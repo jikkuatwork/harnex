@@ -53,6 +53,13 @@ module Harnex
     normalize_label(label).downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
   end
 
+  def cli_key(cli)
+    value = cli.to_s.strip.downcase
+    return nil if value.empty?
+
+    value.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
   def configured_label
     value = env_value("HARNEX_LABEL", legacy: "CXW_LABEL")
     return nil if value.nil? || value.to_s.strip.empty?
@@ -74,14 +81,16 @@ module Harnex
     raise ArgumentError, "#{option_name} requires a value"
   end
 
-  def registry_path(repo_root, label = DEFAULT_LABEL)
+  def registry_path(repo_root, label = DEFAULT_LABEL, cli: nil)
     FileUtils.mkdir_p(SESSIONS_DIR)
     slug = label_key(label)
     slug = "default" if slug.empty?
-    File.join(SESSIONS_DIR, "#{repo_key(repo_root)}--#{slug}.json")
+    cli_slug = cli_key(cli)
+    suffix = cli_slug ? "#{slug}--#{cli_slug}" : slug
+    File.join(SESSIONS_DIR, "#{repo_key(repo_root)}--#{suffix}.json")
   end
 
-  def active_sessions(repo_root = nil)
+  def active_sessions(repo_root = nil, label: nil, cli: nil)
     FileUtils.mkdir_p(SESSIONS_DIR)
     pattern =
       if repo_root
@@ -90,10 +99,17 @@ module Harnex
         File.join(SESSIONS_DIR, "*.json")
       end
 
+    normalized_label = label.nil? ? nil : normalize_label(label)
+    normalized_cli = cli_key(cli)
+
     Dir.glob(pattern).sort.filter_map do |path|
       data = JSON.parse(File.read(path))
       if data["pid"] && alive_pid?(data["pid"])
-        data.merge("registry_path" => path)
+        session = data.merge("registry_path" => path)
+        next if normalized_label && session["label"].to_s != normalized_label
+        next if normalized_cli && cli_key(session_cli(session)) != normalized_cli
+
+        session
       else
         FileUtils.rm_f(path)
         nil
@@ -113,17 +129,11 @@ module Harnex
     true
   end
 
-  def read_registry(repo_root, label = DEFAULT_LABEL)
-    path = registry_path(repo_root, label)
-    return nil unless File.exist?(path)
+  def read_registry(repo_root, label = DEFAULT_LABEL, cli: nil)
+    sessions = active_sessions(repo_root, label: label, cli: cli)
+    return nil unless sessions.length == 1
 
-    data = JSON.parse(File.read(path))
-    return data if data["pid"] && alive_pid?(data["pid"])
-
-    FileUtils.rm_f(path)
-    nil
-  rescue JSON::ParserError
-    nil
+    sessions.first
   end
 
   def write_registry(path, payload)
@@ -132,14 +142,14 @@ module Harnex
     File.rename(tmp, path)
   end
 
-  def allocate_port(repo_root, label, requested_port = nil, host: DEFAULT_HOST)
+  def allocate_port(repo_root, label, requested_port = nil, host: DEFAULT_HOST, cli: nil)
     if requested_port
       return requested_port if port_available?(host, requested_port)
 
       raise "port #{requested_port} is already in use on #{host}"
     end
 
-    seed = Digest::SHA256.hexdigest("#{repo_root}\0#{normalize_label(label)}").to_i(16)
+    seed = Digest::SHA256.hexdigest("#{repo_root}\0#{normalize_label(label)}\0#{cli_key(cli)}").to_i(16)
     offset = seed % DEFAULT_PORT_SPAN
 
     DEFAULT_PORT_SPAN.times do |index|
@@ -160,6 +170,10 @@ module Harnex
 
   def build_adapter(cli, argv)
     Adapters.build(cli || DEFAULT_CLI, argv)
+  end
+
+  def session_cli(session)
+    (session["cli"] || Array(session["command"]).first).to_s
   end
 
   class CLI
@@ -368,10 +382,10 @@ module Harnex
       @repo_root = repo_root
       @host = host
       @label = Harnex.normalize_label(label)
-      @registry_path = Harnex.registry_path(repo_root, @label)
+      @registry_path = Harnex.registry_path(repo_root, @label, cli: adapter.key)
       @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
-      @port = Harnex.allocate_port(repo_root, @label, port, host: host)
+      @port = Harnex.allocate_port(repo_root, @label, port, host: host, cli: adapter.key)
       @mutex = Mutex.new
       @injected_count = 0
       @last_injected_at = nil
@@ -805,7 +819,7 @@ module Harnex
     def table_row(session, columns)
       row = {
         "LABEL" => session["label"].to_s,
-        "CLI" => (session["cli"] || session.fetch("command", []).first || "-").to_s,
+        "CLI" => Harnex.session_cli(session).empty? ? "-" : Harnex.session_cli(session),
         "PID" => session["pid"].to_s,
         "PORT" => session["port"].to_s,
         "AGE" => timeago(session["started_at"]),
@@ -851,6 +865,7 @@ module Harnex
         opts.banner = "Usage: #{program_name} [options] [text...]"
         opts.on("--repo PATH", "Resolve the active session using PATH's repo root") { |value| options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
         opts.on("--label LABEL", "Target a labeled session in the current repo") { |value| options[:label] = Harnex.normalize_label(Harnex.ensure_option_value!("--label", value)) }
+        opts.on("--cli CLI", Adapters.supported, "Target a specific CLI for the label (#{Adapters.supported.join(', ')})") { |value| options[:cli] = value }
         opts.on("--message TEXT", "Message text to inject without using positional args") { |value| options[:message] = Harnex.ensure_option_value!("--message", value) }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
         opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = Harnex.ensure_option_value!("--host", value) }
@@ -875,6 +890,7 @@ module Harnex
       @options = {
         repo_path: Dir.pwd,
         label: Harnex.configured_label,
+        cli: nil,
         message: nil,
         submit: true,
         enter_only: false,
@@ -899,7 +915,7 @@ module Harnex
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       debug("repo_root=#{repo_root}")
       debug("label=#{@options[:label] || '(auto)'}")
-      debug("registry_path=#{Harnex.registry_path(repo_root, @options[:label])}") if @options[:label] && !@options[:port]
+      debug("cli=#{@options[:cli] || '(any)'}")
       registry = wait_for_registry(repo_root)
 
       if @options[:port]
@@ -972,30 +988,39 @@ module Harnex
     end
 
     def resolve_registry(repo_root)
-      if @options[:label]
-        Harnex.read_registry(repo_root, @options[:label]) || :retry
-      else
-        sessions = Harnex.active_sessions(repo_root)
-        return :retry if sessions.empty?
-        return sessions.first if sessions.length == 1
+      sessions =
+        Harnex.active_sessions(
+          repo_root,
+          label: @options[:label],
+          cli: @options[:cli]
+        )
 
-        :ambiguous
-      end
+      return :retry if sessions.empty?
+      return sessions.first if sessions.length == 1
+
+      :ambiguous
     end
 
     def missing_session_message(repo_root)
       base = "no active harnex session found for #{repo_root}"
-      return "#{base} (label: #{@options[:label]})" if @options[:label]
+      filters = []
+      filters << "label: #{@options[:label]}" if @options[:label]
+      filters << "cli: #{@options[:cli]}" if @options[:cli]
+      return "#{base} (#{filters.join(', ')})" unless filters.empty?
 
-      available = Harnex.active_sessions(repo_root).map { |session| session["label"] }.uniq.sort
-      suffix = available.empty? ? "" : " | active labels: #{available.join(', ')}"
+      available = Harnex.active_sessions(repo_root).map { |session| "#{session['label']}(#{Harnex.session_cli(session)})" }.uniq.sort
+      suffix = available.empty? ? "" : " | active: #{available.join(', ')}"
       "#{base}#{suffix}"
     end
 
     def ambiguous_session_message(repo_root)
-      available = Harnex.active_sessions(repo_root)
-      detail = available.map { |session| "#{session['label']}(#{session['cli'] || session.fetch('command', []).first})" }.join(", ")
-      "multiple active harnex sessions found for #{repo_root}; use --label or `harnex status` | active: #{detail}"
+      available = Harnex.active_sessions(repo_root, label: @options[:label], cli: @options[:cli])
+      detail = available.map { |session| "#{session['label']}(#{Harnex.session_cli(session)})" }.join(", ")
+      filters = []
+      filters << "label #{@options[:label].inspect}" if @options[:label]
+      filters << "cli #{@options[:cli].inspect}" if @options[:cli]
+      scope = filters.empty? ? repo_root : "#{repo_root} with #{filters.join(' and ')}"
+      "multiple active harnex sessions found for #{scope}; use --label, --cli, or `harnex status` | active: #{detail}"
     end
 
     def with_http_retry

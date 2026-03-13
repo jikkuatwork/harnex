@@ -70,6 +70,12 @@ Send to a specific labeled session:
 harnex send --label review --message "Summarize current progress."
 ```
 
+If a workflow label has both Codex and Claude attached, add `--cli`:
+
+```bash
+harnex send --label review --cli codex --message "Summarize current progress."
+```
+
 Press Enter without sending new text:
 
 ```bash
@@ -151,6 +157,7 @@ Each session is scoped by:
 
 - repo root
 - label
+- CLI
 
 If you do not pass `--label`, Harnex uses the adapter name as the label. That
 means these two sessions can coexist without extra flags:
@@ -163,13 +170,14 @@ harnex run claude
 Session metadata is written to:
 
 ```text
-~/.local/state/harnex/sessions/<repo-hash>--<label>.json
+~/.local/state/harnex/sessions/<repo-hash>--<label>--<cli>.json
 ```
 
 That registry entry includes:
 
 - repo root
 - label
+- CLI
 - PID
 - host and chosen port
 - bearer token
@@ -186,17 +194,58 @@ harnex send --label main --message "Status?"
 harnex send --label monitor --message "Summarize the queue."
 ```
 
-If multiple sessions use the same repo and the same label, the newest session
-wins for that label.
+You can also reuse one workflow label across both CLIs:
+
+```bash
+harnex run codex --label hello
+harnex run claude --label hello
+
+harnex send --label hello --cli codex --message "/tick"
+harnex send --label hello --cli claude --message "/tick"
+```
+
+If exactly one live session matches the requested label, `harnex send --label`
+does not need `--cli`. If both Codex and Claude are live under that label,
+`harnex send --label hello` is ambiguous and will ask for `--cli`.
 
 If exactly one live session exists in the current repo, `harnex send` can target
 it without `--label`. If multiple sessions are live, `harnex send` will ask you
 to choose with `--label` and `harnex status` will show the available targets.
 
+## Two-Agent Relay
+
+One useful pattern is to run both agents under one shared workflow label in
+adjacent tmux panes, then let either agent call `harnex send` to talk to the
+other one.
+
+Start both:
+
+```bash
+harnex run codex --label hello
+harnex run claude --label hello
+```
+
+Then, from inside the Codex pane:
+
+```bash
+harnex send --label hello --cli claude --message "codex: please review plan 34"
+```
+
+and from inside the Claude pane:
+
+```bash
+harnex send --label hello --cli codex --message "claude: review passed; please apply the fixes"
+```
+
+In that setup, Harnex is just the relay. It does not create a protocol or
+decide what the agents should say to each other. The repository or workflow
+should define that convention. You can still watch both panes directly and
+interrupt either side at any time.
+
 ## Port Selection
 
-Harnex picks a deterministic starting port from the repo root and label, then
-walks forward until it finds a free port.
+Harnex picks a deterministic starting port from the repo root, label, and CLI,
+then walks forward until it finds a free port.
 
 Defaults:
 
@@ -327,6 +376,7 @@ Harnex is usable now, but it is still early. The current shape is:
 - solid repo-aware session lookup
 - adapter-backed Codex and Claude launch profiles
 - labeled multi-session routing
+- shared workflow labels across Codex and Claude
 - optional-label single-session targeting
 - repo-scoped live session table via `harnex status`
 - typed message injection and submit control
