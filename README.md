@@ -235,19 +235,66 @@ harnex run claude --label hello
 Then, from inside the Codex pane:
 
 ```bash
-harnex send --label hello --cli claude --message "codex: please review plan 34"
+harnex send --label hello --cli claude --message "please review plan 34"
 ```
 
 and from inside the Claude pane:
 
 ```bash
-harnex send --label hello --cli codex --message "claude: review passed; please apply the fixes"
+harnex send --label hello --cli codex --message "review passed; please apply the fixes"
 ```
 
-In that setup, Harnex is just the relay. It does not create a protocol or
-decide what the agents should say to each other. The repository or workflow
-should define that convention. You can still watch both panes directly and
-interrupt either side at any time.
+When `harnex send` runs from inside another Harnex-managed session and targets a
+different live session, Harnex automatically wraps the message with a relay
+header and a newline before the body:
+
+```text
+[harnex relay from=codex label=hello at=2026-03-14T00:29:18+04:00]
+please review plan 34
+```
+
+That keeps short peer-to-peer exchanges in-band and reviewable without making
+them look like raw user input. Use `--no-relay` to disable the automatic
+wrapper, or `--relay` to force it when the send originates from another
+Harnex-managed session.
+
+## Live Discussion Workflow
+
+One practical use of Harnex is a visible discussion loop between you, Codex,
+and Claude under one shared label.
+
+Start both sessions:
+
+```bash
+harnex run codex --label discuss
+harnex run claude --label discuss
+```
+
+Seed a topic in one pane from your shell:
+
+```bash
+harnex send --label discuss --cli codex --message "Topic: should Harnex ship screen_tail before SSE?"
+```
+
+Then ask the other side to answer through Harnex instead of only replying in
+its own pane:
+
+```bash
+harnex send --label discuss --cli claude --message "Please reply back to Codex through harnex with your view, then wait for follow-up."
+```
+
+From there, you can pause at any point and type directly into either pane. If
+you want one side to answer a question and relay that answer back to the other
+side, just ask it explicitly:
+
+```bash
+harnex send --label discuss --cli codex --message "Please answer the user's question and send the answer back to Claude through harnex."
+harnex send --label discuss --cli claude --message "Please answer the user's question and send the answer back to Codex through harnex."
+```
+
+The important property is that the sessions stay human-visible and
+human-interruptible. Harnex handles discovery and message injection, but you
+can still steer either conversation manually at any time.
 
 ## File Hooks
 

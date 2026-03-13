@@ -114,6 +114,29 @@ module Harnex
     configured_label || normalize_label(cli || DEFAULT_CLI)
   end
 
+  def current_session_context(env = ENV)
+    session_id = env["HARNEX_SESSION_ID"].to_s.strip
+    cli = env["HARNEX_SESSION_CLI"].to_s.strip
+    label = env["HARNEX_SESSION_LABEL"].to_s.strip
+    repo_root = env["HARNEX_SESSION_REPO_ROOT"].to_s.strip
+    return nil if session_id.empty? || cli.empty? || label.empty?
+
+    {
+      session_id: session_id,
+      cli: cli,
+      label: label,
+      repo_root: repo_root.empty? ? nil : repo_root
+    }
+  end
+
+  def format_relay_message(text, from:, label:, at: Time.now)
+    header = "[harnex relay from=#{from} label=#{normalize_label(label)} at=#{at.iso8601}]"
+    body = text.to_s
+    return header if body.empty?
+
+    "#{header}\n#{body}"
+  end
+
   def suspicious_option_value?(value)
     value.to_s.start_with?("-")
   end
@@ -461,6 +484,7 @@ module Harnex
       @token = SecureRandom.hex(16)
       @port = Harnex.allocate_port(repo_root, @label, port, host: host, cli: adapter.key)
       @mutex = Mutex.new
+      @inject_mutex = Mutex.new
       @injected_count = 0
       @last_injected_at = nil
       @started_at = Time.now
@@ -473,7 +497,7 @@ module Harnex
     end
 
     def run
-      @reader, @writer, @pid = PTY.spawn(*command)
+      @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
 
       install_signal_handlers
@@ -536,36 +560,27 @@ module Harnex
     def inject(text, newline: true)
       raise "session is not running" unless pid && Harnex.alive_pid?(pid)
 
-      payload = text.dup
-      payload << "\n" if newline
-
-      written = @mutex.synchronize do
-        bytes = @writer.write(payload)
-        @writer.flush
-        @injected_count += 1
-        @last_injected_at = Time.now
-        persist_registry
-        bytes
-      end
-
-      {
-        ok: true,
-        bytes_written: written,
-        injected_count: @injected_count,
-        newline: newline
-      }
+      inject_sequence([{ text: text, newline: newline }])
     end
 
     def inject_via_adapter(text:, submit:, enter_only:, force: false)
+      snapshot = wait_for_sendable_snapshot(submit: submit, enter_only: enter_only, force: force)
       payload = adapter.build_send_payload(
         text: text,
         submit: submit,
         enter_only: enter_only,
-        screen_text: screen_snapshot,
+        screen_text: snapshot,
         force: force
       )
 
-      inject(payload.fetch(:text), newline: payload.fetch(:newline, false)).merge(
+      result =
+        if payload[:steps]
+          inject_sequence(payload.fetch(:steps))
+        else
+          inject(payload.fetch(:text), newline: payload.fetch(:newline, false))
+        end
+
+      result.merge(
         cli: adapter.key,
         input_state: payload[:input_state],
         force: payload[:force]
@@ -581,6 +596,78 @@ module Harnex
     end
 
     private
+
+    def child_env
+      {
+        "HARNEX_SESSION_ID" => session_id,
+        "HARNEX_SESSION_CLI" => adapter.key,
+        "HARNEX_SESSION_LABEL" => label,
+        "HARNEX_SESSION_REPO_ROOT" => repo_root
+      }
+    end
+
+    def wait_for_sendable_snapshot(submit:, enter_only:, force:)
+      snapshot = screen_snapshot
+      return snapshot if force
+
+      wait_seconds = adapter.send_wait_seconds(submit: submit, enter_only: enter_only).to_f
+      return snapshot unless wait_seconds.positive?
+
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait_seconds
+      state = adapter.input_state(snapshot)
+
+      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline &&
+            adapter.wait_for_sendable_state?(state, submit: submit, enter_only: enter_only)
+        sleep 0.05
+        snapshot = screen_snapshot
+        state = adapter.input_state(snapshot)
+      end
+
+      snapshot
+    end
+
+    def inject_sequence(steps)
+      @inject_mutex.synchronize do
+        total_bytes = 0
+        newline = false
+
+        steps.each do |step|
+          delay_ms = step[:delay_ms].to_i
+          sleep(delay_ms / 1000.0) if delay_ms.positive?
+
+          payload = step.fetch(:text, "").dup
+          newline = step.fetch(:newline, false)
+          payload << "\n" if newline
+          total_bytes += write_payload(payload)
+        end
+
+        finish_injection(bytes_written: total_bytes, newline: newline)
+      end
+    end
+
+    def write_payload(payload)
+      @mutex.synchronize do
+        bytes = @writer.write(payload)
+        @writer.flush
+        bytes
+      end
+    end
+
+    def finish_injection(bytes_written:, newline:)
+      injected_count = @mutex.synchronize do
+        @injected_count += 1
+        @last_injected_at = Time.now
+        persist_registry
+        @injected_count
+      end
+
+      {
+        ok: true,
+        bytes_written: bytes_written,
+        injected_count: injected_count,
+        newline: newline
+      }
+    end
 
     def registry_payload
       status_payload(include_input_state: false).merge(
@@ -606,9 +693,11 @@ module Harnex
       Thread.new do
         loop do
           chunk = STDIN.readpartial(4096)
-          @mutex.synchronize do
-            @writer.write(chunk)
-            @writer.flush
+          @inject_mutex.synchronize do
+            @mutex.synchronize do
+              @writer.write(chunk)
+              @writer.flush
+            end
           end
         rescue EOFError, Errno::EIO, IOError
           break
@@ -1076,6 +1165,8 @@ module Harnex
           options[:submit] = true
         end
         opts.on("--no-submit", "Inject text without pressing Enter") { options[:submit] = false }
+        opts.on("--relay", "Force relay header formatting for sends from a wrapped session") { options[:relay] = true }
+        opts.on("--no-relay", "Disable automatic relay header formatting") { options[:relay] = false }
         opts.on("--force", "Send input even if the adapter says the UI is not at a prompt") { options[:force] = true }
         opts.on("--debug", "Print repo/session lookup details to stderr") { options[:debug] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
@@ -1094,6 +1185,7 @@ module Harnex
         message: nil,
         submit: true,
         enter_only: false,
+        relay: nil,
         force: false,
         status: false,
         port: nil,
@@ -1136,8 +1228,9 @@ module Harnex
       text = nil
       unless @options[:status]
         text = resolve_text
+        text = relay_text(text, registry)
         raise "text is required" if text.to_s.empty? && !@options[:enter_only]
-        debug("payload_bytes=#{text.bytesize} submit=#{@options[:submit]} enter_only=#{@options[:enter_only]} force=#{@options[:force]}")
+        debug("payload_bytes=#{text.bytesize} submit=#{@options[:submit]} enter_only=#{@options[:enter_only]} relay=#{relay_enabled_for?(registry)} force=#{@options[:force]}")
       end
 
       response = with_http_retry do
@@ -1166,6 +1259,33 @@ module Harnex
       return "" if @options[:enter_only]
 
       @options[:message] || (@argv.empty? ? STDIN.read : @argv.join(" "))
+    end
+
+    def relay_text(text, registry)
+      return text if text.to_s.empty?
+      return text unless relay_enabled_for?(registry)
+      return text if text.lstrip.start_with?("[harnex relay ")
+
+      context = Harnex.current_session_context
+      Harnex.format_relay_message(
+        text,
+        from: context.fetch(:cli),
+        label: context.fetch(:label)
+      )
+    end
+
+    def relay_enabled_for?(registry)
+      return false if @options[:enter_only] || @options[:status]
+      return false if @options[:relay] == false
+
+      context = Harnex.current_session_context
+      return false unless context
+      return true if @options[:relay] == true
+
+      target_session_id = registry["session_id"].to_s
+      return false if target_session_id.empty?
+
+      target_session_id != context.fetch(:session_id)
     end
 
     def debug(message)

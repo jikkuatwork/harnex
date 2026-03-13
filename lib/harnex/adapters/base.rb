@@ -29,6 +29,14 @@ module Harnex
         }
       end
 
+      def send_wait_seconds(submit:, enter_only:)
+        0.0
+      end
+
+      def wait_for_sendable_state?(_state, submit:, enter_only:)
+        false
+      end
+
       def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
         state = input_state(screen_text)
         if !force && blocked_state?(state, enter_only: enter_only)

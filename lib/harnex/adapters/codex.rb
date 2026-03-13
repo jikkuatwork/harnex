@@ -1,6 +1,9 @@
 module Harnex
   module Adapters
     class Codex < Base
+      SUBMIT_DELAY_MS = 75
+      SEND_WAIT_SECONDS = 2.0
+
       def initialize(extra_args = [])
         super("codex", extra_args)
       end
@@ -46,6 +49,53 @@ module Harnex
             input_ready: nil
           }
         end
+      end
+
+      def send_wait_seconds(submit:, enter_only:)
+        return 0.0 unless submit
+        return 0.0 if enter_only
+
+        SEND_WAIT_SECONDS
+      end
+
+      def wait_for_sendable_state?(state, submit:, enter_only:)
+        return false unless submit
+        return false if enter_only
+
+        state[:input_ready] != true
+      end
+
+      def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
+        state = input_state(screen_text)
+        if !force && submit && !enter_only && state[:input_ready] != true
+          raise ArgumentError, blocked_message(state, enter_only: enter_only)
+        end
+
+        steps = []
+        unless enter_only
+          body = text.to_s
+          steps << { text: body, newline: false } unless body.empty?
+        end
+
+        if submit || enter_only
+          step = { text: submit_bytes, newline: false }
+          step[:delay_ms] = SUBMIT_DELAY_MS if steps.any?
+          steps << step
+        end
+
+        {
+          steps: steps,
+          input_state: state,
+          force: force
+        }
+      end
+
+      protected
+
+      def blocked_message(state, enter_only:)
+        return super if enter_only
+
+        "Codex is not at a prompt; wait and retry or use `harnex send --force` (state: #{state[:state]})"
       end
     end
   end
