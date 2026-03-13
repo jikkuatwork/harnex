@@ -1,5 +1,6 @@
 require "digest"
 require "fileutils"
+require "fiddle/import"
 require "io/console"
 require "json"
 require "net/http"
@@ -28,8 +29,50 @@ module Harnex
   DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", legacy: "CXW_PORT_SPAN", default: "4000"))
   DEFAULT_LABEL = env_value("HARNEX_LABEL", legacy: "CXW_LABEL", default: "default")
   DEFAULT_CLI = "codex"
+  WATCH_DEBOUNCE_SECONDS = 1.0
   STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", legacy: "CXW_STATE_DIR", default: "~/.local/state/harnex"))
   SESSIONS_DIR = File.join(STATE_DIR, "sessions")
+  WatchConfig = Struct.new(:absolute_path, :display_path, :hook_message, :debounce_seconds, keyword_init: true)
+
+  module LinuxInotify
+    extend Fiddle::Importer
+
+    IN_ATTRIB = 0x00000004
+    IN_CLOSE_WRITE = 0x00000008
+    IN_CREATE = 0x00000100
+    IN_MOVED_TO = 0x00000080
+
+    @available = false
+    begin
+      dlload Fiddle.dlopen(nil)
+      extern "int inotify_init(void)"
+      extern "int inotify_add_watch(int, const char*, unsigned int)"
+      @available = true
+    rescue Fiddle::DLError
+      @available = false
+    end
+
+    class << self
+      def available?
+        @available
+      end
+
+      def directory_io(path, mask)
+        raise "file watch is unsupported on this system" unless available?
+
+        fd = inotify_init
+        raise "could not initialize file watch" if fd.negative?
+
+        watch_id = inotify_add_watch(fd, path, mask)
+        if watch_id.negative?
+          IO.for_fd(fd, autoclose: true)&.close
+          raise "could not watch #{path}"
+        end
+
+        IO.for_fd(fd, "rb", autoclose: true)
+      end
+    end
+  end
 
   def resolve_repo_root(path = Dir.pwd)
     output, status = Open3.capture2("git", "rev-parse", "--show-toplevel", chdir: path)
@@ -176,6 +219,26 @@ module Harnex
     (session["cli"] || Array(session["command"]).first).to_s
   end
 
+  def build_watch_config(path, repo_root)
+    return nil if path.nil?
+
+    raise "file watch is unsupported on this system" unless LinuxInotify.available?
+
+    display_path = path.to_s.strip
+    raise ArgumentError, "--watch requires a value" if display_path.empty?
+
+    display_path = ensure_option_value!("--watch", display_path)
+    absolute_path = File.expand_path(display_path, repo_root)
+    FileUtils.mkdir_p(File.dirname(absolute_path))
+
+    WatchConfig.new(
+      absolute_path: absolute_path,
+      display_path: display_path,
+      hook_message: "file-change-hook: read #{display_path}",
+      debounce_seconds: WATCH_DEBOUNCE_SECONDS
+    )
+  end
+
   class CLI
     def initialize(argv)
       @argv = argv.dup
@@ -254,6 +317,7 @@ module Harnex
           --label LABEL   Session label for this repo (default: adapter name)
           --host HOST     Bind host for the local API (default: #{DEFAULT_HOST})
           --port PORT     Force a specific local API port
+          --watch PATH    Watch PATH and auto-send a file-change hook after 1s quiet time
           -h, --help      Show this help
 
         Notes:
@@ -272,6 +336,7 @@ module Harnex
         label: Harnex.configured_label,
         host: DEFAULT_HOST,
         port: (env_port = Harnex.env_value("HARNEX_PORT", legacy: "CXW_PORT")) && Integer(env_port),
+        watch: nil,
         help: false
       }
     end
@@ -287,13 +352,15 @@ module Harnex
       @options[:label] ||= Harnex.default_session_label(adapter.key)
       command = adapter.build_command
       repo_root = Harnex.resolve_repo_root(adapter.infer_repo_path(child_args))
+      watch = Harnex.build_watch_config(@options[:watch], repo_root)
       session = Session.new(
         adapter: adapter,
         command: command,
         repo_root: repo_root,
         host: @options[:host],
         port: @options[:port],
-        label: @options[:label]
+        label: @options[:label],
+        watch: watch
       )
 
       session.run
@@ -333,6 +400,12 @@ module Harnex
           @options[:port] = Integer(Harnex.ensure_option_value!("--port", argv[index]))
         when /\A--port=(\d+)\z/
           @options[:port] = Integer(Regexp.last_match(1))
+        when "--watch"
+          index += 1
+          raise OptionParser::MissingArgument, "--watch" if index >= argv.length
+          @options[:watch] = Harnex.ensure_option_value!("--watch", argv[index])
+        when /\A--watch=(.+)\z/
+          @options[:watch] = Harnex.ensure_option_value!("--watch", Regexp.last_match(1))
         else
           if index == cli_index
             cli_name = arg
@@ -355,9 +428,9 @@ module Harnex
           break
         when "-h", "--help"
           nil
-        when "--label", "--host", "--port"
+        when "--label", "--host", "--port", "--watch"
           index += 1
-        when /\A--(?:label|host)=(.+)\z/, /\A--port=(\d+)\z/
+        when /\A--(?:label|host|watch)=(.+)\z/, /\A--port=(\d+)\z/
           nil
         else
           return index if Adapters.supported.include?(arg)
@@ -374,14 +447,15 @@ module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :label, :adapter
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :label, :adapter, :watch
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, label: DEFAULT_LABEL)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, label: DEFAULT_LABEL, watch: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
       @host = host
       @label = Harnex.normalize_label(label)
+      @watch = watch
       @registry_path = Harnex.registry_path(repo_root, @label, cli: adapter.key)
       @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
@@ -409,6 +483,7 @@ module Harnex
       persist_registry
 
       stdin_state = STDIN.tty? ? STDIN.raw! : nil
+      watch_thread = start_watch_thread
       input_thread = start_input_thread
       output_thread = start_output_thread
 
@@ -417,6 +492,7 @@ module Harnex
 
       output_thread.join(1)
       input_thread&.kill
+      watch_thread&.kill
       @exit_code
     ensure
       STDIN.cooked! if STDIN.tty? && stdin_state
@@ -442,6 +518,12 @@ module Harnex
         last_injected_at: @last_injected_at&.iso8601,
         injected_count: @injected_count
       }
+
+      if watch
+        payload[:watch_path] = watch.display_path
+        payload[:watch_absolute_path] = watch.absolute_path
+        payload[:watch_debounce_seconds] = watch.debounce_seconds
+      end
 
       payload[:input_state] = adapter.input_state(screen_snapshot) if include_input_state
       payload
@@ -547,6 +629,12 @@ module Harnex
       end
     end
 
+    def start_watch_thread
+      return nil unless watch
+
+      FileChangeHook.new(self, watch).start
+    end
+
     def install_signal_handlers
       %w[INT TERM HUP QUIT].each do |signal_name|
         Signal.trap(signal_name) { forward_signal(signal_name) }
@@ -572,6 +660,118 @@ module Harnex
 
     def screen_snapshot
       @mutex.synchronize { @output_buffer.dup }
+    end
+  end
+
+  class FileChangeHook
+    EVENT_HEADER_SIZE = 16
+    WATCH_MASK = LinuxInotify::IN_ATTRIB | LinuxInotify::IN_CLOSE_WRITE | LinuxInotify::IN_CREATE | LinuxInotify::IN_MOVED_TO
+    RETRY_SECONDS = 1.0
+    IDLE_SLEEP_SECONDS = 0.1
+
+    def initialize(session, config)
+      @session = session
+      @config = config
+      @target_dir = File.dirname(config.absolute_path)
+      @target_name = File.basename(config.absolute_path)
+      @buffer = +""
+      @buffer.force_encoding(Encoding::BINARY)
+      @mutex = Mutex.new
+      @change_generation = 0
+      @delivered_generation = 0
+      @last_change_at = nil
+    end
+
+    def start
+      Thread.new { run }
+    end
+
+    private
+
+    def run
+      reader_thread = Thread.new { watch_loop }
+      delivery_loop
+    ensure
+      reader_thread&.kill
+      reader_thread&.join(0.1)
+    end
+
+    def watch_loop
+      io = LinuxInotify.directory_io(@target_dir, WATCH_MASK)
+      loop do
+        chunk = io.readpartial(4096)
+        note_change if relevant_change?(chunk)
+      rescue EOFError, IOError, Errno::EIO
+        break
+      end
+    ensure
+      io&.close unless io&.closed?
+    end
+
+    def delivery_loop
+      loop do
+        generation, delivered_generation, last_change_at = snapshot
+        if generation == delivered_generation || last_change_at.nil?
+          sleep IDLE_SLEEP_SECONDS
+          next
+        end
+
+        remaining = @config.debounce_seconds - (Time.now - last_change_at)
+        if remaining.positive?
+          sleep [remaining, IDLE_SLEEP_SECONDS].max
+          next
+        end
+
+        begin
+          @session.inject_via_adapter(
+            text: @config.hook_message,
+            submit: true,
+            enter_only: false,
+            force: false
+          )
+          mark_delivered
+        rescue ArgumentError
+          sleep RETRY_SECONDS
+        rescue StandardError => e
+          break if e.message == "session is not running"
+
+          sleep RETRY_SECONDS
+        end
+      end
+    end
+
+    def relevant_change?(chunk)
+      @buffer << chunk
+      changed = false
+
+      while @buffer.bytesize >= EVENT_HEADER_SIZE
+        _, mask, _, name_length = @buffer.byteslice(0, EVENT_HEADER_SIZE).unpack("iIII")
+        event_size = EVENT_HEADER_SIZE + name_length
+        break if @buffer.bytesize < event_size
+
+        name = @buffer.byteslice(EVENT_HEADER_SIZE, name_length).to_s.delete("\0")
+        changed ||= name == @target_name && (mask & WATCH_MASK).positive?
+        @buffer = @buffer.byteslice(event_size, @buffer.bytesize - event_size).to_s
+      end
+
+      changed
+    end
+
+    def note_change
+      @mutex.synchronize do
+        @change_generation += 1
+        @last_change_at = Time.now
+      end
+    end
+
+    def snapshot
+      @mutex.synchronize { [@change_generation, @delivered_generation, @last_change_at] }
+    end
+
+    def mark_delivered
+      @mutex.synchronize do
+        @delivered_generation = @change_generation
+      end
     end
   end
 

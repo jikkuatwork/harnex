@@ -46,6 +46,12 @@ Start Claude with a label:
 harnex run claude --label review
 ```
 
+Start Codex with a watched file hook:
+
+```bash
+harnex run codex --label hello --watch ./tmp/tick.jsonl
+```
+
 Forward extra args to the adapter command:
 
 ```bash
@@ -121,6 +127,7 @@ Examples:
 harnex run codex
 harnex run claude
 harnex run codex --label hello
+harnex run codex --label hello --watch ./tmp/tick.jsonl
 harnex run codex -- --cd /path/to/repo
 ```
 
@@ -241,6 +248,46 @@ In that setup, Harnex is just the relay. It does not create a protocol or
 decide what the agents should say to each other. The repository or workflow
 should define that convention. You can still watch both panes directly and
 interrupt either side at any time.
+
+## File Hooks
+
+`harnex run --watch PATH` adds one dumb file-change hook to that session.
+
+When `PATH` changes, Harnex waits for 1 second of quiet time and then sends:
+
+```text
+file-change-hook: read ./tmp/tick.jsonl
+```
+
+Harnex does not parse the file, track offsets, or interpret its contents. It
+just tells the running CLI to reread the watched path. The repository workflow
+owns everything after that.
+
+Example:
+
+```bash
+harnex run codex --label hello --watch ./tmp/tick.jsonl
+harnex run claude --label hello --watch ./tmp/tick.jsonl
+```
+
+That shared-file pattern works well when the repo wants one append-only log that
+both agents reread on change.
+
+Notes:
+
+- relative watch paths are resolved from the session repo root
+- Harnex creates the watched file's parent directory if needed
+- the watched file itself does not need to exist at startup
+- rapid bursts of file changes are collapsed into one hook message after 1 second
+- the current implementation uses Linux inotify
+- `harnex send --status` includes the active watch path and debounce value
+
+If you want per-agent inbox files instead, that works too:
+
+```bash
+harnex run codex --label hello --watch ./tmp/inbox.codex
+harnex run claude --label hello --watch ./tmp/inbox.claude
+```
 
 ## Port Selection
 
