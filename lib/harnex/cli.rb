@@ -53,7 +53,7 @@ module Harnex
         Usage:
           harnex run [cli] [wrapper-options] [--] [cli-args...]
           harnex send [options] [text...]
-          harnex wait --id ID [options]
+          harnex wait --id ID [--until prompt] [options]
           harnex exit --id ID [options]
           harnex status [options]
           harnex [cli] [wrapper-options] [--] [cli-args...]
@@ -61,7 +61,7 @@ module Harnex
         Commands:
           run    Start a wrapped interactive session and local API
           send   Send text or inspect status for an active session
-          wait   Block until a detached session exits
+          wait   Block until a session exits or reaches a state
           exit   Send exit sequence to a session
           status List live sessions for this repo
 

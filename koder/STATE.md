@@ -12,7 +12,7 @@ Updated: 2026-03-14
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,exit,status}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 75 minitest tests, all passing.
+- Test suite: `test/` with 84 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 
 ## What harnex does
@@ -47,7 +47,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | # | Title | Status | Priority |
 |---|-------|--------|----------|
 | 01 | Clean exit primitive | **fixed** | P1 |
-| 02 | Wait-until-prompt mode | open | P1 |
+| 02 | Wait-until-prompt mode | **fixed** | P1 |
 | 03 | API & command design audit | open | P1 |
 | 04 | Output streaming | open | P2 |
 | 05 | Inbox fast-path deadlock | **fixed** | P1 |

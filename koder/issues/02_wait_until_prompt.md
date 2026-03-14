@@ -1,6 +1,6 @@
 # Issue 02: Wait-Until-Prompt Mode
 
-**Status**: open
+**Status**: **fixed**
 **Priority**: P1
 **Created**: 2026-03-14
 
