@@ -87,7 +87,30 @@ harnex run codex --id impl-1 --tmux cx-p1 -- --cd /path/to/worktree
 - `--detach` starts the session in the background, returns JSON with pid/port
 - `--tmux` creates a tmux window (implies `--detach`)
 - `--tmux NAME` sets a custom window title (keep names terse: `cx-p3`, `cl-r3`)
+- `--context TEXT` sets an initial prompt with session ID auto-included
 - Returns immediately; use `harnex send` to inject work, `harnex wait` to block
+
+#### Using `--context` to orient spawned agents
+
+`--context` prepends a context string as the agent's initial prompt, with the
+session ID automatically included as `[harnex session id=<ID>]`. The spawner
+decides what context to provide — harnex only adds the session ID.
+
+```bash
+# Fire-and-forget: give the task upfront
+harnex run codex --id impl-1 --tmux cx-p1 \
+  --context "Implement the feature in koder/plans/03_auth.md. Commit when done." \
+  -- --cd /path/to/worktree
+
+# Fire-and-wait: give context, then send work separately
+harnex run codex --id reviewer --tmux cx-rv \
+  --context "You are a code reviewer. Wait for instructions via harnex relay messages." \
+  -- --cd /path/to/repo
+harnex send --id reviewer --message "Review the changes in src/auth.rb"
+harnex wait --id reviewer
+```
+
+The context string is the spawner's responsibility — tailor it to the use case.
 
 ### Wait for a session to exit
 

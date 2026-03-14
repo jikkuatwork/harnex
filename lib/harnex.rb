@@ -350,6 +350,7 @@ module Harnex
           --host HOST     Bind host for the local API (default: #{DEFAULT_HOST})
           --port PORT     Force a specific local API port
           --watch PATH    Watch PATH and auto-send a file-change hook after 1s quiet time
+          --context TEXT   Prepend context as initial prompt (auto-includes session ID)
           -h, --help      Show this help
 
         Notes:
@@ -369,6 +370,7 @@ module Harnex
         host: DEFAULT_HOST,
         port: (env_port = Harnex.env_value("HARNEX_PORT", legacy: "CXW_PORT")) && Integer(env_port),
         watch: nil,
+        context: nil,
         detach: false,
         tmux: false,
         tmux_name: nil,
@@ -383,8 +385,10 @@ module Harnex
         return 0
       end
 
+      # ID must be resolved before apply_context uses it
+      @options[:id] ||= Harnex.default_id(cli_name || DEFAULT_CLI)
+      child_args = apply_context(child_args)
       adapter = Harnex.build_adapter(cli_name, child_args)
-      @options[:id] ||= Harnex.default_id(adapter.key)
       @options[:detach] = true if @options[:tmux]
 
       if @options[:detach]
@@ -530,6 +534,15 @@ module Harnex
       adapter.infer_repo_path(child_args)
     end
 
+    # Append context string (with session ID) to child args as the initial prompt.
+    # Both codex and claude accept a trailing positional [PROMPT] argument.
+    def apply_context(child_args)
+      return child_args unless @options[:context]
+
+      context = "[harnex session id=#{@options[:id]}] #{@options[:context]}"
+      child_args + [context]
+    end
+
     private
 
     def extract_wrapper_options(argv)
@@ -582,6 +595,12 @@ module Harnex
           @options[:watch] = Harnex.ensure_option_value!("--watch", argv[index])
         when /\A--watch=(.+)\z/
           @options[:watch] = Harnex.ensure_option_value!("--watch", Regexp.last_match(1))
+        when "--context"
+          index += 1
+          raise OptionParser::MissingArgument, "--context" if index >= argv.length
+          @options[:context] = Harnex.ensure_option_value!("--context", argv[index])
+        when /\A--context=(.+)\z/
+          @options[:context] = Harnex.ensure_option_value!("--context", Regexp.last_match(1))
         else
           if index == cli_index
             cli_name = arg
