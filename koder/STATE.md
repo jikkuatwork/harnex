@@ -4,17 +4,16 @@ Updated: 2026-03-14
 
 ## Current snapshot
 
-- Main implementation is still concentrated in `lib/harnex.rb` at about 1895
-  lines.
-- Adapters are already split into:
-  - `lib/harnex/adapters/base.rb`
-  - `lib/harnex/adapters/codex.rb`
-  - `lib/harnex/adapters/claude.rb`
-- CLI entrypoint is `bin/harnex`.
-- Refactor plan has been created at `koder/plans/01_refactor.md`.
-- No implementation refactor has started yet.
-- No automated tests are present yet. A quick search found no `test/` or
-  `spec/` tree in the repo.
+- `lib/harnex.rb` is a 20-line loader.
+- Code is split into separate files:
+  - `lib/harnex/core.rb` — constants, env helpers, registry, port allocation
+  - `lib/harnex/linux_inotify.rb` — inotify via Fiddle
+  - `lib/harnex/adapters.rb` + `adapters/{base,codex,claude}.rb`
+  - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
+  - `lib/harnex/commands/{run,send,wait,exit,status}.rb`
+  - `lib/harnex/cli.rb`
+- Test suite: `test/` with 75 minitest tests, all passing.
+- CLI entrypoint is `bin/harnex` (unchanged).
 
 ## What harnex does
 
@@ -25,10 +24,11 @@ Harnex is a local PTY harness for interactive terminal agents.
   registry.
 - `harnex send` resolves a target session, applies relay headers when one
   harnex-managed session talks to another, and sends input through the local API.
+- `harnex exit` sends the adapter-appropriate exit sequence to a session.
 - `harnex status` reads the registry and live status endpoints.
 - `harnex wait` blocks on a detached session and reports exit status.
-- Adapter logic owns CLI-specific launch args, prompt detection, and submit
-  behavior.
+- Adapter logic owns CLI-specific launch args, prompt detection, submit
+  behavior, and exit sequence.
 
 ## Features currently implemented
 
@@ -38,6 +38,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 - detached headless sessions via `--detach`
 - tmux-backed detached sessions via `--tmux`
 - `wait` command for detached workers
+- `exit` command for clean session termination
 - relay headers for cross-session sends
 - file-change hooks using inotify on Linux
 
@@ -45,86 +46,46 @@ Harnex is a local PTY harness for interactive terminal agents.
 
 | # | Title | Status | Priority |
 |---|-------|--------|----------|
-| 01 | Clean exit primitive | open | P1 |
+| 01 | Clean exit primitive | **fixed** | P1 |
 | 02 | Wait-until-prompt mode | open | P1 |
 | 03 | API & command design audit | open | P1 |
 | 04 | Output streaming | open | P2 |
+| 05 | Inbox fast-path deadlock | **fixed** | P1 |
 
 See `koder/issues/` for details.
 
-Issue 03 subsumes the four confirmed bugs below (3d covers exit file collision,
-3e covers registry fallback, `--port` auth is covered by the `--status`/mode
-cleanup, normalization collision is part of the broader ID resolution fix).
+## Confirmed bugs from earlier review (all fixed)
 
-## Confirmed bugs from earlier review
+1. ~~`harnex send --port` broken for authenticated requests~~ → added `--token` flag
+2. ~~Exit status files keyed only by `id`~~ → now uses `repo_key--id_key.json`
+3. ~~`harnex wait` depends on live registry entry~~ → falls back to exit status file
+4. ~~Registry ID normalization collision~~ → `active_sessions` now uses `id_key` for matching
 
-1. `harnex send --port` broken for authenticated requests (no CLI token path)
-2. Exit status files keyed only by `id` (collides across repos) → Issue 03d
-3. `harnex wait` depends on live registry entry (race with fast-exit sessions)
-4. Registry ID normalization collision (`normalize_id` vs `id_key`)
+## What was done this session
 
-## Review summary
-
-What looks good:
-
-- The project scope is disciplined. It is a harness and local control plane, not
-  a full orchestration system.
-- The adapter seam is the right abstraction boundary.
-- The workflow primitives are useful and concrete:
-  - repo-scoped discovery
-  - relay headers
-  - queued sends
-  - detached and tmux sessions
-  - waitable worker sessions
-
-Main concern:
-
-- The project has outgrown the single-file implementation. The current logic
-  mixes config, registry, CLI parsing, PTY/session runtime, HTTP API, queueing,
-  and waiting in one file.
-
-## What was done this turn
-
-- Read and reviewed:
-  - `README.md`
-  - `bin/harnex`
-  - `lib/harnex.rb`
-  - `lib/harnex/adapters/*.rb`
-  - `koder/STATE.md`
-- Confirmed current architecture and control flow.
-- Verified syntax with:
-  - `ruby -c bin/harnex`
-  - `ruby -c lib/harnex.rb`
-  - `ruby -c lib/harnex/adapters/base.rb`
-  - `ruby -c lib/harnex/adapters/codex.rb`
-  - `ruby -c lib/harnex/adapters/claude.rb`
-- Created the refactor plan file:
-  - `koder/plans/01_refactor.md`
-- No production code was changed in this turn.
+- **Refactor Phase 1**: Added minitest harness with 75 tests across 7 files.
+- **Refactor Phase 2**: Extracted `lib/harnex.rb` (~1900 lines) into 13
+  separate files. It is now a 20-line loader.
+- **Fixed issue #05**: Inbox fast-path deadlock — restructured `enqueue` to
+  release mutex before calling `deliver_now`.
+- **Fixed 4 confirmed bugs** with tests:
+  1. Added `--token` flag to `harnex send` for `--port` mode auth
+  2. Exit files now keyed by `repo_key--id_key` (no cross-repo collision)
+  3. `harnex wait` falls back to exit status file when registry is gone
+  4. `active_sessions` uses `id_key` for matching (consistent with disk keys)
+- **Fixed issue #01**: Clean exit primitive — added `harnex exit --id <ID>`,
+  `POST /exit` API endpoint, and `exit_sequence` adapter method.
 
 ## Refactor plan
 
 See `koder/plans/01_refactor.md`.
 
-The plan is to split the code into:
-
-- core/config helpers
-- Linux inotify wrapper
-- runtime/session classes
-- command classes
-- CLI loader
-- a new `test/` tree using `minitest`
+Phases 1–2 are complete. All confirmed bugs are fixed.
+Phase 3 (idiomatic cleanup: namespacing under `Harnex::Commands`, aliases) is
+optional.
 
 ## Recommended next step after restart
 
-1. Open `koder/plans/01_refactor.md`.
-2. Add a small `minitest` harness first.
-3. Extract `core.rb` and `linux_inotify.rb`.
-4. Extract runtime classes next.
-5. Extract command classes and reduce `lib/harnex.rb` to a loader.
-6. Fix the four confirmed issues above while adding tests around them.
-
-## Current worktree changes
-
-- `koder/plans/01_refactor.md`
-- `koder/STATE.md`
+1. Work on issue #02 (wait-until-prompt mode).
+2. Work on issue #03 (API & command design audit).
+3. Optionally do Phase 3 cleanup.

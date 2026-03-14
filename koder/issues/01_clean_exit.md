@@ -1,6 +1,6 @@
 # Issue 01: Clean Exit Primitive
 
-**Status**: open
+**Status**: fixed
 **Priority**: P1
 **Created**: 2026-03-14
 

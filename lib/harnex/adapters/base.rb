@@ -58,6 +58,10 @@ module Harnex
         "\r"
       end
 
+      def exit_sequence
+        "/exit\n"
+      end
+
       protected
 
       def blocked_state?(state, enter_only:)

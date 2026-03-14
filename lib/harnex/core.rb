@@ -1,0 +1,221 @@
+require "digest"
+require "fileutils"
+require "securerandom"
+require "socket"
+
+module Harnex
+  module_function
+
+  def env_value(name, legacy: nil, default: nil)
+    return ENV[name] if ENV.key?(name)
+    return ENV[legacy] if legacy && ENV.key?(legacy)
+
+    default
+  end
+
+  DEFAULT_HOST = env_value("HARNEX_HOST", legacy: "CXW_HOST", default: "127.0.0.1")
+  DEFAULT_BASE_PORT = Integer(env_value("HARNEX_BASE_PORT", legacy: "CXW_BASE_PORT", default: "43000"))
+  DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", legacy: "CXW_PORT_SPAN", default: "4000"))
+  DEFAULT_ID = env_value("HARNEX_ID", legacy: "HARNEX_LABEL", default: "default")
+  DEFAULT_CLI = "codex"
+  WATCH_DEBOUNCE_SECONDS = 1.0
+  STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", legacy: "CXW_STATE_DIR", default: "~/.local/state/harnex"))
+  SESSIONS_DIR = File.join(STATE_DIR, "sessions")
+  WatchConfig = Struct.new(:absolute_path, :display_path, :hook_message, :debounce_seconds, keyword_init: true)
+
+  def resolve_repo_root(path = Dir.pwd)
+    output, status = Open3.capture2("git", "rev-parse", "--show-toplevel", chdir: path)
+    status.success? ? output.strip : File.expand_path(path)
+  rescue StandardError
+    File.expand_path(path)
+  end
+
+  def repo_key(repo_root)
+    Digest::SHA256.hexdigest(repo_root)[0, 16]
+  end
+
+  def normalize_id(id)
+    value = id.to_s.strip
+    raise "id is required" if value.empty?
+
+    value
+  end
+
+  def id_key(id)
+    normalize_id(id).downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
+  def cli_key(cli)
+    value = cli.to_s.strip.downcase
+    return nil if value.empty?
+
+    value.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
+
+  def configured_id
+    value = env_value("HARNEX_ID", legacy: "HARNEX_LABEL")
+    return nil if value.nil? || value.to_s.strip.empty?
+
+    normalize_id(value)
+  end
+
+  def default_id(cli = DEFAULT_CLI)
+    configured_id || normalize_id(cli || DEFAULT_CLI)
+  end
+
+  def current_session_context(env = ENV)
+    session_id = env["HARNEX_SESSION_ID"].to_s.strip
+    cli = env["HARNEX_SESSION_CLI"].to_s.strip
+    id = (env["HARNEX_ID"] || env["HARNEX_SESSION_LABEL"]).to_s.strip
+    repo_root = env["HARNEX_SESSION_REPO_ROOT"].to_s.strip
+    return nil if session_id.empty? || cli.empty? || id.empty?
+
+    {
+      session_id: session_id,
+      cli: cli,
+      id: id,
+      repo_root: repo_root.empty? ? nil : repo_root
+    }
+  end
+
+  def format_relay_message(text, from:, id:, at: Time.now)
+    header = "[harnex relay from=#{from} id=#{normalize_id(id)} at=#{at.iso8601}]"
+    body = text.to_s
+    return header if body.empty?
+
+    "#{header}\n#{body}"
+  end
+
+  def suspicious_option_value?(value)
+    value.to_s.start_with?("-")
+  end
+
+  def ensure_option_value!(option_name, value)
+    return value unless suspicious_option_value?(value)
+
+    raise ArgumentError, "#{option_name} requires a value"
+  end
+
+  def registry_path(repo_root, id = DEFAULT_ID)
+    FileUtils.mkdir_p(SESSIONS_DIR)
+    File.join(SESSIONS_DIR, "#{session_file_slug(repo_root, id)}.json")
+  end
+
+  def exit_status_path(repo_root, id)
+    exit_dir = File.join(STATE_DIR, "exits")
+    FileUtils.mkdir_p(exit_dir)
+    File.join(exit_dir, "#{session_file_slug(repo_root, id)}.json")
+  end
+
+  def session_file_slug(repo_root, id)
+    slug = id_key(id)
+    slug = "default" if slug.empty?
+    "#{repo_key(repo_root)}--#{slug}"
+  end
+
+  def active_sessions(repo_root = nil, id: nil, cli: nil)
+    FileUtils.mkdir_p(SESSIONS_DIR)
+    pattern =
+      if repo_root
+        File.join(SESSIONS_DIR, "#{repo_key(repo_root)}--*.json")
+      else
+        File.join(SESSIONS_DIR, "*.json")
+      end
+
+    target_id_key = id.nil? ? nil : id_key(id)
+    normalized_cli = cli_key(cli)
+
+    Dir.glob(pattern).sort.filter_map do |path|
+      data = JSON.parse(File.read(path))
+      if data["pid"] && alive_pid?(data["pid"])
+        session = data.merge("registry_path" => path)
+        next if target_id_key && id_key(session["id"].to_s) != target_id_key
+        next if normalized_cli && cli_key(session_cli(session)) != normalized_cli
+
+        session
+      else
+        FileUtils.rm_f(path)
+        nil
+      end
+    rescue JSON::ParserError
+      FileUtils.rm_f(path)
+      nil
+    end
+  end
+
+  def alive_pid?(pid)
+    Process.kill(0, Integer(pid))
+    true
+  rescue Errno::ESRCH
+    false
+  rescue Errno::EPERM
+    true
+  end
+
+  def read_registry(repo_root, id = DEFAULT_ID, cli: nil)
+    sessions = active_sessions(repo_root, id: id, cli: cli)
+    return nil unless sessions.length == 1
+
+    sessions.first
+  end
+
+  def write_registry(path, payload)
+    tmp = "#{path}.tmp.#{Process.pid}"
+    File.write(tmp, JSON.pretty_generate(payload))
+    File.rename(tmp, path)
+  end
+
+  def allocate_port(repo_root, id, requested_port = nil, host: DEFAULT_HOST)
+    if requested_port
+      return requested_port if port_available?(host, requested_port)
+
+      raise "port #{requested_port} is already in use on #{host}"
+    end
+
+    seed = Digest::SHA256.hexdigest("#{repo_root}\0#{normalize_id(id)}").to_i(16)
+    offset = seed % DEFAULT_PORT_SPAN
+
+    DEFAULT_PORT_SPAN.times do |index|
+      port = DEFAULT_BASE_PORT + ((offset + index) % DEFAULT_PORT_SPAN)
+      return port if port_available?(host, port)
+    end
+
+    raise "could not find a free port in #{DEFAULT_BASE_PORT}-#{DEFAULT_BASE_PORT + DEFAULT_PORT_SPAN - 1}"
+  end
+
+  def port_available?(host, port)
+    server = TCPServer.new(host, port)
+    server.close
+    true
+  rescue Errno::EADDRINUSE, Errno::EACCES
+    false
+  end
+
+  def build_adapter(cli, argv)
+    Adapters.build(cli || DEFAULT_CLI, argv)
+  end
+
+  def session_cli(session)
+    (session["cli"] || Array(session["command"]).first).to_s
+  end
+
+  def build_watch_config(path, repo_root)
+    return nil if path.nil?
+
+    raise "file watch is unsupported on this system" unless LinuxInotify.available?
+
+    display_path = path.to_s.strip
+    raise ArgumentError, "--watch requires a value" if display_path.empty?
+
+    display_path = ensure_option_value!("--watch", display_path)
+    absolute_path = File.expand_path(display_path, repo_root)
+    FileUtils.mkdir_p(File.dirname(absolute_path))
+
+    WatchConfig.new(
+      absolute_path: absolute_path,
+      display_path: display_path,
+      hook_message: "file-change-hook: read #{display_path}",
+      debounce_seconds: WATCH_DEBOUNCE_SECONDS
+    )
+  end
+end
