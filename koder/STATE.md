@@ -41,28 +41,27 @@ Harnex is a local PTY harness for interactive terminal agents.
 - relay headers for cross-session sends
 - file-change hooks using inotify on Linux
 
-## Confirmed issues from review
+## Issues
 
-1. `harnex send --port` is effectively broken for authenticated requests.
-   - The sender can skip registry lookup when `--port` is supplied.
-   - The API still requires the bearer token.
-   - There is no CLI path to provide that token.
-   - Verified by running `harnex send --port 43123 --status`, which returned
-     `{"ok":false,"error":"unauthorized"}`.
+| # | Title | Status | Priority |
+|---|-------|--------|----------|
+| 01 | Clean exit primitive | open | P1 |
+| 02 | Wait-until-prompt mode | open | P1 |
+| 03 | API & command design audit | open | P1 |
+| 04 | Output streaming | open | P2 |
 
-2. Exit status files and headless logs are keyed only by `id`.
-   - This can collide across repos or across repeated runs using the same ID.
-   - It is inconsistent with the repo-scoped registry model.
+See `koder/issues/` for details.
 
-3. `harnex wait` depends on a live registry entry before checking exit status.
-   - A fast-exiting detached session can disappear from the registry before
-     `wait` starts.
-   - In that case, `wait` reports "no session found" even if an exit file exists.
+Issue 03 subsumes the four confirmed bugs below (3d covers exit file collision,
+3e covers registry fallback, `--port` auth is covered by the `--status`/mode
+cleanup, normalization collision is part of the broader ID resolution fix).
 
-4. Registry filenames normalize IDs more aggressively than the visible ID model.
-   - `normalize_id` only trims whitespace.
-   - `id_key` lowercases and collapses punctuation.
-   - Distinct user-facing IDs can alias onto the same on-disk registry file.
+## Confirmed bugs from earlier review
+
+1. `harnex send --port` broken for authenticated requests (no CLI token path)
+2. Exit status files keyed only by `id` (collides across repos) → Issue 03d
+3. `harnex wait` depends on live registry entry (race with fast-exit sessions)
+4. Registry ID normalization collision (`normalize_id` vs `id_key`)
 
 ## Review summary
 
