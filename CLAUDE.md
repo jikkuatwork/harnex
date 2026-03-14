@@ -68,6 +68,11 @@ Check `$HARNEX_ID` and `$HARNEX_SESSION_CLI` to confirm. You can use
 `harnex send`, `harnex status`, and `harnex wait` to coordinate with
 peer sessions. See `skills/harnex/SKILL.md` for full usage patterns.
 
+## More details
+
+See [TECHNICAL.md](TECHNICAL.md) for the HTTP API, adapter
+contract, state machine, concurrency model, and known issues.
+
 ## Development notes
 
 - Ruby 3.x, stdlib only (no gems)

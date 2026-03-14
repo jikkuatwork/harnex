@@ -1,32 +1,23 @@
 # Harnex
 
-A PTY harness that lets AI agents talk to each other.
+Make your AI agents work together.
 
-Harnex wraps terminal agents (Claude Code, Codex) in a thin local control
-plane. Each agent keeps its normal terminal — harnex just adds discovery,
-messaging, and coordination on top.
+Harnex lets you run multiple AI agents (Claude, Codex) side
+by side and have them talk to each other. Each agent keeps
+its normal terminal — harnex just connects them.
 
 ```
-  ┌──────────────────────────────────────────────────────┐
-  │                    Your Terminal                      │
-  │                                                      │
-  │  ┌─────────────┐   harnex send   ┌─────────────┐    │
-  │  │  Claude      │ ─────────────> │  Codex       │    │
-  │  │  id=review   │ <───────────── │  id=worker   │    │
-  │  │              │   relay msg     │              │    │
-  │  └──────┬───────┘                └──────┬───────┘    │
-  │         │                               │            │
-  │    :45899/send                    :43123/send         │
-  │    :45899/status                  :43123/status       │
-  │                                                      │
-  │  ~/.local/state/harnex/sessions/                      │
-  │    ├── <repo>--review.json                           │
-  │    └── <repo>--worker.json                           │
-  └──────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────┐
+  │                                                 │
+  │  ┌────────────────┐       ┌────────────────┐    │
+  │  │                │ send  │                │    │
+  │  │   Claude       ├──────>┤   Codex        │    │
+  │  │   id=review    │       │   id=worker    │    │
+  │  │                ├<──────┤                │    │
+  │  └────────────────┘ reply └────────────────┘    │
+  │                                                 │
+  └─────────────────────────────────────────────────┘
 ```
-
-Each session gets a local HTTP API, a repo-scoped registry entry, and an
-inbox queue. That's it. No orchestration framework, no custom protocols.
 
 ## Install
 
@@ -35,203 +26,243 @@ git clone https://github.com/jikkujose/harnex.git
 ln -s $(pwd)/harnex/bin/harnex ~/.local/bin/harnex
 ```
 
-Requires Ruby 3.x. No gem dependencies.
+Needs Ruby 3.x. No other dependencies.
 
 ## Quick Start
 
+**Start an agent:**
+
 ```bash
-# Start a codex session
 harnex run codex
-
-# Start claude with an ID
-harnex run claude --id review
-
-# List live sessions
-harnex status
-
-# Send a message
-harnex send --id review --message "Summarize current progress."
 ```
+
+**Start another agent with a name:**
+
+```bash
+harnex run claude --id review
+```
+
+**See what's running:**
+
+```bash
+harnex status
+```
+
+**Send a message to an agent:**
+
+```bash
+harnex send --id review --message "Summarize the project."
+```
+
+That's the core loop: start agents, name them, send messages.
 
 ## How It Works
 
 ```
-  You type:  harnex run codex --id worker
+  You type:
+    harnex run codex --id worker
 
-  harnex does:
-    1. Spawn codex under a PTY (terminal stays normal)
-    2. Pick a local port (deterministic from repo + id)
-    3. Start HTTP API on 127.0.0.1:<port>
-    4. Write session file to ~/.local/state/harnex/sessions/
-    5. Monitor screen output for prompt detection
+  Harnex:
+    1. Starts codex (terminal works exactly as before)
+    2. Registers the session so others can find it
+    3. Starts listening for messages
 
-  Other processes can now:
+  Now you (or other agents) can:
     harnex send --id worker --message "do something"
-    harnex send --id worker --status
+    harnex status
     harnex wait --id worker
 ```
 
 ## Commands
 
-### `harnex run [cli] [options] [-- cli-args...]`
-
-Start a wrapped session.
+### `harnex run` — Start an agent
 
 ```bash
-harnex run codex                          # default
-harnex run claude --id review             # named session
-harnex run codex -- --cd /path/to/repo    # forward args
+harnex run codex
+harnex run claude --id review
+harnex run codex -- --cd ~/other/repo
 ```
 
-Options:
+| Flag            | What it does                          |
+|-----------------|---------------------------------------|
+| `--id ID`       | Name this session (default: cli name) |
+| `--detach`      | Run in background, no terminal        |
+| `--tmux [NAME]` | Run in a tmux window you can watch    |
+| `--context TXT` | Give the agent a task on startup      |
+| `--watch PATH`  | Notify agent when a file changes      |
 
-| Flag | Purpose |
-|------|---------|
-| `--id ID` | Session ID (default: cli name) |
-| `--detach` | Background, no terminal |
-| `--tmux [NAME]` | Background in tmux window |
-| `--context TEXT` | Initial prompt (auto-includes session ID) |
-| `--watch PATH` | File change hook |
-| `--host HOST` | Bind address (default: 127.0.0.1) |
-| `--port PORT` | Force specific port |
-
-### `harnex send [options]`
-
-Send a message to a running session.
+### `harnex send` — Talk to a running agent
 
 ```bash
 harnex send --id worker --message "implement plan A"
-harnex send --id worker --enter           # just press Enter
-harnex send --id worker --no-submit       # type without Enter
-harnex send --id worker --status          # inspect session
-harnex send --id worker --force           # bypass queue
-harnex send --id worker --async           # don't wait for delivery
 ```
 
-### `harnex status`
+| Flag          | What it does                         |
+|---------------|--------------------------------------|
+| `--id ID`     | Which agent to talk to               |
+| `--message`   | The message text                     |
+| `--enter`     | Just press Enter (no new text)       |
+| `--no-submit` | Type the text but don't press Enter  |
+| `--status`    | Check if the agent is busy or ready  |
+| `--force`     | Send even if the agent looks busy    |
+| `--async`     | Don't wait for delivery confirmation |
+
+### `harnex status` — See running agents
 
 ```
-ID       CLI     PID      PORT   AGE      LAST     STATE
--------  ------  -------  -----  -------  -------  ------
-worker   codex   1919287  43371  36s ago  29s ago  prompt
-review   claude  1919632  46769  8s ago   never    busy
+  ID       CLI     AGE      STATE
+  ───────  ──────  ───────  ──────
+  worker   codex   36s ago  prompt
+  review   claude   8s ago  busy
 ```
 
-### `harnex wait --id ID`
-
-Block until a session exits. Returns JSON with exit code.
+### `harnex wait` — Wait for an agent to finish
 
 ```bash
-harnex wait --id worker              # wait forever
-harnex wait --id worker --timeout 300  # 5 min timeout
+harnex wait --id worker
+harnex wait --id worker --timeout 300
 ```
 
-## Agent-to-Agent Messaging
+## Agents Talking to Each Other
 
-When one harnex session sends to another, a relay header is added
-automatically:
-
-```
-  ┌──────────┐                        ┌──────────┐
-  │ Claude   │  harnex send --id w    │ Codex    │
-  │ id=super │ ─────────────────────> │ id=w     │
-  └──────────┘                        └──────────┘
-
-  What Codex receives:
-  ┌─────────────────────────────────────────────────┐
-  │ [harnex relay from=claude id=super at=...T12:00]│
-  │ implement plan A                                │
-  └─────────────────────────────────────────────────┘
-```
-
-If the target agent is busy, the message queues and delivers
-automatically when it returns to a prompt:
+When one harnex agent sends a message to another, the receiver
+automatically sees who sent it:
 
 ```
-  Sender                        Target (busy)
-    │                              │
-    │──── POST /send ────────────>│
-    │<─── 202 queued ─────────────│
-    │                              │
-    │  ... target finishes task ...│
-    │                              │
-    │  (inbox auto-delivers)       │
-    │<─── delivered ──────────────│
+  ┌────────────────┐                  ┌────────────────┐
+  │                │  "implement A"   │                │
+  │   Claude       ├────────────────>─┤   Codex        │
+  │   id=super     │                  │   id=worker    │
+  └────────────────┘                  └───────┬────────┘
+                                              │
+                                   What Codex sees:
+                                              │
+                            ┌─────────────────┴───────────┐
+                            │  [harnex relay              │
+                            │    from=claude id=super     │
+                            │    at=2026-03-14T12:00]     │
+                            │                             │
+                            │  implement A                │
+                            └─────────────────────────────┘
 ```
 
-## Detached Sessions & Supervisor Pattern
+This happens automatically. No setup needed.
 
-Spawn workers in the background, send them tasks, wait for results:
+### What if the agent is busy?
+
+Messages queue up and deliver when the agent is ready:
+
+```
+  Sender                         Receiver (busy)
+    │                                │
+    ├── "implement plan A" ─────────>│
+    │<── queued ─────────────────────┤
+    │                                │
+    │    ... agent finishes ...      │
+    │                                │
+    │    (message auto-delivered)    │
+    │<── done ───────────────────────┤
+```
+
+You don't have to retry. Harnex handles the waiting.
+
+## Background Agents
+
+You don't need a terminal for every agent. Run them in the
+background and interact through messages.
+
+**In a tmux window** (you can watch them):
 
 ```bash
-# Spawn workers in tmux windows
-harnex run codex --id impl-1 --tmux cx-p1 -- --cd ~/repo/wt-a
-harnex run codex --id impl-2 --tmux cx-p2 -- --cd ~/repo/wt-b
+harnex run codex --id worker --tmux cx-w1
+```
 
-# Send work
+Switch to the tmux window anytime to see what the agent is
+doing.
+
+**Headless** (no terminal at all):
+
+```bash
+harnex run codex --id worker --detach
+```
+
+## Supervisor Pattern
+
+One agent can manage others — spawn workers, give them tasks,
+and wait for results:
+
+```bash
+# Spawn two workers in tmux windows
+harnex run codex --id impl-1 --tmux cx-p1 -- --cd ~/wt-a
+harnex run codex --id impl-2 --tmux cx-p2 -- --cd ~/wt-b
+
+# Give them tasks
 harnex send --id impl-1 --message "implement feature A"
 harnex send --id impl-2 --message "implement feature B"
 
-# Wait for both
+# Wait for both to finish
 harnex wait --id impl-1
 harnex wait --id impl-2
 
-# Review phase
+# Spawn a reviewer
 harnex run claude --id review --tmux cl-r1
-harnex send --id review --message "review changes in wt-a and wt-b"
+harnex send --id review --message "review changes"
 harnex wait --id review
 ```
 
 ```
-  Supervisor (Claude)
+  Supervisor
     │
-    ├── spawn ──> impl-1 (Codex, tmux cx-p1)
-    ├── spawn ──> impl-2 (Codex, tmux cx-p2)
+    ├── spawn ──> impl-1 (Codex)
+    ├── spawn ──> impl-2 (Codex)
     │
-    ├── send "implement A" ──> impl-1
-    ├── send "implement B" ──> impl-2
+    ├── send "feature A" ──> impl-1
+    ├── send "feature B" ──> impl-2
     │
     ├── wait impl-1 ✓
     ├── wait impl-2 ✓
     │
-    ├── spawn ──> review (Claude, tmux cl-r1)
+    ├── spawn ──> review (Claude)
     ├── send "review changes" ──> review
     └── wait review ✓
 ```
 
-### Using `--context` on spawn
+## Give Agents Context on Startup
 
-`--context` passes an initial prompt to the agent with the session ID
-auto-included. The spawner decides the content:
+Use `--context` to tell an agent what to do when it starts.
+Harnex automatically includes the session ID.
+
+**Fire and forget** — agent works on its own:
 
 ```bash
-# Fire-and-forget
 harnex run codex --id impl-1 --tmux cx-p1 \
-  --context "Implement koder/plans/03_auth.md. Commit when done." \
+  --context "Implement the auth feature. Commit when done." \
   -- --cd ~/repo/worktree
+```
 
-# Fire-and-wait
+**Fire and wait** — start, send work later, wait:
+
+```bash
 harnex run codex --id reviewer --tmux cx-rv \
-  --context "You are a code reviewer. Wait for relay messages."
+  --context "You are a code reviewer."
 harnex send --id reviewer --message "Review src/auth.rb"
 harnex wait --id reviewer
 ```
 
-## Adapters
+## File Watching
 
-Harnex ships adapters for two CLIs:
+Tell an agent to pay attention when a file changes:
 
-| Adapter | Launch command | Notes |
-|---------|---------------|-------|
-| `codex` | `codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen` | Inline mode for screen parsing |
-| `claude` | `claude --dangerously-skip-permissions` | Detects workspace trust prompt |
+```bash
+harnex run codex --id worker --watch ./tmp/status.jsonl
+```
 
-Each adapter handles prompt detection, submit behavior, and blocked
-state recognition. The transport layer stays generic.
+When the file changes, the agent gets notified. The file
+doesn't need to exist when you start.
 
-## Session Registry
+## Naming Sessions
 
-Sessions are addressed by ID within a repo:
+If you don't pick a name, harnex uses the agent name:
 
 ```bash
 harnex run codex               # id: codex
@@ -240,44 +271,24 @@ harnex run codex --id impl-1   # id: impl-1
 harnex run codex --id impl-2   # id: impl-2
 ```
 
-Registry files live at `~/.local/state/harnex/sessions/<repo-hash>--<id>.json`
-and contain the port, PID, token, and timestamps.
+Run as many agents as you want — just give them different
+names.
 
-## File Watch Hooks
+## Supported Agents
 
-```bash
-harnex run codex --id worker --watch ./tmp/tick.jsonl
-```
+| Agent    | Notes                                  |
+|----------|----------------------------------------|
+| `codex`  | OpenAI Codex CLI                       |
+| `claude` | Anthropic Claude Code CLI              |
 
-When the watched file changes (after 1s debounce), harnex injects:
+Adding new agents is straightforward — each one just needs a
+small adapter file.
 
-```
-file-change-hook: read ./tmp/tick.jsonl
-```
+## Going Deeper
 
-Uses Linux inotify. The file doesn't need to exist at startup.
-
-## Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `HARNEX_ID` | Default session ID |
-| `HARNEX_HOST` | Bind host |
-| `HARNEX_PORT` | Force port |
-| `HARNEX_BASE_PORT` | Base port (default: 43000) |
-| `HARNEX_PORT_SPAN` | Port range (default: 4000) |
-| `HARNEX_STATE_DIR` | State directory |
-| `HARNEX_SEND_WAIT` | Sender poll timeout (default: 30s) |
-| `HARNEX_TRACE=1` | Print backtraces |
-
-Inside a harnex session, these are also set:
-
-| Variable | Purpose |
-|----------|---------|
-| `HARNEX_SESSION_CLI` | Which CLI (`claude` / `codex`) |
-| `HARNEX_SESSION_ID` | Internal instance ID |
-| `HARNEX_SESSION_REPO_ROOT` | Repo root path |
+For technical details — the HTTP API, state machine, message
+queue, adapter internals — see [TECHNICAL.md](TECHNICAL.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
