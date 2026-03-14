@@ -8,6 +8,7 @@ require "open3"
 require "optparse"
 require "pty"
 require "securerandom"
+require "shellwords"
 require "socket"
 require "time"
 require "uri"
@@ -27,7 +28,7 @@ module Harnex
   DEFAULT_HOST = env_value("HARNEX_HOST", legacy: "CXW_HOST", default: "127.0.0.1")
   DEFAULT_BASE_PORT = Integer(env_value("HARNEX_BASE_PORT", legacy: "CXW_BASE_PORT", default: "43000"))
   DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", legacy: "CXW_PORT_SPAN", default: "4000"))
-  DEFAULT_LABEL = env_value("HARNEX_LABEL", legacy: "CXW_LABEL", default: "default")
+  DEFAULT_ID = env_value("HARNEX_ID", legacy: "HARNEX_LABEL", default: "default")
   DEFAULT_CLI = "codex"
   WATCH_DEBOUNCE_SECONDS = 1.0
   STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", legacy: "CXW_STATE_DIR", default: "~/.local/state/harnex"))
@@ -85,15 +86,15 @@ module Harnex
     Digest::SHA256.hexdigest(repo_root)[0, 16]
   end
 
-  def normalize_label(label)
-    value = label.to_s.strip
-    raise "label is required" if value.empty?
+  def normalize_id(id)
+    value = id.to_s.strip
+    raise "id is required" if value.empty?
 
     value
   end
 
-  def label_key(label)
-    normalize_label(label).downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  def id_key(id)
+    normalize_id(id).downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
   end
 
   def cli_key(cli)
@@ -103,34 +104,34 @@ module Harnex
     value.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
   end
 
-  def configured_label
-    value = env_value("HARNEX_LABEL", legacy: "CXW_LABEL")
+  def configured_id
+    value = env_value("HARNEX_ID", legacy: "HARNEX_LABEL")
     return nil if value.nil? || value.to_s.strip.empty?
 
-    normalize_label(value)
+    normalize_id(value)
   end
 
-  def default_session_label(cli = DEFAULT_CLI)
-    configured_label || normalize_label(cli || DEFAULT_CLI)
+  def default_id(cli = DEFAULT_CLI)
+    configured_id || normalize_id(cli || DEFAULT_CLI)
   end
 
   def current_session_context(env = ENV)
     session_id = env["HARNEX_SESSION_ID"].to_s.strip
     cli = env["HARNEX_SESSION_CLI"].to_s.strip
-    label = env["HARNEX_SESSION_LABEL"].to_s.strip
+    id = (env["HARNEX_ID"] || env["HARNEX_SESSION_LABEL"]).to_s.strip
     repo_root = env["HARNEX_SESSION_REPO_ROOT"].to_s.strip
-    return nil if session_id.empty? || cli.empty? || label.empty?
+    return nil if session_id.empty? || cli.empty? || id.empty?
 
     {
       session_id: session_id,
       cli: cli,
-      label: label,
+      id: id,
       repo_root: repo_root.empty? ? nil : repo_root
     }
   end
 
-  def format_relay_message(text, from:, label:, at: Time.now)
-    header = "[harnex relay from=#{from} label=#{normalize_label(label)} at=#{at.iso8601}]"
+  def format_relay_message(text, from:, id:, at: Time.now)
+    header = "[harnex relay from=#{from} id=#{normalize_id(id)} at=#{at.iso8601}]"
     body = text.to_s
     return header if body.empty?
 
@@ -147,16 +148,14 @@ module Harnex
     raise ArgumentError, "#{option_name} requires a value"
   end
 
-  def registry_path(repo_root, label = DEFAULT_LABEL, cli: nil)
+  def registry_path(repo_root, id = DEFAULT_ID)
     FileUtils.mkdir_p(SESSIONS_DIR)
-    slug = label_key(label)
+    slug = id_key(id)
     slug = "default" if slug.empty?
-    cli_slug = cli_key(cli)
-    suffix = cli_slug ? "#{slug}--#{cli_slug}" : slug
-    File.join(SESSIONS_DIR, "#{repo_key(repo_root)}--#{suffix}.json")
+    File.join(SESSIONS_DIR, "#{repo_key(repo_root)}--#{slug}.json")
   end
 
-  def active_sessions(repo_root = nil, label: nil, cli: nil)
+  def active_sessions(repo_root = nil, id: nil, cli: nil)
     FileUtils.mkdir_p(SESSIONS_DIR)
     pattern =
       if repo_root
@@ -165,14 +164,14 @@ module Harnex
         File.join(SESSIONS_DIR, "*.json")
       end
 
-    normalized_label = label.nil? ? nil : normalize_label(label)
+    normalized_id = id.nil? ? nil : normalize_id(id)
     normalized_cli = cli_key(cli)
 
     Dir.glob(pattern).sort.filter_map do |path|
       data = JSON.parse(File.read(path))
       if data["pid"] && alive_pid?(data["pid"])
         session = data.merge("registry_path" => path)
-        next if normalized_label && session["label"].to_s != normalized_label
+        next if normalized_id && session["id"].to_s != normalized_id
         next if normalized_cli && cli_key(session_cli(session)) != normalized_cli
 
         session
@@ -195,8 +194,8 @@ module Harnex
     true
   end
 
-  def read_registry(repo_root, label = DEFAULT_LABEL, cli: nil)
-    sessions = active_sessions(repo_root, label: label, cli: cli)
+  def read_registry(repo_root, id = DEFAULT_ID, cli: nil)
+    sessions = active_sessions(repo_root, id: id, cli: cli)
     return nil unless sessions.length == 1
 
     sessions.first
@@ -208,14 +207,14 @@ module Harnex
     File.rename(tmp, path)
   end
 
-  def allocate_port(repo_root, label, requested_port = nil, host: DEFAULT_HOST, cli: nil)
+  def allocate_port(repo_root, id, requested_port = nil, host: DEFAULT_HOST)
     if requested_port
       return requested_port if port_available?(host, requested_port)
 
       raise "port #{requested_port} is already in use on #{host}"
     end
 
-    seed = Digest::SHA256.hexdigest("#{repo_root}\0#{normalize_label(label)}\0#{cli_key(cli)}").to_i(16)
+    seed = Digest::SHA256.hexdigest("#{repo_root}\0#{normalize_id(id)}").to_i(16)
     offset = seed % DEFAULT_PORT_SPAN
 
     DEFAULT_PORT_SPAN.times do |index|
@@ -275,6 +274,8 @@ module Harnex
         Runner.new(@argv.drop(1)).run
       when "send"
         Sender.new(@argv.drop(1)).run
+      when "wait"
+        Waiter.new(@argv.drop(1)).run
       when "status"
         Status.new(@argv.drop(1)).run
       when "help"
@@ -296,6 +297,8 @@ module Harnex
         Runner.usage
       when "send"
         Sender.usage
+      when "wait"
+        Waiter.usage
       when "status"
         Status.usage
       else
@@ -308,12 +311,14 @@ module Harnex
         Usage:
           harnex run [cli] [wrapper-options] [--] [cli-args...]
           harnex send [options] [text...]
+          harnex wait --id ID [options]
           harnex status [options]
           harnex [cli] [wrapper-options] [--] [cli-args...]
 
         Commands:
           run    Start a wrapped interactive session and local API
           send   Send text or inspect status for an active session
+          wait   Block until a detached session exits
           status List live sessions for this repo
 
         Notes:
@@ -323,10 +328,10 @@ module Harnex
         Examples:
           harnex
           harnex run codex
-          harnex run codex --label hello
+          harnex run codex --id hello
           harnex run codex -- --cd /path/to/repo
           harnex status
-          harnex send --label main --message "Summarize current progress."
+          harnex send --id main --message "Summarize current progress."
       TEXT
     end
   end
@@ -337,7 +342,11 @@ module Harnex
         Usage: #{program_name} [cli] [wrapper-options] [--] [cli-args...]
 
         Wrapper options:
-          --label LABEL   Session label for this repo (default: adapter name)
+          --id ID         Session ID (default: adapter name)
+          --detach        Start session in background and return immediately
+          --tmux [NAME]   Run detached session in a tmux window (implies --detach)
+                          NAME sets the window title (default: session ID)
+                          Tip: keep names terse (e.g. "cx-p3", "cl-r3") for narrow tab bars
           --host HOST     Bind host for the local API (default: #{DEFAULT_HOST})
           --port PORT     Force a specific local API port
           --watch PATH    Watch PATH and auto-send a file-change hook after 1s quiet time
@@ -356,10 +365,13 @@ module Harnex
     def initialize(argv)
       @argv = argv.dup
       @options = {
-        label: Harnex.configured_label,
+        id: Harnex.configured_id,
         host: DEFAULT_HOST,
         port: (env_port = Harnex.env_value("HARNEX_PORT", legacy: "CXW_PORT")) && Integer(env_port),
         watch: nil,
+        detach: false,
+        tmux: false,
+        tmux_name: nil,
         help: false
       }
     end
@@ -372,7 +384,17 @@ module Harnex
       end
 
       adapter = Harnex.build_adapter(cli_name, child_args)
-      @options[:label] ||= Harnex.default_session_label(adapter.key)
+      @options[:id] ||= Harnex.default_id(adapter.key)
+      @options[:detach] = true if @options[:tmux]
+
+      if @options[:detach]
+        run_detached(adapter, cli_name, child_args)
+      else
+        run_foreground(adapter, child_args)
+      end
+    end
+
+    def run_foreground(adapter, child_args)
       command = adapter.build_command
       repo_root = Harnex.resolve_repo_root(adapter.infer_repo_path(child_args))
       watch = Harnex.build_watch_config(@options[:watch], repo_root)
@@ -382,11 +404,130 @@ module Harnex
         repo_root: repo_root,
         host: @options[:host],
         port: @options[:port],
-        label: @options[:label],
+        id: @options[:id],
         watch: watch
       )
 
       session.run
+    end
+
+    def run_detached(adapter, cli_name, child_args)
+      if @options[:tmux]
+        run_in_tmux(cli_name, child_args)
+      else
+        run_headless(adapter, child_args)
+      end
+    end
+
+    def run_in_tmux(cli_name, child_args)
+      # Build the harnex command to run inside the tmux window (foreground, no --detach)
+      harnex_bin = File.expand_path("../../bin/harnex", __dir__)
+      tmux_cmd = [harnex_bin, "run"]
+      tmux_cmd << cli_name if cli_name
+      tmux_cmd += ["--id", @options[:id]]
+      tmux_cmd += ["--host", @options[:host]]
+      tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
+      tmux_cmd += ["--watch", @options[:watch]] if @options[:watch]
+      tmux_cmd += ["--"] + child_args unless child_args.empty?
+
+      window_name = @options[:tmux_name] || @options[:id]
+      shell_cmd = tmux_cmd.map { |a| Shellwords.shellescape(a) }.join(" ")
+
+      # Try current tmux session first, fall back to creating a new session
+      if ENV["TMUX"]
+        system("tmux", "new-window", "-n", window_name, "-d", shell_cmd)
+      else
+        system("tmux", "new-session", "-d", "-s", "harnex", "-n", window_name, shell_cmd)
+      end
+
+      # Wait briefly for the session to register
+      deadline = Time.now + 5.0
+      registry = nil
+      repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
+      while Time.now < deadline
+        registry = Harnex.read_registry(repo_root, @options[:id])
+        break if registry
+        sleep 0.1
+      end
+
+      if registry
+        puts JSON.generate(
+          ok: true,
+          id: @options[:id],
+          cli: cli_name || DEFAULT_CLI,
+          pid: registry["pid"],
+          port: registry["port"],
+          mode: "tmux",
+          window: window_name
+        )
+        0
+      else
+        warn("harnex: detached session #{@options[:id]} did not register within 5s")
+        1
+      end
+    end
+
+    def run_headless(adapter, child_args)
+      repo_root = Harnex.resolve_repo_root(adapter.infer_repo_path(child_args))
+      log_dir = File.join(Harnex::STATE_DIR, "logs")
+      FileUtils.mkdir_p(log_dir)
+      log_path = File.join(log_dir, "#{@options[:id]}.log")
+
+      child_pid = fork do
+        Process.setsid
+        STDIN.reopen("/dev/null")
+        log_file = File.open(log_path, "a")
+        STDOUT.reopen(log_file)
+        STDERR.reopen(log_file)
+        STDOUT.sync = true
+        STDERR.sync = true
+
+        watch = Harnex.build_watch_config(@options[:watch], repo_root)
+        session = Session.new(
+          adapter: adapter,
+          command: adapter.build_command,
+          repo_root: repo_root,
+          host: @options[:host],
+          port: @options[:port],
+          id: @options[:id],
+          watch: watch
+        )
+
+        exit_code = session.run
+        exit(exit_code || 1)
+      end
+
+      Process.detach(child_pid)
+
+      # Wait briefly for the session to register
+      deadline = Time.now + 5.0
+      registry = nil
+      while Time.now < deadline
+        registry = Harnex.read_registry(repo_root, @options[:id])
+        break if registry
+        sleep 0.1
+      end
+
+      if registry
+        puts JSON.generate(
+          ok: true,
+          id: @options[:id],
+          cli: adapter.key,
+          pid: registry["pid"],
+          port: registry["port"],
+          mode: "headless",
+          log: log_path
+        )
+        0
+      else
+        warn("harnex: detached session #{@options[:id]} did not register within 5s")
+        1
+      end
+    end
+
+    def adapter_repo_path(cli_name, child_args)
+      adapter = Harnex.build_adapter(cli_name, child_args)
+      adapter.infer_repo_path(child_args)
     end
 
     private
@@ -405,12 +546,24 @@ module Harnex
           break
         when "-h", "--help"
           @options[:help] = true
-        when "--label"
+        when "--id", "--label"
           index += 1
-          raise OptionParser::MissingArgument, "--label" if index >= argv.length
-          @options[:label] = Harnex.normalize_label(Harnex.ensure_option_value!("--label", argv[index]))
-        when /\A--label=(.+)\z/
-          @options[:label] = Harnex.normalize_label(Regexp.last_match(1))
+          raise OptionParser::MissingArgument, arg if index >= argv.length
+          @options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!(arg, argv[index]))
+        when /\A--(?:id|label)=(.+)\z/
+          @options[:id] = Harnex.normalize_id(Regexp.last_match(1))
+        when "--detach"
+          @options[:detach] = true
+        when "--tmux"
+          @options[:tmux] = true
+          # Peek at next arg — if it's not a flag or CLI name, treat as window name
+          if index + 1 < argv.length && !argv[index + 1].start_with?("-") && !Adapters.supported.include?(argv[index + 1])
+            index += 1
+            @options[:tmux_name] = argv[index]
+          end
+        when /\A--tmux=(.+)\z/
+          @options[:tmux] = true
+          @options[:tmux_name] = Regexp.last_match(1)
         when "--host"
           index += 1
           raise OptionParser::MissingArgument, "--host" if index >= argv.length
@@ -449,11 +602,16 @@ module Harnex
         case arg
         when "--"
           break
-        when "-h", "--help"
+        when "-h", "--help", "--detach"
           nil
-        when "--label", "--host", "--port", "--watch"
+        when "--tmux"
+          # Skip optional name argument if present
+          if index + 1 < argv.length && !argv[index + 1].start_with?("-") && !Adapters.supported.include?(argv[index + 1])
+            index += 1
+          end
+        when "--id", "--label", "--host", "--port", "--watch"
           index += 1
-        when /\A--(?:label|host|watch)=(.+)\z/, /\A--port=(\d+)\z/
+        when /\A--(?:id|label|host|watch|tmux)=(.+)\z/, /\A--port=(\d+)\z/
           nil
         else
           return index if Adapters.supported.include?(arg)
@@ -467,22 +625,224 @@ module Harnex
 
   Launcher = Runner
 
+  class SessionState
+    STATES = %i[prompt busy blocked unknown].freeze
+
+    attr_reader :state
+
+    def initialize(adapter)
+      @adapter = adapter
+      @state = :unknown
+      @mutex = Mutex.new
+      @condvar = ConditionVariable.new
+    end
+
+    def update(screen_snapshot)
+      input = @adapter.input_state(screen_snapshot)
+      new_state =
+        case input[:input_ready]
+        when true  then :prompt
+        when false then :blocked
+        else            :unknown
+        end
+
+      @mutex.synchronize do
+        old = @state
+        @state = new_state
+        @condvar.broadcast if old != new_state
+      end
+
+      new_state
+    end
+
+    def force_busy!
+      @mutex.synchronize do
+        @state = :busy
+        @condvar.broadcast
+      end
+    end
+
+    def wait_for_prompt(timeout)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      @mutex.synchronize do
+        loop do
+          return true if @state == :prompt
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          return false if remaining <= 0
+          @condvar.wait(@mutex, remaining)
+        end
+      end
+    end
+
+    def to_s
+      @mutex.synchronize { @state.to_s }
+    end
+  end
+
+  Message = Struct.new(:id, :text, :submit, :enter_only, :force, :queued_at, :status, :delivered_at, :error, keyword_init: true) do
+    def to_h
+      {
+        id: id,
+        status: status.to_s,
+        queued_at: queued_at&.iso8601,
+        delivered_at: delivered_at&.iso8601,
+        error: error
+      }
+    end
+  end
+
+  class Inbox
+    MAX_PENDING = 64
+    DELIVERY_TIMEOUT = 300
+
+    def initialize(session, state_machine)
+      @session = session
+      @state_machine = state_machine
+      @queue = []
+      @messages = {}
+      @mutex = Mutex.new
+      @condvar = ConditionVariable.new
+      @thread = nil
+      @running = false
+      @delivered_total = 0
+    end
+
+    def start
+      @running = true
+      @thread = Thread.new { delivery_loop }
+    end
+
+    def stop
+      @running = false
+      @mutex.synchronize { @condvar.broadcast }
+      @thread&.join(2)
+      @thread&.kill
+    end
+
+    def enqueue(text:, submit:, enter_only:, force: false)
+      msg = Message.new(
+        id: SecureRandom.hex(8),
+        text: text,
+        submit: submit,
+        enter_only: enter_only,
+        force: force,
+        queued_at: Time.now,
+        status: :queued
+      )
+
+      # Force messages bypass the queue entirely
+      if force
+        return deliver_now(msg)
+      end
+
+      # Fast path: prompt ready and queue empty — deliver immediately
+      @mutex.synchronize do
+        if @queue.empty? && @state_machine.state == :prompt
+          result = deliver_now(msg)
+          return result if msg.status == :delivered
+          # Fall through to queue if delivery failed
+          msg.status = :queued
+          msg.error = nil
+        end
+
+        raise "inbox full (#{MAX_PENDING} pending messages)" if @queue.size >= MAX_PENDING
+
+        @queue << msg
+        @messages[msg.id] = msg
+        @condvar.broadcast
+      end
+
+      { ok: true, status: "queued", message_id: msg.id, http_status: 202 }
+    end
+
+    def message_status(id)
+      @mutex.synchronize do
+        msg = @messages[id]
+        return nil unless msg
+        msg.to_h
+      end
+    end
+
+    def stats
+      @mutex.synchronize do
+        { pending: @queue.size, delivered_total: @delivered_total }
+      end
+    end
+
+    private
+
+    def deliver_now(msg)
+      result = @session.inject_via_adapter(
+        text: msg.text,
+        submit: msg.submit,
+        enter_only: msg.enter_only,
+        force: msg.force
+      )
+      msg.status = :delivered
+      msg.delivered_at = Time.now
+      @mutex.synchronize do
+        @delivered_total += 1
+        @messages[msg.id] = msg
+      end
+      result.merge(ok: true, status: "delivered", message_id: msg.id, http_status: 200)
+    rescue ArgumentError => e
+      msg.status = :failed
+      msg.error = e.message
+      @mutex.synchronize { @messages[msg.id] = msg }
+      raise
+    end
+
+    def delivery_loop
+      while @running
+        msg = @mutex.synchronize do
+          while @queue.empty? && @running
+            @condvar.wait(@mutex, 1.0)
+          end
+          @queue.first
+        end
+
+        break unless @running
+        next unless msg
+
+        ready = @state_machine.wait_for_prompt(DELIVERY_TIMEOUT)
+        unless ready
+          next if @running # Keep waiting
+        end
+
+        begin
+          deliver_now(msg)
+          @mutex.synchronize { @queue.shift }
+        rescue ArgumentError
+          # State race — will retry on next loop iteration
+          sleep 0.1
+        rescue StandardError => e
+          msg.status = :failed
+          msg.error = e.message
+          @mutex.synchronize do
+            @queue.shift
+            @messages[msg.id] = msg
+          end
+        end
+      end
+    end
+  end
+
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :label, :adapter, :watch
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, label: DEFAULT_LABEL, watch: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
       @host = host
-      @label = Harnex.normalize_label(label)
+      @id = Harnex.normalize_id(id)
       @watch = watch
-      @registry_path = Harnex.registry_path(repo_root, @label, cli: adapter.key)
+      @registry_path = Harnex.registry_path(repo_root, @id)
       @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
-      @port = Harnex.allocate_port(repo_root, @label, port, host: host, cli: adapter.key)
+      @port = Harnex.allocate_port(repo_root, @id, port, host: host)
       @mutex = Mutex.new
       @inject_mutex = Mutex.new
       @injected_count = 0
@@ -494,6 +854,8 @@ module Harnex
       @pid = nil
       @output_buffer = +""
       @output_buffer.force_encoding(Encoding::BINARY)
+      @state_machine = SessionState.new(adapter)
+      @inbox = Inbox.new(self, @state_machine)
     end
 
     def run
@@ -508,6 +870,7 @@ module Harnex
 
       stdin_state = STDIN.tty? ? STDIN.raw! : nil
       watch_thread = start_watch_thread
+      @inbox.start
       input_thread = start_input_thread
       output_thread = start_output_thread
 
@@ -519,8 +882,10 @@ module Harnex
       watch_thread&.kill
       @exit_code
     ensure
+      @inbox.stop
       STDIN.cooked! if STDIN.tty? && stdin_state
       @server&.stop
+      persist_exit_status
       cleanup_registry
       @reader&.close unless @reader&.closed?
       @writer&.close unless @writer&.closed?
@@ -533,7 +898,7 @@ module Harnex
         repo_root: repo_root,
         repo_key: Harnex.repo_key(repo_root),
         cli: adapter.key,
-        label: label,
+        id: id,
         pid: pid,
         host: host,
         port: port,
@@ -550,6 +915,8 @@ module Harnex
       end
 
       payload[:input_state] = adapter.input_state(screen_snapshot) if include_input_state
+      payload[:agent_state] = @state_machine.to_s
+      payload[:inbox] = @inbox.stats
       payload
     end
 
@@ -601,7 +968,7 @@ module Harnex
       {
         "HARNEX_SESSION_ID" => session_id,
         "HARNEX_SESSION_CLI" => adapter.key,
-        "HARNEX_SESSION_LABEL" => label,
+        "HARNEX_ID" => id,
         "HARNEX_SESSION_REPO_ROOT" => repo_root
       }
     end
@@ -641,7 +1008,9 @@ module Harnex
           total_bytes += write_payload(payload)
         end
 
-        finish_injection(bytes_written: total_bytes, newline: newline)
+        result = finish_injection(bytes_written: total_bytes, newline: newline)
+        @state_machine.force_busy!
+        result
       end
     end
 
@@ -678,6 +1047,25 @@ module Harnex
 
     def persist_registry
       Harnex.write_registry(@registry_path, registry_payload)
+    end
+
+    def persist_exit_status
+      exit_dir = File.join(Harnex::STATE_DIR, "exits")
+      FileUtils.mkdir_p(exit_dir)
+      exit_path = File.join(exit_dir, "#{id}.json")
+      payload = {
+        ok: true,
+        id: id,
+        cli: adapter.key,
+        session_id: session_id,
+        exit_code: @exit_code,
+        started_at: @started_at.iso8601,
+        exited_at: Time.now.iso8601,
+        injected_count: @injected_count
+      }
+      Harnex.write_registry(exit_path, payload)
+    rescue StandardError
+      nil
     end
 
     def cleanup_registry
@@ -740,11 +1128,13 @@ module Harnex
     end
 
     def record_output(chunk)
-      @mutex.synchronize do
+      snapshot = @mutex.synchronize do
         @output_buffer << chunk
         overflow = @output_buffer.bytesize - OUTPUT_BUFFER_LIMIT
         @output_buffer = @output_buffer.byteslice(overflow, OUTPUT_BUFFER_LIMIT) if overflow.positive?
+        @output_buffer.dup
       end
+      @state_machine.update(snapshot)
     end
 
     def screen_snapshot
@@ -812,15 +1202,13 @@ module Harnex
         end
 
         begin
-          @session.inject_via_adapter(
+          @session.inbox.enqueue(
             text: @config.hook_message,
             submit: true,
             enter_only: false,
             force: false
           )
           mark_delivered
-        rescue ArgumentError
-          sleep RETRY_SECONDS
         rescue StandardError => e
           break if e.message == "session is not running"
 
@@ -924,23 +1312,33 @@ module Harnex
         if payload[:mode] == :adapter
           return json(client, 400, ok: false, error: "text is required") if payload[:text].to_s.empty? && !payload[:enter_only]
 
-          json(
-            client,
-            200,
-            @session.inject_via_adapter(
-              text: payload[:text],
-              submit: payload[:submit],
-              enter_only: payload[:enter_only],
-              force: payload[:force]
-            )
+          result = @session.inbox.enqueue(
+            text: payload[:text],
+            submit: payload[:submit],
+            enter_only: payload[:enter_only],
+            force: payload[:force]
           )
+          http_code = result.delete(:http_status) || 200
+          json(client, http_code, result)
         else
           return json(client, 400, ok: false, error: "text is required") if payload[:text].to_s.empty?
 
           json(client, 200, @session.inject(payload[:text], newline: payload[:newline]))
         end
       else
-        json(client, 404, ok: false, error: "not found")
+        if method == "GET" && path =~ %r{\A/messages/([a-f0-9]+)\z}
+          return unauthorized(client) unless authorized?(headers)
+
+          msg_id = Regexp.last_match(1)
+          msg = @session.inbox.message_status(msg_id)
+          if msg
+            json(client, 200, msg)
+          else
+            json(client, 404, ok: false, error: "message not found")
+          end
+        else
+          json(client, 404, ok: false, error: "not found")
+        end
       end
     rescue JSON::ParserError
       json(client, 400, ok: false, error: "invalid json")
@@ -1000,12 +1398,97 @@ module Harnex
     def http_reason(code)
       {
         200 => "OK",
+        202 => "Accepted",
         400 => "Bad Request",
         401 => "Unauthorized",
         409 => "Conflict",
         404 => "Not Found",
         500 => "Internal Server Error"
       }.fetch(code, "OK")
+    end
+  end
+
+  class Waiter
+    POLL_INTERVAL = 0.5
+
+    def self.usage(program_name = "harnex wait")
+      <<~TEXT
+        Usage: #{program_name} [options]
+
+        Options:
+          --id ID         Session ID to wait for (required)
+          --repo PATH     Resolve session using PATH's repo root (default: current repo)
+          --timeout SECS  Maximum time to wait in seconds (default: unlimited)
+          -h, --help      Show this help
+      TEXT
+    end
+
+    def initialize(argv)
+      @argv = argv.dup
+      @options = {
+        id: nil,
+        repo_path: Dir.pwd,
+        timeout: nil,
+        help: false
+      }
+    end
+
+    def run
+      parser.parse!(@argv)
+      if @options[:help]
+        puts self.class.usage
+        return 0
+      end
+
+      raise "--id is required for harnex wait" unless @options[:id]
+
+      repo_root = Harnex.resolve_repo_root(@options[:repo_path])
+      deadline = @options[:timeout] ? Time.now + @options[:timeout] : nil
+
+      # First, confirm the session exists
+      registry = Harnex.read_registry(repo_root, @options[:id])
+      unless registry
+        warn("harnex wait: no session found with id #{@options[:id].inspect}")
+        return 1
+      end
+
+      target_pid = registry["pid"]
+      warn("harnex wait: watching session #{@options[:id]} (pid #{target_pid})")
+
+      # Poll until the process exits
+      loop do
+        unless Harnex.alive_pid?(target_pid)
+          # Check for exit status file
+          exit_path = File.join(Harnex::STATE_DIR, "exits", "#{@options[:id]}.json")
+          if File.exist?(exit_path)
+            data = JSON.parse(File.read(exit_path))
+            puts JSON.generate(data)
+            return data["exit_code"] || 0
+          else
+            puts JSON.generate(ok: true, id: @options[:id], status: "exited")
+            return 0
+          end
+        end
+
+        if deadline && Time.now >= deadline
+          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", pid: target_pid)
+          return 124
+        end
+
+        sleep POLL_INTERVAL
+      end
+    end
+
+    private
+
+    def parser
+      @parser ||= OptionParser.new do |opts|
+        opts.banner = "Usage: harnex wait [options]"
+        opts.on("--id ID", "Session ID to wait for") { |value| @options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--id", value)) }
+        opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
+        opts.on("--timeout SECONDS", Float, "Maximum time to wait") { |value| @options[:timeout] = value }
+        opts.on("-h", "--help", "Show help") { @options[:help] = true }
+      end
     end
   end
 
@@ -1071,7 +1554,7 @@ module Harnex
         end
 
       sessions.map { |session| load_live_status(session) }
-        .sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["label"].to_s] }
+        .sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["id"].to_s] }
         .reverse
     end
 
@@ -1092,7 +1575,7 @@ module Harnex
     end
 
     def render_table(sessions)
-      columns = ["LABEL", "CLI", "PID", "PORT", "AGE", "LAST", "STATE"]
+      columns = ["ID", "CLI", "PID", "PORT", "AGE", "LAST", "STATE"]
       columns << "REPO" if @options[:all]
 
       rows = sessions.map { |session| table_row(session, columns) }
@@ -1107,7 +1590,7 @@ module Harnex
 
     def table_row(session, columns)
       row = {
-        "LABEL" => session["label"].to_s,
+        "ID" => session["id"].to_s,
         "CLI" => Harnex.session_cli(session).empty? ? "-" : Harnex.session_cli(session),
         "PID" => session["pid"].to_s,
         "PORT" => session["port"].to_s,
@@ -1153,8 +1636,9 @@ module Harnex
       OptionParser.new do |opts|
         opts.banner = "Usage: #{program_name} [options] [text...]"
         opts.on("--repo PATH", "Resolve the active session using PATH's repo root") { |value| options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
-        opts.on("--label LABEL", "Target a labeled session in the current repo") { |value| options[:label] = Harnex.normalize_label(Harnex.ensure_option_value!("--label", value)) }
-        opts.on("--cli CLI", Adapters.supported, "Target a specific CLI for the label (#{Adapters.supported.join(', ')})") { |value| options[:cli] = value }
+        opts.on("--id ID", "Target a session by ID") { |value| options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--id", value)) }
+        opts.on("--label ID", "Alias for --id (deprecated)") { |value| options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--label", value)) }
+        opts.on("--cli CLI", Adapters.supported, "Filter by CLI type (#{Adapters.supported.join(', ')})") { |value| options[:cli] = value }
         opts.on("--message TEXT", "Message text to inject without using positional args") { |value| options[:message] = Harnex.ensure_option_value!("--message", value) }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
         opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = Harnex.ensure_option_value!("--host", value) }
@@ -1168,6 +1652,7 @@ module Harnex
         opts.on("--relay", "Force relay header formatting for sends from a wrapped session") { options[:relay] = true }
         opts.on("--no-relay", "Disable automatic relay header formatting") { options[:relay] = false }
         opts.on("--force", "Send input even if the adapter says the UI is not at a prompt") { options[:force] = true }
+        opts.on("--async", "Return immediately with message_id when queued (don't wait for delivery)") { options[:async] = true }
         opts.on("--debug", "Print repo/session lookup details to stderr") { options[:debug] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
       end
@@ -1180,17 +1665,18 @@ module Harnex
     def initialize(argv)
       @options = {
         repo_path: Dir.pwd,
-        label: Harnex.configured_label,
+        id: Harnex.configured_id,
         cli: nil,
         message: nil,
         submit: true,
         enter_only: false,
         relay: nil,
         force: false,
+        async: false,
         status: false,
         port: nil,
         host: DEFAULT_HOST,
-        wait_seconds: Float(Harnex.env_value("HARNEX_SEND_WAIT", legacy: "CXW_SEND_WAIT", default: "2.0")),
+        wait_seconds: Float(Harnex.env_value("HARNEX_SEND_WAIT", legacy: "CXW_SEND_WAIT", default: "30.0")),
         debug: false,
         help: false
       }
@@ -1206,7 +1692,7 @@ module Harnex
 
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       debug("repo_root=#{repo_root}")
-      debug("label=#{@options[:label] || '(auto)'}")
+      debug("id=#{@options[:id] || '(auto)'}")
       debug("cli=#{@options[:cli] || '(any)'}")
       registry = wait_for_registry(repo_root)
 
@@ -1249,6 +1735,18 @@ module Harnex
 
         Net::HTTP.start(uri.host, uri.port) { |http| http.request(request) }
       end
+
+      if response.code == "202" && !@options[:async]
+        parsed = JSON.parse(response.body)
+        message_id = parsed["message_id"]
+        if message_id
+          debug("queued message_id=#{message_id}, polling for delivery...")
+          result = poll_delivery(registry, message_id)
+          puts JSON.generate(result)
+          return result["status"] == "delivered" ? 0 : 1
+        end
+      end
+
       puts response.body
       response.is_a?(Net::HTTPSuccess) ? 0 : 1
     end
@@ -1261,6 +1759,40 @@ module Harnex
       @options[:message] || (@argv.empty? ? STDIN.read : @argv.join(" "))
     end
 
+    def poll_delivery(registry, message_id)
+      base = "http://#{registry.fetch('host', @options[:host])}:#{registry.fetch('port')}"
+      uri = URI("#{base}/messages/#{message_id}")
+      deadline = Time.now + @options[:wait_seconds]
+      dots = 0
+
+      loop do
+        request = Net::HTTP::Get.new(uri)
+        request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+        response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 2) { |http| http.request(request) }
+        parsed = JSON.parse(response.body)
+
+        case parsed["status"]
+        when "delivered", "failed"
+          warn("") if dots.positive?
+          return parsed
+        end
+
+        if Time.now >= deadline
+          warn("") if dots.positive?
+          return parsed.merge("error" => "poll timeout after #{@options[:wait_seconds]}s")
+        end
+
+        warn(".") if @options[:debug] || dots.zero?
+        dots += 1
+        sleep 0.25
+      rescue StandardError => e
+        if Time.now >= deadline
+          return { "status" => "unknown", "error" => e.message }
+        end
+        sleep 0.25
+      end
+    end
+
     def relay_text(text, registry)
       return text if text.to_s.empty?
       return text unless relay_enabled_for?(registry)
@@ -1270,7 +1802,7 @@ module Harnex
       Harnex.format_relay_message(
         text,
         from: context.fetch(:cli),
-        label: context.fetch(:label)
+        id: context.fetch(:id)
       )
     end
 
@@ -1311,7 +1843,7 @@ module Harnex
       sessions =
         Harnex.active_sessions(
           repo_root,
-          label: @options[:label],
+          id: @options[:id],
           cli: @options[:cli]
         )
 
@@ -1324,23 +1856,23 @@ module Harnex
     def missing_session_message(repo_root)
       base = "no active harnex session found for #{repo_root}"
       filters = []
-      filters << "label: #{@options[:label]}" if @options[:label]
+      filters << "id: #{@options[:id]}" if @options[:id]
       filters << "cli: #{@options[:cli]}" if @options[:cli]
       return "#{base} (#{filters.join(', ')})" unless filters.empty?
 
-      available = Harnex.active_sessions(repo_root).map { |session| "#{session['label']}(#{Harnex.session_cli(session)})" }.uniq.sort
+      available = Harnex.active_sessions(repo_root).map { |session| "#{session['id']}(#{Harnex.session_cli(session)})" }.uniq.sort
       suffix = available.empty? ? "" : " | active: #{available.join(', ')}"
       "#{base}#{suffix}"
     end
 
     def ambiguous_session_message(repo_root)
-      available = Harnex.active_sessions(repo_root, label: @options[:label], cli: @options[:cli])
-      detail = available.map { |session| "#{session['label']}(#{Harnex.session_cli(session)})" }.join(", ")
+      available = Harnex.active_sessions(repo_root, id: @options[:id], cli: @options[:cli])
+      detail = available.map { |session| "#{session['id']}(#{Harnex.session_cli(session)})" }.join(", ")
       filters = []
-      filters << "label #{@options[:label].inspect}" if @options[:label]
+      filters << "id #{@options[:id].inspect}" if @options[:id]
       filters << "cli #{@options[:cli].inspect}" if @options[:cli]
       scope = filters.empty? ? repo_root : "#{repo_root} with #{filters.join(' and ')}"
-      "multiple active harnex sessions found for #{scope}; use --label, --cli, or `harnex status` | active: #{detail}"
+      "multiple active harnex sessions found for #{scope}; use --id, --cli, or `harnex status` | active: #{detail}"
     end
 
     def with_http_retry

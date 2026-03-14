@@ -1,88 +1,61 @@
-# Harnex State Handoff
+# Harnex State
 
-Updated: 2026-03-14T01:16:00+04:00
-
-## Why this file exists
-
-This repo recently fixed a relay-submission bug where Claude-to-Codex
-`harnex send` messages could appear in the Codex input box without being
-submitted automatically.
-
-This file is the committed recovery note for that work and for the live
-Codex-Claude discussion workflow now documented in `README.md`.
+Updated: 2026-03-14
 
 ## Current repo state
 
-- Relay send fixes and the discussion workflow docs were committed in:
-  - `65b3e11` - `Improve relay sends and document live discussion workflow`
-- `tmp/` is intended to stay local scratch space and is now ignored by Git.
-- `koder/STATE.md` is tracked so the relay context survives session restarts.
-- The intended operating mode is one live Codex session and one live Claude
-  session under the same workflow label.
+### Architecture
 
-## What changed
+- Single file: `lib/harnex.rb` (~1880 lines)
+- Adapters: `lib/harnex/adapters/{base,codex,claude}.rb`
+- Skill: `skills/harnex/SKILL.md` (symlinked to `~/.claude/skills/` and `~/.codex/skills/`)
+- CLI entry: `bin/harnex`
+- Session registry: `~/.local/state/harnex/sessions/`
+- Exit status: `~/.local/state/harnex/exits/<id>.json`
+- Headless logs: `~/.local/state/harnex/logs/<id>.log`
 
-- `lib/harnex.rb`
-  - exports session context to child processes so wrapped sessions know who
-    they are
-  - auto-wraps cross-session sends with a relay header
-  - supports multi-step injection and serializes stdin with automated writes
-  - waits briefly for a sendable screen state before submitting
-- `lib/harnex/adapters/base.rb`
-  - adds adapter hooks for short send-time waiting
-- `lib/harnex/adapters/codex.rb`
-  - waits briefly for a real prompt before auto-submit
-  - injects message text and submit bytes as separate steps
-  - returns a clearer blocked-state message when Codex is busy
-- `README.md`
-  - documents automatic relay headers
-  - documents a human-steerable live discussion workflow between Codex and
-    Claude
+### Features
 
-## What was validated
+- **ID-based addressing** — sessions addressed by unique `--id` (not label)
+- **State machine** — `SessionState` tracks prompt/busy/blocked/unknown via
+  adapter screen parsing, condvar-based blocking
+- **Inbox queue** — per-session FIFO with background delivery thread; messages
+  queue when busy (HTTP 202), auto-deliver on prompt return
+- **Detached sessions** — `--detach` for headless, `--tmux [NAME]` for tmux
+  windows with custom terse names
+- **Wait** — `harnex wait --id X` blocks until session exits, returns exit code
+- **Relay headers** — automatic `[harnex relay from=... id=...]` on cross-session sends
+- **File watch hooks** — inotify-based, debounced
+- **Adapters** — codex (prompt detection, multi-step inject) and claude
+  (trust prompt detection)
 
-- Ruby syntax checks passed for:
-  - `lib/harnex.rb`
-  - `lib/harnex/adapters/base.rb`
-  - `lib/harnex/adapters/codex.rb`
-- A disposable probe Codex session received relays from the live `hh` Claude
-  session and replied correctly to:
-  - a single-line prompt
-  - a multiline prompt
-- A direct live `hh` exchange between Codex and Claude succeeded after restart:
-  - Claude relayed a message back into the live Codex session
-  - Codex relayed an acknowledgement back to Claude
-- The relay messages arrived as submitted prompts, not as unsent text left in
-  the input box.
+### Recent changes (this session)
 
-## Live discussion workflow
+1. State machine + inbox queue (SessionState, Message, Inbox classes)
+2. Label → ID rename (`--label` kept as deprecated alias)
+3. `--detach` and `--tmux [NAME]` for background session spawning
+4. `harnex wait` subcommand
+5. Exit status persistence (`exits/<id>.json`)
+6. Skill file created in repo, symlinked to `~/.claude/` and `~/.codex/`
+7. README and docs updated
 
-1. Start both sessions:
+### Key commits
 
-```bash
-./bin/harnex run codex --label hh
-./bin/harnex run claude --label hh
-```
+- `f54376a` — Track state handoff and ignore tmp artifacts
+- `65b3e11` — Improve relay sends and document live discussion workflow
+- `314f3a7` — Add file watcher
+- `c436bba` — Support shared labels across codex and claude
 
-2. Seed a topic from your shell:
+## Testing the supervisor workflow
+
+Start both sessions under harnex:
 
 ```bash
-./bin/harnex send --label hh --cli codex --message "Topic: should Harnex ship screen_tail before SSE?"
+# Terminal 1 — supervisor (you interact here)
+harnex run claude --id supervisor
+
+# The supervisor can then spawn workers:
+harnex run codex --id test-worker --tmux cx-t1
+harnex send --id test-worker --message "Review this project and give feedback"
+harnex wait --id test-worker
 ```
-
-3. Ask the other side to reply through Harnex:
-
-```bash
-./bin/harnex send --label hh --cli claude --message "Please reply back to Codex through harnex, then wait for follow-up."
-```
-
-4. Pause either pane at any time and steer it directly. If you want one side to
-answer the other, ask it explicitly to run `harnex send` back across the shared
-label.
-
-## Likely next follow-up
-
-Observability is still the weak point. `harnex send --status` exposes session
-state, but it does not return a sanitized recent screen buffer. A small
-read-only `screen_tail` or `/screen` endpoint is still the most useful next
-step; SSE can layer on top later.
