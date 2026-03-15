@@ -430,6 +430,98 @@ strings matching `--<known-option>` patterns.
     - `--description` appears in status_payload
     - `HARNEX_DESCRIPTION` appears in child_env
 
+### Phase 0b: Adapter contract cleanup
+
+Move leaked runtime logic behind the adapter boundary so that a new
+adapter can fully control exit and send-readiness behavior.
+
+1. **`exit_sequence` → `inject_exit(writer)`**: Currently session.rb
+   calls `adapter.exit_sequence` to get text, then does its own
+   `inject_sequence`. Instead, the adapter should own the full exit
+   flow. Rename to `inject_exit(writer)` — base impl writes `/exit\n`,
+   but a future adapter could send Ctrl+C, a signal, or multi-step.
+
+   In `base.rb`:
+   ```ruby
+   def inject_exit(writer)
+     writer.write("/exit\n")
+     writer.flush
+   end
+   ```
+
+   In `session.rb`, replace:
+   ```ruby
+   def inject_exit
+     sequence = adapter.exit_sequence
+     inject_sequence([{ text: sequence, newline: false }])
+   end
+   ```
+   With:
+   ```ruby
+   def inject_stop
+     raise "session is not running" unless pid && Harnex.alive_pid?(pid)
+     @inject_mutex.synchronize do
+       adapter.inject_exit(@writer)
+       @state_machine.force_busy!
+     end
+     { ok: true, signal: "exit_sequence_sent" }
+   end
+   ```
+
+2. **Move `wait_for_sendable_snapshot` into adapter**: Currently the
+   polling loop (sleep, deadline, state check) lives in session.rb
+   with the adapter providing `send_wait_seconds` and
+   `wait_for_sendable_state?`. Move the whole method to base adapter
+   so subclasses can override the strategy entirely.
+
+   In `base.rb`:
+   ```ruby
+   def wait_for_sendable(screen_snapshot_fn, submit:, enter_only:, force:)
+     return screen_snapshot_fn.call if force
+     snapshot = screen_snapshot_fn.call
+     wait_secs = send_wait_seconds(submit: submit, enter_only: enter_only).to_f
+     return snapshot unless wait_secs.positive?
+
+     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait_secs
+     state = input_state(snapshot)
+     while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline &&
+           wait_for_sendable_state?(state, submit: submit, enter_only: enter_only)
+       sleep 0.05
+       snapshot = screen_snapshot_fn.call
+       state = input_state(snapshot)
+     end
+     snapshot
+   end
+   ```
+
+   Session.rb calls: `adapter.wait_for_sendable(method(:screen_snapshot), ...)`
+   This keeps the base behavior identical but lets a future adapter
+   (e.g. one that checks an HTTP health endpoint) override entirely.
+
+3. **Remove `submit_bytes` from public contract**: It's only used inside
+   `build_send_payload`. Keep it as a private/protected helper in Base.
+   Not part of the adapter interface.
+
+4. **Document the adapter contract** in `base.rb` with a comment block:
+
+   ```ruby
+   # Adapter contract — subclasses MUST implement:
+   #   base_command          → Array[String]  CLI args to spawn
+   #
+   # Subclasses MAY override:
+   #   input_state(text)     → Hash           Parse screen for state
+   #   build_send_payload    → Hash           Build injection payload
+   #   inject_exit(writer)   → void           Send exit sequence
+   #   infer_repo_path(argv) → String         Extract repo from CLI args
+   #   wait_for_sendable     → String         Wait for ready state
+   ```
+
+5. Tests:
+   - Base adapter `inject_exit` writes `/exit\n`
+   - Codex/Claude adapters inherit or override correctly
+   - `wait_for_sendable` returns immediately when force=true
+   - Custom adapter can override `inject_exit` with different behavior
+
 ### Phase 1: Renames and removals
 
 1. Rename `exit` → `stop` everywhere:

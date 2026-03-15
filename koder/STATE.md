@@ -51,6 +51,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 03 | API & command design audit | **planned** | P1 |
 | 04 | Output streaming | open | P2 |
 | 05 | Inbox fast-path deadlock | **fixed** | P1 |
+| 06 | Full adapter abstraction | open | P2 |
 
 See `koder/issues/` for details.
 
