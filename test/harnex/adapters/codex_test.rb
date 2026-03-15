@@ -36,6 +36,15 @@ class CodexAdapterTest < Minitest::Test
     assert_nil state[:input_ready]
   end
 
+  # Regression: OSC sequences in Codex TUI output caused greedy regex to
+  # consume the entire buffer, making "OpenAI Codex" undetectable.
+  def test_detects_prompt_through_osc_sequences
+    screen = "\e]10;?\e\\\e]11;?\e\\\e[3;1H\e[2m│ >_ \e[1mOpenAI Codex\e[22m (v0.114.0) │\n\e[1m› \e[22mtype here\n"
+    state = @adapter.input_state(screen)
+    assert_equal "prompt", state[:state]
+    assert_equal true, state[:input_ready]
+  end
+
   # --- build_send_payload ---
 
   def test_build_send_payload_with_text_and_submit

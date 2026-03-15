@@ -12,7 +12,7 @@ Updated: 2026-03-15
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 146 minitest tests, all passing.
+- Test suite: `test/` with 149 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -29,6 +29,9 @@ Updated: 2026-03-15
   covering zero-exit and signaled-exit persistence.
 - File watching is now cross-platform: inotify on Linux, stat-polling fallback
   on macOS and other platforms. Zero external dependencies maintained.
+- OSC escape sequence stripping fixed: greedy regex was consuming entire
+  screen buffers when multiple OSC sequences were present, breaking state
+  detection for both Codex and Claude adapters.
 - Layer A (multi-agent reliability) is implemented:
   - `harnex stop` now uses a 75ms delay between exit text and submit in
     Claude/Codex adapters, matching the `build_send_payload` pattern.
@@ -77,7 +80,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 09 | Claude vim mode not detected | **fixed** | P2 |
 | 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
 | 11 | Tmux pane capture | open | P3 |
-| 12 | State detection failures cause send/receive problems | open | P1 |
+| 12 | State detection failures cause send/receive problems | **fixed** | P1 |
 
 See `koder/issues/` for details.
 
@@ -103,9 +106,9 @@ See `koder/plans/` for details.
 authenticated output API on top of the transcript file so local tools can tail
 session output by byte offset.
 
-Alternatively, fix issue #12 (state detection failures) which is P1 and
-blocks reliable agent-to-agent messaging, or tackle issue #11 (tmux pane
-capture) which is a quick diagnostic tool for tmux-backed sessions.
+Alternatively, tackle issue #11 (tmux pane capture) which is a quick
+diagnostic tool for tmux-backed sessions, or issue #06 (full adapter
+abstraction).
 
 ## Confirmed bugs from earlier review (all fixed)
 

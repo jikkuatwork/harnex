@@ -125,7 +125,7 @@ module Harnex
 
       def normalized_screen_text(screen_text)
         text = screen_text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
-        text = text.gsub(/\e\][^\a]*(?:\a|\e\\)/, "")
+        text = text.gsub(/\e\][^\a]*?(?:\a|\e\\)/, "")
         text = text.gsub(/\e(?:[@-Z\\-_]|\[[0-?]*[ -\/]*[@-~])/, "")
         text.gsub(/\r\n?/, "\n")
       end

@@ -1,7 +1,7 @@
 # Issue 12: State detection failures cause send/receive problems
 
 Priority: P1
-Status: open
+Status: **fixed**
 
 ## Problem
 
@@ -28,51 +28,42 @@ state shows as `"unknown"`. When the user next interacts with the terminal,
 the inbox sees apparent prompt-readiness and dumps the queued message text
 into the input box — mixed in with whatever the user was typing.
 
-Observed: Codex sent two relay messages to Claude session `hh`. Both were
-queued (`delivered_total: 2`). When the user tried to type, the queued
-messages got pasted into the input, corrupting the user's input.
-
 ## Root cause
 
-State detection heuristics in both adapters fail to recognize prompt states
-in certain screen configurations:
+The OSC (Operating System Command) escape sequence stripping regex in
+`Adapters::Base#normalized_screen_text` used a **greedy** quantifier:
 
-- **Codex adapter**: `input_state` requires screen text to contain
-  `"OpenAI Codex"` or `"gpt-"` to activate Codex-specific detection. If the
-  screen buffer doesn't include these strings (e.g. after scrolling or in
-  `--no-alt-screen` mode), it falls back to generic detection which returns
-  `"unknown"`.
-
-- **Claude adapter**: vim mode detection was added in issue #09 but the base
-  prompt detection may not cover all Claude Code UI states (e.g. when Claude
-  is showing a tool approval prompt or other non-standard screens).
-
-## Investigation needed
-
-- Verify whether `\r` vs `\n` matters for Codex submit
-- Check if the 75ms delay is sufficient for Codex's TUI rendering
-- Investigate why `input_state` returns `"unknown"` for Codex at a prompt
-  (the `--no-alt-screen` flag may affect screen text detection)
-- Review Claude adapter detection for edge cases beyond vim mode
-- Consider whether the inbox should refuse to deliver when state is `"unknown"`
-  rather than treating it as potentially prompt-ready
-- Test with `--verbose` to see exact delivery timing
-
-## Reproduction
-
-### Codex send failure
-
-```bash
-harnex run codex --tmux --description "test"
-# Wait for Codex to reach prompt
-harnex send --id <ID> --message "echo hello" --verbose
-# Observe: text appears in Codex input but is not submitted
+```ruby
+text.gsub(/\e\][^\a]*(?:\a|\e\\)/, "")
 ```
 
-### Claude receive failure
+The `[^\a]*` (greedy) matches `\e` characters, so when the screen buffer
+contains multiple OSC sequences like `\e]10;?\e\\\e]11;?\e\\`, the regex
+consumes everything from the first `\e]` to the **last** `\e\\` in the buffer
+— eating all printable content in between. This left the normalized text
+empty, causing all adapter `input_state` calls to fall through to `"unknown"`.
 
-```bash
-# From a Codex session managed by harnex:
-harnex send --id <claude-id> --message "result here"
-# Message gets queued, then pastes into Claude input on next user interaction
+Codex TUI uses OSC queries (`\e]10;?` and `\e]11;?`) during initialization,
+which reliably triggered this bug. Claude was also affected (the greedy match
+stripped ~9MB of a 16MB buffer) but happened to still detect prompts because
+the prompt markers appeared after the last OSC terminator.
+
+## Fix
+
+One-character change — make the OSC quantifier non-greedy:
+
+```ruby
+text.gsub(/\e\][^\a]*?(?:\a|\e\\)/, "")
 ```
+
+This correctly terminates each OSC sequence at its own `\e\\` terminator
+rather than consuming through to the last one in the buffer.
+
+Regression tests added in `base_test.rb` and `codex_test.rb`.
+
+## Verified
+
+Dogfooded live: launched Codex via `harnex run codex --tmux`, confirmed
+`input_state` returned `prompt` (was `unknown`), successfully sent a task
+via `harnex send`, and received a relay response back — full round-trip
+agent-to-agent messaging working.

@@ -82,4 +82,23 @@ class BaseAdapterContractTest < Minitest::Test
     CustomExitAdapter.new.inject_exit(writer)
     assert_equal "quit\r", writer.string
   end
+
+  # Regression: OSC regex was greedy and consumed text between multiple
+  # OSC sequences (e.g. \e]10;?\e\\ ... \e]11;?\e\\), eating the entire
+  # screen buffer. Non-greedy *? fix preserves printable content.
+  def test_normalized_screen_text_preserves_content_between_osc_sequences
+    adapter = Harnex::Adapters::Base.new("test")
+    screen = "\e]10;?\e\\\e]11;?\e\\visible text here\e[0m"
+    result = adapter.send(:normalized_screen_text, screen)
+    assert_includes result, "visible text here"
+  end
+
+  def test_normalized_screen_text_handles_codex_tui_output
+    adapter = Harnex::Adapters::Base.new("test")
+    # Simulates Codex TUI: OSC queries followed by cursor-addressed content
+    screen = "\e]10;?\e\\\e]11;?\e\\\e[?2026h\e[3;1H\e[2m│ >_ \e[1mOpenAI Codex\e[22m (v0.114.0) │\e[5;1H\e[2m│\e[22m\n\e[1m› \e[22mtype here"
+    result = adapter.send(:normalized_screen_text, screen)
+    assert_includes result, "OpenAI Codex"
+    assert_includes result, "› type here"
+  end
 end
