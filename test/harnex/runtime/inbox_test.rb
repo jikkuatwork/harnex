@@ -122,6 +122,7 @@ class InboxTest < Minitest::Test
     assert msg[:id]
     assert_equal "queued", msg[:status].to_s
     assert msg[:queued_at]
+    assert_equal "test", msg[:text_preview]
   end
 
   # --- stats ---
@@ -130,6 +131,7 @@ class InboxTest < Minitest::Test
     stats = @inbox.stats
     assert_equal 0, stats[:pending]
     assert_equal 0, stats[:delivered_total]
+    assert_equal 0, stats[:expired_total]
   end
 
   def test_stats_after_delivery_via_thread
@@ -145,6 +147,7 @@ class InboxTest < Minitest::Test
     stats = @inbox.stats
     assert_equal 0, stats[:pending]
     assert_equal 2, stats[:delivered_total]
+    assert_equal 0, stats[:expired_total]
   end
 
   # --- fast-path immediate delivery ---
@@ -155,5 +158,47 @@ class InboxTest < Minitest::Test
     assert_equal 200, result[:http_status]
     assert_equal 1, @session.injections.length
     assert_equal "fast", @session.injections.first[:text]
+  end
+
+  # --- expiry and queue management ---
+
+  def test_expire_stale_messages_removes_oldest_pending_message
+    @inbox.stop
+    @state.state = :busy
+    @inbox = Harnex::Inbox.new(@session, @state, ttl: 0.1)
+    @inbox.start
+
+    result = @inbox.enqueue(text: "stale", submit: true, enter_only: false)
+    sleep 0.25
+
+    msg = @inbox.message_status(result[:message_id])
+    stats = @inbox.stats
+
+    assert_equal "expired", msg[:status]
+    assert_equal 0, stats[:pending]
+    assert_equal 1, stats[:expired_total]
+    assert_empty @session.injections
+  end
+
+  def test_drop_removes_pending_message_from_queue
+    @state.state = :busy
+    result = @inbox.enqueue(text: "drop-me", submit: true, enter_only: false)
+
+    dropped = @inbox.drop(result[:message_id])
+
+    assert_equal "dropped", dropped[:status]
+    assert_empty @inbox.pending_messages
+    assert_equal "dropped", @inbox.message_status(result[:message_id])[:status]
+  end
+
+  def test_clear_removes_all_pending_messages
+    @state.state = :busy
+    3.times { |index| @inbox.enqueue(text: "msg-#{index}", submit: true, enter_only: false) }
+
+    cleared = @inbox.clear
+
+    assert_equal 3, cleared
+    assert_empty @inbox.pending_messages
+    assert_equal 0, @inbox.stats[:pending]
   end
 end

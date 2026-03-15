@@ -55,6 +55,14 @@ module Harnex
         return unauthorized(client) unless authorized?(headers)
 
         json(client, 200, @session.status_payload)
+      when ["GET", "/inbox"]
+        return unauthorized(client) unless authorized?(headers)
+
+        json(client, 200, ok: true, messages: @session.inbox.pending_messages)
+      when ["DELETE", "/inbox"]
+        return unauthorized(client) unless authorized?(headers)
+
+        json(client, 200, ok: true, cleared: @session.inbox.clear)
       when ["POST", "/stop"]
         return unauthorized(client) unless authorized?(headers)
 
@@ -87,6 +95,16 @@ module Harnex
           msg = @session.inbox.message_status(msg_id)
           if msg
             json(client, 200, msg)
+          else
+            json(client, 404, ok: false, error: "message not found")
+          end
+        elsif method == "DELETE" && path =~ %r{\A/inbox/([a-f0-9]+)\z}
+          return unauthorized(client) unless authorized?(headers)
+
+          msg_id = Regexp.last_match(1)
+          msg = @session.inbox.drop(msg_id)
+          if msg
+            json(client, 200, ok: true, message: msg)
           else
             json(client, 404, ok: false, error: "message not found")
           end

@@ -28,6 +28,11 @@ class SessionTest < Minitest::Test
     assert_equal Harnex.output_log_path(Dir.pwd, session.id), payload[:output_log_path]
   end
 
+  def test_session_uses_configured_inbox_ttl
+    session = build_session(inbox_ttl: 42.5)
+    assert_in_delta 42.5, session.inbox.instance_variable_get(:@ttl), 0.0001
+  end
+
   def test_record_output_writes_to_output_log
     session = build_session
     session.send(:prepare_output_log)
@@ -75,7 +80,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], description: nil)
+  def build_session(command: ["ruby"], description: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
     adapter = Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -84,7 +89,8 @@ class SessionTest < Minitest::Test
       repo_root: Dir.pwd,
       host: "127.0.0.1",
       id: "session-#{SecureRandom.hex(4)}",
-      description: description
+      description: description,
+      inbox_ttl: inbox_ttl
     )
   end
 end

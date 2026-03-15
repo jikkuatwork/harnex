@@ -35,6 +35,11 @@ module Harnex
             state: "prompt",
             input_ready: true
           }
+        elsif compact.include?("NORMAL") || compact.include?("--NORMAL--")
+          {
+            state: "vim-normal",
+            input_ready: true
+          }
         elsif lines.any? { |line| prompt_line?(line) }
           {
             state: "prompt",
@@ -68,6 +73,10 @@ module Harnex
           input_state: state,
           force: force
         }
+      end
+
+      def inject_exit(writer)
+        super(writer, delay_ms: SUBMIT_DELAY_MS)
       end
 
       protected

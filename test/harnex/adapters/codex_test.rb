@@ -92,6 +92,18 @@ class CodexAdapterTest < Minitest::Test
     assert payload[:force]
   end
 
+  def test_inject_exit_uses_submit_delay
+    writer = StringIO.new
+    sleep_calls = []
+    @adapter.define_singleton_method(:sleep) { |seconds| sleep_calls << seconds }
+
+    @adapter.inject_exit(writer)
+
+    assert_equal "/exit\r", writer.string
+    assert_equal 1, sleep_calls.length
+    assert_in_delta 0.075, sleep_calls.first, 0.0001
+  end
+
   # --- infer_repo_path ---
 
   def test_infer_repo_path_from_cd_flag

@@ -84,8 +84,10 @@ module Harnex
         }
       end
 
-      def inject_exit(writer)
+      def inject_exit(writer, delay_ms: 0)
         writer.write("/exit")
+        writer.flush
+        sleep(delay_ms / 1000.0) if delay_ms.positive?
         writer.write(submit_bytes)
         writer.flush
       end

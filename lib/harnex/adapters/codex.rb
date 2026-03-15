@@ -90,6 +90,10 @@ module Harnex
         }
       end
 
+      def inject_exit(writer)
+        super(writer, delay_ms: SUBMIT_DELAY_MS)
+      end
+
       protected
 
       def blocked_message(state, enter_only:)

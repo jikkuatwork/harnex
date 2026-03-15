@@ -5,6 +5,7 @@ require "uri"
 
 module Harnex
   class Sender
+    DEFAULT_TIMEOUT = 120.0
     MIN_HTTP_TIMEOUT = 0.1
     class TimeoutError < RuntimeError; end
 
@@ -21,13 +22,13 @@ module Harnex
           options[:submit] = true
         end
         opts.on("--force", "Send even if the agent is not at a prompt") { options[:force] = true }
-        opts.on("--no-wait", "Return queued message_id immediately") { options[:wait] = false }
+        opts.on("--no-wait", "Return immediately after queueing (HTTP 202). Use for fire-and-forget or when polling delivery separately.") { options[:wait] = false }
         opts.on("--relay", "Force relay header formatting") { options[:relay] = true }
         opts.on("--no-relay", "Disable automatic relay headers") { options[:relay] = false }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
         opts.on("--token TOKEN", "Auth token for --port mode") { |value| options[:token] = value }
         opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = value }
-        opts.on("--timeout SECS", Float, "How long to wait for lookup or delivery (default: 30)") { |value| options[:timeout] = value }
+        opts.on("--timeout SECS", Float, "How long to wait for lookup or delivery (default: #{DEFAULT_TIMEOUT.to_i})") { |value| options[:timeout] = value }
         opts.on("--verbose", "Print lookup and delivery details to stderr") { options[:verbose] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
       end
@@ -51,7 +52,7 @@ module Harnex
         port: nil,
         token: nil,
         host: DEFAULT_HOST,
-        timeout: 30.0,
+        timeout: DEFAULT_TIMEOUT,
         verbose: false,
         help: false
       }

@@ -166,6 +166,20 @@ class SenderRelayTest < Minitest::Test
     assert_raises(RuntimeError) { sender.run }
   end
 
+  def test_default_timeout_is_120_seconds
+    assert_equal 120.0, Harnex::Sender::DEFAULT_TIMEOUT
+
+    sender = Harnex::Sender.new(["--id", "target", "--message", "hello"])
+    assert_equal 120.0, sender.instance_variable_get(:@options)[:timeout]
+  end
+
+  def test_usage_documents_no_wait_for_automation
+    usage = Harnex::Sender.usage
+
+    assert_includes usage, "Return immediately after queueing (HTTP 202)."
+    assert_includes usage, "fire-and-forget"
+  end
+
   def test_run_uses_one_deadline_across_lookup_request_and_delivery
     sender = Harnex::Sender.new(["--id", "target", "--message", "hello", "--timeout", "5"])
     registry = { "host" => "127.0.0.1", "port" => 40123, "session_id" => "peer-session" }
@@ -190,5 +204,26 @@ class SenderRelayTest < Minitest::Test
     assert_equal "delivered", data["status"]
     assert_equal 3, deadlines.length
     assert_equal 1, deadlines.uniq.length
+  end
+
+  def test_run_returns_timeout_for_queued_delivery_when_timeout_is_short
+    sender = Harnex::Sender.new(["--id", "target", "--message", "hello", "--timeout", "1"])
+    registry = { "host" => "127.0.0.1", "port" => 40123, "session_id" => "peer-session" }
+    response = AcceptedResponse.new("202", JSON.generate("message_id" => "msg-1"))
+
+    sender.define_singleton_method(:wait_for_registry) do |_repo_root, deadline:|
+      registry
+    end
+    sender.define_singleton_method(:with_http_retry) do |deadline:, &block|
+      response
+    end
+    sender.define_singleton_method(:poll_delivery) do |_registry, _message_id, deadline:|
+      { "ok" => false, "status" => "timeout", "error" => "delivery timed out after 1.0s" }
+    end
+
+    out, = capture_io { assert_equal 124, sender.run }
+    data = JSON.parse(out)
+    assert_equal "timeout", data["status"]
+    assert_equal "delivery timed out after 1.0s", data["error"]
   end
 end

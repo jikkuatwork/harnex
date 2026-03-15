@@ -43,6 +43,20 @@ class ClaudeAdapterTest < Minitest::Test
     assert_equal true, state[:input_ready]
   end
 
+  def test_detects_normal_mode_as_vim_normal
+    screen = "some output\nNORMAL\n"
+    state = @adapter.input_state(screen)
+    assert_equal "vim-normal", state[:state]
+    assert_equal true, state[:input_ready]
+  end
+
+  def test_detects_dash_normal_mode_as_vim_normal
+    screen = "some output\n--NORMAL--\n"
+    state = @adapter.input_state(screen)
+    assert_equal "vim-normal", state[:state]
+    assert_equal true, state[:input_ready]
+  end
+
   def test_detects_prompt_line_as_prompt
     screen = "some output\n> \n"
     state = @adapter.input_state(screen)
@@ -97,6 +111,18 @@ class ClaudeAdapterTest < Minitest::Test
     assert_equal "review this diff", payload[:steps][0][:text]
     assert_equal "\r", payload[:steps][1][:text]
     assert_equal 75, payload[:steps][1][:delay_ms]
+  end
+
+  def test_inject_exit_uses_submit_delay
+    writer = StringIO.new
+    sleep_calls = []
+    @adapter.define_singleton_method(:sleep) { |seconds| sleep_calls << seconds }
+
+    @adapter.inject_exit(writer)
+
+    assert_equal "/exit\r", writer.string
+    assert_equal 1, sleep_calls.length
+    assert_in_delta 0.075, sleep_calls.first, 0.0001
   end
 
   # --- base_command ---

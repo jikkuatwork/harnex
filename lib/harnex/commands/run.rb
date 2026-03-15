@@ -6,10 +6,10 @@ module Harnex
   class Runner
     DEFAULT_TIMEOUT = 5.0
     KNOWN_FLAGS = %w[
-      --id --description --detach --tmux --host --port --watch --context --timeout --help
+      --id --description --detach --tmux --host --port --watch --context --timeout --inbox-ttl --help
     ].freeze
     VALUE_FLAGS = %w[
-      --id --description --host --port --watch --context --timeout
+      --id --description --host --port --watch --context --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -26,6 +26,7 @@ module Harnex
           --watch PATH       Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
+          --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           -h, --help         Show this help
 
         Notes:
@@ -48,6 +49,7 @@ module Harnex
         tmux: false,
         tmux_name: nil,
         timeout: DEFAULT_TIMEOUT,
+        inbox_ttl: default_inbox_ttl,
         help: false
       }
     end
@@ -100,6 +102,7 @@ module Harnex
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
       tmux_cmd += ["--watch", @options[:watch]] if @options[:watch]
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
+      tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
       window_name = @options[:tmux_name] || @options[:id]
@@ -183,7 +186,8 @@ module Harnex
         port: @options[:port],
         id: @options[:id],
         watch: watch,
-        description: @options[:description]
+        description: @options[:description],
+        inbox_ttl: @options[:inbox_ttl]
       )
     end
 
@@ -273,6 +277,11 @@ module Harnex
           @options[:timeout] = Float(required_option_value(arg, argv[index]))
         when /\A--timeout=(.+)\z/
           @options[:timeout] = Float(required_option_value("--timeout", Regexp.last_match(1)))
+        when "--inbox-ttl"
+          index += 1
+          @options[:inbox_ttl] = Float(required_option_value(arg, argv[index]))
+        when /\A--inbox-ttl=(.+)\z/
+          @options[:inbox_ttl] = Float(required_option_value("--inbox-ttl", Regexp.last_match(1)))
         else
           if cli_name.nil?
             cli_name = arg
@@ -317,7 +326,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|context|timeout)=/
+        when /\A--(?:id|description|host|port|watch|context|timeout|inbox-ttl)=/
           nil
         else
           return true
@@ -331,7 +340,14 @@ module Harnex
     def wrapper_option_token?(arg)
       KNOWN_FLAGS.include?(arg) ||
         arg == "-h" ||
-        arg.start_with?("--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--context=", "--timeout=")
+        arg.start_with?("--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--context=", "--timeout=", "--inbox-ttl=")
+    end
+
+    def default_inbox_ttl
+      value = ENV["HARNEX_INBOX_TTL"]
+      return Inbox::DEFAULT_TTL.to_f if value.nil? || value.strip.empty?
+
+      Float(value)
     end
   end
 end

@@ -12,7 +12,7 @@ Updated: 2026-03-15
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 121 minitest tests, all passing.
+- Test suite: `test/` with 138 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -25,20 +25,17 @@ Updated: 2026-03-15
 - Exit status records now preserve signal metadata as `signal` alongside the
   synthesized numeric `exit_code` for signaled sessions, with regression tests
   covering zero-exit and signaled-exit persistence.
-- Review follow-up fixes are in: `harnex send --timeout` now uses one shared
-  deadline across lookup/request/delivery; `harnex run` rejects accidental
-  single-dash flag tokens as wrapper option values; `harnex stop` retries
-  transient API failures with a configurable timeout; transcript logs append
-  instead of truncating on session reuse; and the Claude adapter now sends
-  submit as a delayed second injection step so pasted prompts are actually
-  executed.
-- Agent-facing collaboration docs now prefer visible tmux-backed peer sessions
-  by default, instead of hidden foreground PTYs, unless the user asks for
-  headless/background behavior.
-- Agent-facing docs now require an explicit return channel for delegated
-  harnex work; preferred pattern is peer replies via `harnex send --id $HARNEX_ID`.
 - File watching is now cross-platform: inotify on Linux, stat-polling fallback
   on macOS and other platforms. Zero external dependencies maintained.
+- Layer A (multi-agent reliability) is implemented:
+  - `harnex stop` now uses a 75ms delay between exit text and submit in
+    Claude/Codex adapters, matching the `build_send_payload` pattern.
+  - `harnex send` default timeout raised from 30s to 120s for fresh sessions.
+  - Claude adapter detects vim normal mode (`NORMAL`/`--NORMAL--`) as a
+    sendable state (`vim-normal`, `input_ready: true`).
+  - Inbox has TTL auto-expiry (default 120s), `pending_messages`, `drop`,
+    `clear` methods, and API endpoints (`GET /inbox`, `DELETE /inbox`,
+    `DELETE /inbox/:id`). Configurable via `--inbox-ttl` or `HARNEX_INBOX_TTL`.
 
 ## What harnex does
 
@@ -71,10 +68,10 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 04 | Output streaming | open | P2 |
 | 05 | Inbox fast-path deadlock | **fixed** | P1 |
 | 06 | Full adapter abstraction | open | P2 |
-| 07 | `stop` types exit but doesn't submit | open | P1 |
-| 08 | Send to fresh Codex times out | open | P2 |
-| 09 | Claude vim mode not detected | open | P2 |
-| 10 | Inbox management (list/drop/TTL) | open | P2 |
+| 07 | `stop` types exit but doesn't submit | **fixed** | P1 |
+| 08 | Send to fresh Codex times out | **fixed** | P2 |
+| 09 | Claude vim mode not detected | **fixed** | P2 |
+| 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
 | 11 | Tmux pane capture | open | P3 |
 
 See `koder/issues/` for details.
@@ -86,22 +83,23 @@ See `koder/issues/` for details.
 | 01 | Monolith refactor | **done** (phases 1-2) |
 | 02 | Command & API redesign | **done** |
 | 03 | Output streaming | **in progress** (phase 1 done) |
-| 04 | Stop submit fix (#07) | open |
-| 05 | Send startup timeout (#08) | open |
-| 06 | Claude vim mode (#09) | open |
-| 07 | Inbox management (#10) | open |
+| 04 | Stop submit fix (#07) | **done** |
+| 05 | Send startup timeout (#08) | **done** |
+| 06 | Claude vim mode (#09) | **done** |
+| 07 | Inbox management (#10) | **done** |
 
-Plans 04–07 are **layer A** (multi-agent reliability). Sequence: 04 → 05 → 06 → 07.
+Plans 04-07 are **layer A** (multi-agent reliability).
 
 See `koder/plans/` for details.
 
 ## Next step
 
-**Fix issue 07 (`harnex stop` not submitting):** this is the highest-priority
-open bug. The exit sequence is injected but the Enter keypress doesn't land,
-leaving sessions hanging after `harnex stop`. Likely needs a delay between
-text and newline in `inject_exit`, similar to the 75ms pattern in
-`build_send_payload`.
+**Implement phase 2 of the output streaming plan (03):** add a `harnex logs`
+command on top of the session transcript file. Phase 1 established the storage
+layer; phase 2 adds a read-only CLI with `--follow` mode.
+
+Alternatively, tackle issue #11 (tmux pane capture) which is a quick
+diagnostic tool for tmux-backed sessions.
 
 ## Confirmed bugs from earlier review (all fixed)
 

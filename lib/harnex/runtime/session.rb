@@ -8,7 +8,7 @@ module Harnex
 
     attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :output_log_path
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, inbox_ttl: Inbox::DEFAULT_TTL)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -36,7 +36,7 @@ module Harnex
       @output_buffer = +""
       @output_buffer.force_encoding(Encoding::BINARY)
       @state_machine = SessionState.new(adapter)
-      @inbox = Inbox.new(self, @state_machine)
+      @inbox = Inbox.new(self, @state_machine, ttl: inbox_ttl)
     end
 
     def self.validate_binary!(command)
