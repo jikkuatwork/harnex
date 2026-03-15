@@ -6,22 +6,28 @@ require "uri"
 
 module Harnex
   class Status
+    DESCRIPTION_WIDTH = 30
+
     def self.usage(program_name = "harnex status")
       <<~TEXT
         Usage: #{program_name} [options]
 
         Options:
-          --repo PATH   List sessions for PATH's repo root (default: current repo)
-          --all         List sessions across all repos
-          -h, --help    Show this help
+          --id ID      Show a specific session
+          --repo PATH  Filter to PATH's repo root (default: current repo)
+          --all        List sessions across all repos
+          --json       Output JSON instead of a table
+          -h, --help   Show this help
       TEXT
     end
 
     def initialize(argv)
       @argv = argv.dup
       @options = {
+        id: nil,
         repo_path: Dir.pwd,
         all: false,
+        json: false,
         help: false
       }
     end
@@ -34,6 +40,11 @@ module Harnex
       end
 
       sessions = load_sessions
+      if @options[:json]
+        puts JSON.generate(sessions)
+        return 0
+      end
+
       if sessions.empty?
         if @options[:all]
           puts "No active harnex sessions."
@@ -52,19 +63,17 @@ module Harnex
     def parser
       @parser ||= OptionParser.new do |opts|
         opts.banner = "Usage: harnex status [options]"
-        opts.on("--repo PATH", "List sessions for PATH's repo root") { |value| @options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
+        opts.on("--id ID", "Show a specific session") { |value| @options[:id] = Harnex.normalize_id(value) }
+        opts.on("--repo PATH", "Filter to PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--all", "List sessions across all repos") { @options[:all] = true }
+        opts.on("--json", "Output JSON instead of a table") { @options[:json] = true }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
     end
 
     def load_sessions
-      sessions =
-        if @options[:all]
-          Harnex.active_sessions
-        else
-          Harnex.active_sessions(Harnex.resolve_repo_root(@options[:repo_path]))
-        end
+      repo_root = @options[:all] ? nil : Harnex.resolve_repo_root(@options[:repo_path])
+      sessions = Harnex.active_sessions(repo_root, id: @options[:id])
 
       sessions.map { |session| load_live_status(session) }
         .sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["id"].to_s] }
@@ -88,7 +97,7 @@ module Harnex
     end
 
     def render_table(sessions)
-      columns = ["ID", "CLI", "PID", "PORT", "AGE", "LAST", "STATE"]
+      columns = ["ID", "CLI", "PID", "PORT", "AGE", "STATE", "DESC"]
       columns << "REPO" if @options[:all]
 
       rows = sessions.map { |session| table_row(session, columns) }
@@ -108,8 +117,8 @@ module Harnex
         "PID" => session["pid"].to_s,
         "PORT" => session["port"].to_s,
         "AGE" => timeago(session["started_at"]),
-        "LAST" => timeago(session["last_injected_at"], none: "never"),
-        "STATE" => session.dig("input_state", "state").to_s.empty? ? "-" : session.dig("input_state", "state").to_s
+        "STATE" => session.dig("input_state", "state").to_s.empty? ? "-" : session.dig("input_state", "state").to_s,
+        "DESC" => truncate(session["description"])
       }
       row["REPO"] = display_path(session["repo_root"]) if columns.include?("REPO")
       row
@@ -119,24 +128,32 @@ module Harnex
       columns.map { |column| row.fetch(column).ljust(widths.fetch(column)) }.join("  ")
     end
 
-    def timeago(timestamp, none: "-")
-      return none if timestamp.to_s.empty?
+    def timeago(timestamp)
+      return "-" if timestamp.to_s.empty?
 
       seconds = (Time.now - Time.parse(timestamp.to_s)).to_i
       seconds = 0 if seconds.negative?
 
       case seconds
       when 0...60
-        "#{seconds}s ago"
+        "#{seconds}s"
       when 60...3600
-        "#{seconds / 60}m ago"
+        "#{seconds / 60}m"
       when 3600...86_400
-        "#{seconds / 3600}h ago"
+        "#{seconds / 3600}h"
       else
-        "#{seconds / 86_400}d ago"
+        "#{seconds / 86_400}d"
       end
     rescue StandardError
       timestamp.to_s
+    end
+
+    def truncate(value)
+      text = value.to_s
+      return "-" if text.empty?
+      return text if text.length <= DESCRIPTION_WIDTH
+
+      "#{text[0, DESCRIPTION_WIDTH - 3]}..."
     end
 
     def display_path(path)

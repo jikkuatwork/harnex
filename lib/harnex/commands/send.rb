@@ -5,29 +5,30 @@ require "uri"
 
 module Harnex
   class Sender
+    MIN_HTTP_TIMEOUT = 0.1
+    class TimeoutError < RuntimeError; end
+
     def self.build_parser(options, program_name = "harnex send")
       OptionParser.new do |opts|
-        opts.banner = "Usage: #{program_name} [options] [text...]"
-        opts.on("--repo PATH", "Resolve the active session using PATH's repo root") { |value| options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
-        opts.on("--id ID", "Target a session by ID") { |value| options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--id", value)) }
-        opts.on("--label ID", "Alias for --id (deprecated)") { |value| options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--label", value)) }
-        opts.on("--cli CLI", Adapters.supported, "Filter by CLI type (#{Adapters.supported.join(', ')})") { |value| options[:cli] = value }
-        opts.on("--message TEXT", "Message text to inject without using positional args") { |value| options[:message] = Harnex.ensure_option_value!("--message", value) }
-        opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
-        opts.on("--token TOKEN", "Auth token for --port mode (from session registry)") { |value| options[:token] = Harnex.ensure_option_value!("--token", value) }
-        opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = Harnex.ensure_option_value!("--host", value) }
-        opts.on("--wait SECONDS", Float, "How long to wait for the target session to appear/respond") { |value| options[:wait_seconds] = value }
-        opts.on("--status", "Print session status instead of sending text") { options[:status] = true }
-        opts.on("--enter", "Send only Enter to submit the current prompt") do
-          options[:enter_only] = true
+        opts.banner = "Usage: #{program_name} --id ID [options] [text...]"
+        opts.on("--id ID", "Target session ID") { |value| options[:id] = Harnex.normalize_id(value) }
+        opts.on("--repo PATH", "Resolve the target using PATH's repo root") { |value| options[:repo_path] = value }
+        opts.on("--cli CLI", "Filter by CLI type") { |value| options[:cli] = value }
+        opts.on("--message TEXT", "Message text to inject instead of positional args") { |value| options[:message] = value }
+        opts.on("--no-submit", "Inject text without pressing Enter") { options[:submit] = false }
+        opts.on("--submit-only", "Press Enter without injecting text") do
+          options[:submit_only] = true
           options[:submit] = true
         end
-        opts.on("--no-submit", "Inject text without pressing Enter") { options[:submit] = false }
-        opts.on("--relay", "Force relay header formatting for sends from a wrapped session") { options[:relay] = true }
-        opts.on("--no-relay", "Disable automatic relay header formatting") { options[:relay] = false }
-        opts.on("--force", "Send input even if the adapter says the UI is not at a prompt") { options[:force] = true }
-        opts.on("--async", "Return immediately with message_id when queued (don't wait for delivery)") { options[:async] = true }
-        opts.on("--debug", "Print repo/session lookup details to stderr") { options[:debug] = true }
+        opts.on("--force", "Send even if the agent is not at a prompt") { options[:force] = true }
+        opts.on("--no-wait", "Return queued message_id immediately") { options[:wait] = false }
+        opts.on("--relay", "Force relay header formatting") { options[:relay] = true }
+        opts.on("--no-relay", "Disable automatic relay headers") { options[:relay] = false }
+        opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
+        opts.on("--token TOKEN", "Auth token for --port mode") { |value| options[:token] = value }
+        opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = value }
+        opts.on("--timeout SECS", Float, "How long to wait for lookup or delivery (default: 30)") { |value| options[:timeout] = value }
+        opts.on("--verbose", "Print lookup and delivery details to stderr") { options[:verbose] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
       end
     end
@@ -39,23 +40,22 @@ module Harnex
     def initialize(argv)
       @options = {
         repo_path: Dir.pwd,
-        id: Harnex.configured_id,
+        id: nil,
         cli: nil,
         message: nil,
         submit: true,
-        enter_only: false,
+        submit_only: false,
         relay: nil,
         force: false,
-        async: false,
-        status: false,
+        wait: true,
         port: nil,
         token: nil,
         host: DEFAULT_HOST,
-        wait_seconds: Float(Harnex.env_value("HARNEX_SEND_WAIT", legacy: "CXW_SEND_WAIT", default: "30.0")),
-        debug: false,
+        timeout: 30.0,
+        verbose: false,
         help: false
       }
-      @argv = argv
+      @argv = argv.dup
     end
 
     def run
@@ -65,106 +65,109 @@ module Harnex
         return 0
       end
 
+      raise "--id is required for harnex send" unless @options[:id]
+      validate_modes!
+
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
-      debug("repo_root=#{repo_root}")
-      debug("id=#{@options[:id] || '(auto)'}")
-      debug("cli=#{@options[:cli] || '(any)'}")
-      registry = wait_for_registry(repo_root)
+      deadline = monotonic_now + @options[:timeout]
+      verbose("repo_root=#{repo_root}")
+      verbose("id=#{@options[:id]}")
+      verbose("cli=#{@options[:cli] || '(any)'}")
 
-      if @options[:port]
-        registry ||= {}
-        registry["host"] ||= @options[:host]
-        registry["port"] = @options[:port]
-        registry["token"] = @options[:token] if @options[:token]
-      end
-
+      registry = wait_for_registry(repo_root, deadline: deadline)
       case registry
       when :ambiguous
         raise ambiguous_session_message(repo_root)
-      when nil
-        raise missing_session_message(repo_root)
+      when :timeout
+        puts JSON.generate(ok: false, id: @options[:id], status: "timeout", error: "lookup timed out after #{@options[:timeout]}s")
+        return 124
       end
 
-      uri = URI("http://#{registry.fetch('host', @options[:host])}:#{registry.fetch('port')}#{@options[:status] ? '/status' : '/send'}")
-      debug("target=#{uri}")
-      text = nil
-      unless @options[:status]
-        text = resolve_text
-        text = relay_text(text, registry)
-        raise "text is required" if text.to_s.empty? && !@options[:enter_only]
-        debug("payload_bytes=#{text.bytesize} submit=#{@options[:submit]} enter_only=#{@options[:enter_only]} relay=#{relay_enabled_for?(registry)} force=#{@options[:force]}")
-      end
+      registry = direct_registry.merge(registry || {})
+      verbose("target=http://#{registry.fetch('host')}:#{registry.fetch('port')}/send")
 
-      response = with_http_retry do
-        request = @options[:status] ? Net::HTTP::Get.new(uri) : Net::HTTP::Post.new(uri)
+      text = resolve_text
+      text = relay_text(text, registry)
+      raise "text is required" if text.to_s.empty? && !@options[:submit_only]
+
+      response = with_http_retry(deadline: deadline) do
+        uri = URI("http://#{registry.fetch('host')}:#{registry.fetch('port')}/send")
+        request = Net::HTTP::Post.new(uri)
         request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+        request["Content-Type"] = "application/json"
+        request.body = JSON.generate(
+          text: text,
+          submit: @options[:submit],
+          enter_only: @options[:submit_only],
+          force: @options[:force]
+        )
 
-        unless @options[:status]
-          request["Content-Type"] = "application/json"
-          request.body = JSON.generate(
-            text: text,
-            submit: @options[:submit],
-            enter_only: @options[:enter_only],
-            force: @options[:force]
-          )
-        end
-
-        Net::HTTP.start(uri.host, uri.port) { |http| http.request(request) }
+        Net::HTTP.start(
+          uri.host,
+          uri.port,
+          open_timeout: http_timeout(deadline),
+          read_timeout: http_timeout(deadline)
+        ) { |http| http.request(request) }
       end
 
-      if response.code == "202" && !@options[:async]
-        parsed = JSON.parse(response.body)
+      if response.code == "202" && @options[:wait]
+        parsed = parse_json_body(response.body)
         message_id = parsed["message_id"]
         if message_id
-          debug("queued message_id=#{message_id}, polling for delivery...")
-          result = poll_delivery(registry, message_id)
+          verbose("queued message_id=#{message_id}")
+          result = poll_delivery(registry, message_id, deadline: deadline)
           puts JSON.generate(result)
+          return 124 if result["status"] == "timeout"
+
           return result["status"] == "delivered" ? 0 : 1
         end
       end
 
-      puts response.body
+      parsed = parse_json_body(response.body)
+      puts JSON.generate(parsed)
       response.is_a?(Net::HTTPSuccess) ? 0 : 1
+    rescue TimeoutError => e
+      puts JSON.generate(ok: false, id: @options[:id], status: "timeout", error: e.message)
+      124
     end
 
     private
 
     def resolve_text
-      return "" if @options[:enter_only]
+      return "" if @options[:submit_only]
+      return @options[:message] if @options[:message]
+      return @argv.join(" ") unless @argv.empty?
+      return STDIN.read unless STDIN.tty?
 
-      @options[:message] || (@argv.empty? ? STDIN.read : @argv.join(" "))
+      raise "harnex send: no message provided (use --message, positional args, or pipe)"
     end
 
-    def poll_delivery(registry, message_id)
-      base = "http://#{registry.fetch('host', @options[:host])}:#{registry.fetch('port')}"
+    def poll_delivery(registry, message_id, deadline:)
+      base = "http://#{registry.fetch('host')}:#{registry.fetch('port')}"
       uri = URI("#{base}/messages/#{message_id}")
-      deadline = Time.now + @options[:wait_seconds]
-      dots = 0
 
       loop do
+        return({ "ok" => false, "status" => "timeout", "error" => timeout_message("delivery") }) if deadline_reached?(deadline)
+
         request = Net::HTTP::Get.new(uri)
         request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
-        response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 2) { |http| http.request(request) }
-        parsed = JSON.parse(response.body)
+        response = Net::HTTP.start(
+          uri.host,
+          uri.port,
+          open_timeout: http_timeout(deadline, cap: 1.0),
+          read_timeout: http_timeout(deadline, cap: 2.0)
+        ) { |http| http.request(request) }
+        parsed = parse_json_body(response.body)
+        status = parsed["status"]
 
-        case parsed["status"]
-        when "delivered", "failed"
-          warn("") if dots.positive?
-          return parsed
-        end
+        return parsed if %w[delivered failed].include?(status)
+        return parsed.merge("status" => "timeout", "error" => timeout_message("delivery")) if deadline_reached?(deadline)
 
-        if Time.now >= deadline
-          warn("") if dots.positive?
-          return parsed.merge("error" => "poll timeout after #{@options[:wait_seconds]}s")
-        end
-
-        warn(".") if @options[:debug] || dots.zero?
-        dots += 1
+        verbose("delivery status=#{status || 'unknown'}")
         sleep 0.25
       rescue StandardError => e
-        if Time.now >= deadline
-          return { "status" => "unknown", "error" => e.message }
-        end
+        return({ "ok" => false, "status" => "timeout", "error" => timeout_message("delivery") }) if deadline_reached?(deadline)
+
         sleep 0.25
       end
     end
@@ -183,7 +186,7 @@ module Harnex
     end
 
     def relay_enabled_for?(registry)
-      return false if @options[:enter_only] || @options[:status]
+      return false if @options[:submit_only]
       return false if @options[:relay] == false
 
       context = Harnex.current_session_context
@@ -196,37 +199,41 @@ module Harnex
       target_session_id != context.fetch(:session_id)
     end
 
-    def debug(message)
-      return unless @options[:debug]
+    def verbose(message)
+      return unless @options[:verbose]
 
       warn("[harnex send] #{message}")
     end
 
-    def wait_for_registry(repo_root)
+    def wait_for_registry(repo_root, deadline:)
       return nil if @options[:port]
 
-      deadline = Time.now + @options[:wait_seconds]
       loop do
         registry = resolve_registry(repo_root)
         return registry unless registry == :retry
-        return nil if Time.now >= deadline
+        return :timeout if deadline_reached?(deadline)
 
         sleep 0.1
       end
     end
 
     def resolve_registry(repo_root)
-      sessions =
-        Harnex.active_sessions(
-          repo_root,
-          id: @options[:id],
-          cli: @options[:cli]
-        )
-
+      sessions = Harnex.active_sessions(repo_root, id: @options[:id], cli: @options[:cli])
       return :retry if sessions.empty?
       return sessions.first if sessions.length == 1
 
       :ambiguous
+    end
+
+    def direct_registry
+      return {} unless @options[:port]
+
+      registry = {
+        "host" => @options[:host],
+        "port" => @options[:port]
+      }
+      registry["token"] = @options[:token] if @options[:token]
+      registry
     end
 
     def missing_session_message(repo_root)
@@ -251,17 +258,50 @@ module Harnex
       "multiple active harnex sessions found for #{scope}; use --id, --cli, or `harnex status` | active: #{detail}"
     end
 
-    def with_http_retry
-      deadline = Time.now + @options[:wait_seconds]
+    def with_http_retry(deadline:)
       loop do
+        raise TimeoutError, timeout_message("request") if deadline_reached?(deadline)
+
         return yield
-      rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, EOFError
-        raise if Time.now >= deadline
-        sleep 0.1
-      rescue Net::ReadTimeout, Net::OpenTimeout
-        raise if Time.now >= deadline
+      rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, EOFError, Net::ReadTimeout, Net::OpenTimeout => e
+        raise TimeoutError, timeout_message("request") if deadline_reached?(deadline)
+
+        verbose("retrying after #{e.class}")
         sleep 0.1
       end
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def deadline_reached?(deadline)
+      monotonic_now >= deadline
+    end
+
+    def http_timeout(deadline, cap: nil)
+      remaining = deadline - monotonic_now
+      remaining = [remaining, MIN_HTTP_TIMEOUT].max
+      cap ? [remaining, cap].min : remaining
+    end
+
+    def timeout_message(phase)
+      "#{phase} timed out after #{@options[:timeout]}s"
+    end
+
+    def parse_json_body(body)
+      JSON.parse(body.to_s.empty? ? "{}" : body.to_s)
+    rescue JSON::ParserError
+      { "ok" => false, "error" => "invalid json response", "raw_body" => body.to_s }
+    end
+
+    def validate_modes!
+      raise "--submit-only cannot be combined with --no-submit" if @options[:submit_only] && !@options[:submit]
+
+      return unless @options[:submit_only]
+      return if @options[:message].nil? && @argv.empty?
+
+      raise "--submit-only does not accept message text"
     end
 
     def parser

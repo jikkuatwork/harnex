@@ -25,6 +25,37 @@ Check environment variables to understand your role:
 If these are set, you are **inside a harnex session** and can send messages to
 peer sessions or spawn new worker sessions.
 
+## Mode preference
+
+When starting another agent session for the user, default to a visible tmux
+session via `harnex run <cli> --tmux`. That is the preferred interactive mode
+because the user can watch the peer's work live.
+
+Use other modes only when the user asks for them or when visibility is not
+wanted:
+
+- prefer `--tmux` over a hidden foreground PTY for peer-agent work
+- use plain foreground `harnex run` only when the current terminal is meant to
+  become that peer's UI
+- use `--detach` only for explicitly headless/background workflows
+
+## Return channel first
+
+Before you start a peer session or send it work, decide how the result will get
+back to you.
+
+Preferred pattern when you are inside harnex:
+- Use your own `HARNEX_ID` as the return address
+- Tell the peer to send its final result back with `harnex send --id <YOUR_ID>`
+- Wait for the peer's reply; do not rely on scraping logs or tmux panes as the
+  primary way to collect the answer
+
+Fallback when you are not inside harnex:
+- Define another explicit return channel before delegating, such as a known file
+  path in the repo
+
+Do not launch a worker/reviewer without an explicit completion contract.
+
 ## Core commands
 
 ### Send a message to a peer agent
@@ -38,13 +69,13 @@ harnex send --id <ID> --message "<text>"
 - Message is auto-submitted (peer receives it as a prompt)
 - `--no-submit` types without pressing Enter
 - `--force` sends even if peer UI is not at a prompt (bypasses queue)
-- `--enter` sends only Enter (submit what's already in the input box)
-- `--async` returns immediately with a message_id (don't wait for delivery)
+- `--submit-only` sends only Enter (submit what's already in the input box)
+- `--no-wait` returns immediately with a message_id (don't wait for delivery)
 - `--cli` filters by CLI type when multiple sessions share resolution scope
 
 When the target agent is busy, the message is **queued** (HTTP 202) and
 delivered automatically when the agent returns to a prompt. The sender polls
-until delivery completes (up to `--wait` seconds, default 30).
+until delivery completes using one overall `--timeout` budget (default 30s).
 
 **Multi-line messages**: use a heredoc:
 
@@ -68,13 +99,13 @@ Shows live sessions with their ID, CLI, port, PID, age, and input state.
 ### Inspect a specific session
 
 ```bash
-harnex send --id <ID> --status
+harnex status --id <ID> --json
 ```
 
-Returns JSON with input state, agent state, inbox stats, injection count,
+Returns JSON with input state, agent state, inbox stats, description,
 watch config, and timestamps.
 
-### Spawn a detached worker session
+### Only when explicitly requested: spawn a detached worker session
 
 ```bash
 # Headless (no terminal)
@@ -88,7 +119,10 @@ harnex run codex --id impl-1 --tmux cx-p1 -- --cd /path/to/worktree
 - `--tmux` creates a tmux window (implies `--detach`)
 - `--tmux NAME` sets a custom window title (keep names terse: `cx-p3`, `cl-r3`)
 - `--context TEXT` sets an initial prompt with session ID auto-included
+- `--description TEXT` stores a short session description in the registry/API
 - Returns immediately; use `harnex send` to inject work, `harnex wait` to block
+
+Do this only if the user explicitly asks for detached/background execution.
 
 #### Using `--context` to orient spawned agents
 
@@ -150,7 +184,31 @@ When the user (or a relay message) asks you to reply to the other agent:
 harnex send --id <TARGET_ID> --message "Your response here"
 ```
 
+### Delegate work and get the answer back
+
+When you ask a peer agent to do work, include the return path in the task
+itself.
+
+Preferred when you are inside harnex:
+
+```bash
+harnex send --id reviewer --message "$(cat <<EOF
+Review the current working tree.
+
+Return your final findings to me with:
+harnex send --id $HARNEX_ID --message '<findings>'
+
+Use findings-first format with file paths and line numbers where possible.
+EOF
+)"
+```
+
+Then wait for the peer to answer you. Do not assume you can reconstruct the
+result later from detached logs or tmux capture.
+
 ### Supervisor pattern
+
+Use this only when the user explicitly wants detached/background workers.
 
 A supervisor session spawns workers, sends them tasks, and waits for completion:
 
@@ -193,3 +251,7 @@ receive this hook, read the file and act on its contents.
    manually prepend them.
 6. When composing a message to send, be concise and actionable — the peer agent
    receives it as a prompt and will act on it.
+7. Do not spawn detached or tmux-backed sessions unless the user explicitly
+   asked for detached/background execution.
+8. Before delegating work, define the result return path. Prefer a reply back to
+   your own `HARNEX_ID` over logs, pane capture, or other indirect collection.

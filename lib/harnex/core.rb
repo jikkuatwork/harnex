@@ -1,27 +1,34 @@
 require "digest"
 require "fileutils"
 require "securerandom"
+require "set"
 require "socket"
 
 module Harnex
+  class BinaryNotFound < RuntimeError; end
+
   module_function
 
-  def env_value(name, legacy: nil, default: nil)
-    return ENV[name] if ENV.key?(name)
-    return ENV[legacy] if legacy && ENV.key?(legacy)
-
-    default
+  def env_value(name, default: nil)
+    ENV.fetch(name, default)
   end
 
-  DEFAULT_HOST = env_value("HARNEX_HOST", legacy: "CXW_HOST", default: "127.0.0.1")
-  DEFAULT_BASE_PORT = Integer(env_value("HARNEX_BASE_PORT", legacy: "CXW_BASE_PORT", default: "43000"))
-  DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", legacy: "CXW_PORT_SPAN", default: "4000"))
-  DEFAULT_ID = env_value("HARNEX_ID", legacy: "HARNEX_LABEL", default: "default")
-  DEFAULT_CLI = "codex"
+  DEFAULT_HOST = env_value("HARNEX_HOST", default: "127.0.0.1")
+  DEFAULT_BASE_PORT = Integer(env_value("HARNEX_BASE_PORT", default: "43000"))
+  DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", default: "4000"))
+  DEFAULT_ID = "default"
   WATCH_DEBOUNCE_SECONDS = 1.0
-  STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", legacy: "CXW_STATE_DIR", default: "~/.local/state/harnex"))
+  STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", default: "~/.local/state/harnex"))
   SESSIONS_DIR = File.join(STATE_DIR, "sessions")
   WatchConfig = Struct.new(:absolute_path, :display_path, :hook_message, :debounce_seconds, keyword_init: true)
+  ID_ADJECTIVES = %w[
+    bold blue calm cool dark dry fast gold gray green
+    keen loud mint pale pink red shy slim soft warm
+  ].freeze
+  ID_NOUNS = %w[
+    ant bat bee cat cod cow cub doe elk fox
+    hen jay kit owl pug ram ray seal wasp yak
+  ].freeze
 
   def resolve_repo_root(path = Dir.pwd)
     output, status = Open3.capture2("git", "rev-parse", "--show-toplevel", chdir: path)
@@ -52,21 +59,10 @@ module Harnex
     value.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
   end
 
-  def configured_id
-    value = env_value("HARNEX_ID", legacy: "HARNEX_LABEL")
-    return nil if value.nil? || value.to_s.strip.empty?
-
-    normalize_id(value)
-  end
-
-  def default_id(cli = DEFAULT_CLI)
-    configured_id || normalize_id(cli || DEFAULT_CLI)
-  end
-
   def current_session_context(env = ENV)
     session_id = env["HARNEX_SESSION_ID"].to_s.strip
     cli = env["HARNEX_SESSION_CLI"].to_s.strip
-    id = (env["HARNEX_ID"] || env["HARNEX_SESSION_LABEL"]).to_s.strip
+    id = env["HARNEX_ID"].to_s.strip
     repo_root = env["HARNEX_SESSION_REPO_ROOT"].to_s.strip
     return nil if session_id.empty? || cli.empty? || id.empty?
 
@@ -86,14 +82,18 @@ module Harnex
     "#{header}\n#{body}"
   end
 
-  def suspicious_option_value?(value)
-    value.to_s.start_with?("-")
+  def active_session_ids(repo_root)
+    active_sessions(repo_root).map { |session| session["id"].to_s.downcase }.to_set
   end
 
-  def ensure_option_value!(option_name, value)
-    return value unless suspicious_option_value?(value)
+  def generate_id(repo_root)
+    taken = active_session_ids(repo_root)
+    ID_ADJECTIVES.product(ID_NOUNS).shuffle.each do |adj, noun|
+      candidate = "#{adj}-#{noun}"
+      return candidate unless taken.include?(candidate)
+    end
 
-    raise ArgumentError, "#{option_name} requires a value"
+    "session-#{SecureRandom.hex(4)}"
   end
 
   def registry_path(repo_root, id = DEFAULT_ID)
@@ -105,6 +105,12 @@ module Harnex
     exit_dir = File.join(STATE_DIR, "exits")
     FileUtils.mkdir_p(exit_dir)
     File.join(exit_dir, "#{session_file_slug(repo_root, id)}.json")
+  end
+
+  def output_log_path(repo_root, id)
+    output_dir = File.join(STATE_DIR, "output")
+    FileUtils.mkdir_p(output_dir)
+    File.join(output_dir, "#{session_file_slug(repo_root, id)}.log")
   end
 
   def session_file_slug(repo_root, id)
@@ -192,7 +198,9 @@ module Harnex
   end
 
   def build_adapter(cli, argv)
-    Adapters.build(cli || DEFAULT_CLI, argv)
+    raise ArgumentError, "cli is required" if cli.to_s.strip.empty?
+
+    Adapters.build(cli, argv)
   end
 
   def session_cli(session)
@@ -207,7 +215,6 @@ module Harnex
     display_path = path.to_s.strip
     raise ArgumentError, "--watch requires a value" if display_path.empty?
 
-    display_path = ensure_option_value!("--watch", display_path)
     absolute_path = File.expand_path(display_path, repo_root)
     FileUtils.mkdir_p(File.dirname(absolute_path))
 

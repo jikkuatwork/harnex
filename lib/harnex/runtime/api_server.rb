@@ -55,11 +55,10 @@ module Harnex
         return unauthorized(client) unless authorized?(headers)
 
         json(client, 200, @session.status_payload)
-      when ["POST", "/exit"]
+      when ["POST", "/stop"]
         return unauthorized(client) unless authorized?(headers)
 
-        result = @session.inject_exit
-        json(client, 200, result.merge(ok: true, signal: "exit_sequence_sent"))
+        json(client, 200, @session.inject_stop)
       when ["POST", "/send"]
         return unauthorized(client) unless authorized?(headers)
 
@@ -100,7 +99,11 @@ module Harnex
     rescue ArgumentError => e
       json(client, 409, ok: false, error: e.message)
     rescue StandardError => e
-      json(client, 500, ok: false, error: e.message)
+      if e.message.start_with?("inbox full")
+        json(client, 503, ok: false, error: e.message)
+      else
+        json(client, 500, ok: false, error: e.message)
+      end
     ensure
       client.close unless client.closed?
     end
@@ -157,6 +160,7 @@ module Harnex
         400 => "Bad Request",
         401 => "Unauthorized",
         409 => "Conflict",
+        503 => "Service Unavailable",
         404 => "Not Found",
         500 => "Internal Server Error"
       }.fetch(code, "OK")

@@ -81,6 +81,22 @@ class ClaudeAdapterTest < Minitest::Test
     )
     # Should not raise — enter_only is allowed for workspace trust
     assert_equal false, payload[:input_state][:input_ready]
+    assert_equal [{ text: "\r", newline: false }], payload[:steps]
+  end
+
+  def test_build_send_payload_sends_submit_as_delayed_second_step
+    screen = "some output\n--INSERT--\n"
+    payload = @adapter.build_send_payload(
+      text: "review this diff",
+      submit: true,
+      enter_only: false,
+      screen_text: screen
+    )
+
+    assert_equal 2, payload[:steps].length
+    assert_equal "review this diff", payload[:steps][0][:text]
+    assert_equal "\r", payload[:steps][1][:text]
+    assert_equal 75, payload[:steps][1][:delay_ms]
   end
 
   # --- base_command ---

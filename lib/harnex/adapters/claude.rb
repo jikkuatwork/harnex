@@ -1,6 +1,8 @@
 module Harnex
   module Adapters
     class Claude < Base
+      SUBMIT_DELAY_MS = 75
+
       def initialize(extra_args = [])
         super("claude", extra_args)
       end
@@ -43,6 +45,31 @@ module Harnex
         end
       end
 
+      def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
+        state = input_state(screen_text)
+        if !force && blocked_state?(state, enter_only: enter_only)
+          raise ArgumentError, blocked_message(state, enter_only: enter_only)
+        end
+
+        steps = []
+        unless enter_only
+          body = text.to_s
+          steps << { text: body, newline: false } unless body.empty?
+        end
+
+        if submit || enter_only
+          step = { text: submit_bytes, newline: false }
+          step[:delay_ms] = SUBMIT_DELAY_MS if steps.any?
+          steps << step
+        end
+
+        {
+          steps: steps,
+          input_state: state,
+          force: force
+        }
+      end
+
       protected
 
       def allow_control_action?(state, enter_only:)
@@ -55,7 +82,7 @@ module Harnex
         if enter_only
           "Claude is waiting on the workspace trust prompt"
         else
-          "Claude is waiting on the workspace trust prompt; use `harnex send --enter` first or `--force` to bypass"
+          "Claude is waiting on the workspace trust prompt; use `harnex send --submit-only` first or `--force` to bypass"
         end
       end
     end

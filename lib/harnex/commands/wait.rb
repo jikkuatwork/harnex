@@ -154,9 +154,9 @@ module Harnex
     def parser
       @parser ||= OptionParser.new do |opts|
         opts.banner = "Usage: harnex wait [options]"
-        opts.on("--id ID", "Session ID to wait for") { |value| @options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!("--id", value)) }
-        opts.on("--until STATE", "Wait until session reaches STATE") { |value| @options[:until_state] = Harnex.ensure_option_value!("--until", value) }
-        opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = Harnex.ensure_option_value!("--repo", value) }
+        opts.on("--id ID", "Session ID to wait for") { |value| @options[:id] = Harnex.normalize_id(value) }
+        opts.on("--until STATE", "Wait until session reaches STATE") { |value| @options[:until_state] = value }
+        opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--timeout SECONDS", Float, "Maximum time to wait") { |value| @options[:timeout] = value }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end

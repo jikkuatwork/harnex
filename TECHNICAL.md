@@ -8,13 +8,14 @@ examples, see [README.md](README.md).
 ```
  bin/harnex
    │
-   └── lib/harnex.rb (~1900 lines, all classes below)
+   └── lib/harnex.rb (loader)
          │
-         ├── CLI          dispatch: run / send / status / wait
+         ├── CLI          dispatch: run / send / status / wait / stop
          ├── Runner        spawn sessions (foreground/detach/tmux)
          ├── Sender        resolve target, inject text
          ├── Status        list live sessions
          ├── Waiter        block until session exits
+         ├── Stopper       send stop sequence
          │
          ├── Session       PTY lifecycle, HTTP server, registry
          ├── SessionState  state machine (prompt/busy/blocked)
@@ -26,31 +27,41 @@ examples, see [README.md](README.md).
 
  lib/harnex/adapters/
    ├── base.rb     adapter interface
+   ├── generic.rb  fallback adapter for any CLI
    ├── codex.rb    codex-specific behavior
    └── claude.rb   claude-specific behavior
 ```
 
 ## Session Lifecycle
 
+Foreground execution is the default operating mode for a human directly using
+`harnex run`. For agent-to-agent delegation, a visible tmux session is the
+preferred interactive mode because it keeps the peer's work observable.
+
+Headless/background execution (`--detach`) should still be treated as opt-in.
+
 When you run `harnex run codex --id worker`:
 
 ```
  1. Parse wrapper options, build adapter
- 2. Spawn the agent CLI under a PTY (pseudoterminal)
- 3. Generate a random bearer token for API auth
- 4. Pick a port:
+ 2. Validate the target binary before spawn
+ 3. Spawn the agent CLI under a PTY (pseudoterminal)
+ 4. Generate a random bearer token for API auth
+ 5. Pick a port:
       hash(repo_root + id) % port_span + base_port
       walk forward until a free port is found
- 5. Start HTTP server on 127.0.0.1:<port>
- 6. Write registry file:
+ 6. Start HTTP server on 127.0.0.1:<port>
+ 7. Write registry file:
       ~/.local/state/harnex/sessions/<repo_hash>--<id>.json
- 7. Start background threads:
+      and open transcript file:
+      ~/.local/state/harnex/output/<repo_hash>--<id>.log
+ 8. Start background threads:
       - PTY reader (screen buffer)
       - State machine (adapter parses screen for state)
       - Inbox delivery (queue -> inject when prompt)
       - File watcher (if --watch was given)
- 8. Relay terminal I/O between user and agent
- 9. On exit: clean up registry, write exit status
+ 9. Relay terminal I/O between user and agent
+10. On exit: clean up registry, write exit status
 ```
 
 ## PTY and Screen Parsing
@@ -75,8 +86,9 @@ Each adapter in `lib/harnex/adapters/` implements:
 | `base_command`            | CLI args to launch the agent    |
 | `input_state(screen)`     | Parse screen -> state hash      |
 | `build_send_payload(...)` | Build injection with submit     |
+| `inject_exit(writer)`     | Send adapter-specific stop text |
 | `infer_repo_path(argv)`   | Extract repo path from CLI args |
-| `send_wait_seconds(...)`  | How long to wait before sending |
+| `wait_for_sendable(...)`  | Wait strategy before sending    |
 
 ### Input States
 
@@ -100,8 +112,10 @@ The adapter reads the screen and returns a state hash:
 ### Claude Adapter
 
 - Detects workspace trust prompt ("Quick safety check")
-- Allows `--enter` to clear the trust prompt
+- Allows `--submit-only` to clear the trust prompt
 - Detects prompt via `--INSERT--` marker or `›` prefix
+- Multi-step submit: types text, then sends Enter after a
+  short delay so pasted prompts are actually submitted
 
 ## State Machine
 
@@ -173,6 +187,7 @@ Returns JSON:
   "repo_root": "/path/to/repo",
   "cli": "codex",
   "id": "worker",
+  "description": "implement auth module",
   "pid": 12345,
   "host": "127.0.0.1",
   "port": 43123,
@@ -210,6 +225,13 @@ Send JSON body:
   is busy, message will auto-deliver
 - **400** — missing text or bad request
 - **409** — agent not ready (use `--force` to override)
+- **503** — inbox is full
+
+### `POST /stop`
+
+Tells the session adapter to inject its stop sequence.
+The `harnex stop` CLI retries transient API failures for up
+to its `--timeout` budget before returning exit code 124.
 
 ### `GET /messages/:id`
 
@@ -242,11 +264,27 @@ during lookups.
 When a session exits, harnex writes:
 
 ```
-~/.local/state/harnex/exits/<id>.json
+~/.local/state/harnex/exits/<repo_hash>--<normalized_id>.json
 ```
 
 This lets `harnex wait` return exit info even if the session
 registry entry is already gone.
+
+## Output Transcript
+
+Every session also writes a repo-keyed transcript:
+
+```
+~/.local/state/harnex/output/<repo_hash>--<normalized_id>.log
+```
+
+- PTY output is appended as bytes are read
+- The transcript is opened in append mode, so reusing an ID
+  does not wipe prior output
+- `output_log_path` is exposed via `status --json` and
+  detached `run` responses
+- The transcript is the source of truth for the planned
+  `harnex logs` operator interface
 
 ## Relay Headers
 
@@ -315,7 +353,7 @@ The skill tells agents:
 
 - How to detect they're inside a harnex session (env vars)
 - How to send messages, check status, spawn workers
-- How to use `--context`, `--force`, `--async`
+- How to use `--context`, `--force`, `--no-wait`
 - Relay header format and behavior
 - Collaboration patterns (reply, supervisor, file watch)
 - Safety rules (confirm before sending, no auto-loops)
@@ -379,10 +417,10 @@ picked up immediately.
 
 - Adapter prompt detection is heuristic-based. It works well
   but can misread unusual screen output.
-- `harnex send --port` cannot authenticate because the bearer
-  token is only available from the registry file.
-- Exit status files are keyed by ID only — can collide across
-  repos or repeated runs with the same ID.
+- There is still no first-class `harnex logs` command for
+  reading or following transcript files.
+- There is still no read-only HTTP output endpoint for local
+  dashboards or other tools.
 - File watching uses Linux inotify. No macOS/Windows support.
 - The HTTP server is a simple socket server, not a full
   framework. One thread per connection, no keep-alive.

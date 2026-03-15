@@ -5,13 +5,13 @@ require_relative "../lib/harnex"
 begin
   exit(Harnex::CLI.new(ARGV).run)
 rescue OptionParser::ParseError => e
-  trace = ENV["HARNEX_TRACE"] == "1" || ENV["CXW_TRACE"] == "1"
+  trace = ENV["HARNEX_TRACE"] == "1"
   warn "harnex: #{e.message}"
   warn "Try: harnex --help" unless trace
   warn e.backtrace.join("\n") if trace
   exit 2
 rescue StandardError => e
-  trace = ENV["HARNEX_TRACE"] == "1" || ENV["CXW_TRACE"] == "1"
+  trace = ENV["HARNEX_TRACE"] == "1"
   warn "harnex: #{e.message}"
   warn e.backtrace.join("\n") if trace
   exit 1

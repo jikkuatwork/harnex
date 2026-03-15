@@ -1,69 +1,51 @@
 # Issue 02: Wait-Until-Prompt Mode
 
-**Status**: **fixed**
+**Status**: fixed
 **Priority**: P1
 **Created**: 2026-03-14
 
 ## Problem
 
-`harnex wait` only blocks until a session **exits**. There is no way to block
-until a session returns to **prompt** (meaning: the agent finished its current
-task and is idle, ready for the next message).
+`harnex wait` originally only handled session exit. There was no clean way to
+block until a reused worker became idle again and was ready for the next
+message.
 
-This forces workflows into one of two patterns:
-1. One-shot workers: spawn → work → exit → wait. Requires a new session per phase.
-2. Polling: loop `harnex send --id X --status` checking for `prompt` state.
+That forced orchestration into either:
 
-Neither is great. One-shot wastes startup time. Polling is ugly and races.
+1. One-shot workers: spawn, do work, exit
+2. Polling: repeatedly query status until the session looked idle
 
-## Proposal
+Both patterns were worse than a first-class "wait until prompt" primitive.
 
-### `harnex wait --id <ID> --until prompt`
+## Resolution
 
-Blocks until the session's state machine transitions to `prompt`.
+This shipped as `harnex wait --id <ID> --until prompt`.
 
-Mechanics:
-- Connect to session's HTTP API
-- Poll `/status` at reasonable interval (500ms–1s)
-- Return when `agent_state == "prompt"`
-- Timeout via `--timeout SECS` (default: no timeout? or 3600?)
+Implementation notes:
 
-Return value (JSON):
+- `lib/harnex/commands/wait.rb` reads the session registry once, then polls the
+  local `/status` endpoint
+- readiness is based on `agent_state`, not just raw prompt text
+- `--timeout SECS` returns exit code `124` and a JSON timeout payload
+
+Success response shape:
+
 ```json
-{
-  "id": "worker",
-  "state": "prompt",
-  "waited_seconds": 45.2
-}
+{"ok":true,"id":"worker","state":"prompt","waited_seconds":45.2}
 ```
 
-### Why this matters
+## Why it mattered
 
-This is the missing primitive for multi-phase workflows where a supervisor
-reuses a session:
+This is the reuse primitive for multi-phase workflows:
 
 ```bash
-harnex run codex --id worker --tmux cx-w1
-harnex send --id worker --message "implement plan 150"
-harnex wait --id worker --until prompt    # blocks until codex finishes
-# supervisor inspects working tree, decides next action
-harnex send --id worker --message "now fix these issues: ..."
+harnex send --id worker --message "implement phase 1"
 harnex wait --id worker --until prompt
-harnex exit --id worker
-harnex wait --id worker                   # blocks until actual exit
+harnex send --id worker --message "now fix these review findings"
+harnex wait --id worker --until prompt
+harnex stop --id worker
+harnex wait --id worker
 ```
 
-Without this, the supervisor must either poll or use one-shot sessions.
-
-### Alternative considered
-
-Could use `harnex send --async` and then poll `/messages/:id` for delivery +
-completion. But that only tells you the message was delivered, not that the
-agent finished processing it.
-
-## Interaction with Issue 01
-
-Together with `harnex exit`, this gives the full lifecycle:
-```
-spawn → send → wait-until-prompt → (inspect/decide) → exit → wait-for-exit
-```
+Together with Issue 01, harnex now supports the full
+`send -> wait for prompt -> inspect -> stop -> wait for exit` loop.

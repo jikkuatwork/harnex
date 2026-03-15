@@ -4,43 +4,50 @@ require "shellwords"
 
 module Harnex
   class Runner
+    DEFAULT_TIMEOUT = 5.0
+    KNOWN_FLAGS = %w[
+      --id --description --detach --tmux --host --port --watch --context --timeout --help
+    ].freeze
+    VALUE_FLAGS = %w[
+      --id --description --host --port --watch --context --timeout
+    ].freeze
+
     def self.usage(program_name = "harnex run")
       <<~TEXT
-        Usage: #{program_name} [cli] [wrapper-options] [--] [cli-args...]
+        Usage: #{program_name} <cli> [options] [--] [cli-args...]
 
-        Wrapper options:
-          --id ID         Session ID (default: adapter name)
-          --detach        Start session in background and return immediately
-          --tmux [NAME]   Run detached session in a tmux window (implies --detach)
-                          NAME sets the window title (default: session ID)
-                          Tip: keep names terse (e.g. "cx-p3", "cl-r3") for narrow tab bars
-          --host HOST     Bind host for the local API (default: #{DEFAULT_HOST})
-          --port PORT     Force a specific local API port
-          --watch PATH    Watch PATH and auto-send a file-change hook after 1s quiet time
-          --context TEXT   Prepend context as initial prompt (auto-includes session ID)
-          -h, --help      Show this help
+        Options:
+          --id ID            Session identifier (default: random two-word ID)
+          --description TEXT Short description of what this session is doing
+          --detach           Start session in background and return JSON on stdout
+          --tmux [NAME]      Run in a tmux window (implies --detach)
+          --host HOST        Bind host for the local API (default: #{DEFAULT_HOST})
+          --port PORT        Force a specific local API port
+          --watch PATH       Auto-send a file-change hook on modification
+          --context TEXT     Inject as the initial prompt (prepends session header)
+          --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
+          -h, --help         Show this help
 
         Notes:
-          Supported CLIs: #{Adapters.supported.join(', ')}
-          If `cli` is omitted, Harnex uses: #{DEFAULT_CLI}
-
-          After `cli`, all remaining args are forwarded to that adapter's command.
-          Wrapper options may appear before or after `cli`.
-          Use `--` to forward args to the adapter without ambiguity.
+          CLIs with smart prompt detection: #{Adapters.known.join(', ')}
+          Any other CLI name is launched with generic wrapping.
+          Wrapper options may appear before or after <cli>.
       TEXT
     end
 
     def initialize(argv)
       @argv = argv.dup
       @options = {
-        id: Harnex.configured_id,
+        id: nil,
+        description: nil,
         host: DEFAULT_HOST,
-        port: (env_port = Harnex.env_value("HARNEX_PORT", legacy: "CXW_PORT")) && Integer(env_port),
+        port: nil,
         watch: nil,
         context: nil,
         detach: false,
         tmux: false,
         tmux_name: nil,
+        timeout: DEFAULT_TIMEOUT,
         help: false
       }
     end
@@ -52,94 +59,80 @@ module Harnex
         return 0
       end
 
-      # ID must be resolved before apply_context uses it
-      @options[:id] ||= Harnex.default_id(cli_name || DEFAULT_CLI)
-      child_args = apply_context(child_args)
-      adapter = Harnex.build_adapter(cli_name, child_args)
+      raise OptionParser::MissingArgument, "cli" if cli_name.nil?
+
+      repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
+      @options[:id] ||= Harnex.generate_id(repo_root)
+      effective_child_args = apply_context(child_args)
+      adapter = Harnex.build_adapter(cli_name, effective_child_args)
       @options[:detach] = true if @options[:tmux]
 
       if @options[:detach]
-        run_detached(adapter, cli_name, child_args)
+        run_detached(adapter, cli_name, child_args, repo_root)
       else
-        run_foreground(adapter, child_args)
+        run_foreground(adapter, repo_root)
       end
     end
 
-    def run_foreground(adapter, child_args)
-      command = adapter.build_command
-      repo_root = Harnex.resolve_repo_root(adapter.infer_repo_path(child_args))
-      watch = Harnex.build_watch_config(@options[:watch], repo_root)
-      session = Session.new(
-        adapter: adapter,
-        command: command,
-        repo_root: repo_root,
-        host: @options[:host],
-        port: @options[:port],
-        id: @options[:id],
-        watch: watch
-      )
-
-      session.run
+    def run_foreground(adapter, repo_root)
+      session = build_session(adapter, repo_root)
+      session.validate_binary!
+      warn("harnex: session #{session.id} on #{session.host}:#{session.port}")
+      session.run(validate_binary: false)
     end
 
-    def run_detached(adapter, cli_name, child_args)
+    def run_detached(adapter, cli_name, child_args, repo_root)
+      Session.validate_binary!(adapter.build_command)
+
       if @options[:tmux]
-        run_in_tmux(cli_name, child_args)
+        run_in_tmux(cli_name, child_args, repo_root)
       else
-        run_headless(adapter, child_args)
+        run_headless(adapter, repo_root)
       end
     end
 
-    def run_in_tmux(cli_name, child_args)
-      # Build the harnex command to run inside the tmux window (foreground, no --detach)
+    def run_in_tmux(cli_name, child_args, repo_root)
       harnex_bin = File.expand_path("../../../bin/harnex", __dir__)
-      tmux_cmd = [harnex_bin, "run"]
-      tmux_cmd << cli_name if cli_name
+      tmux_cmd = [harnex_bin, "run", cli_name]
       tmux_cmd += ["--id", @options[:id]]
+      tmux_cmd += ["--description", @options[:description]] if @options[:description]
       tmux_cmd += ["--host", @options[:host]]
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
       tmux_cmd += ["--watch", @options[:watch]] if @options[:watch]
+      tmux_cmd += ["--context", @options[:context]] if @options[:context]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
       window_name = @options[:tmux_name] || @options[:id]
-      shell_cmd = tmux_cmd.map { |a| Shellwords.shellescape(a) }.join(" ")
+      shell_cmd = tmux_cmd.map { |arg| Shellwords.shellescape(arg) }.join(" ")
 
-      # Try current tmux session first, fall back to creating a new session
-      if ENV["TMUX"]
-        system("tmux", "new-window", "-n", window_name, "-d", shell_cmd)
-      else
-        system("tmux", "new-session", "-d", "-s", "harnex", "-n", window_name, shell_cmd)
-      end
+      started =
+        if ENV["TMUX"]
+          system("tmux", "new-window", "-n", window_name, "-d", shell_cmd)
+        else
+          system("tmux", "new-session", "-d", "-s", "harnex", "-n", window_name, shell_cmd)
+        end
 
-      # Wait briefly for the session to register
-      deadline = Time.now + 5.0
-      registry = nil
-      repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
-      while Time.now < deadline
-        registry = Harnex.read_registry(repo_root, @options[:id])
-        break if registry
-        sleep 0.1
-      end
+      raise "tmux failed to start #{cli_name.inspect}" unless started
 
-      if registry
-        puts JSON.generate(
-          ok: true,
-          id: @options[:id],
-          cli: cli_name || DEFAULT_CLI,
-          pid: registry["pid"],
-          port: registry["port"],
-          mode: "tmux",
-          window: window_name
-        )
-        0
-      else
-        warn("harnex: detached session #{@options[:id]} did not register within 5s")
-        1
-      end
+      registry = wait_for_registration(repo_root)
+      return registration_timeout(@options[:id]) unless registry
+
+      payload = {
+        ok: true,
+        id: @options[:id],
+        cli: cli_name,
+        pid: registry["pid"],
+        port: registry["port"],
+        mode: "tmux",
+        window: window_name,
+        output_log_path: Harnex.output_log_path(repo_root, @options[:id])
+      }
+      payload[:description] = @options[:description] if @options[:description]
+      puts JSON.generate(payload)
+      0
     end
 
-    def run_headless(adapter, child_args)
-      repo_root = Harnex.resolve_repo_root(adapter.infer_repo_path(child_args))
+    def run_headless(adapter, repo_root)
       log_dir = File.join(Harnex::STATE_DIR, "logs")
       FileUtils.mkdir_p(log_dir)
       log_path = File.join(log_dir, "#{@options[:id]}.log")
@@ -153,56 +146,51 @@ module Harnex
         STDOUT.sync = true
         STDERR.sync = true
 
-        watch = Harnex.build_watch_config(@options[:watch], repo_root)
-        session = Session.new(
-          adapter: adapter,
-          command: adapter.build_command,
-          repo_root: repo_root,
-          host: @options[:host],
-          port: @options[:port],
-          id: @options[:id],
-          watch: watch
-        )
-
-        exit_code = session.run
+        session = build_session(adapter, repo_root)
+        exit_code = session.run(validate_binary: false)
         exit(exit_code || 1)
       end
 
       Process.detach(child_pid)
 
-      # Wait briefly for the session to register
-      deadline = Time.now + 5.0
-      registry = nil
-      while Time.now < deadline
-        registry = Harnex.read_registry(repo_root, @options[:id])
-        break if registry
-        sleep 0.1
-      end
+      registry = wait_for_registration(repo_root)
+      return registration_timeout(@options[:id]) unless registry
 
-      if registry
-        puts JSON.generate(
-          ok: true,
-          id: @options[:id],
-          cli: adapter.key,
-          pid: registry["pid"],
-          port: registry["port"],
-          mode: "headless",
-          log: log_path
-        )
-        0
-      else
-        warn("harnex: detached session #{@options[:id]} did not register within 5s")
-        1
-      end
+      payload = {
+        ok: true,
+        id: @options[:id],
+        cli: adapter.key,
+        pid: registry["pid"],
+        port: registry["port"],
+        mode: "headless",
+        log: log_path,
+        output_log_path: Harnex.output_log_path(repo_root, @options[:id])
+      }
+      payload[:description] = @options[:description] if @options[:description]
+      puts JSON.generate(payload)
+      0
+    end
+
+    private
+
+    def build_session(adapter, repo_root)
+      watch = Harnex.build_watch_config(@options[:watch], repo_root)
+      Session.new(
+        adapter: adapter,
+        command: adapter.build_command,
+        repo_root: repo_root,
+        host: @options[:host],
+        port: @options[:port],
+        id: @options[:id],
+        watch: watch,
+        description: @options[:description]
+      )
     end
 
     def adapter_repo_path(cli_name, child_args)
-      adapter = Harnex.build_adapter(cli_name, child_args)
-      adapter.infer_repo_path(child_args)
+      Harnex.build_adapter(cli_name, child_args).infer_repo_path(child_args)
     end
 
-    # Append context string (with session ID) to child args as the initial prompt.
-    # Both codex and claude accept a trailing positional [PROMPT] argument.
     def apply_context(child_args)
       return child_args unless @options[:context]
 
@@ -210,10 +198,23 @@ module Harnex
       child_args + [context]
     end
 
-    private
+    def wait_for_registration(repo_root)
+      deadline = Time.now + @options[:timeout]
+      loop do
+        registry = Harnex.read_registry(repo_root, @options[:id])
+        return registry if registry
+        return nil if Time.now >= deadline
+
+        sleep 0.1
+      end
+    end
+
+    def registration_timeout(id)
+      warn("harnex: detached session #{id} did not register within #{@options[:timeout]}s")
+      124
+    end
 
     def extract_wrapper_options(argv)
-      cli_index = find_cli_index(argv)
       cli_name = nil
       forwarded = []
       index = 0
@@ -226,18 +227,21 @@ module Harnex
           break
         when "-h", "--help"
           @options[:help] = true
-        when "--id", "--label"
+        when "--id"
           index += 1
-          raise OptionParser::MissingArgument, arg if index >= argv.length
-          @options[:id] = Harnex.normalize_id(Harnex.ensure_option_value!(arg, argv[index]))
-        when /\A--(?:id|label)=(.+)\z/
-          @options[:id] = Harnex.normalize_id(Regexp.last_match(1))
+          @options[:id] = Harnex.normalize_id(required_option_value(arg, argv[index]))
+        when /\A--id=(.+)\z/
+          @options[:id] = Harnex.normalize_id(required_option_value("--id", Regexp.last_match(1)))
+        when "--description"
+          index += 1
+          @options[:description] = required_option_value(arg, argv[index])
+        when /\A--description=(.+)\z/
+          @options[:description] = required_option_value("--description", Regexp.last_match(1))
         when "--detach"
           @options[:detach] = true
         when "--tmux"
           @options[:tmux] = true
-          # Peek at next arg — if it's not a flag or CLI name, treat as window name
-          if index + 1 < argv.length && !argv[index + 1].start_with?("-") && !Adapters.supported.include?(argv[index + 1])
+          if tmux_name_arg?(argv, index, cli_name)
             index += 1
             @options[:tmux_name] = argv[index]
           end
@@ -246,30 +250,31 @@ module Harnex
           @options[:tmux_name] = Regexp.last_match(1)
         when "--host"
           index += 1
-          raise OptionParser::MissingArgument, "--host" if index >= argv.length
-          @options[:host] = Harnex.ensure_option_value!("--host", argv[index])
+          @options[:host] = required_option_value(arg, argv[index])
         when /\A--host=(.+)\z/
-          @options[:host] = Regexp.last_match(1)
+          @options[:host] = required_option_value("--host", Regexp.last_match(1))
         when "--port"
           index += 1
-          raise OptionParser::MissingArgument, "--port" if index >= argv.length
-          @options[:port] = Integer(Harnex.ensure_option_value!("--port", argv[index]))
-        when /\A--port=(\d+)\z/
-          @options[:port] = Integer(Regexp.last_match(1))
+          @options[:port] = Integer(required_option_value(arg, argv[index]))
+        when /\A--port=(.+)\z/
+          @options[:port] = Integer(required_option_value("--port", Regexp.last_match(1)))
         when "--watch"
           index += 1
-          raise OptionParser::MissingArgument, "--watch" if index >= argv.length
-          @options[:watch] = Harnex.ensure_option_value!("--watch", argv[index])
+          @options[:watch] = required_option_value(arg, argv[index])
         when /\A--watch=(.+)\z/
-          @options[:watch] = Harnex.ensure_option_value!("--watch", Regexp.last_match(1))
+          @options[:watch] = required_option_value("--watch", Regexp.last_match(1))
         when "--context"
           index += 1
-          raise OptionParser::MissingArgument, "--context" if index >= argv.length
-          @options[:context] = Harnex.ensure_option_value!("--context", argv[index])
+          @options[:context] = required_option_value(arg, argv[index])
         when /\A--context=(.+)\z/
-          @options[:context] = Harnex.ensure_option_value!("--context", Regexp.last_match(1))
+          @options[:context] = required_option_value("--context", Regexp.last_match(1))
+        when "--timeout"
+          index += 1
+          @options[:timeout] = Float(required_option_value(arg, argv[index]))
+        when /\A--timeout=(.+)\z/
+          @options[:timeout] = Float(required_option_value("--timeout", Regexp.last_match(1)))
         else
-          if index == cli_index
+          if cli_name.nil?
             cli_name = arg
           else
             forwarded << arg
@@ -281,33 +286,52 @@ module Harnex
       [cli_name, forwarded]
     end
 
-    def find_cli_index(argv)
-      index = 0
+    def required_option_value(option_name, value)
+      raise OptionParser::MissingArgument, option_name if value.nil?
+      raise OptionParser::MissingArgument, option_name if value.match?(/\A-[A-Za-z]/)
+      return value unless value.start_with?("--")
+
+      flag = value.split("=", 2).first
+      raise OptionParser::MissingArgument, option_name if KNOWN_FLAGS.include?(flag)
+
+      value
+    end
+
+    def tmux_name_arg?(argv, index, cli_name)
+      value = argv[index + 1]
+      return false if value.nil? || value == "--" || wrapper_option_token?(value)
+      return true if cli_name
+
+      cli_candidate_after?(argv, index + 2)
+    end
+
+    def cli_candidate_after?(argv, index)
       while index < argv.length
         arg = argv[index]
         case arg
         when "--"
-          break
-        when "-h", "--help", "--detach"
+          return false
+        when "-h", "--help", "--detach", "--tmux"
           nil
-        when "--tmux"
-          # Skip optional name argument if present
-          if index + 1 < argv.length && !argv[index + 1].start_with?("-") && !Adapters.supported.include?(argv[index + 1])
-            index += 1
-          end
-        when "--id", "--label", "--host", "--port", "--watch"
+        when /\A--tmux=/
+          nil
+        when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|label|host|watch|tmux)=(.+)\z/, /\A--port=(\d+)\z/
+        when /\A--(?:id|description|host|port|watch|context|timeout)=/
           nil
         else
-          return index if Adapters.supported.include?(arg)
+          return true
         end
         index += 1
       end
 
-      nil
+      false
+    end
+
+    def wrapper_option_token?(arg)
+      KNOWN_FLAGS.include?(arg) ||
+        arg == "-h" ||
+        arg.start_with?("--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--context=", "--timeout=")
     end
   end
-
-  Launcher = Runner
 end

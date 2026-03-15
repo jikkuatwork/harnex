@@ -6,16 +6,19 @@ module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :output_log_path
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
       @host = host
       @id = Harnex.normalize_id(id)
       @watch = watch
+      @description = description.to_s.strip
+      @description = nil if @description.empty?
       @registry_path = Harnex.registry_path(repo_root, @id)
+      @output_log_path = Harnex.output_log_path(repo_root, @id)
       @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
       @port = Harnex.allocate_port(repo_root, @id, port, host: host)
@@ -26,15 +29,37 @@ module Harnex
       @started_at = Time.now
       @server = nil
       @reader = nil
+      @output_log = nil
       @writer = nil
       @pid = nil
+      @term_signal = nil
       @output_buffer = +""
       @output_buffer.force_encoding(Encoding::BINARY)
       @state_machine = SessionState.new(adapter)
       @inbox = Inbox.new(self, @state_machine)
     end
 
-    def run
+    def self.validate_binary!(command)
+      binary = Array(command).first.to_s
+      raise BinaryNotFound, "\"\" not found — is it installed and on your PATH?" if binary.empty?
+
+      if binary.include?("/")
+        return binary if File.executable?(binary) && !File.directory?(binary)
+
+        raise BinaryNotFound, "\"#{binary}\" not found — is it installed and on your PATH?"
+      end
+
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+        path = File.join(dir, binary)
+        return path if File.executable?(path) && !File.directory?(path)
+      end
+
+      raise BinaryNotFound, "\"#{binary}\" not found — is it installed and on your PATH?"
+    end
+
+    def run(validate_binary: true)
+      validate_binary! if validate_binary
+      prepare_output_log
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
 
@@ -51,6 +76,7 @@ module Harnex
       output_thread = start_output_thread
 
       _, status = Process.wait2(pid)
+      @term_signal = status.signaled? ? status.termsig : nil
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
 
       output_thread.join(1)
@@ -64,6 +90,7 @@ module Harnex
       persist_exit_status
       cleanup_registry
       @reader&.close unless @reader&.closed?
+      @output_log&.close unless @output_log&.closed?
       @writer&.close unless @writer&.closed?
     end
 
@@ -81,8 +108,10 @@ module Harnex
         command: command,
         started_at: @started_at.iso8601,
         last_injected_at: @last_injected_at&.iso8601,
-        injected_count: @injected_count
+        injected_count: @injected_count,
+        output_log_path: output_log_path
       }
+      payload[:description] = description if description
 
       if watch
         payload[:watch_path] = watch.display_path
@@ -106,15 +135,19 @@ module Harnex
       inject_sequence([{ text: text, newline: newline }])
     end
 
-    def inject_exit
+    def inject_stop
       raise "session is not running" unless pid && Harnex.alive_pid?(pid)
 
-      sequence = adapter.exit_sequence
-      inject_sequence([{ text: sequence, newline: false }])
+      @inject_mutex.synchronize do
+        adapter.inject_exit(@writer)
+        @state_machine.force_busy!
+      end
+
+      { ok: true, signal: "exit_sequence_sent" }
     end
 
     def inject_via_adapter(text:, submit:, enter_only:, force: false)
-      snapshot = wait_for_sendable_snapshot(submit: submit, enter_only: enter_only, force: force)
+      snapshot = adapter.wait_for_sendable(method(:screen_snapshot), submit: submit, enter_only: enter_only, force: force)
       payload = adapter.build_send_payload(
         text: text,
         submit: submit,
@@ -145,35 +178,21 @@ module Harnex
       nil
     end
 
+    def validate_binary!
+      self.class.validate_binary!(command)
+    end
+
     private
 
     def child_env
-      {
+      env = {
         "HARNEX_SESSION_ID" => session_id,
         "HARNEX_SESSION_CLI" => adapter.key,
         "HARNEX_ID" => id,
         "HARNEX_SESSION_REPO_ROOT" => repo_root
       }
-    end
-
-    def wait_for_sendable_snapshot(submit:, enter_only:, force:)
-      snapshot = screen_snapshot
-      return snapshot if force
-
-      wait_seconds = adapter.send_wait_seconds(submit: submit, enter_only: enter_only).to_f
-      return snapshot unless wait_seconds.positive?
-
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait_seconds
-      state = adapter.input_state(snapshot)
-
-      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline &&
-            adapter.wait_for_sendable_state?(state, submit: submit, enter_only: enter_only)
-        sleep 0.05
-        snapshot = screen_snapshot
-        state = adapter.input_state(snapshot)
-      end
-
-      snapshot
+      env["HARNEX_DESCRIPTION"] = description if description
+      env
     end
 
     def inject_sequence(steps)
@@ -233,6 +252,8 @@ module Harnex
     end
 
     def persist_exit_status
+      return unless defined?(@exit_code) && !@exit_code.nil?
+
       exit_path = Harnex.exit_status_path(repo_root, id)
       payload = {
         ok: true,
@@ -245,6 +266,7 @@ module Harnex
         exited_at: Time.now.iso8601,
         injected_count: @injected_count
       }
+      payload[:signal] = @term_signal if @term_signal
       Harnex.write_registry(exit_path, payload)
     rescue StandardError
       nil
@@ -294,6 +316,13 @@ module Harnex
       FileChangeHook.new(self, watch).start
     end
 
+    def prepare_output_log
+      @output_log&.close unless @output_log&.closed?
+      @output_log = File.open(output_log_path, "ab")
+      @output_log.sync = true
+      @output_log_failed = false
+    end
+
     def install_signal_handlers
       %w[INT TERM HUP QUIT].each do |signal_name|
         Signal.trap(signal_name) { forward_signal(signal_name) }
@@ -311,12 +340,24 @@ module Harnex
 
     def record_output(chunk)
       snapshot = @mutex.synchronize do
+        append_output_log(chunk)
         @output_buffer << chunk
         overflow = @output_buffer.bytesize - OUTPUT_BUFFER_LIMIT
         @output_buffer = @output_buffer.byteslice(overflow, OUTPUT_BUFFER_LIMIT) if overflow.positive?
         @output_buffer.dup
       end
       @state_machine.update(snapshot)
+    end
+
+    def append_output_log(chunk)
+      return unless @output_log
+
+      @output_log.write(chunk)
+    rescue StandardError => e
+      return if defined?(@output_log_failed) && @output_log_failed
+
+      @output_log_failed = true
+      warn("harnex: failed to write output log #{output_log_path}: #{e.message}")
     end
 
     def screen_snapshot

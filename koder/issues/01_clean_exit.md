@@ -1,4 +1,4 @@
-# Issue 01: Clean Exit Primitive
+# Issue 01: Clean Stop Primitive
 
 **Status**: fixed
 **Priority**: P1
@@ -6,60 +6,46 @@
 
 ## Problem
 
-There is no way for an external caller to gracefully terminate a harnex session.
+An external caller needed a clean way to tell a harnex-managed session to
+finish and exit without killing the PID directly.
 
-When a supervisor spawns a worker via `harnex run --detach` or `--tmux`, the
-worker runs until the human or the agent itself decides to quit. The supervisor
-has no CLI command to say "you're done, exit cleanly."
+That supervisor workflow is:
 
-This blocks the supervisor pattern for orchestration workflows where:
-1. Supervisor spawns worker, sends task, waits for prompt (task complete)
-2. Supervisor reads results from working tree / result files
-3. Supervisor signals worker to exit
-4. Supervisor moves to next phase
+1. Spawn a worker
+2. Send work
+3. Wait until the worker returns to prompt
+4. Inspect results
+5. Stop the worker cleanly
+6. Wait for actual exit
 
-Today step 3 requires either:
-- Hoping the prompt instructs the agent to self-exit (unreliable)
-- `kill` on the PID (unclean — no exit status file, no cleanup)
+Without a stop primitive, step 5 required either relying on the wrapped agent
+to self-exit or sending a raw process kill, which skipped the normal control
+path and made cleanup less predictable.
 
-## Proposal
+## Resolution
 
-### `harnex exit --id <ID>`
+This shipped as `harnex stop --id <ID>` plus `POST /stop` on the session API.
 
-Sends the adapter-appropriate exit sequence to the session's PTY:
-- Codex: `/exit\n`
-- Claude: `/exit\n`
+Implemented pieces:
 
-Mechanics:
-- Resolve session from registry (same as `harnex send`)
-- Call adapter method `exit_sequence()` → returns the keystrokes to send
-- Write sequence to PTY (bypasses inbox — this is a control action, not a message)
-- Return immediately (caller uses `harnex wait` to block on actual exit)
+- `lib/harnex/commands/stop.rb` resolves the target session and calls `/stop`
+- `lib/harnex/runtime/api_server.rb` exposes `POST /stop`
+- `lib/harnex/runtime/session.rb` implements `Session#inject_stop`
+- adapters own the stop sequence via `inject_exit(writer)`
 
-### API surface
+API response:
 
-```
-POST /exit
-Authorization: Bearer <token>
-
-Response: 200 {"ok": true, "signal": "exit_sequence_sent"}
+```json
+{"ok":true,"signal":"exit_sequence_sent"}
 ```
 
-### Adapter contract addition
+## Result
 
-```ruby
-# Base adapter — subclasses override
-def exit_sequence
-  "/exit\n"  # default, works for both codex and claude today
-end
-```
+The clean lifecycle is now:
 
-## Related
-
-This also improves the `harnex wait` story. A supervisor can now do:
 ```bash
-harnex exit --id worker
-harnex wait --id worker --timeout 10
+harnex send --id worker --message "implement phase 1"
+harnex wait --id worker --until prompt
+harnex stop --id worker
+harnex wait --id worker
 ```
-
-Which is a clean "finish and confirm" pattern.

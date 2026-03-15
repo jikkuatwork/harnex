@@ -5,84 +5,60 @@
 **Created**: 2026-03-14
 **Tags**: feature, architecture
 
-## Problem
+## Current state
 
-Harnex captures PTY output into a 64KB ring buffer for internal state
-detection, but there's no way for external consumers to read that output.
+Harnex now has the first piece of output visibility, but not the full feature:
 
-A supervisor orchestrating workers is blind to what they're doing. It can only:
-- Check state (`prompt` / `busy` / `blocked`)
-- Wait for exit
-- Read files the worker happened to write
+- `Session#record_output` still keeps the 64KB in-memory ring buffer used for
+  state detection
+- each session now also writes a repo-keyed transcript file at
+  `~/.local/state/harnex/output/<repo>--<id>.log`
+- transcript files now append across repeated same-ID launches instead of
+  truncating prior output
+- the transcript path is exposed as `output_log_path` in session status payloads
+  and detached `run` responses
 
-It can't see the worker's reasoning, progress, errors, or partial output.
+What is still missing:
 
-## Use Cases
+- no `harnex logs` command to read or follow that transcript
+- no read-only HTTP output endpoint for dashboards
+- no retention/rotation policy for long-lived transcripts
+- detached headless mode still has an incidental wrapper log at
+  `~/.local/state/harnex/logs/<id>.log`; that file is not repo-keyed and should
+  not be treated as the long-term output interface
 
-### 1. Supervisor visibility
+## Why the issue stays open
 
-A chain-implement supervisor spawns an implement worker. While the worker runs
-(5-10 minutes), the supervisor has zero visibility. With output streaming, it
-could:
-- Show a live progress summary
-- Detect early failures without waiting for exit
-- Make smarter decisions about when to intervene
+Supervisors still cannot ask harnex itself for live progress. They can discover
+the transcript path, but they must reach for external tools to read or tail it.
 
-### 2. Web dashboard
+That leaves three important gaps:
 
-Stream session output to a webapp for monitoring multi-agent workflows. A
-simple SSE or WebSocket endpoint on the existing HTTP server would allow a
-browser to show live terminal output for all active sessions.
+1. No built-in operator UX
+2. No stable API for web dashboards
+3. No transcript lifecycle policy
 
-### 3. Logging and audit
+## Recommended direction
 
-Capture full session transcripts for post-mortem analysis. Today the ring
-buffer overwrites — long sessions lose early output.
+Keep the file-first approach.
 
-## Possible Approaches
+1. Make the session-owned transcript file the source of truth
+2. Add a `harnex logs` command on top of it
+3. Add a read-only tail API after the CLI semantics settle
+4. Revisit SSE only if a browser/dashboard really needs push delivery
 
-### A. SSE endpoint on existing HTTP server
+## Planned phases
 
-```
-GET /output/stream
-Authorization: Bearer <token>
+### Phase 1 — Session-owned transcript file
 
-data: {"ts": "...", "chunk": "raw pty bytes (base64 or utf8)"}
-data: {"ts": "...", "chunk": "..."}
-```
+Done.
 
-Pros: Uses existing HTTP server, no new dependencies.
-Cons: SSE is unidirectional (fine for this use case).
+### Phase 2 — `harnex logs`
 
-### B. Log file + tail
+Add a CLI command that can print the current transcript and optionally follow
+new bytes while the session is still running.
 
-Write all PTY output to a file (`~/.local/state/harnex/logs/<repo>--<id>.log`).
-Consumers tail it. `harnex logs --id worker` as a convenience command.
+### Phase 3 — Read-only output API
 
-Pros: Simple, works with existing Unix tools.
-Cons: Disk usage, no structured framing.
-
-### C. Ring buffer API endpoint
-
-```
-GET /output?since=<cursor>&limit=100
-```
-
-Return chunks from the ring buffer with cursors for pagination.
-
-Pros: No disk overhead, random access.
-Cons: Limited history (64KB), cursor management complexity.
-
-## Recommendation
-
-Start with **B** (log file + `harnex logs`). It's the simplest, most Unix-y
-approach. The log file is useful even without streaming (post-mortem). Add **A**
-(SSE) later when real-time dashboard needs emerge.
-
-## Scope Note
-
-This is a long-term capability, not urgent. Filing to capture the idea while
-the orchestration model is being designed. The initial chain-implement rewrite
-can work without this — the supervisor reads working tree state and result
-files. But as workflows get more sophisticated, output visibility becomes
-essential.
+Add a cursor or byte-offset based HTTP endpoint for dashboards and other local
+consumers. Consider SSE only after that simpler tail API proves insufficient.

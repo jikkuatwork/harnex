@@ -51,6 +51,22 @@ class WaiterTest < Minitest::Test
     FileUtils.rm_f(exit_path) if exit_path
   end
 
+  def test_reads_signal_metadata_from_exit_status_file
+    repo_root = Dir.pwd
+    id = "signaled-worker-#{$$}"
+    exit_path = Harnex.exit_status_path(repo_root, id)
+
+    File.write(exit_path, JSON.generate(ok: true, id: id, exit_code: 143, signal: 15, status: "exited"))
+
+    waiter = Harnex::Waiter.new(["--id", id])
+    out, = capture_io { assert_equal 143, waiter.run }
+    data = JSON.parse(out)
+    assert_equal 143, data["exit_code"]
+    assert_equal 15, data["signal"]
+  ensure
+    FileUtils.rm_f(exit_path) if exit_path
+  end
+
   # --- wait-until-state with immediate prompt ---
 
   def test_until_prompt_succeeds_when_api_returns_prompt

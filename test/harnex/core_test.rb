@@ -1,6 +1,15 @@
 require_relative "../test_helper"
 
 class CoreTest < Minitest::Test
+  def with_active_session_ids(ids)
+    singleton = Harnex.singleton_class
+    original = Harnex.method(:active_session_ids)
+    singleton.send(:define_method, :active_session_ids) { |_repo_root| ids }
+    yield
+  ensure
+    singleton.send(:define_method, :active_session_ids, original)
+  end
+
   # --- normalize_id ---
 
   def test_normalize_id_strips_whitespace
@@ -116,32 +125,37 @@ class CoreTest < Minitest::Test
     assert_equal "/tmp/repo", ctx[:repo_root]
   end
 
-  def test_current_session_context_with_legacy_label
+  def test_current_session_context_returns_nil_without_harnex_id
     env = {
       "HARNEX_SESSION_ID" => "abc123",
-      "HARNEX_SESSION_CLI" => "codex",
-      "HARNEX_SESSION_LABEL" => "worker-1"
+      "HARNEX_SESSION_CLI" => "codex"
     }
-    ctx = Harnex.current_session_context(env)
-    assert_equal "worker-1", ctx[:id]
-    assert_nil ctx[:repo_root]
+    assert_nil Harnex.current_session_context(env)
   end
 
-  # --- suspicious_option_value? ---
+  # --- generate_id ---
 
-  def test_suspicious_option_value
-    assert Harnex.suspicious_option_value?("--id")
-    refute Harnex.suspicious_option_value?("hello")
+  def test_generate_id_returns_adjective_noun
+    with_active_session_ids(Set.new) do
+      id = Harnex.generate_id("/tmp/repo")
+      assert_match(/\A[a-z]+-[a-z]+\z/, id)
+    end
   end
 
-  # --- ensure_option_value! ---
-
-  def test_ensure_option_value_raises_on_suspicious
-    assert_raises(ArgumentError) { Harnex.ensure_option_value!("--id", "--port") }
+  def test_generate_id_avoids_collisions
+    with_active_session_ids(Set["bold-ant"]) do
+      id = Harnex.generate_id("/tmp/repo")
+      refute_equal "bold-ant", id
+    end
   end
 
-  def test_ensure_option_value_passes_through_normal
-    assert_equal "hello", Harnex.ensure_option_value!("--id", "hello")
+  def test_generate_id_falls_back_when_word_space_is_exhausted
+    taken = Harnex::ID_ADJECTIVES.product(Harnex::ID_NOUNS).map { |adj, noun| "#{adj}-#{noun}" }.to_set
+
+    with_active_session_ids(taken) do
+      id = Harnex.generate_id("/tmp/repo")
+      assert_match(/\Asession-[0-9a-f]{8}\z/, id)
+    end
   end
 
   # --- exit_status_path (bug #2 fix: includes repo_key) ---
@@ -156,6 +170,21 @@ class CoreTest < Minitest::Test
   def test_exit_status_path_differs_across_repos
     a = Harnex.exit_status_path("/tmp/repo-a", "worker")
     b = Harnex.exit_status_path("/tmp/repo-b", "worker")
+    refute_equal a, b
+  end
+
+  # --- output_log_path ---
+
+  def test_output_log_path_includes_repo_key
+    path = Harnex.output_log_path("/tmp/repo", "worker-1")
+    assert path.include?(Harnex.repo_key("/tmp/repo"))
+    assert path.end_with?("--worker-1.log")
+    assert path.include?("output")
+  end
+
+  def test_output_log_path_differs_across_repos
+    a = Harnex.output_log_path("/tmp/repo-a", "worker")
+    b = Harnex.output_log_path("/tmp/repo-b", "worker")
     refute_equal a, b
   end
 

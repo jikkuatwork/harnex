@@ -26,11 +26,11 @@ bin/harnex                       CLI entry point
 lib/harnex.rb                    Loader (requires all modules)
 lib/harnex/core.rb               Constants, env, registry, port allocation
 lib/harnex/cli.rb                Top-level command dispatch
-lib/harnex/commands/             Command implementations (run, send, wait, exit, status)
+lib/harnex/commands/             Command implementations (run, send, wait, stop, status)
 lib/harnex/runtime/              Session, state machine, inbox, API server
-lib/harnex/adapters/             Adapter base + CLI-specific adapters
+lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/linux_inotify.rb      inotify via Fiddle
-test/                            Minitest suite (84 tests)
+test/                            Minitest suite (111 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
@@ -44,7 +44,7 @@ skills/harnex/SKILL.md           Skill file for Claude/Codex integration
 - **`Harnex::Sender`** — `harnex send` (resolve target, inject text)
 - **`Harnex::Status`** — `harnex status` (list sessions)
 - **`Harnex::Waiter`** — `harnex wait` (block until exit or state)
-- **`Harnex::Exiter`** — `harnex exit` (send exit sequence)
+- **`Harnex::Stopper`** — `harnex stop` (send stop sequence)
 - **`Harnex::Session`** — PTY lifecycle, HTTP API server, registry
 - **`Harnex::SessionState`** — state machine (prompt/busy/blocked)
 - **`Harnex::Inbox`** — per-session message queue with delivery thread
@@ -60,14 +60,33 @@ May override:
 
 - `input_state(screen_text)` — parse screen to detect prompt/busy/blocked
 - `build_send_payload(...)` — build injection payload with submit behavior
-- `exit_sequence` — text to send for clean exit
+- `inject_exit(writer)` — send the adapter-specific stop sequence
 - `infer_repo_path(argv)` — extract repo path from CLI args
+- `wait_for_sendable(...)` — control send-readiness waiting behavior
 
 ## If you are running inside harnex
 
 Check `$HARNEX_ID` and `$HARNEX_SESSION_CLI` to confirm. You can use
 `harnex send`, `harnex status`, and `harnex wait` to coordinate with
 peer sessions. See `skills/harnex/SKILL.md` for full usage patterns.
+
+When starting a peer CLI session on the user's behalf, default to a
+visible interactive tmux session via `harnex run <cli> --tmux` so the
+user can inspect the peer's work live.
+
+Use hidden/background modes only when the user explicitly asks for them
+or when visibility is not wanted. In particular:
+
+- prefer `--tmux` over a hidden foreground PTY for delegated peer work
+- use plain foreground `harnex run` only when the current terminal is the
+  intended UI for that peer
+- use `--detach` only when the user explicitly wants headless/background
+  execution
+
+Before delegating work over harnex, define the return channel first.
+Preferred pattern: tell the peer to send its final result back to your own
+`$HARNEX_ID` with `harnex send`. Do not rely on detached logs or tmux pane
+capture as the primary way to collect the answer.
 
 ## Development notes
 

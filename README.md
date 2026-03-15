@@ -85,11 +85,15 @@ harnex run codex -- --cd ~/other/repo
 
 | Flag            | What it does                          |
 |-----------------|---------------------------------------|
-| `--id ID`       | Name this session (default: cli name) |
+| `--id ID`       | Name this session (default: random ID) |
+| `--description` | Store a short session description     |
 | `--detach`      | Run in background, no terminal        |
 | `--tmux [NAME]` | Run in a tmux window you can watch    |
+| `--host HOST`   | Bind a specific API host              |
+| `--port PORT`   | Force a specific API port             |
 | `--context TXT` | Give the agent a task on startup      |
 | `--watch PATH`  | Notify agent when a file changes      |
+| `--timeout SEC` | Wait budget for detached registration |
 
 ### `harnex send` — Talk to a running agent
 
@@ -100,12 +104,27 @@ harnex send --id worker --message "implement plan A"
 | Flag          | What it does                         |
 |---------------|--------------------------------------|
 | `--id ID`     | Which agent to talk to               |
+| `--repo PATH` | Resolve the session from a repo root |
+| `--cli CLI`   | Filter by CLI type                   |
 | `--message`   | The message text                     |
-| `--enter`     | Just press Enter (no new text)       |
+| `--submit-only` | Just press Enter (no new text)     |
 | `--no-submit` | Type the text but don't press Enter  |
-| `--status`    | Check if the agent is busy or ready  |
 | `--force`     | Send even if the agent looks busy    |
-| `--async`     | Don't wait for delivery confirmation |
+| `--no-wait`   | Don't wait for delivery confirmation |
+| `--relay`     | Force relay header formatting        |
+| `--no-relay`  | Suppress automatic relay headers     |
+| `--port` / `--token` | Send directly to a known API port |
+| `--timeout`   | Overall wait budget for lookup/delivery |
+
+### `harnex stop` — Ask an agent to stop
+
+```bash
+harnex stop --id worker
+harnex stop --id worker --timeout 5
+```
+
+`harnex stop` sends the adapter-specific stop sequence and retries transient API
+failures for up to the given timeout.
 
 ### `harnex status` — See running agents
 
@@ -115,6 +134,9 @@ harnex send --id worker --message "implement plan A"
   worker   codex   36s ago  prompt
   review   claude   8s ago  busy
 ```
+
+Use `harnex status --json` for the full payload, including `output_log_path` for
+detached transcript access.
 
 ### `harnex wait` — Wait for an agent to finish
 
@@ -185,6 +207,9 @@ doing.
 ```bash
 harnex run codex --id worker --detach
 ```
+
+Detached and tmux-backed runs return JSON that includes `output_log_path`, the
+repo-keyed transcript file for that session.
 
 ## Supervisor Pattern
 
@@ -262,11 +287,11 @@ doesn't need to exist when you start.
 
 ## Naming Sessions
 
-If you don't pick a name, harnex uses the agent name:
+If you don't pick a name, harnex generates a random two-word ID:
 
 ```bash
-harnex run codex               # id: codex
-harnex run claude              # id: claude
+harnex run codex               # id: e.g. bold-ant
+harnex run claude              # id: e.g. calm-otter
 harnex run codex --id impl-1   # id: impl-1
 harnex run codex --id impl-2   # id: impl-2
 ```

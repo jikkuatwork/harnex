@@ -3,6 +3,16 @@ module Harnex
     class Base
       PROMPT_PREFIXES = [">", "\u203A", "\u276F"].freeze
 
+      # Adapter contract — subclasses MUST implement:
+      #   base_command          -> Array[String]  CLI args to spawn
+      #
+      # Subclasses MAY override:
+      #   input_state(text)     -> Hash           Parse screen for state
+      #   build_send_payload    -> Hash           Build injection payload
+      #   inject_exit(writer)   -> void           Send a stop/exit sequence
+      #   infer_repo_path(argv) -> String         Extract repo path from CLI args
+      #   wait_for_sendable     -> String         Wait for a send-ready snapshot
+
       attr_reader :key
 
       def initialize(key, extra_args = [])
@@ -37,6 +47,26 @@ module Harnex
         false
       end
 
+      def wait_for_sendable(screen_snapshot_fn, submit:, enter_only:, force:)
+        snapshot = screen_snapshot_fn.call
+        return snapshot if force
+
+        wait_secs = send_wait_seconds(submit: submit, enter_only: enter_only).to_f
+        return snapshot unless wait_secs.positive?
+
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait_secs
+        state = input_state(snapshot)
+
+        while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline &&
+              wait_for_sendable_state?(state, submit: submit, enter_only: enter_only)
+          sleep 0.05
+          snapshot = screen_snapshot_fn.call
+          state = input_state(snapshot)
+        end
+
+        snapshot
+      end
+
       def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
         state = input_state(screen_text)
         if !force && blocked_state?(state, enter_only: enter_only)
@@ -54,15 +84,17 @@ module Harnex
         }
       end
 
-      def submit_bytes
-        "\r"
-      end
-
-      def exit_sequence
-        "/exit\n"
+      def inject_exit(writer)
+        writer.write("/exit")
+        writer.write(submit_bytes)
+        writer.flush
       end
 
       protected
+
+      def submit_bytes
+        "\r"
+      end
 
       def blocked_state?(state, enter_only:)
         state[:input_ready] == false && !allow_control_action?(state, enter_only: enter_only)
