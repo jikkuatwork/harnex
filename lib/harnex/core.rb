@@ -210,7 +210,7 @@ module Harnex
   def build_watch_config(path, repo_root)
     return nil if path.nil?
 
-    raise "file watch is unsupported on this system" unless LinuxInotify.available?
+    raise "file watch is unsupported on this system" unless Watcher.available?
 
     display_path = path.to_s.strip
     raise ArgumentError, "--watch requires a value" if display_path.empty?

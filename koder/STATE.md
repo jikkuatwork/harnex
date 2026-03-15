@@ -7,12 +7,12 @@ Updated: 2026-03-15
 - `lib/harnex.rb` is a 19-line loader.
 - Code is split into separate files:
   - `lib/harnex/core.rb` — constants, env helpers, registry, port allocation
-  - `lib/harnex/linux_inotify.rb` — inotify via Fiddle
+  - `lib/harnex/watcher.rb` + `watcher/{inotify,polling}.rb` — file watching (inotify on Linux, polling fallback on macOS/other)
   - `lib/harnex/adapters.rb` + `adapters/{base,generic,codex,claude}.rb`
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 111 minitest tests, all passing.
+- Test suite: `test/` with 121 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -37,6 +37,8 @@ Updated: 2026-03-15
   headless/background behavior.
 - Agent-facing docs now require an explicit return channel for delegated
   harnex work; preferred pattern is peer replies via `harnex send --id $HARNEX_ID`.
+- File watching is now cross-platform: inotify on Linux, stat-polling fallback
+  on macOS and other platforms. Zero external dependencies maintained.
 
 ## What harnex does
 
@@ -69,6 +71,11 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 04 | Output streaming | open | P2 |
 | 05 | Inbox fast-path deadlock | **fixed** | P1 |
 | 06 | Full adapter abstraction | open | P2 |
+| 07 | `stop` types exit but doesn't submit | open | P1 |
+| 08 | Send to fresh Codex times out | open | P2 |
+| 09 | Claude vim mode not detected | open | P2 |
+| 10 | Inbox management (list/drop/TTL) | open | P2 |
+| 11 | Tmux pane capture | open | P3 |
 
 See `koder/issues/` for details.
 
@@ -84,18 +91,15 @@ See `koder/plans/` for details.
 
 ## Next step
 
-**Implement phase 2 of the output streaming plan:** add a `harnex logs`
-command on top of the new session transcript file.
-
-Phase 1 established the storage layer and surfaced `output_log_path`, but there
-is still no first-class CLI for operators or supervisors to read or follow a
-worker's transcript. The next concrete step is a read-only `harnex logs --id`
-command with an initial snapshot mode and a `--follow` mode that tails new
-output while the session is still active.
+**Fix issue 07 (`harnex stop` not submitting):** this is the highest-priority
+open bug. The exit sequence is injected but the Enter keypress doesn't land,
+leaving sessions hanging after `harnex stop`. Likely needs a delay between
+text and newline in `inject_exit`, similar to the 75ms pattern in
+`build_send_payload`.
 
 ## Confirmed bugs from earlier review (all fixed)
 
-1. ~~`harnex send --port` broken for auth~~ → added `--token` flag
-2. ~~Exit status files keyed only by `id`~~ → `repo_key--id_key.json`
-3. ~~`harnex wait` depends on live registry~~ → falls back to exit file
-4. ~~Registry ID normalization collision~~ → `id_key` for matching
+1. ~~`harnex send --port` broken for auth~~ -> added `--token` flag
+2. ~~Exit status files keyed only by `id`~~ -> `repo_key--id_key.json`
+3. ~~`harnex wait` depends on live registry~~ -> falls back to exit file
+4. ~~Registry ID normalization collision~~ -> `id_key` for matching

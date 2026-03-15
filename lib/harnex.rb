@@ -3,7 +3,7 @@ require "json"
 require "open3"
 
 require_relative "harnex/core"
-require_relative "harnex/linux_inotify"
+require_relative "harnex/watcher"
 require_relative "harnex/adapters"
 require_relative "harnex/runtime/session_state"
 require_relative "harnex/runtime/message"

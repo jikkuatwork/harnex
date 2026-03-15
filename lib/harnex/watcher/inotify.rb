@@ -1,7 +1,7 @@
 require "fiddle/import"
 
 module Harnex
-  module LinuxInotify
+  module Inotify
     extend Fiddle::Importer
 
     IN_ATTRIB = 0x00000004
@@ -25,7 +25,7 @@ module Harnex
       end
 
       def directory_io(path, mask)
-        raise "file watch is unsupported on this system" unless available?
+        raise "inotify is not available on this system" unless available?
 
         fd = inotify_init
         raise "could not initialize file watch" if fd.negative?

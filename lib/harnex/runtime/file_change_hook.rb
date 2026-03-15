@@ -1,7 +1,7 @@
 module Harnex
   class FileChangeHook
     EVENT_HEADER_SIZE = 16
-    WATCH_MASK = LinuxInotify::IN_ATTRIB | LinuxInotify::IN_CLOSE_WRITE | LinuxInotify::IN_CREATE | LinuxInotify::IN_MOVED_TO
+    WATCH_MASK = Inotify::IN_ATTRIB | Inotify::IN_CLOSE_WRITE | Inotify::IN_CREATE | Inotify::IN_MOVED_TO
     RETRY_SECONDS = 1.0
     IDLE_SLEEP_SECONDS = 0.1
 
@@ -33,7 +33,7 @@ module Harnex
     end
 
     def watch_loop
-      io = LinuxInotify.directory_io(@target_dir, WATCH_MASK)
+      io = Watcher.directory_io(@target_dir, WATCH_MASK)
       loop do
         chunk = io.readpartial(4096)
         note_change if relevant_change?(chunk)

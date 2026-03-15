@@ -29,7 +29,9 @@ lib/harnex/cli.rb                Top-level command dispatch
 lib/harnex/commands/             Command implementations (run, send, wait, stop, status)
 lib/harnex/runtime/              Session, state machine, inbox, API server
 lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
-lib/harnex/linux_inotify.rb      inotify via Fiddle
+lib/harnex/watcher.rb            File watcher (auto-selects backend)
+lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
+lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
 test/                            Minitest suite (111 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
@@ -91,5 +93,5 @@ capture as the primary way to collect the answer.
 ## Development notes
 
 - Ruby 3.x, stdlib only (no gems)
-- Linux-only for file watching (inotify via Fiddle)
+- File watching: inotify on Linux, stat-polling fallback on macOS/other
 - Run tests: `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
