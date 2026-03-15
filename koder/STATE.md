@@ -86,6 +86,12 @@ See `koder/issues/` for details.
 | 01 | Monolith refactor | **done** (phases 1-2) |
 | 02 | Command & API redesign | **done** |
 | 03 | Output streaming | **in progress** (phase 1 done) |
+| 04 | Stop submit fix (#07) | open |
+| 05 | Send startup timeout (#08) | open |
+| 06 | Claude vim mode (#09) | open |
+| 07 | Inbox management (#10) | open |
+
+Plans 04–07 are **layer A** (multi-agent reliability). Sequence: 04 → 05 → 06 → 07.
 
 See `koder/plans/` for details.
 
