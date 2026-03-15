@@ -56,6 +56,35 @@ Fallback when you are not inside harnex:
 
 Do not launch a worker/reviewer without an explicit completion contract.
 
+## Two rules for every send
+
+**1. Keep messages short — use file references for long prompts.**
+Long inline prompts can stall delivery (PTY buffer limits) and break shell
+quoting. Instead, write the full task to a file and tell the peer to read it:
+
+```bash
+# Write the task to a file
+cat > /tmp/task-impl1.md <<'EOF'
+Implement phase 2 from koder/plans/03_output_streaming.md.
+... detailed instructions ...
+EOF
+
+# Send a short message pointing to it
+harnex send --id impl-1 --message "Read and execute /tmp/task-impl1.md. When done, send results back: harnex send --id $HARNEX_ID --message '<summary>'"
+```
+
+If the task is already written down (a plan file, issue, koder doc), just
+reference it directly — no need for a temp file.
+
+**2. Always tell the peer how to reply.**
+Every delegated task must include a return path. Without it, the peer finishes
+silently and you have no way to collect the result:
+
+```bash
+# Always end with the reply instruction
+harnex send --id impl-1 --message "Review src/auth.rb. When done: harnex send --id $HARNEX_ID --message '<your findings>'"
+```
+
 ## Core commands
 
 ### Send a message to a peer agent
@@ -76,21 +105,6 @@ harnex send --id <ID> --message "<text>"
 When the target agent is busy, the message is **queued** (HTTP 202) and
 delivered automatically when the agent returns to a prompt. The sender polls
 until delivery completes using one overall `--timeout` budget (default 120s).
-
-**Prefer file references over inline text**: when the task is already written
-down (a plan file, issue, or temp file), point the peer to it instead of
-pasting the full content into `--message`. This avoids shell quoting issues
-and keeps the send payload small:
-
-```bash
-# Good: reference the plan
-harnex send --id impl-1 --message "Implement phase 2 from koder/plans/03_output_streaming.md. Send results back: harnex send --id $HARNEX_ID"
-
-# Good: reference a task file you already wrote
-harnex send --id impl-1 --message "Your task is in /tmp/task.txt — read and execute it. Send results back: harnex send --id $HARNEX_ID"
-
-# Avoid: pasting large multi-line prompts inline (shell quoting breaks easily)
-```
 
 **Multi-line messages** (when a file reference isn't practical): use a heredoc:
 

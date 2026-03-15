@@ -110,7 +110,7 @@ class ClaudeAdapterTest < Minitest::Test
     assert_equal 2, payload[:steps].length
     assert_equal "review this diff", payload[:steps][0][:text]
     assert_equal "\r", payload[:steps][1][:text]
-    assert_equal 75, payload[:steps][1][:delay_ms]
+    assert_operator payload[:steps][1][:delay_ms], :>=, 75
   end
 
   def test_inject_exit_uses_submit_delay

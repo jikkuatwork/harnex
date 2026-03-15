@@ -2,6 +2,7 @@ module Harnex
   module Adapters
     class Codex < Base
       SUBMIT_DELAY_MS = 75
+      SUBMIT_DELAY_PER_KB_MS = 50
       SEND_WAIT_SECONDS = 2.0
 
       def initialize(extra_args = [])
@@ -79,7 +80,7 @@ module Harnex
 
         if submit || enter_only
           step = { text: submit_bytes, newline: false }
-          step[:delay_ms] = SUBMIT_DELAY_MS if steps.any?
+          step[:delay_ms] = submit_delay_ms(text) if steps.any?
           steps << step
         end
 
@@ -95,6 +96,11 @@ module Harnex
       end
 
       protected
+
+      def submit_delay_ms(text)
+        extra = (text.to_s.bytesize / 1024.0 * SUBMIT_DELAY_PER_KB_MS).ceil
+        SUBMIT_DELAY_MS + extra
+      end
 
       def blocked_message(state, enter_only:)
         return super if enter_only

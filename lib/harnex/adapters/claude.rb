@@ -2,6 +2,7 @@ module Harnex
   module Adapters
     class Claude < Base
       SUBMIT_DELAY_MS = 75
+      SUBMIT_DELAY_PER_KB_MS = 50
 
       def initialize(extra_args = [])
         super("claude", extra_args)
@@ -64,7 +65,7 @@ module Harnex
 
         if submit || enter_only
           step = { text: submit_bytes, newline: false }
-          step[:delay_ms] = SUBMIT_DELAY_MS if steps.any?
+          step[:delay_ms] = submit_delay_ms(text) if steps.any?
           steps << step
         end
 
@@ -80,6 +81,11 @@ module Harnex
       end
 
       protected
+
+      def submit_delay_ms(text)
+        extra = (text.to_s.bytesize / 1024.0 * SUBMIT_DELAY_PER_KB_MS).ceil
+        SUBMIT_DELAY_MS + extra
+      end
 
       def allow_control_action?(state, enter_only:)
         enter_only && state[:state] == "workspace-trust-prompt"
