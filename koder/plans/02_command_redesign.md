@@ -16,6 +16,101 @@ legacy patterns. There are no existing users — this is a clean break.
 5. No implicit behavior: bare `harnex` shows help
 6. No legacy aliases
 
+## Generic adapter and binary validation
+
+### Problem
+
+Currently `harnex run` only accepts CLIs with a registered adapter (`claude`,
+`codex`). Any other CLI name is rejected. And if a registered CLI's binary
+isn't installed, `PTY.spawn` raises a cryptic `Errno::ENOENT: No such file
+or directory - fork failed`.
+
+### Solution: two changes
+
+**1. Generic adapter for unknown CLIs**
+
+If the CLI name isn't in the adapter registry, fall back to a `Generic`
+adapter instead of raising an error. This lets `harnex run opencode`,
+`harnex run droid`, `harnex run aider`, etc. work out of the box.
+
+```ruby
+# adapters/generic.rb
+class Generic < Base
+  def initialize(cli_name, extra_args = [])
+    @cli_name = cli_name
+    super(cli_name, extra_args)
+  end
+
+  def base_command
+    [@cli_name]
+  end
+end
+```
+
+Update `Adapters.build`:
+
+```ruby
+def build(key, extra_args = [])
+  adapter_class = registry[key.to_s]
+  if adapter_class
+    adapter_class.new(extra_args)
+  else
+    Generic.new(key.to_s, extra_args)
+  end
+end
+```
+
+The generic adapter inherits all Base defaults:
+- `input_state` → always `:unknown` (no prompt detection)
+- `build_send_payload` → raw text injection
+- `exit_sequence` → `/exit\n`
+- `infer_repo_path` → `Dir.pwd`
+
+Known adapters (claude, codex) still get their smart prompt detection
+and submit behavior. New adapters can be added later for better support.
+
+`Adapters.supported` should be renamed or supplemented with
+`Adapters.known` to distinguish "has a dedicated adapter" from
+"can be launched". Help text should say:
+
+```
+CLIs with smart prompt detection: claude, codex
+Any other CLI name is launched with generic wrapping.
+```
+
+**2. Binary existence check before spawn**
+
+In `Session#run`, before `PTY.spawn`, check if the binary exists:
+
+```ruby
+def validate_binary!
+  binary = command.first
+  return if binary.include?("/") && File.executable?(binary)
+
+  resolved = which(binary)
+  return if resolved
+
+  raise Harnex::BinaryNotFound,
+    "\"#{binary}\" not found — is it installed and on your PATH?"
+end
+
+def which(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+    path = File.join(dir, name)
+    return path if File.executable?(path) && !File.directory?(path)
+  end
+  nil
+end
+```
+
+Define `Harnex::BinaryNotFound < RuntimeError` in core.rb.
+
+This gives a clear error:
+
+```
+harnex: "droid" not found — is it installed and on your PATH?
+```
+
 ## Random session IDs
 
 When `--id` is not specified, generate a random two-word ID like `blue-cat`.
@@ -297,10 +392,19 @@ strings matching `--<known-option>` patterns.
 
 ## Implementation phases
 
-### Phase 0: Random IDs and --description
+### Phase 0: Generic adapter, binary check, random IDs, --description
 
-1. Add `ID_ADJECTIVES` and `ID_NOUNS` arrays to `core.rb` (20 words each)
-2. Add `generate_id(repo_root)` and `active_session_ids(repo_root)` to `core.rb`
+1. Add `Harnex::BinaryNotFound < RuntimeError` to `core.rb`
+2. Add `adapters/generic.rb` — subclass of Base, takes cli name as command
+3. Update `Adapters.build` to fall back to `Generic` instead of raising
+4. Rename `Adapters.supported` → `Adapters.known` (adapters with smart
+   detection); add `Adapters.supported?` that returns true for any string
+5. Update help text: "CLIs with smart prompt detection: claude, codex.
+   Any other CLI name is launched with generic wrapping."
+6. Add `Session#validate_binary!` with `which()` helper, called at top
+   of `Session#run` before `PTY.spawn`
+7. Add `ID_ADJECTIVES` and `ID_NOUNS` arrays to `core.rb` (20 words each)
+8. Add `generate_id(repo_root)` and `active_session_ids(repo_root)` to `core.rb`
 3. In `Runner#run`: replace `@options[:id] ||= Harnex.default_id(cli_name)` with
    `@options[:id] ||= Harnex.generate_id(repo_root)` — note: repo_root must be
    resolved before ID generation, so reorder if needed
@@ -316,6 +420,10 @@ strings matching `--<known-option>` patterns.
 11. Print session info to stderr in foreground mode:
     `warn("harnex: session #{id} on #{host}:#{port}")`
 12. Tests:
+    - `Generic` adapter uses cli name as command
+    - `Adapters.build("opencode")` returns Generic, not raises
+    - `validate_binary!` raises BinaryNotFound for missing binary
+    - `validate_binary!` passes for existing binary (e.g. "ruby")
     - `generate_id` returns adjective-noun format
     - `generate_id` avoids collision with active sessions
     - `generate_id` falls back to hex when all combos taken (mock)
@@ -401,6 +509,8 @@ bin/harnex help status
 
 ## Done criteria
 
+- Any CLI name works via generic adapter; known adapters get smart detection
+- Missing binary gives clear error: `"X" not found — is it installed and on your PATH?`
 - Random two-word IDs generated when `--id` omitted from `harnex run`
 - `--description` stored in registry, exposed in API and env vars
 - No `CXW_*`, `--label`, `--status` (on send), `Launcher`, `DEFAULT_CLI`
