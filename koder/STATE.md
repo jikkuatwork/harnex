@@ -113,12 +113,16 @@ See `koder/plans/` for details.
 
 ## Next step
 
+Packaged as gem v0.1.0 (not yet published to rubygems). Install locally
+with `gem build harnex.gemspec && gem install ./harnex-0.1.0.gem`.
+
 Output streaming phase 3 (HTTP API) is deferred — `harnex pane --follow`
 covers the primary supervisor monitoring use case. Issue #06 (full adapter
 abstraction) is intentionally deferred until a third adapter hits the wall
 with the current contract.
 
 Potential next work:
+- Internal dogfooding before public gem release
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Add `harnex pane` to SKILL.md so agents know about it
 - Tackle retention/rotation for transcript files if they grow large
