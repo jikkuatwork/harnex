@@ -26,13 +26,13 @@ bin/harnex                       CLI entry point
 lib/harnex.rb                    Loader (requires all modules)
 lib/harnex/core.rb               Constants, env, registry, port allocation
 lib/harnex/cli.rb                Top-level command dispatch
-lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs)
+lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs, pane)
 lib/harnex/runtime/              Session, state machine, inbox, API server
 lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
-test/                            Minitest suite (149 tests)
+test/                            Minitest suite (160 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
@@ -51,6 +51,7 @@ skills/harnex/SKILL.md           Skill file for Claude/Codex integration
 - **`Harnex::SessionState`** — state machine (prompt/busy/blocked)
 - **`Harnex::Inbox`** — per-session message queue with delivery thread
 - **`Harnex::ApiServer`** — per-session HTTP control API
+- **`Harnex::Pane`** — `harnex pane` (capture a tmux pane snapshot)
 
 ## Adapter contract
 

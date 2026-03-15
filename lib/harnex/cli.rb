@@ -21,6 +21,8 @@ module Harnex
         Status.new(@argv.drop(1)).run
       when "logs"
         Logs.new(@argv.drop(1)).run
+      when "pane"
+        Pane.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -48,6 +50,8 @@ module Harnex
         Status.usage
       when "logs"
         Logs.usage
+      when "pane"
+        Pane.usage
       else
         usage
       end
@@ -62,6 +66,7 @@ module Harnex
           harnex stop --id ID [options]
           harnex status [options]
           harnex logs --id ID [options]
+          harnex pane --id ID [options]
           harnex help [command]
 
         Commands:
@@ -71,6 +76,7 @@ module Harnex
           stop    Send the adapter stop sequence to a session
           status  List live sessions
           logs    Read session output transcripts
+          pane    Capture the current tmux pane for a live session
           help    Show command help
 
         Notes:
@@ -83,6 +89,7 @@ module Harnex
           harnex run codex -- --cd /path/to/repo
           harnex status
           harnex logs --id main --follow
+          harnex pane --id main --lines 40
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

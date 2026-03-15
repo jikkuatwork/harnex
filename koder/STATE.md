@@ -1,18 +1,18 @@
 # Harnex State
 
-Updated: 2026-03-15
+Updated: 2026-03-16
 
 ## Current snapshot
 
-- `lib/harnex.rb` is a 19-line loader.
+- `lib/harnex.rb` is a 21-line loader.
 - Code is split into separate files:
   - `lib/harnex/core.rb` — constants, env helpers, registry, port allocation
   - `lib/harnex/watcher.rb` + `watcher/{inotify,polling}.rb` — file watching (inotify on Linux, polling fallback on macOS/other)
   - `lib/harnex/adapters.rb` + `adapters/{base,generic,codex,claude}.rb`
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
-  - `lib/harnex/commands/{run,send,wait,stop,status,logs}.rb`
+  - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 149 minitest tests, all passing.
+- Test suite: `test/` with 160 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -41,6 +41,9 @@ Updated: 2026-03-15
   - Inbox has TTL auto-expiry (default 120s), `pending_messages`, `drop`,
     `clear` methods, and API endpoints (`GET /inbox`, `DELETE /inbox`,
     `DELETE /inbox/:id`). Configurable via `--inbox-ttl` or `HARNEX_INBOX_TTL`.
+- Issue #11 is now implemented: `harnex pane --id <session>` captures a clean
+  tmux screen snapshot for live sessions, supports `--lines`/`--json`, and
+  fails clearly when `tmux` is unavailable or the session is not tmux-backed.
 
 ## What harnex does
 
@@ -57,6 +60,9 @@ Harnex is a local PTY harness for interactive terminal agents.
   or JSON output.
 - `harnex logs` reads the persisted transcript for a live or exited session,
   with last-N snapshot output and polling `--follow` mode.
+- `harnex pane` reads the current tmux pane for a live session and prints a
+  clean screen snapshot, optionally limited to the last N lines or wrapped in
+  JSON metadata.
 - `harnex wait` blocks until a session exits or reaches a target state
   (`--until prompt`).
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
@@ -79,7 +85,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 08 | Send to fresh Codex times out | **fixed** | P2 |
 | 09 | Claude vim mode not detected | **fixed** | P2 |
 | 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
-| 11 | Tmux pane capture | open | P3 |
+| 11 | Tmux pane capture | **fixed** | P3 |
 | 12 | State detection failures cause send/receive problems | **fixed** | P1 |
 
 See `koder/issues/` for details.
@@ -95,6 +101,7 @@ See `koder/issues/` for details.
 | 05 | Send startup timeout (#08) | **done** |
 | 06 | Claude vim mode (#09) | **done** |
 | 07 | Inbox management (#10) | **done** |
+| 08 | Pane capture (#11) | **done** |
 
 Plans 04-07 are **layer A** (multi-agent reliability).
 
@@ -106,9 +113,7 @@ See `koder/plans/` for details.
 authenticated output API on top of the transcript file so local tools can tail
 session output by byte offset.
 
-Alternatively, tackle issue #11 (tmux pane capture) which is a quick
-diagnostic tool for tmux-backed sessions, or issue #06 (full adapter
-abstraction).
+Alternatively, tackle issue #06 (full adapter abstraction).
 
 ## Confirmed bugs from earlier review (all fixed)
 
