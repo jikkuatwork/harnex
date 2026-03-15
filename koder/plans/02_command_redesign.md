@@ -16,6 +16,111 @@ legacy patterns. There are no existing users — this is a clean break.
 5. No implicit behavior: bare `harnex` shows help
 6. No legacy aliases
 
+## Random session IDs
+
+When `--id` is not specified, generate a random two-word ID like `blue-cat`.
+
+### Word lists
+
+Define two arrays in `core.rb`, 20 words each:
+
+```ruby
+ID_ADJECTIVES = %w[
+  bold blue calm cool dark dry fast gold gray green
+  keen loud mint pale pink red shy slim soft warm
+].freeze
+
+ID_NOUNS = %w[
+  ant bat bee cat cod cow cub doe elk fox
+  hen jay kit owl pug ram ray seal wasp yak
+].freeze
+```
+
+### Generation
+
+```ruby
+def generate_id(repo_root)
+  taken = active_session_ids(repo_root)
+  ID_ADJECTIVES.product(ID_NOUNS).shuffle.each do |adj, noun|
+    candidate = "#{adj}-#{noun}"
+    return candidate unless taken.include?(candidate)
+  end
+  # Fallback if all 400 combos taken (unlikely)
+  "session-#{SecureRandom.hex(4)}"
+end
+
+def active_session_ids(repo_root)
+  active_sessions(repo_root).map { |s| s["id"].to_s.downcase }.to_set
+end
+```
+
+### Where it's used
+
+Only in `harnex run` when `--id` is omitted:
+
+```ruby
+# In Runner#run, after cli_name is resolved:
+@options[:id] ||= Harnex.generate_id(repo_root)
+```
+
+All other commands (`send`, `wait`, `stop`) still **require** `--id`.
+The generated ID is printed to stderr: `harnex: session blue-cat on 127.0.0.1:43217`
+
+## Session description (`--description`)
+
+### Flag
+
+Add `--description TEXT` to `harnex run`:
+
+```
+--description TEXT  Short description of what this session is doing
+```
+
+### Storage
+
+- Stored in the registry JSON as `"description"` field
+- Exposed in `/status` API response as `"description"`
+- Passed to child as `HARNEX_DESCRIPTION` env var
+
+### In session.rb child_env:
+
+```ruby
+def child_env
+  env = {
+    "HARNEX_SESSION_ID" => session_id,
+    "HARNEX_SESSION_CLI" => adapter.key,
+    "HARNEX_ID" => id,
+    "HARNEX_SESSION_REPO_ROOT" => repo_root
+  }
+  env["HARNEX_DESCRIPTION"] = description if description
+  env
+end
+```
+
+### In `harnex status` table:
+
+Add a DESC column (truncated to 30 chars in table mode, full in --json):
+
+```
+ID        CLI     PID    PORT   AGE   STATE   DESC
+blue-cat  codex   12345  43217  3m    prompt  implement auth module
+red-fox   claude  12346  43218  12m   busy    fix payment bugs
+```
+
+### Self-discovery from inside a session
+
+The wrapped agent reads env vars to know its own identity:
+
+```
+$HARNEX_ID          → "blue-cat"
+$HARNEX_DESCRIPTION → "implement auth module"
+```
+
+These are already set (except HARNEX_DESCRIPTION which we add).
+The agent can also query its own session's API via the port in
+the registry, or use `harnex status --id $HARNEX_ID --json` to
+get full metadata.
+
 ## Exit codes (all commands)
 
 | Code | Meaning |
@@ -45,7 +150,8 @@ Show help text. Do NOT spawn a session.
 ```
 <cli>              Agent to launch (required: claude, codex)
 
---id ID            Session identifier (default: cli name)
+--id ID            Session identifier (default: random two-word, e.g. "blue-cat")
+--description TEXT Short description of what this session does
 --detach           Run in background, return JSON on stdout
 --tmux [NAME]      Run in a tmux window (implies --detach)
 --host HOST        Bind address for control API (default: 127.0.0.1)
@@ -58,7 +164,9 @@ Show help text. Do NOT spawn a session.
 
 Changes from current:
 - `<cli>` is **required** — remove `DEFAULT_CLI` fallback from dispatch
-- Print selected port to stderr: `harnex: listening on 127.0.0.1:43217`
+- `--id` defaults to random two-word ID (e.g. "blue-cat"), not cli name
+- Add `--description` — stored in registry, exposed in API, passed as env var
+- Print session info to stderr: `harnex: session blue-cat on 127.0.0.1:43217`
 - `--timeout` for detach registration wait (replaces hardcoded 5s)
 - Remove `--label` alias
 - Remove `Launcher` alias class
@@ -189,6 +297,31 @@ strings matching `--<known-option>` patterns.
 
 ## Implementation phases
 
+### Phase 0: Random IDs and --description
+
+1. Add `ID_ADJECTIVES` and `ID_NOUNS` arrays to `core.rb` (20 words each)
+2. Add `generate_id(repo_root)` and `active_session_ids(repo_root)` to `core.rb`
+3. In `Runner#run`: replace `@options[:id] ||= Harnex.default_id(cli_name)` with
+   `@options[:id] ||= Harnex.generate_id(repo_root)` — note: repo_root must be
+   resolved before ID generation, so reorder if needed
+4. Add `--description TEXT` to Runner's option parsing (both manual parser and
+   `--description=TEXT` form)
+5. Store `@options[:description]` in Runner, pass to Session constructor
+6. In `Session#initialize`: accept `description:` kwarg, store as `@description`
+7. In `Session#child_env`: add `"HARNEX_DESCRIPTION" => @description` when present
+8. In `Session#status_payload`: add `description: @description` when present
+9. In `Session#registry_payload`: description is included via status_payload
+10. In `Status#table_row`: add DESC column showing `session["description"]`
+    (truncate to 30 chars in table, full in --json)
+11. Print session info to stderr in foreground mode:
+    `warn("harnex: session #{id} on #{host}:#{port}")`
+12. Tests:
+    - `generate_id` returns adjective-noun format
+    - `generate_id` avoids collision with active sessions
+    - `generate_id` falls back to hex when all combos taken (mock)
+    - `--description` appears in status_payload
+    - `HARNEX_DESCRIPTION` appears in child_env
+
 ### Phase 1: Renames and removals
 
 1. Rename `exit` → `stop` everywhere:
@@ -268,6 +401,8 @@ bin/harnex help status
 
 ## Done criteria
 
+- Random two-word IDs generated when `--id` omitted from `harnex run`
+- `--description` stored in registry, exposed in API and env vars
 - No `CXW_*`, `--label`, `--status` (on send), `Launcher`, `DEFAULT_CLI`
   auto-spawn, or `configured_id` remain in the codebase
 - `exit` → `stop` rename complete (command, API, class, tests)
