@@ -2,6 +2,7 @@ require "fileutils"
 require "json"
 require "open3"
 
+require_relative "harnex/version"
 require_relative "harnex/core"
 require_relative "harnex/watcher"
 require_relative "harnex/adapters"
