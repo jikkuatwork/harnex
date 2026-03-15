@@ -138,7 +138,80 @@ class PaneCommandTest < Minitest::Test
     refute_nil payload["captured_at"]
   end
 
+  def test_follow_refreshes_until_pid_exits
+    write_registry("pane-session", pid: Process.pid)
+    pane = Harnex::Pane.new(["--id", "pane-session", "--repo", @repo_root, "--follow", "--interval", "0"])
+    status = successful_status
+
+    stub_tmux_system(pane, "pane-session")
+
+    call_count = 0
+    pane.define_singleton_method(:capture_command) do |_command|
+      call_count += 1
+      ["screen #{call_count}\n", "", status]
+    end
+
+    # Stub alive_pid? to return false after 2 captures
+    original_alive = Harnex.method(:alive_pid?)
+    Harnex.define_singleton_method(:alive_pid?) do |pid|
+      call_count >= 2 ? false : original_alive.call(pid)
+    end
+
+    out, = capture_io { assert_equal 0, pane.run }
+
+    assert_operator call_count, :>=, 2
+    # Last screen should be in output (clear codes + text)
+    assert_includes out, "screen"
+  ensure
+    Harnex.define_singleton_method(:alive_pid?, &original_alive) if original_alive
+  end
+
+  def test_follow_only_redraws_on_change
+    write_registry("pane-session", pid: Process.pid)
+    pane = Harnex::Pane.new(["--id", "pane-session", "--repo", @repo_root, "--follow", "--interval", "0"])
+    status = successful_status
+
+    stub_tmux_system(pane, "pane-session")
+
+    call_count = 0
+    pane.define_singleton_method(:capture_command) do |_command|
+      call_count += 1
+      ["same screen\n", "", status]
+    end
+
+    original_alive = Harnex.method(:alive_pid?)
+    Harnex.define_singleton_method(:alive_pid?) do |pid|
+      call_count >= 3 ? false : original_alive.call(pid)
+    end
+
+    out, = capture_io { pane.run }
+
+    # 3 captures but only 1 clear+draw (first time)
+    assert_equal 3, call_count
+    assert_equal 1, out.scan("\e[H\e[2J").length
+  ensure
+    Harnex.define_singleton_method(:alive_pid?, &original_alive) if original_alive
+  end
+
+  def test_help_shows_follow_option
+    pane = Harnex::Pane.new(["--help"])
+    out, = capture_io { pane.run }
+    assert_includes out, "--follow"
+    assert_includes out, "--interval"
+  end
+
   private
+
+  def stub_tmux_system(pane, window)
+    pane.define_singleton_method(:system) do |*args, **_kwargs|
+      case args
+      when ["tmux", "-V"], ["tmux", "has-session", "-t", window]
+        true
+      else
+        raise "unexpected system call: #{args.inspect}"
+      end
+    end
+  end
 
   def successful_status
     Object.new.tap do |status|

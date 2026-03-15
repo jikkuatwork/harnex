@@ -5,6 +5,8 @@ require "time"
 
 module Harnex
   class Pane
+    FOLLOW_INTERVAL = 1.0
+
     def self.usage(program_name = "harnex pane")
       <<~TEXT
         Usage: #{program_name} [options]
@@ -14,6 +16,8 @@ module Harnex
           --repo PATH   Resolve using PATH's repo root (default: current repo)
           --cli CLI     Filter the active session by CLI
           --lines N     Capture the last N lines instead of the full pane
+          --follow      Refresh the pane snapshot every second until the session exits
+          --interval N  Refresh interval in seconds for --follow (default: #{FOLLOW_INTERVAL.to_i})
           --json        Output JSON with capture metadata
           -h, --help    Show this help
       TEXT
@@ -26,6 +30,8 @@ module Harnex
         repo_path: Dir.pwd,
         cli: nil,
         lines: nil,
+        follow: false,
+        interval: FOLLOW_INTERVAL,
         json: false,
         help: false
       }
@@ -51,10 +57,14 @@ module Harnex
       window = session.fetch("id")
       return 1 unless tmux_window_exists?(window)
 
-      text = capture(window)
-      return 1 unless text
+      if @options[:follow]
+        follow(session, window)
+      else
+        text = capture(window)
+        return 1 unless text
 
-      emit_output(session.fetch("id"), text)
+        emit_output(session.fetch("id"), text)
+      end
       0
     end
 
@@ -67,6 +77,8 @@ module Harnex
         opts.on("--repo PATH", "Resolve using PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--cli CLI", "Filter the active session by CLI") { |value| @options[:cli] = value }
         opts.on("--lines N", Integer, "Capture the last N lines instead of the full pane") { |value| @options[:lines] = value }
+        opts.on("--follow", "Refresh the pane snapshot until the session exits") { @options[:follow] = true }
+        opts.on("--interval N", Float, "Refresh interval in seconds for --follow") { |value| @options[:interval] = value }
         opts.on("--json", "Output JSON with capture metadata") { @options[:json] = true }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
@@ -112,6 +124,36 @@ module Harnex
     rescue Errno::ENOENT
       warn("harnex pane: tmux is not installed or not available in PATH")
       false
+    end
+
+    def follow(session, window)
+      pid = session["pid"].to_i
+      last_text = nil
+
+      loop do
+        text = capture(window)
+        break unless text
+
+        if text != last_text
+          clear_screen
+          if @options[:json]
+            emit_output(session.fetch("id"), text)
+          else
+            $stdout.write(text)
+            $stdout.flush
+          end
+          last_text = text
+        end
+
+        break unless Harnex.alive_pid?(pid)
+
+        sleep @options[:interval]
+      end
+    end
+
+    def clear_screen
+      $stdout.write("\e[H\e[2J")
+      $stdout.flush
     end
 
     def capture(window)

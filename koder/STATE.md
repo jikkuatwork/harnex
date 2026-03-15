@@ -12,7 +12,7 @@ Updated: 2026-03-16
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 160 minitest tests, all passing.
+- Test suite: `test/` with 163 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -42,8 +42,11 @@ Updated: 2026-03-16
     `clear` methods, and API endpoints (`GET /inbox`, `DELETE /inbox`,
     `DELETE /inbox/:id`). Configurable via `--inbox-ttl` or `HARNEX_INBOX_TTL`.
 - Issue #11 is now implemented: `harnex pane --id <session>` captures a clean
-  tmux screen snapshot for live sessions, supports `--lines`/`--json`, and
-  fails clearly when `tmux` is unavailable or the session is not tmux-backed.
+  tmux screen snapshot for live sessions, supports `--lines`/`--json`/`--follow`,
+  and fails clearly when `tmux` is unavailable or the session is not tmux-backed.
+  `--follow` refreshes the screen at a configurable interval until the session
+  exits, effectively solving the supervisor monitoring use case and making the
+  output streaming HTTP API (issue #04 phase 3) low priority.
 
 ## What harnex does
 
@@ -62,7 +65,8 @@ Harnex is a local PTY harness for interactive terminal agents.
   with last-N snapshot output and polling `--follow` mode.
 - `harnex pane` reads the current tmux pane for a live session and prints a
   clean screen snapshot, optionally limited to the last N lines or wrapped in
-  JSON metadata.
+  JSON metadata. `--follow` refreshes the snapshot at a configurable interval
+  until the session exits.
 - `harnex wait` blocks until a session exits or reaches a target state
   (`--until prompt`).
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
@@ -78,7 +82,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 01 | Clean stop primitive | **fixed** | P1 |
 | 02 | Wait-until-prompt mode | **fixed** | P1 |
 | 03 | API & command design audit | **fixed** | P1 |
-| 04 | Output streaming | open | P2 |
+| 04 | Output streaming | open | P3 |
 | 05 | Inbox fast-path deadlock | **fixed** | P1 |
 | 06 | Full adapter abstraction | open | P2 |
 | 07 | `stop` types exit but doesn't submit | **fixed** | P1 |
@@ -109,11 +113,15 @@ See `koder/plans/` for details.
 
 ## Next step
 
-**Implement phase 3 of the output streaming plan (03):** add the read-only,
-authenticated output API on top of the transcript file so local tools can tail
-session output by byte offset.
+Output streaming phase 3 (HTTP API) is deferred — `harnex pane --follow`
+covers the primary supervisor monitoring use case. Issue #06 (full adapter
+abstraction) is intentionally deferred until a third adapter hits the wall
+with the current contract.
 
-Alternatively, tackle issue #06 (full adapter abstraction).
+Potential next work:
+- Build a third adapter (aider, cursor, etc.) to naturally drive #06
+- Add `harnex pane` to SKILL.md so agents know about it
+- Tackle retention/rotation for transcript files if they grow large
 
 ## Confirmed bugs from earlier review (all fixed)
 

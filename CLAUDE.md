@@ -32,7 +32,7 @@ lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
-test/                            Minitest suite (160 tests)
+test/                            Minitest suite (163 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
