@@ -19,6 +19,8 @@ module Harnex
         Stopper.new(@argv.drop(1)).run
       when "status"
         Status.new(@argv.drop(1)).run
+      when "logs"
+        Logs.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -44,6 +46,8 @@ module Harnex
         Stopper.usage
       when "status"
         Status.usage
+      when "logs"
+        Logs.usage
       else
         usage
       end
@@ -57,6 +61,7 @@ module Harnex
           harnex wait --id ID [options]
           harnex stop --id ID [options]
           harnex status [options]
+          harnex logs --id ID [options]
           harnex help [command]
 
         Commands:
@@ -65,6 +70,7 @@ module Harnex
           wait    Block until a session exits or reaches a state
           stop    Send the adapter stop sequence to a session
           status  List live sessions
+          logs    Read session output transcripts
           help    Show command help
 
         Notes:
@@ -76,6 +82,7 @@ module Harnex
           harnex run aider --id blue-cat
           harnex run codex -- --cd /path/to/repo
           harnex status
+          harnex logs --id main --follow
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

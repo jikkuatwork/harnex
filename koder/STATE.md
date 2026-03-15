@@ -10,18 +10,20 @@ Updated: 2026-03-15
   - `lib/harnex/watcher.rb` + `watcher/{inotify,polling}.rb` — file watching (inotify on Linux, polling fallback on macOS/other)
   - `lib/harnex/adapters.rb` + `adapters/{base,generic,codex,claude}.rb`
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
-  - `lib/harnex/commands/{run,send,wait,stop,status}.rb`
+  - `lib/harnex/commands/{run,send,wait,stop,status,logs}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 138 minitest tests, all passing.
+- Test suite: `test/` with 146 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
   and the renamed `send` flags are all live.
 - Issue docs `01`, `02`, `03`, and `05` now match the implemented command and
   status surface.
-- Output streaming phase 1 is in place: every session now writes a repo-keyed
+- Output streaming phases 1-2 are in place: every session writes a repo-keyed
   transcript file at `~/.local/state/harnex/output/<repo>--<id>.log`, exposed
-  as `output_log_path` in status payloads and detached `run` responses.
+  as `output_log_path` in status payloads and detached `run` responses, and
+  `harnex logs` can snapshot the last N lines or `--follow` appended output
+  without depending on the session HTTP API.
 - Exit status records now preserve signal metadata as `signal` alongside the
   synthesized numeric `exit_code` for signaled sessions, with regression tests
   covering zero-exit and signaled-exit persistence.
@@ -50,6 +52,8 @@ Harnex is a local PTY harness for interactive terminal agents.
 - `harnex stop` sends the adapter-appropriate stop sequence to a session.
 - `harnex status` reads the registry and live status endpoints, with table
   or JSON output.
+- `harnex logs` reads the persisted transcript for a live or exited session,
+  with last-N snapshot output and polling `--follow` mode.
 - `harnex wait` blocks until a session exits or reaches a target state
   (`--until prompt`).
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
@@ -73,6 +77,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 09 | Claude vim mode not detected | **fixed** | P2 |
 | 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
 | 11 | Tmux pane capture | open | P3 |
+| 12 | State detection failures cause send/receive problems | open | P1 |
 
 See `koder/issues/` for details.
 
@@ -82,7 +87,7 @@ See `koder/issues/` for details.
 |---|-------|--------|
 | 01 | Monolith refactor | **done** (phases 1-2) |
 | 02 | Command & API redesign | **done** |
-| 03 | Output streaming | **in progress** (phase 1 done) |
+| 03 | Output streaming | **in progress** (phases 1-2 done) |
 | 04 | Stop submit fix (#07) | **done** |
 | 05 | Send startup timeout (#08) | **done** |
 | 06 | Claude vim mode (#09) | **done** |
@@ -94,12 +99,13 @@ See `koder/plans/` for details.
 
 ## Next step
 
-**Implement phase 2 of the output streaming plan (03):** add a `harnex logs`
-command on top of the session transcript file. Phase 1 established the storage
-layer; phase 2 adds a read-only CLI with `--follow` mode.
+**Implement phase 3 of the output streaming plan (03):** add the read-only,
+authenticated output API on top of the transcript file so local tools can tail
+session output by byte offset.
 
-Alternatively, tackle issue #11 (tmux pane capture) which is a quick
-diagnostic tool for tmux-backed sessions.
+Alternatively, fix issue #12 (state detection failures) which is P1 and
+blocks reliable agent-to-agent messaging, or tackle issue #11 (tmux pane
+capture) which is a quick diagnostic tool for tmux-backed sessions.
 
 ## Confirmed bugs from earlier review (all fixed)
 

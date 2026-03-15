@@ -24,7 +24,12 @@ modes without changing harnex's local-only control model.
   - PTY output appended to a session-owned transcript file
   - `output_log_path` exposed through `status` payloads and detached `run`
     responses
-- There is still no first-class CLI or API for tailing that output
+- Phase 2 is now implemented:
+  - `harnex logs` reads the transcript for live sessions via the registry
+  - exited sessions fall back to the repo-keyed transcript path directly
+  - `--lines N` snapshots the last N lines (default 200)
+  - `--follow` polls the file for growth until the session exits
+- There is still no HTTP output API for local tooling
 
 ## Phase 1: Session-owned transcript file
 
@@ -41,7 +46,7 @@ Shipped work:
 
 ## Phase 2: `harnex logs`
 
-Status: next
+Status: done
 
 Add a read-focused CLI on top of the transcript file.
 

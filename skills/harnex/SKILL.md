@@ -77,7 +77,22 @@ When the target agent is busy, the message is **queued** (HTTP 202) and
 delivered automatically when the agent returns to a prompt. The sender polls
 until delivery completes using one overall `--timeout` budget (default 30s).
 
-**Multi-line messages**: use a heredoc:
+**Prefer file references over inline text**: when the task is already written
+down (a plan file, issue, or temp file), point the peer to it instead of
+pasting the full content into `--message`. This avoids shell quoting issues
+and keeps the send payload small:
+
+```bash
+# Good: reference the plan
+harnex send --id impl-1 --message "Implement phase 2 from koder/plans/03_output_streaming.md. Send results back: harnex send --id $HARNEX_ID"
+
+# Good: reference a task file you already wrote
+harnex send --id impl-1 --message "Your task is in /tmp/task.txt — read and execute it. Send results back: harnex send --id $HARNEX_ID"
+
+# Avoid: pasting large multi-line prompts inline (shell quoting breaks easily)
+```
+
+**Multi-line messages** (when a file reference isn't practical): use a heredoc:
 
 ```bash
 harnex send --id worker-1 --message "$(cat <<'EOF'
