@@ -75,7 +75,7 @@ harnex send --id <ID> --message "<text>"
 
 When the target agent is busy, the message is **queued** (HTTP 202) and
 delivered automatically when the agent returns to a prompt. The sender polls
-until delivery completes using one overall `--timeout` budget (default 30s).
+until delivery completes using one overall `--timeout` budget (default 120s).
 
 **Prefer file references over inline text**: when the task is already written
 down (a plan file, issue, or temp file), point the peer to it instead of

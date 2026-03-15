@@ -26,13 +26,13 @@ bin/harnex                       CLI entry point
 lib/harnex.rb                    Loader (requires all modules)
 lib/harnex/core.rb               Constants, env, registry, port allocation
 lib/harnex/cli.rb                Top-level command dispatch
-lib/harnex/commands/             Command implementations (run, send, wait, stop, status)
+lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs)
 lib/harnex/runtime/              Session, state machine, inbox, API server
 lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
-test/                            Minitest suite (111 tests)
+test/                            Minitest suite (149 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
@@ -64,7 +64,9 @@ May override:
 - `build_send_payload(...)` — build injection payload with submit behavior
 - `inject_exit(writer)` — send the adapter-specific stop sequence
 - `infer_repo_path(argv)` — extract repo path from CLI args
-- `wait_for_sendable(...)` — control send-readiness waiting behavior
+- `send_wait_seconds(submit:, enter_only:)` — how long to wait for sendable state
+- `wait_for_sendable_state?(state, submit:, enter_only:)` — whether a state is sendable
+- `wait_for_sendable(screen_snapshot_fn, submit:, enter_only:, force:)` — orchestrate send-readiness waiting
 
 ## If you are running inside harnex
 
