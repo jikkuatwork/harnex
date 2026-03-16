@@ -79,9 +79,9 @@ but everything else works). Adding a new agent is one small file.
 
 ## Going deeper
 
-Command reference, flags, the HTTP API, adapter internals, state
-machine, message queue, and architecture — all in
-[TECHNICAL.md](TECHNICAL.md).
+- [GUIDE.md](GUIDE.md) — practical getting-started for new users
+- [TECHNICAL.md](TECHNICAL.md) — command reference, flags, HTTP
+  API, and internals
 
 ## License
 

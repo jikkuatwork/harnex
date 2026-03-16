@@ -23,6 +23,12 @@ module Harnex
         Logs.new(@argv.drop(1)).run
       when "pane"
         Pane.new(@argv.drop(1)).run
+      when "recipes"
+        Recipes.new(@argv.drop(1)).run
+      when "guide"
+        Guide.new.run
+      when "skills"
+        Skills.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -52,6 +58,12 @@ module Harnex
         Logs.usage
       when "pane"
         Pane.usage
+      when "recipes"
+        Recipes.usage
+      when "guide"
+        Guide.usage
+      when "skills"
+        Skills.usage
       else
         usage
       end
@@ -77,7 +89,12 @@ module Harnex
           status  List live sessions
           logs    Read session output transcripts
           pane    Capture the current tmux pane for a live session
+          recipes List and read workflow recipes
+          guide   Show the getting started guide
+          skills  Install harnex skill into a repo
           help    Show command help
+
+        New to harnex? Start with: harnex guide
 
         Notes:
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}

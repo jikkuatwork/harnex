@@ -6,6 +6,9 @@ allowed-tools: Bash(harnex *)
 
 # Harnex — Cross-Agent Collaboration
 
+If this is your first time using harnex, run `harnex guide` for the full
+getting started walkthrough, and `harnex recipes` for tested workflow patterns.
+
 Harnex wraps interactive terminal agents (Claude Code, Codex) and opens a local
 control plane so they can discover and message each other. You use it to **send
 messages to a peer agent**, **check session status**, **spawn worker sessions**,
