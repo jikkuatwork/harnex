@@ -65,6 +65,7 @@ module Harnex
 
       repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
       @options[:id] ||= Harnex.generate_id(repo_root)
+      validate_unique_id!(repo_root)
       effective_child_args = apply_context(child_args)
       adapter = Harnex.build_adapter(cli_name, effective_child_args)
       @options[:detach] = true if @options[:tmux]
@@ -175,6 +176,15 @@ module Harnex
     end
 
     private
+
+    def validate_unique_id!(repo_root)
+      existing = Harnex.read_registry(repo_root, @options[:id])
+      return unless existing
+
+      raise "harnex run: session #{@options[:id].inspect} is already active " \
+            "(pid #{existing['pid']}, port #{existing['port']}). " \
+            "Use a different --id or stop the existing session first."
+    end
 
     def build_session(adapter, repo_root)
       watch = Harnex.build_watch_config(@options[:watch], repo_root)

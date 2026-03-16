@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-16
+Updated: 2026-03-17
 
 ## Current snapshot
 
@@ -10,9 +10,9 @@ Updated: 2026-03-16
   - `lib/harnex/watcher.rb` + `watcher/{inotify,polling}.rb` — file watching (inotify on Linux, polling fallback on macOS/other)
   - `lib/harnex/adapters.rb` + `adapters/{base,generic,codex,claude}.rb`
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
-  - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane}.rb`
+  - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 169 minitest tests, all passing.
+- Test suite: `test/` with 171 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -24,6 +24,19 @@ Updated: 2026-03-16
   JSON result. Eliminates the `sleep 5` workaround in orchestration workflows.
   Uses a 30s fence timeout for instant-response agents and reuses `--timeout`
   for the full lifecycle.
+- `harnex run` rejects duplicate session IDs — fails fast with a clear error
+  if the ID is already active on the same repo.
+- New CLI commands for documentation and onboarding:
+  - `harnex guide` — prints GUIDE.md (getting started walkthrough)
+  - `harnex recipes` — lists and shows workflow recipes (fire-and-watch,
+    chain-implement)
+  - `harnex skills install` — copies the harnex skill into a repo's
+    `.claude/skills/` and symlinks `.codex/skills/` to it
+- README rewritten for non-users (quick "is this for me?" format). Usage
+  details moved to GUIDE.md, command reference stays in TECHNICAL.md.
+- `recipes/` directory with tested workflow patterns:
+  - `01_fire_and_watch` — atomic unit: spawn, send, pane poll, capture
+  - `02_chain_implement` — batch implement→review→fix loop
 - Output streaming phases 1-2 are in place: every session writes a repo-keyed
   transcript file at `~/.local/state/harnex/output/<repo>--<id>.log`, exposed
   as `output_log_path` in status payloads and detached `run` responses, and
@@ -74,6 +87,9 @@ Harnex is a local PTY harness for interactive terminal agents.
   until the session exits.
 - `harnex wait` blocks until a session exits or reaches a target state
   (`--until prompt`).
+- `harnex guide` prints the getting started guide.
+- `harnex recipes` lists and shows workflow recipes.
+- `harnex skills install` copies the skill into a repo for Claude/Codex.
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
   behavior, stop sequence, and send-readiness waiting.
 - Session output is mirrored to the terminal, stored in a 64KB ring buffer for
@@ -121,8 +137,8 @@ See `koder/plans/` for details.
 
 ## Next step
 
-Packaged as gem v0.1.2 (not yet published to rubygems). Install locally
-with `gem build harnex.gemspec && gem install ./harnex-0.1.2.gem`.
+Packaged as gem v0.1.4 (not yet published to rubygems). Install locally
+with `gem build harnex.gemspec && gem install ./harnex-0.1.4.gem`.
 
 Dogfooding confirmed: used harnex to spawn Codex and delegate issue #13
 implementation. Hit the exact send→wait race condition during the process,

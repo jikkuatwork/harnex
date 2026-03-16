@@ -42,4 +42,39 @@ class RunnerTest < Minitest::Test
       assert_equal 12.5, runner.instance_variable_get(:@options)[:inbox_ttl]
     end
   end
+
+  def test_validate_unique_id_raises_when_session_exists
+    repo_root = Dir.pwd
+    id = "dup-test-#{$$}"
+    registry_path = Harnex.registry_path(repo_root, id)
+
+    Harnex.write_registry(registry_path, {
+      "id" => id,
+      "pid" => Process.pid,
+      "host" => "127.0.0.1",
+      "port" => 44444,
+      "token" => "test",
+      "repo_root" => repo_root
+    })
+
+    runner = Harnex::Runner.new(["codex", "--id", id])
+    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+
+    error = assert_raises(RuntimeError) { runner.send(:validate_unique_id!, repo_root) }
+    assert_match(/already active/, error.message)
+    assert_match(/#{id}/, error.message)
+  ensure
+    FileUtils.rm_f(registry_path) if registry_path
+  end
+
+  def test_validate_unique_id_passes_when_no_session
+    repo_root = Dir.pwd
+    id = "unique-test-#{$$}"
+
+    runner = Harnex::Runner.new(["codex", "--id", id])
+    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+
+    # Should not raise
+    runner.send(:validate_unique_id!, repo_root)
+  end
 end
