@@ -1,7 +1,163 @@
 # Technical Reference
 
-This document covers the internals of harnex. For usage and
-examples, see [README.md](README.md).
+For what harnex is and whether you'd want it, see
+[README.md](README.md). This document covers commands, patterns,
+and internals.
+
+## Commands
+
+### `harnex run` — Start an agent
+
+```bash
+harnex run codex
+harnex run claude --id review
+harnex run codex -- --cd ~/other/repo
+```
+
+| Flag            | What it does                          |
+|-----------------|---------------------------------------|
+| `--id ID`       | Name this session (default: random)   |
+| `--description` | Store a short session description     |
+| `--detach`      | Run in background, no terminal        |
+| `--tmux [NAME]` | Run in a tmux window you can watch    |
+| `--host HOST`   | Bind a specific API host              |
+| `--port PORT`   | Force a specific API port             |
+| `--context TXT` | Give the agent a task on startup      |
+| `--watch PATH`  | Notify agent when a file changes      |
+| `--timeout SEC` | Wait budget for detached registration |
+
+### `harnex send` — Talk to a running agent
+
+```bash
+harnex send --id worker --message "implement plan A"
+```
+
+| Flag              | What it does                           |
+|-------------------|----------------------------------------|
+| `--id ID`         | Which agent to talk to                 |
+| `--message`       | The message text                       |
+| `--wait-for-idle` | Block until agent finishes processing  |
+| `--repo PATH`     | Resolve session from a repo root       |
+| `--cli CLI`       | Filter by CLI type                     |
+| `--submit-only`   | Just press Enter (no new text)         |
+| `--no-submit`     | Type the text but don't press Enter    |
+| `--force`         | Send even if the agent looks busy      |
+| `--no-wait`       | Don't wait for delivery confirmation   |
+| `--relay`         | Force relay header formatting          |
+| `--no-relay`      | Suppress automatic relay headers       |
+| `--port` / `--token` | Send directly to a known API port  |
+| `--timeout`       | Overall wait budget                    |
+
+### `harnex stop` — Ask an agent to stop
+
+```bash
+harnex stop --id worker
+harnex stop --id worker --timeout 5
+```
+
+Sends the adapter-specific stop sequence. Retries transient
+failures for up to the given timeout.
+
+### `harnex status` — See running agents
+
+```
+  ID       CLI     AGE      STATE
+  worker   codex   36s ago  prompt
+  review   claude   8s ago  busy
+```
+
+Use `--json` for full payloads. Use `--all` for all repos.
+
+### `harnex wait` — Wait for an agent to finish
+
+```bash
+harnex wait --id worker
+harnex wait --id worker --until prompt --timeout 300
+```
+
+### `harnex logs` — Read session transcripts
+
+```bash
+harnex logs --id worker --lines 50
+harnex logs --id worker --follow
+```
+
+### `harnex pane` — Capture a tmux screen snapshot
+
+```bash
+harnex pane --id worker --lines 40
+harnex pane --id worker --follow
+harnex pane --id worker --json
+```
+
+## Usage Patterns
+
+### Atomic send+wait
+
+Use `--wait-for-idle` instead of separate send + sleep + wait:
+
+```bash
+# Replaces: send → sleep 5 → wait --until prompt
+harnex send --id cx-1 --message "implement the plan" --wait-for-idle --timeout 600
+```
+
+### Agents talking to each other
+
+When one harnex agent sends to another, the receiver sees a
+relay header automatically:
+
+```
+[harnex relay from=claude id=supervisor at=2026-03-14T12:00]
+implement A
+```
+
+Messages queue when the agent is busy and auto-deliver when ready.
+
+### Background agents
+
+**tmux** (observable):
+
+```bash
+harnex run codex --id worker --tmux cx-w1
+```
+
+**Headless** (no terminal):
+
+```bash
+harnex run codex --id worker --detach
+```
+
+### Supervisor pattern
+
+One agent manages others:
+
+```bash
+harnex run codex --id impl-1 --tmux cx-p1 -- --cd ~/wt-a
+harnex run codex --id impl-2 --tmux cx-p2 -- --cd ~/wt-b
+
+harnex send --id impl-1 --message "implement feature A" --wait-for-idle --timeout 600
+harnex send --id impl-2 --message "implement feature B" --wait-for-idle --timeout 600
+
+harnex run claude --id review --tmux cl-r1
+harnex send --id review --message "review changes" --wait-for-idle --timeout 300
+```
+
+### Context on startup
+
+```bash
+harnex run codex --id impl-1 --tmux cx-p1 \
+  --context "Implement the auth feature. Commit when done." \
+  -- --cd ~/repo/worktree
+```
+
+### File watching
+
+```bash
+harnex run codex --id worker --watch ./tmp/status.jsonl
+```
+
+Agent gets notified when the file changes. File doesn't need to
+exist at startup.
 
 ## Architecture
 
@@ -417,11 +573,10 @@ picked up immediately.
 
 - Adapter prompt detection is heuristic-based. It works well
   but can misread unusual screen output.
-- There is still no first-class `harnex logs` command for
-  reading or following transcript files.
-- There is still no read-only HTTP output endpoint for local
-  dashboards or other tools.
-- File watching uses Linux inotify. No macOS/Windows support.
+- No read-only HTTP output endpoint for local dashboards (use
+  `harnex pane --follow` or `harnex logs --follow` instead).
+- File watching: inotify on Linux, stat-polling fallback on
+  macOS/other (works everywhere, inotify is just faster).
 - The HTTP server is a simple socket server, not a full
   framework. One thread per connection, no keep-alive.
 

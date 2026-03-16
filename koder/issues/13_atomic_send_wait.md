@@ -1,7 +1,7 @@
 ---
 id: 13
 title: "Atomic `send --wait` — send message and block until agent is idle"
-status: open
+status: resolved
 priority: P1
 created: 2026-03-16
 ---
