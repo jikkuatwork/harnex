@@ -12,13 +12,18 @@ Updated: 2026-03-16
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 163 minitest tests, all passing.
+- Test suite: `test/` with 169 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
   and the renamed `send` flags are all live.
 - Issue docs `01`, `02`, `03`, and `05` now match the implemented command and
   status surface.
+- `harnex send --wait-for-idle` makes send+wait atomic: sends the message,
+  polls until the agent transitions prompt→busy→prompt, and returns a single
+  JSON result. Eliminates the `sleep 5` workaround in orchestration workflows.
+  Uses a 30s fence timeout for instant-response agents and reuses `--timeout`
+  for the full lifecycle.
 - Output streaming phases 1-2 are in place: every session writes a repo-keyed
   transcript file at `~/.local/state/harnex/output/<repo>--<id>.log`, exposed
   as `output_log_path` in status payloads and detached `run` responses, and
@@ -91,6 +96,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
 | 11 | Tmux pane capture | **fixed** | P3 |
 | 12 | State detection failures cause send/receive problems | **fixed** | P1 |
+| 13 | Atomic `send --wait-for-idle` | **fixed** | P1 |
 
 See `koder/issues/` for details.
 
@@ -106,15 +112,21 @@ See `koder/issues/` for details.
 | 06 | Claude vim mode (#09) | **done** |
 | 07 | Inbox management (#10) | **done** |
 | 08 | Pane capture (#11) | **done** |
+| 09 | Atomic send --wait-for-idle (#13) | **done** |
 
-Plans 04-07 are **layer A** (multi-agent reliability).
+Plans 04-08 are **layer A** (multi-agent reliability).
+Plan 09 is **layer B** (atomic orchestration primitives).
 
 See `koder/plans/` for details.
 
 ## Next step
 
-Packaged as gem v0.1.0 (not yet published to rubygems). Install locally
-with `gem build harnex.gemspec && gem install ./harnex-0.1.0.gem`.
+Packaged as gem v0.1.2 (not yet published to rubygems). Install locally
+with `gem build harnex.gemspec && gem install ./harnex-0.1.2.gem`.
+
+Dogfooding confirmed: used harnex to spawn Codex and delegate issue #13
+implementation. Hit the exact send→wait race condition during the process,
+validating the fix.
 
 Output streaming phase 3 (HTTP API) is deferred — `harnex pane --follow`
 covers the primary supervisor monitoring use case. Issue #06 (full adapter
@@ -122,10 +134,9 @@ abstraction) is intentionally deferred until a third adapter hits the wall
 with the current contract.
 
 Potential next work:
-- Internal dogfooding before public gem release
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
-- Add `harnex pane` to SKILL.md so agents know about it
 - Tackle retention/rotation for transcript files if they grow large
+- Public gem release
 
 ## Confirmed bugs from earlier review (all fixed)
 

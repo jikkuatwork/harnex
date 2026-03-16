@@ -14,6 +14,85 @@ class SenderRelayTest < Minitest::Test
     overrides.each { |key, _| saved[key] ? ENV[key] = saved[key] : ENV.delete(key) }
   end
 
+  def with_sender_wait_timing(poll_interval:, fence_timeout:)
+    sender_class = Harnex::Sender
+    original_poll_interval = sender_class.const_get(:POLL_INTERVAL)
+    original_fence_timeout = sender_class.const_get(:IDLE_FENCE_TIMEOUT)
+
+    sender_class.send(:remove_const, :POLL_INTERVAL)
+    sender_class.const_set(:POLL_INTERVAL, poll_interval)
+    sender_class.send(:remove_const, :IDLE_FENCE_TIMEOUT)
+    sender_class.const_set(:IDLE_FENCE_TIMEOUT, fence_timeout)
+
+    yield
+  ensure
+    sender_class.send(:remove_const, :POLL_INTERVAL)
+    sender_class.const_set(:POLL_INTERVAL, original_poll_interval)
+    sender_class.send(:remove_const, :IDLE_FENCE_TIMEOUT)
+    sender_class.const_set(:IDLE_FENCE_TIMEOUT, original_fence_timeout)
+  end
+
+  def with_send_server(status_states:, close_after_send: false)
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    states = status_states.dup
+    mutex = Mutex.new
+
+    server_thread = Thread.new do
+      loop do
+        client = server.accept
+        request_line = client.gets("\r\n")
+        break unless request_line
+
+        _method, path, = request_line.split(" ")
+        headers = {}
+        while (line = client.gets("\r\n"))
+          break if line.strip.empty?
+
+          key, value = line.split(":", 2)
+          headers[key] = value.to_s.strip
+        end
+
+        content_length = headers.fetch("Content-Length", "0").to_i
+        client.read(content_length) if content_length.positive?
+
+        case path
+        when "/send"
+          body = JSON.generate(ok: true, accepted: true)
+          client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+          client.close
+
+          if close_after_send
+            server.close
+            break
+          end
+        when "/status"
+          state = mutex.synchronize do
+            if states.length > 1
+              states.shift
+            else
+              states.first || "prompt"
+            end
+          end
+          body = JSON.generate(agent_state: state, ok: true)
+          client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+          client.close
+        else
+          body = JSON.generate(ok: false, error: "not found")
+          client.write("HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+          client.close
+        end
+      rescue IOError, Errno::EBADF
+        break
+      end
+    end
+
+    yield port
+  ensure
+    server.close if server && !server.closed?
+    server_thread&.join(1)
+  end
+
   def test_send_requires_id
     sender = Harnex::Sender.new(["--message", "hello"])
     assert_raises(RuntimeError) { sender.run }
@@ -137,6 +216,20 @@ class SenderRelayTest < Minitest::Test
     assert_equal 9999, opts[:port]
   end
 
+  def test_wait_for_idle_flag_parsed
+    sender = Harnex::Sender.new(["--id", "target", "--wait-for-idle", "--message", "hi"])
+    sender.send(:parser).parse!(sender.instance_variable_get(:@argv))
+    opts = sender.instance_variable_get(:@options)
+    assert opts[:wait_for_idle]
+  end
+
+  def test_wait_for_idle_not_set_by_default
+    sender = Harnex::Sender.new(["--id", "target", "--message", "hi"])
+    sender.send(:parser).parse!(sender.instance_variable_get(:@argv))
+    opts = sender.instance_variable_get(:@options)
+    refute opts[:wait_for_idle]
+  end
+
   def test_resolve_text_returns_empty_for_submit_only
     sender = Harnex::Sender.new(["--id", "target", "--submit-only"])
     sender.send(:parser).parse!(sender.instance_variable_get(:@argv))
@@ -225,5 +318,64 @@ class SenderRelayTest < Minitest::Test
     data = JSON.parse(out)
     assert_equal "timeout", data["status"]
     assert_equal "delivery timed out after 1.0s", data["error"]
+  end
+
+  def test_wait_for_idle_full_cycle
+    with_sender_wait_timing(poll_interval: 0.01, fence_timeout: 0.05) do
+      with_send_server(status_states: %w[busy busy prompt]) do |port|
+        sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hello", "--wait-for-idle", "--timeout", "1"])
+
+        out, = capture_io { assert_equal 0, sender.run }
+        data = JSON.parse(out)
+        assert data["ok"]
+        assert_equal "target", data["id"]
+        assert_equal "prompt", data["state"]
+        assert data.key?("waited_seconds")
+      end
+    end
+  end
+
+  def test_wait_for_idle_timeout
+    with_sender_wait_timing(poll_interval: 0.01, fence_timeout: 0.2) do
+      with_send_server(status_states: ["busy"]) do |port|
+        sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hello", "--wait-for-idle", "--timeout", "0.05"])
+
+        out, = capture_io { assert_equal 124, sender.run }
+        data = JSON.parse(out)
+        refute data["ok"]
+        assert_equal "target", data["id"]
+        assert_equal "busy", data["state"]
+        assert_equal "timeout", data["error"]
+      end
+    end
+  end
+
+  def test_wait_for_idle_fence_timeout_succeeds
+    with_sender_wait_timing(poll_interval: 0.01, fence_timeout: 0.03) do
+      with_send_server(status_states: ["prompt"]) do |port|
+        sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hello", "--wait-for-idle", "--timeout", "1"])
+
+        out, = capture_io { assert_equal 0, sender.run }
+        data = JSON.parse(out)
+        assert data["ok"]
+        assert_equal "prompt", data["state"]
+        assert data.key?("waited_seconds")
+      end
+    end
+  end
+
+  def test_wait_for_idle_process_exit
+    with_sender_wait_timing(poll_interval: 0.01, fence_timeout: 0.05) do
+      with_send_server(status_states: ["busy"], close_after_send: true) do |port|
+        sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hello", "--wait-for-idle", "--timeout", "1"])
+
+        out, = capture_io { assert_equal 1, sender.run }
+        data = JSON.parse(out)
+        refute data["ok"]
+        assert_equal "target", data["id"]
+        assert_equal "exited", data["state"]
+        assert data.key?("waited_seconds")
+      end
+    end
   end
 end

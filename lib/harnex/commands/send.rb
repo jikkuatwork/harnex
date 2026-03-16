@@ -7,6 +7,8 @@ module Harnex
   class Sender
     DEFAULT_TIMEOUT = 120.0
     MIN_HTTP_TIMEOUT = 0.1
+    POLL_INTERVAL = 0.5
+    IDLE_FENCE_TIMEOUT = 30.0
     class TimeoutError < RuntimeError; end
 
     def self.build_parser(options, program_name = "harnex send")
@@ -23,12 +25,13 @@ module Harnex
         end
         opts.on("--force", "Send even if the agent is not at a prompt") { options[:force] = true }
         opts.on("--no-wait", "Return immediately after queueing (HTTP 202). Use for fire-and-forget or when polling delivery separately.") { options[:wait] = false }
+        opts.on("--wait-for-idle", "After a successful send, wait for the agent to return to prompt") { options[:wait_for_idle] = true }
         opts.on("--relay", "Force relay header formatting") { options[:relay] = true }
         opts.on("--no-relay", "Disable automatic relay headers") { options[:relay] = false }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
         opts.on("--token TOKEN", "Auth token for --port mode") { |value| options[:token] = value }
         opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = value }
-        opts.on("--timeout SECS", Float, "How long to wait for lookup or delivery (default: #{DEFAULT_TIMEOUT.to_i})") { |value| options[:timeout] = value }
+        opts.on("--timeout SECS", Float, "How long to wait for lookup, delivery, or idle wait (default: #{DEFAULT_TIMEOUT.to_i})") { |value| options[:timeout] = value }
         opts.on("--verbose", "Print lookup and delivery details to stderr") { options[:verbose] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
       end
@@ -49,6 +52,7 @@ module Harnex
         relay: nil,
         force: false,
         wait: true,
+        wait_for_idle: false,
         port: nil,
         token: nil,
         host: DEFAULT_HOST,
@@ -70,7 +74,8 @@ module Harnex
       validate_modes!
 
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
-      deadline = monotonic_now + @options[:timeout]
+      @command_started_at = monotonic_now
+      deadline = @command_started_at + @options[:timeout]
       verbose("repo_root=#{repo_root}")
       verbose("id=#{@options[:id]}")
       verbose("cli=#{@options[:cli] || '(any)'}")
@@ -111,22 +116,36 @@ module Harnex
         ) { |http| http.request(request) }
       end
 
+      result = nil
+      exit_code = nil
+
       if response.code == "202" && @options[:wait]
         parsed = parse_json_body(response.body)
         message_id = parsed["message_id"]
         if message_id
           verbose("queued message_id=#{message_id}")
           result = poll_delivery(registry, message_id, deadline: deadline)
-          puts JSON.generate(result)
-          return 124 if result["status"] == "timeout"
-
-          return result["status"] == "delivered" ? 0 : 1
+          exit_code =
+            case result["status"]
+            when "timeout" then 124
+            when "delivered" then 0
+            else 1
+            end
         end
       end
 
-      parsed = parse_json_body(response.body)
-      puts JSON.generate(parsed)
-      response.is_a?(Net::HTTPSuccess) ? 0 : 1
+      unless result
+        result = parse_json_body(response.body)
+        exit_code = response.is_a?(Net::HTTPSuccess) ? 0 : 1
+      end
+
+      if exit_code == 0 && @options[:wait_for_idle]
+        result = wait_for_idle_state(registry, deadline)
+        exit_code = result["ok"] ? 0 : (result["state"] == "exited" ? 1 : 124)
+      end
+
+      puts JSON.generate(result)
+      exit_code
     rescue TimeoutError => e
       puts JSON.generate(ok: false, id: @options[:id], status: "timeout", error: e.message)
       124
@@ -170,6 +189,39 @@ module Harnex
         return({ "ok" => false, "status" => "timeout", "error" => timeout_message("delivery") }) if deadline_reached?(deadline)
 
         sleep 0.25
+      end
+    end
+
+    def wait_for_idle_state(registry, deadline)
+      host = registry.fetch("host")
+      port = registry.fetch("port")
+      token = registry["token"]
+      last_state = "prompt"
+      fence_deadline = [monotonic_now + IDLE_FENCE_TIMEOUT, deadline].min
+
+      loop do
+        return wait_for_idle_timeout(last_state) if deadline_reached?(deadline)
+
+        state = fetch_agent_state(host, port, token)
+        return wait_for_idle_exited if state.nil?
+
+        last_state = state
+        break if state != "prompt"
+        return wait_for_idle_success("prompt") if monotonic_now >= fence_deadline
+
+        sleep POLL_INTERVAL
+      end
+
+      loop do
+        return wait_for_idle_timeout(last_state) if deadline_reached?(deadline)
+
+        state = fetch_agent_state(host, port, token)
+        return wait_for_idle_exited if state.nil?
+
+        last_state = state
+        return wait_for_idle_success(state) if state == "prompt"
+
+        sleep POLL_INTERVAL
       end
     end
 
@@ -272,6 +324,23 @@ module Harnex
       end
     end
 
+    def fetch_agent_state(host, port, token)
+      uri = URI("http://#{host}:#{port}/status")
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{token}" if token
+
+      response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 1) do |http|
+        http.request(request)
+      end
+
+      return nil unless response.is_a?(Net::HTTPSuccess)
+
+      data = JSON.parse(response.body)
+      data["agent_state"]
+    rescue StandardError
+      nil
+    end
+
     def monotonic_now
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
@@ -288,6 +357,40 @@ module Harnex
 
     def timeout_message(phase)
       "#{phase} timed out after #{@options[:timeout]}s"
+    end
+
+    def waited_seconds
+      return 0.0 unless @command_started_at
+
+      (monotonic_now - @command_started_at).round(1)
+    end
+
+    def wait_for_idle_success(state)
+      {
+        "ok" => true,
+        "id" => @options[:id],
+        "state" => state,
+        "waited_seconds" => waited_seconds
+      }
+    end
+
+    def wait_for_idle_timeout(state)
+      {
+        "ok" => false,
+        "id" => @options[:id],
+        "state" => state || "unknown",
+        "error" => "timeout",
+        "waited_seconds" => waited_seconds
+      }
+    end
+
+    def wait_for_idle_exited
+      {
+        "ok" => false,
+        "id" => @options[:id],
+        "state" => "exited",
+        "waited_seconds" => waited_seconds
+      }
     end
 
     def parse_json_body(body)

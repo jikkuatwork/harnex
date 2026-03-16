@@ -99,12 +99,31 @@ harnex send --id <ID> --message "<text>"
 - `--no-submit` types without pressing Enter
 - `--force` sends even if peer UI is not at a prompt (bypasses queue)
 - `--submit-only` sends only Enter (submit what's already in the input box)
+- `--wait-for-idle` blocks until the agent finishes processing (prompt→busy→prompt)
 - `--no-wait` returns immediately with a message_id (don't wait for delivery)
 - `--cli` filters by CLI type when multiple sessions share resolution scope
 
 When the target agent is busy, the message is **queued** (HTTP 202) and
 delivered automatically when the agent returns to a prompt. The sender polls
 until delivery completes using one overall `--timeout` budget (default 120s).
+
+### Atomic send+wait (recommended for orchestration)
+
+Use `--wait-for-idle` instead of separate `send` + `sleep` + `wait` commands:
+
+```bash
+# Instead of:
+harnex send --id cx-1 --message "implement the plan"
+sleep 5
+harnex wait --id cx-1 --until prompt --timeout 600
+
+# Use:
+harnex send --id cx-1 --message "implement the plan" --wait-for-idle --timeout 600
+```
+
+This eliminates the race condition where `wait --until prompt` sees the stale
+prompt state before the agent starts working. The `--timeout` budget covers
+the entire lifecycle (lookup + send + idle wait).
 
 **Multi-line messages** (when a file reference isn't practical): use a heredoc:
 
@@ -246,13 +265,9 @@ A supervisor session spawns workers, sends them tasks, and waits for completion:
 harnex run codex --id impl-1 --tmux cx-p1 -- --cd ~/repo/wt-feature-a
 harnex run codex --id impl-2 --tmux cx-p2 -- --cd ~/repo/wt-feature-b
 
-# Send work
-harnex send --id impl-1 --message "implement plan 150"
-harnex send --id impl-2 --message "implement plan 151"
-
-# Wait for completion
-harnex wait --id impl-1
-harnex wait --id impl-2
+# Send work and wait for completion (atomic)
+harnex send --id impl-1 --message "implement plan 150" --wait-for-idle --timeout 600
+harnex send --id impl-2 --message "implement plan 151" --wait-for-idle --timeout 600
 
 # Review phase
 harnex run claude --id review-1 --tmux cl-r1
