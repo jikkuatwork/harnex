@@ -1,52 +1,40 @@
 ---
 name: close
-description: Close an issue — update STATE.md, bump version, commit, build & install gem. Use when the user says "close issue", "ship it", "release", or invokes "/close".
+description: Close a work session in this repo — update koder/STATE.md with what changed and the next step, clean up accidental or temporary repo artifacts, and leave a clear handoff. Use when the user says "close session", "wrap up", "end session", "handoff", or invokes "/close".
 ---
 
-# Close Issue Workflow
+# Close Session Workflow
 
-When the user asks to close/ship an issue, run this sequence:
+When the user asks to wrap up or close the current session, run this sequence:
 
-## 1. Update `koder/STATE.md`
+## 1. Review the session changes
 
-- Set the issue status to **fixed** in the issues table
-- Add/update the plan entry if one exists
-- Update the "Current snapshot" section with a one-liner about the change
-- Update test count if tests were added
-- Update the "Next step" section (bump version reference, note what was done)
+- Check `git status --short` and `git diff --stat`
+- Separate the work from this session from unrelated user changes
+- Do not revert unrelated changes you did not make
 
-## 2. Bump version
+## 2. Update `koder/STATE.md`
 
-- Read `lib/harnex/version.rb` for the current version
-- Bump the patch version (e.g. 0.1.2 → 0.1.3)
-- If the change is significant, ask the user about a minor bump
+- Update the `Updated:` date
+- Add or adjust concise lines in `Current snapshot` for completed work
+- Update test count if it changed
+- Update issue or plan statuses only when work was actually completed or a new blocker was clearly discovered
+- Rewrite `Next step` so the next agent can resume without reconstructing context
 
-## 3. Commit
+## 3. Clean up repo artifacts
 
-- Stage all changed files (implementation, tests, koder docs, version, skills)
-- Commit with message format: `<summary of change> (#NN) (vX.Y.Z)`
-- Include `Co-Authored-By` trailer
+- Remove temporary files, scratch notes, or mistaken tracking docs created during the session
+- Keep durable artifacts that are part of the intended result
+- If cleanup would discard ambiguous work, ask the user instead of guessing
 
-## 4. Build & install gem
+## 4. Verify the handoff
 
-```bash
-gem build harnex.gemspec && gem install ./harnex-<version>.gem
-```
-
-Clean up the `.gem` file after install:
-
-```bash
-rm -f harnex-<version>.gem
-```
-
-## 5. Verify
-
-- Run `harnex --version` or `ruby -e "require 'harnex'; puts Harnex::VERSION"` to confirm
-- Report the installed version to the user
+- Run the relevant tests or verification commands if code or docs changed
+- Check the final `git status --short` output for any leftover surprises
+- Give the user a concise summary of what changed and any remaining follow-up
 
 ## Notes
 
-- Do NOT push to remote unless the user asks
-- Do NOT publish to rubygems unless the user explicitly asks
-- If tests haven't been run yet, run them before committing
-- If STATE.md is already up to date, skip step 1
+- Do NOT create or close issue docs unless the user explicitly asks
+- Do NOT commit, build, install, or publish anything unless the user explicitly asks
+- If `koder/STATE.md` is already accurate, keep the update minimal rather than churning it

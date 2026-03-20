@@ -12,6 +12,9 @@ handoff document between agent sessions.
 
 Always check STATE.md at the start of a session to orient yourself.
 If you complete work, update STATE.md before ending.
+Bundled session lifecycle skills follow the same pattern:
+- `open` — initialize the session by reading `koder/STATE.md` and checking the worktree
+- `close` — update `koder/STATE.md`, clean up session artifacts, and leave a handoff
 
 ## What is harnex?
 
@@ -32,10 +35,12 @@ lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
-test/                            Minitest suite (163 tests)
+test/                            Minitest suite (174 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
+skills/open/SKILL.md             Session initialization workflow
+skills/close/SKILL.md            Session wrap-up workflow
 skills/harnex/SKILL.md           Skill file for Claude/Codex integration
 ```
 

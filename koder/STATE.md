@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-17
+Updated: 2026-03-20
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-03-17
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 171 minitest tests, all passing.
+- Test suite: `test/` with 174 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -30,8 +30,15 @@ Updated: 2026-03-17
   - `harnex guide` — prints GUIDE.md (getting started walkthrough)
   - `harnex recipes` — lists and shows workflow recipes (fire-and-watch,
     chain-implement)
-  - `harnex skills install` — copies the harnex skill into a repo's
+  - `harnex skills install [SKILL]` — installs any bundled repo skill into
     `.claude/skills/` and symlinks `.codex/skills/` to it
+- Bundled skill install is now generalized beyond `harnex`: `open` and `close`
+  can be installed repo-locally with `harnex skills install <skill>` while
+  `harnex` remains the default for backwards compatibility.
+- Bundled session lifecycle skills now include `open` for session initialization
+  (read `koder/STATE.md`, inspect the worktree, align on the next step) and
+  `close` for session wrap-up (update `koder/STATE.md`, clean up artifacts,
+  leave a clear handoff).
 - README rewritten for non-users (quick "is this for me?" format). Usage
   details moved to GUIDE.md, command reference stays in TECHNICAL.md.
 - `recipes/` directory with tested workflow patterns:
@@ -89,7 +96,8 @@ Harnex is a local PTY harness for interactive terminal agents.
   (`--until prompt`).
 - `harnex guide` prints the getting started guide.
 - `harnex recipes` lists and shows workflow recipes.
-- `harnex skills install` copies the skill into a repo for Claude/Codex.
+- `harnex skills install [SKILL]` installs bundled skills into a repo for
+  Claude/Codex, defaulting to `harnex`.
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
   behavior, stop sequence, and send-readiness waiting.
 - Session output is mirrored to the terminal, stored in a 64KB ring buffer for

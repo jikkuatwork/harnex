@@ -91,7 +91,7 @@ module Harnex
           pane    Capture the current tmux pane for a live session
           recipes List and read workflow recipes
           guide   Show the getting started guide
-          skills  Install harnex skill into a repo
+          skills  Install bundled skills into a repo or globally
           help    Show command help
 
         New to harnex? Start with: harnex guide
@@ -108,6 +108,7 @@ module Harnex
           harnex logs --id main --follow
           harnex pane --id main --lines 40
           harnex send --id main --message "Summarize current progress."
+          harnex skills install close
       TEXT
     end
   end

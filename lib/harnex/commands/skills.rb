@@ -2,25 +2,38 @@ require "fileutils"
 
 module Harnex
   class Skills
-    SKILL_SOURCE = File.expand_path("../../../../skills/harnex", __FILE__)
+    SKILLS_ROOT = File.expand_path("../../../../skills", __FILE__)
+    DEFAULT_SKILL = "harnex"
 
     def self.usage
+      available = bundled_skill_names
+      skill_list = available.empty? ? "(none found)" : available.join(", ")
+
       <<~TEXT
-        Usage: harnex skills install [--global]
+        Usage: harnex skills install [SKILL] [--global]
 
         Subcommands:
-          install     Install the harnex skill into the current repo
+          install     Install a bundled skill into the current repo
 
         Options:
           --global    Install to ~/.claude/skills and ~/.codex/skills
                       instead of the current repo
 
-        Without --global, copies the skill to .claude/skills/harnex/
-        in the current repo and symlinks .codex/skills/harnex to it.
+        Skill defaults to #{DEFAULT_SKILL.inspect} for backwards compatibility.
+        Available bundled skills: #{skill_list}
 
-        With --global, symlinks both ~/.claude/skills/harnex and
-        ~/.codex/skills/harnex to the harnex source.
+        Without --global, copies the skill to .claude/skills/<skill>/
+        in the current repo and symlinks .codex/skills/<skill> to it.
+
+        With --global, symlinks both ~/.claude/skills/<skill> and
+        ~/.codex/skills/<skill> to the bundled source.
       TEXT
+    end
+
+    def self.bundled_skill_names
+      Dir.glob(File.join(SKILLS_ROOT, "*", "SKILL.md"))
+        .map { |path| File.basename(File.dirname(path)) }
+        .sort
     end
 
     def initialize(argv)
@@ -31,8 +44,16 @@ module Harnex
       subcommand = @argv.shift
       case subcommand
       when "install"
-        global = @argv.include?("--global")
-        global ? install_global : install_local
+        skill_name, global, help = parse_install_args(@argv)
+        if help
+          puts self.class.usage
+          return 0
+        end
+
+        skill_source = resolve_skill_source(skill_name)
+        return missing_skill(skill_name) unless skill_source
+
+        global ? install_global(skill_name, skill_source) : install_local(skill_name, skill_source)
       when "-h", "--help", nil
         puts self.class.usage
         0
@@ -45,21 +66,57 @@ module Harnex
 
     private
 
-    def install_local
-      repo_root = Harnex.resolve_repo_root(Dir.pwd)
-      claude_dir = File.join(repo_root, ".claude", "skills", "harnex")
-      codex_dir = File.join(repo_root, ".codex", "skills", "harnex")
+    def parse_install_args(args)
+      skill_name = nil
+      global = false
+      help = false
 
-      # Copy skill to .claude/skills/harnex/
+      args.each do |arg|
+        case arg
+        when "--global"
+          global = true
+        when "-h", "--help"
+          help = true
+        when /\A-/
+          raise "harnex skills: unknown option #{arg.inspect}"
+        else
+          raise "harnex skills: too many arguments" if skill_name
+
+          skill_name = arg
+        end
+      end
+
+      [skill_name || DEFAULT_SKILL, global, help]
+    end
+
+    def resolve_skill_source(skill_name)
+      return nil unless self.class.bundled_skill_names.include?(skill_name)
+
+      File.join(SKILLS_ROOT, skill_name)
+    end
+
+    def missing_skill(skill_name)
+      warn("harnex skills: unknown skill #{skill_name.inspect}")
+      available = self.class.bundled_skill_names
+      warn("available skills: #{available.join(', ')}") unless available.empty?
+      1
+    end
+
+    def install_local(skill_name, skill_source)
+      repo_root = Harnex.resolve_repo_root(Dir.pwd)
+      claude_dir = File.join(repo_root, ".claude", "skills", skill_name)
+      codex_dir = File.join(repo_root, ".codex", "skills", skill_name)
+
+      # Copy skill to .claude/skills/<skill>/
       if Dir.exist?(claude_dir)
         warn("harnex skills: #{claude_dir} already exists, overwriting")
         FileUtils.rm_rf(claude_dir)
       end
       FileUtils.mkdir_p(File.dirname(claude_dir))
-      FileUtils.cp_r(SKILL_SOURCE, claude_dir)
+      FileUtils.cp_r(skill_source, claude_dir)
       puts "installed #{claude_dir}"
 
-      # Symlink .codex/skills/harnex -> .claude/skills/harnex
+      # Symlink .codex/skills/<skill> -> .claude/skills/<skill>
       codex_parent = File.dirname(codex_dir)
       FileUtils.mkdir_p(codex_parent)
       FileUtils.rm_rf(codex_dir) if File.exist?(codex_dir) || File.symlink?(codex_dir)
@@ -72,16 +129,16 @@ module Harnex
       0
     end
 
-    def install_global
-      claude_dir = File.expand_path("~/.claude/skills/harnex")
-      codex_dir = File.expand_path("~/.codex/skills/harnex")
+    def install_global(skill_name, skill_source)
+      claude_dir = File.expand_path("~/.claude/skills/#{skill_name}")
+      codex_dir = File.expand_path("~/.codex/skills/#{skill_name}")
 
       [claude_dir, codex_dir].each do |dir|
         parent = File.dirname(dir)
         FileUtils.mkdir_p(parent)
         FileUtils.rm_rf(dir) if File.exist?(dir) || File.symlink?(dir)
-        File.symlink(SKILL_SOURCE, dir)
-        puts "symlinked #{dir} -> #{SKILL_SOURCE}"
+        File.symlink(skill_source, dir)
+        puts "symlinked #{dir} -> #{skill_source}"
       end
 
       0
