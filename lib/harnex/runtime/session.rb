@@ -248,7 +248,10 @@ module Harnex
     end
 
     def persist_registry
-      Harnex.write_registry(@registry_path, registry_payload)
+      payload = registry_payload
+      preserved = load_existing_registry_metadata
+      payload = payload.merge(preserved) unless preserved.empty?
+      Harnex.write_registry(@registry_path, payload)
     end
 
     def persist_exit_status
@@ -362,6 +365,16 @@ module Harnex
 
     def screen_snapshot
       @mutex.synchronize { @output_buffer.dup }
+    end
+
+    def load_existing_registry_metadata
+      return {} unless File.exist?(@registry_path)
+
+      JSON.parse(File.read(@registry_path)).each_with_object({}) do |(key, value), memo|
+        memo[key] = value if key.start_with?("tmux_")
+      end
+    rescue JSON::ParserError
+      {}
     end
   end
 end

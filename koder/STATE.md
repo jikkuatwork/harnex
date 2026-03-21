@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-20
+Updated: 2026-03-21
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-03-20
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 174 minitest tests, all passing.
+- Test suite: `test/` with 179 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -41,6 +41,9 @@ Updated: 2026-03-20
   leave a clear handoff).
 - README rewritten for non-users (quick "is this for me?" format). Usage
   details moved to GUIDE.md, command reference stays in TECHNICAL.md.
+- README, GUIDE, and recipe docs now present **fire-and-watch** as the primary
+  workflow: fresh worker per step, file handoffs between steps, Codex for
+  planning/implementation/fixes, Claude for reviews.
 - `recipes/` directory with tested workflow patterns:
   - `01_fire_and_watch` — atomic unit: spawn, send, pane poll, capture
   - `02_chain_implement` — batch implement→review→fix loop
@@ -72,6 +75,12 @@ Updated: 2026-03-20
   `--follow` refreshes the screen at a configurable interval until the session
   exits, effectively solving the supervisor monitoring use case and making the
   output streaming HTTP API (issue #04 phase 3) low priority.
+- Issue #14 is now fixed: `harnex pane` no longer assumes the harnex session ID
+  is a valid tmux target. Tmux-backed launches annotate the registry with
+  `tmux_target` / `tmux_session` / `tmux_window`, pane lookup falls back to
+  discovering the live tmux pane by session PID for older sessions, and `pane`
+  can resolve a unique matching session across repo roots when invoked from the
+  wrong worktree.
 
 ## What harnex does
 
@@ -121,6 +130,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 11 | Tmux pane capture | **fixed** | P3 |
 | 12 | State detection failures cause send/receive problems | **fixed** | P1 |
 | 13 | Atomic `send --wait-for-idle` | **fixed** | P1 |
+| 14 | Pane lookup fails for worktree/custom tmux sessions | **fixed** | P2 |
 
 See `koder/issues/` for details.
 
@@ -145,8 +155,8 @@ See `koder/plans/` for details.
 
 ## Next step
 
-Packaged as gem v0.1.4 (not yet published to rubygems). Install locally
-with `gem build harnex.gemspec && gem install ./harnex-0.1.4.gem`.
+Packaged as gem v0.1.5 (not yet published to rubygems). Install locally
+with `gem build harnex.gemspec && gem install ./harnex-0.1.5.gem`.
 
 Dogfooding confirmed: used harnex to spawn Codex and delegate issue #13
 implementation. Hit the exact send→wait race condition during the process,
@@ -159,6 +169,8 @@ with the current contract.
 
 Potential next work:
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
+- Consider whether the new unique-ID cross-repo fallback used by `pane` should
+  also be applied to other read-only commands such as `logs`
 - Tackle retention/rotation for transcript files if they grow large
 - Public gem release
 

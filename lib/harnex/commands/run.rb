@@ -120,6 +120,7 @@ module Harnex
 
       registry = wait_for_registration(repo_root)
       return registration_timeout(@options[:id]) unless registry
+      registry = annotate_tmux_registry(registry)
 
       payload = {
         ok: true,
@@ -221,6 +222,26 @@ module Harnex
 
         sleep 0.1
       end
+    end
+
+    def annotate_tmux_registry(registry)
+      discovery = Harnex.tmux_pane_for_pid(registry["pid"])
+      return registry unless discovery
+
+      updated = registry.dup
+      updated["tmux_target"] = discovery.fetch(:target)
+      updated["tmux_session"] = discovery.fetch(:session_name)
+      updated["tmux_window"] = discovery.fetch(:window_name)
+
+      path = registry["registry_path"].to_s
+      if !path.empty? && File.exist?(path)
+        persisted = JSON.parse(File.read(path))
+        Harnex.write_registry(path, persisted.merge(updated))
+      end
+
+      updated
+    rescue JSON::ParserError
+      registry
     end
 
     def registration_timeout(id)

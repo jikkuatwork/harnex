@@ -28,6 +28,7 @@ module Harnex
       @options = {
         id: nil,
         repo_path: Dir.pwd,
+        repo_explicit: false,
         cli: nil,
         lines: nil,
         follow: false,
@@ -54,13 +55,14 @@ module Harnex
 
       return 1 unless tmux_available?
 
-      window = session.fetch("id")
-      return 1 unless tmux_window_exists?(window)
+      target = resolve_tmux_target(session)
+      return 1 unless target
+      return 1 unless tmux_target_exists?(session, target)
 
       if @options[:follow]
-        follow(session, window)
+        follow(session, target)
       else
-        text = capture(window)
+        text = capture(target)
         return 1 unless text
 
         emit_output(session.fetch("id"), text)
@@ -74,7 +76,10 @@ module Harnex
       @parser ||= OptionParser.new do |opts|
         opts.banner = "Usage: harnex pane [options]"
         opts.on("--id ID", "Session ID to inspect") { |value| @options[:id] = Harnex.normalize_id(value) }
-        opts.on("--repo PATH", "Resolve using PATH's repo root") { |value| @options[:repo_path] = value }
+        opts.on("--repo PATH", "Resolve using PATH's repo root") do |value|
+          @options[:repo_path] = value
+          @options[:repo_explicit] = true
+        end
         opts.on("--cli CLI", "Filter the active session by CLI") { |value| @options[:cli] = value }
         opts.on("--lines N", Integer, "Capture the last N lines instead of the full pane") { |value| @options[:lines] = value }
         opts.on("--follow", "Refresh the pane snapshot until the session exits") { @options[:follow] = true }
@@ -88,6 +93,17 @@ module Harnex
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       session = Harnex.read_registry(repo_root, @options[:id], cli: @options[:cli])
       return session if session
+
+      unless @options[:repo_explicit]
+        candidates = Harnex.active_sessions(nil, id: @options[:id], cli: @options[:cli])
+        return candidates.first if candidates.length == 1
+
+        if candidates.length > 1
+          repos = candidates.map { |candidate| candidate["repo_root"].to_s }.uniq.sort
+          warn("harnex pane: multiple active sessions found with id #{@options[:id].inspect}; use --repo to disambiguate: #{repos.join(', ')}")
+          return nil
+        end
+      end
 
       if cli_filter_mismatch?(repo_root)
         warn("harnex pane: no active session found with id #{@options[:id].inspect} and cli #{@options[:cli].inspect}")
@@ -106,6 +122,43 @@ module Harnex
       Harnex.cli_key(Harnex.session_cli(session)) != Harnex.cli_key(@options[:cli])
     end
 
+    def resolve_tmux_target(session)
+      target = session["tmux_target"].to_s.strip
+      return target unless target.empty?
+
+      discovery = Harnex.tmux_pane_for_pid(session["pid"])
+      if discovery
+        persist_tmux_metadata(session, discovery)
+        return discovery.fetch(:target)
+      end
+
+      tmux_session = session["tmux_session"].to_s.strip
+      tmux_window = session["tmux_window"].to_s.strip
+      unless tmux_session.empty? || tmux_window.empty?
+        return "#{tmux_session}:#{tmux_window}"
+      end
+
+      warn("harnex pane: session #{session.fetch('id').inspect} is not tmux-backed or the tmux pane could not be located")
+      nil
+    end
+
+    def persist_tmux_metadata(session, discovery)
+      session["tmux_target"] = discovery.fetch(:target)
+      session["tmux_session"] = discovery.fetch(:session_name)
+      session["tmux_window"] = discovery.fetch(:window_name)
+
+      path = session["registry_path"].to_s
+      return if path.empty? || !File.exist?(path)
+
+      payload = JSON.parse(File.read(path))
+      payload["tmux_target"] = session["tmux_target"]
+      payload["tmux_session"] = session["tmux_session"]
+      payload["tmux_window"] = session["tmux_window"]
+      Harnex.write_registry(path, payload)
+    rescue JSON::ParserError
+      nil
+    end
+
     def tmux_available?
       return true if system("tmux", "-V", out: File::NULL, err: File::NULL)
 
@@ -116,22 +169,22 @@ module Harnex
       false
     end
 
-    def tmux_window_exists?(window)
-      return true if system("tmux", "has-session", "-t", window, out: File::NULL, err: File::NULL)
+    def tmux_target_exists?(session, target)
+      return true if system("tmux", "has-session", "-t", target, out: File::NULL, err: File::NULL)
 
-      warn("harnex pane: session #{window.inspect} is not tmux-backed or the tmux window no longer exists")
+      warn("harnex pane: session #{session.fetch('id').inspect} is not tmux-backed or the tmux target #{target.inspect} no longer exists")
       false
     rescue Errno::ENOENT
       warn("harnex pane: tmux is not installed or not available in PATH")
       false
     end
 
-    def follow(session, window)
+    def follow(session, target)
       pid = session["pid"].to_i
       last_text = nil
 
       loop do
-        text = capture(window)
+        text = capture(target)
         break unless text
 
         if text != last_text
@@ -156,8 +209,8 @@ module Harnex
       $stdout.flush
     end
 
-    def capture(window)
-      stdout, stderr, status = capture_command(capture_command_args(window))
+    def capture(target)
+      stdout, stderr, status = capture_command(capture_command_args(target))
       return stdout if status.success?
 
       message = stderr.to_s.strip
@@ -169,8 +222,8 @@ module Harnex
       nil
     end
 
-    def capture_command_args(window)
-      command = ["tmux", "capture-pane", "-t", window, "-p"]
+    def capture_command_args(target)
+      command = ["tmux", "capture-pane", "-t", target, "-p"]
       command += ["-S", "-#{@options[:lines]}"] if @options[:lines]
       command
     end

@@ -1,38 +1,34 @@
 # Harnex
 
-If you use AI coding agents in the terminal — Claude Code, Codex,
-or similar — and you've ever wished you could run two of them at once
-and have them coordinate, that's what harnex does.
+If you use AI coding agents in the terminal and want a reliable way
+to launch them, hand them one job, watch what they do, and stop them
+cleanly, that's what harnex does.
 
-One agent writes code. Another reviews it. A third implements a
-different feature in a separate worktree. You watch them work in
-tmux windows, or let them run in the background. They find each
-other, send messages, queue work, and report back — without you
-copy-pasting between terminals.
+It can relay messages between sessions, but the most dependable
+workflow is simpler: run fresh Codex and Claude workers in tmux, send
+each one a single task, inspect progress with `harnex pane`, and pass
+file artifacts from step to step. Codex plans and implements. Claude
+reviews.
 
 ```
   You
    │
-   ├── harnex run codex --id worker --tmux
-   ├── harnex run claude --id reviewer --tmux
-   │
-   ├── harnex send --id worker --message "implement auth"
-   │     └── worker finishes, reviewer picks it up
-   │
-   └── harnex status
-         worker   codex   prompt
-         reviewer claude  busy
+   ├── harnex run codex  --id cx-plan-23 --tmux
+   ├── harnex send --id cx-plan-23 --message "Write /tmp/plan-23.md"
+   ├── harnex run codex  --id cx-impl-23 --tmux
+   ├── harnex send --id cx-impl-23 --message "Read /tmp/plan-23.md"
+   ├── harnex run claude --id cl-rev-23 --tmux
+   └── harnex send --id cl-rev-23 --message "Review and write /tmp/review-23.md"
 ```
 
 ## When you'd want this
 
-- You're working on a codebase and want to parallelize across
-  agents — one implements, one reviews, one tests
-- You want a supervisor agent that spawns workers, gives them
-  tasks, and collects results
-- You're tired of switching between terminal tabs to copy output
-  from one agent into another
-- You want agents to coordinate without you being the middleman
+- You want a local supervisor harness for fresh agent instances
+- You want Codex to plan or implement and Claude to review
+- You want to inspect real screens and logs instead of trusting
+  callback messages
+- You want serial plan -> implement -> review -> fix workflows
+  without juggling terminal tabs
 
 ## When you wouldn't
 
@@ -42,19 +38,17 @@ copy-pasting between terminals.
 
 ## What it looks like
 
-Start agents, name them, send messages between them:
+Start a worker, send one task, watch it, stop it:
 
 ```bash
-harnex run codex --id worker
-harnex send --id worker --message "implement the auth module"
-harnex send --id worker --message "now write tests" --wait-for-idle
-harnex status
-harnex stop --id worker
+harnex run codex --id cx-impl-23 --tmux
+harnex send --id cx-impl-23 --message "Read and execute /tmp/task-23.md" --wait-for-idle --timeout 600
+harnex pane --id cx-impl-23 --lines 60
+harnex stop --id cx-impl-23
 ```
 
-Messages queue automatically when an agent is busy and deliver
-when it's ready. Agents see who sent each message. No polling,
-no retrying, no glue scripts.
+Queueing and relay still exist when you need them, but the default
+pattern is one task per fresh worker plus screen-based observation.
 
 ## Install
 

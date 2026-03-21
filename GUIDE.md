@@ -2,6 +2,22 @@
 
 You've installed harnex. Here's how to actually use it.
 
+## Recommended mental model
+
+Treat harnex as a local supervisor harness, not as a conversation
+bus between agents.
+
+- Start a fresh worker for each step, usually with `--tmux`
+- Send one clear task, often by pointing the worker at a file
+- Use `--wait-for-idle` as a fence, then inspect with `harnex pane`
+- Ask the worker to write its output to a file when the next step
+  needs structured input
+- Stop the worker when that step is done
+
+For multi-step flows, chain fresh workers with file handoffs:
+Codex writes a plan, another Codex implements it, Claude reviews it,
+another Codex fixes it.
+
 ## Your first session
 
 Start an agent the way you normally would, but through harnex:
@@ -30,7 +46,8 @@ harnex send --id worker --message "implement the auth module"
 
 If the agent is busy, the message queues and delivers
 automatically when the agent is ready. You don't have to wait
-or retry.
+or retry. Queueing exists, but the default workflow should still be
+one task per fresh worker.
 
 ## Seeing what's running
 
@@ -82,6 +99,10 @@ This is better than separate send + wait commands because there's
 no gap where you might check too early and think the agent is
 done when it hasn't started yet.
 
+Treat `--wait-for-idle` as the fence, not the report. After the
+send returns, use `harnex pane` or `harnex logs` to inspect what
+actually happened.
+
 ## Sending large prompts
 
 PTY buffers and shell quoting don't love multi-kilobyte inline
@@ -113,35 +134,36 @@ harnex send --id impl --message "Implement koder/plans/plan_09_atomic_send_wait.
 This is more reliable, easier to debug (you can read the file to
 see exactly what was sent), and avoids quoting headaches.
 
-## Getting results back
+## Capturing results
 
-When you delegate work to an agent, tell it how to report back.
-Otherwise it finishes silently and you have to go dig through its
-output.
+For dependable multi-step work, prefer file handoffs over reply
+messages.
 
-The clearest pattern: tell the agent to send a message back to
-you when it's done.
+Examples:
 
 ```bash
-harnex send --id impl --message "$(cat <<'EOF'
-Implement the auth module from koder/plans/plan_04_auth.md.
-Run tests after.
+# Planning
+harnex send --id plan --message "Read koder/issues/13_atomic_send_wait.md and write a plan to /tmp/plan-13.md. Do not change code." --wait-for-idle --timeout 600
 
-When done, send a summary back:
-  harnex send --id review --message "<what you did, test results>"
-EOF
-)"
+# Review
+harnex send --id review --message "Review the current changes against /tmp/plan-13.md and write findings to /tmp/review-13.md. If clean, say so explicitly." --wait-for-idle --timeout 600
 ```
 
-Now you can wait for the reply instead of guessing when the
-agent finished or scraping its terminal output.
+Why files work better:
 
-If you're inside a harnex session yourself (as a supervised
-agent), use `$HARNEX_ID` as the return address:
+- The next worker can read exactly the same artifact you reviewed
+- The supervisor can inspect the artifact without scraping terminal text
+- If the session dies, the output still exists
+
+After the worker finishes, inspect the screen:
 
 ```bash
-harnex send --id impl --message "Implement the plan. When done: harnex send --id $HARNEX_ID --message '<summary>'"
+harnex pane --id review --lines 60
 ```
+
+Optional: if you're inside a harnex-managed session yourself and
+really want a callback, you can still use `$HARNEX_ID` as the return
+address. Treat that as secondary, not the main control flow.
 
 ## Stopping agents
 
@@ -152,33 +174,34 @@ harnex stop --id impl
 This sends the agent's native exit sequence (e.g. `/exit` for
 Codex). The agent shuts down cleanly.
 
-## A typical multi-agent workflow
+## A reliable supervised workflow
 
-Put it all together — implement a feature across two agents:
+Use fresh instances for each stage. Codex plans and implements.
+Claude only reviews.
 
 ```bash
-# Start agents in tmux
-harnex run codex --id impl --tmux
-harnex run claude --id review --tmux
+# 1. Plan with Codex
+harnex run codex --id cx-plan-13 --tmux
+harnex send --id cx-plan-13 --message "Read koder/issues/13_atomic_send_wait.md and write a concrete implementation plan to /tmp/plan-13.md. Do not change code." --wait-for-idle --timeout 600
+harnex pane --id cx-plan-13 --lines 60
+harnex stop --id cx-plan-13
 
-# Write the task (it's long)
-cat > /tmp/task.md <<'EOF'
-Implement issue #13 following koder/plans/plan_09.md.
-Run the test suite when done.
-When finished, report back: harnex send --id review --message "<summary>"
-EOF
+# 2. Implement with a fresh Codex
+harnex run codex --id cx-impl-13 --tmux
+harnex send --id cx-impl-13 --message "Read /tmp/plan-13.md, implement it, run tests, and write a short summary to /tmp/impl-13.md." --wait-for-idle --timeout 1200
+harnex pane --id cx-impl-13 --lines 80
+harnex stop --id cx-impl-13
 
-# Send and wait
-harnex send --id impl --message "Read and execute /tmp/task.md" --wait-for-idle --timeout 600
-
-# Check on them anytime with tmux (Ctrl-b w) or:
-harnex pane --id impl --lines 20
-harnex status
-
-# Stop when done
-harnex stop --id impl
-harnex stop --id review
+# 3. Review with a fresh Claude
+harnex run claude --id cl-rev-13 --tmux
+harnex send --id cl-rev-13 --message "Review the current changes against /tmp/plan-13.md. Write findings to /tmp/review-13.md. If there are no issues, say clean." --wait-for-idle --timeout 900
+harnex pane --id cl-rev-13 --lines 80
+harnex stop --id cl-rev-13
 ```
+
+If the review finds issues, spawn another fresh Codex worker and tell
+it to read `/tmp/review-13.md`, fix the findings, run tests, and write
+an updated summary. Then review again with a fresh Claude instance.
 
 ## Teaching your agents about harnex
 
@@ -208,10 +231,10 @@ harnex recipes show 01     # read one
 ```
 
 - **Fire and Watch** (`harnex recipes show 01`) — send work to a
-  worker, poll its tmux screen until idle, capture the result.
+  fresh worker, watch its tmux screen, capture the result, stop it.
 - **Chain Implement** (`harnex recipes show 02`) — process a
-  batch of plans in series: implement (Codex) → review (Claude)
-  → fix (Codex).
+  batch as repeated fire-and-watch: Codex plan/implement,
+  Claude review, Codex fix, then review again if needed.
 
 ## What's next
 

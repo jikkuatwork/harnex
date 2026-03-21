@@ -57,6 +57,28 @@ class SessionTest < Minitest::Test
     output_log&.close unless output_log&.closed?
   end
 
+  def test_persist_registry_preserves_tmux_metadata
+    session = build_session
+    path = Harnex.registry_path(Dir.pwd, session.id)
+    Harnex.write_registry(path, {
+      "id" => session.id,
+      "pid" => Process.pid,
+      "repo_root" => Dir.pwd,
+      "tmux_target" => "%91",
+      "tmux_session" => "harnex",
+      "tmux_window" => "cx-91"
+    })
+
+    session.send(:persist_registry)
+
+    payload = JSON.parse(File.read(path))
+    assert_equal "%91", payload["tmux_target"]
+    assert_equal "harnex", payload["tmux_session"]
+    assert_equal "cx-91", payload["tmux_window"]
+  ensure
+    FileUtils.rm_f(path) if path
+  end
+
   def test_persist_exit_status_writes_zero_exit_code
     session = build_session
     session.instance_variable_set(:@exit_code, 0)

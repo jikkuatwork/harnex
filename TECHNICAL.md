@@ -90,6 +90,13 @@ harnex pane --id worker --follow
 harnex pane --id worker --json
 ```
 
+Notes:
+- Works only for tmux-backed sessions
+- Resolves against the live tmux pane target, not just the harnex session ID
+- If a session was started from another worktree, `pane` can fall back to a
+  unique cross-repo ID match; use `--repo` when the same ID exists in more
+  than one repo root
+
 ## Usage Patterns
 
 ### Atomic send+wait

@@ -77,4 +77,40 @@ class RunnerTest < Minitest::Test
     # Should not raise
     runner.send(:validate_unique_id!, repo_root)
   end
+
+  def test_annotate_tmux_registry_persists_tmux_metadata
+    repo_root = Dir.pwd
+    id = "tmux-meta-#{$$}"
+    path = Harnex.registry_path(repo_root, id)
+    payload = {
+      "id" => id,
+      "pid" => Process.pid,
+      "host" => "127.0.0.1",
+      "port" => 44445,
+      "token" => "test",
+      "repo_root" => repo_root,
+      "registry_path" => path
+    }
+    Harnex.write_registry(path, payload.reject { |key, _| key == "registry_path" })
+
+    runner = Harnex::Runner.new(["codex", "--id", id])
+    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+
+    discovery = { target: "%31", session_name: "harnex", window_name: "cx-31" }
+    original_tmux_lookup = Harnex.method(:tmux_pane_for_pid)
+    Harnex.define_singleton_method(:tmux_pane_for_pid) { |_pid| discovery }
+    updated = runner.send(:annotate_tmux_registry, payload)
+
+    assert_equal "%31", updated["tmux_target"]
+    assert_equal "harnex", updated["tmux_session"]
+    assert_equal "cx-31", updated["tmux_window"]
+
+    persisted = JSON.parse(File.read(path))
+    assert_equal "%31", persisted["tmux_target"]
+    assert_equal "harnex", persisted["tmux_session"]
+    assert_equal "cx-31", persisted["tmux_window"]
+  ensure
+    Harnex.define_singleton_method(:tmux_pane_for_pid, &original_tmux_lookup) if original_tmux_lookup
+    FileUtils.rm_f(path) if path
+  end
 end

@@ -165,6 +165,34 @@ module Harnex
     sessions.first
   end
 
+  def tmux_pane_for_pid(pid)
+    target_pid = Integer(pid)
+    stdout, status = Open3.capture2(
+      "tmux", "list-panes", "-a", "-F",
+      "\#{pane_id}\t\#{pane_pid}\t\#{session_name}\t\#{window_name}"
+    )
+    return nil unless status.success?
+
+    matches = stdout.each_line.filter_map do |line|
+      pane_id, pane_pid, session_name, window_name = line.chomp.split("\t", 4)
+      next if pane_id.to_s.empty?
+      next unless pane_pid.to_i == target_pid
+
+      {
+        target: pane_id,
+        pane_id: pane_id,
+        session_name: session_name,
+        window_name: window_name
+      }
+    end
+
+    return nil unless matches.length == 1
+
+    matches.first
+  rescue ArgumentError, Errno::ENOENT
+    nil
+  end
+
   def write_registry(path, payload)
     tmp = "#{path}.tmp.#{Process.pid}"
     File.write(tmp, JSON.pretty_generate(payload))
