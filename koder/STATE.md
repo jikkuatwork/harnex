@@ -131,6 +131,8 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 12 | State detection failures cause send/receive problems | **fixed** | P1 |
 | 13 | Atomic `send --wait-for-idle` | **fixed** | P1 |
 | 14 | Pane lookup fails for worktree/custom tmux sessions | **fixed** | P2 |
+| 15 | Auto-stop session on task completion | open | P2 |
+| 16 | Platform-agnostic data directory (~/.harnex/) | open | P2 |
 
 See `koder/issues/` for details.
 
