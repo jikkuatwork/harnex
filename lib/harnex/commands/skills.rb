@@ -6,9 +6,6 @@ module Harnex
     DEFAULT_SKILL = "harnex"
 
     def self.usage
-      available = bundled_skill_names
-      skill_list = available.empty? ? "(none found)" : available.join(", ")
-
       <<~TEXT
         Usage: harnex skills install [SKILL] [--global]
 
@@ -19,8 +16,7 @@ module Harnex
           --global    Install to ~/.claude/skills and ~/.codex/skills
                       instead of the current repo
 
-        Skill defaults to #{DEFAULT_SKILL.inspect} for backwards compatibility.
-        Available bundled skills: #{skill_list}
+        Installs the #{DEFAULT_SKILL.inspect} skill only.
 
         Without --global, copies the skill to .claude/skills/<skill>/
         in the current repo and symlinks .codex/skills/<skill> to it.
@@ -31,9 +27,7 @@ module Harnex
     end
 
     def self.bundled_skill_names
-      Dir.glob(File.join(SKILLS_ROOT, "*", "SKILL.md"))
-        .map { |path| File.basename(File.dirname(path)) }
-        .sort
+      [DEFAULT_SKILL]
     end
 
     def initialize(argv)
