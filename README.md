@@ -80,3 +80,7 @@ but everything else works). Adding a new agent is one small file.
 ## License
 
 [MIT](LICENSE)
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/harnex)
