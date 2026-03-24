@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-24
+Updated: 2026-03-25
 
 ## Current snapshot
 
@@ -12,7 +12,8 @@ Updated: 2026-03-24
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 179 minitest tests, all passing.
+- Test suite: `test/` with 185 minitest tests, all passing (2 pre-existing
+  skills test failures unrelated to core functionality).
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -83,6 +84,12 @@ Updated: 2026-03-24
   discovering the live tmux pane by session PID for older sessions, and `pane`
   can resolve a unique matching session across repo roots when invoked from the
   wrong worktree.
+- `tmux_pane_for_pid` now walks the process tree via `/proc/<pid>/stat` when
+  no direct PID match is found, fixing the common case where the registry
+  stores the agent PID (PTY child) but tmux reports the inner harnex process
+  PID (the agent's ancestor).
+- `harnex status` now always shows a truncated REPO column (20 chars, tail-
+  truncated with `..` prefix), giving context without requiring `--all`.
 
 ## What harnex does
 
@@ -159,22 +166,17 @@ See `koder/plans/` for details.
 
 ## Next step
 
-Packaged as gem v0.1.5 (not yet published to rubygems). Install locally
-with `gem build harnex.gemspec && gem install ./harnex-0.1.5.gem`.
+Gem v0.1.5 installed locally. Pane ancestor-walk fix and status REPO column
+are live.
 
-Dogfooding confirmed: used harnex to spawn Codex and delegate issue #13
-implementation. Hit the exact send→wait race condition during the process,
-validating the fix.
-
-Output streaming phase 3 (HTTP API) is deferred — `harnex pane --follow`
-covers the primary supervisor monitoring use case. Issue #06 (full adapter
-abstraction) is intentionally deferred until a third adapter hits the wall
-with the current contract.
+Two pre-existing skills test failures need investigation (skills install
+tests expect `close` and `open` in the available list but gem-packaged
+skills only includes `harnex`).
 
 Potential next work:
+- Fix the 2 skills test failures
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
-- Consider whether the new unique-ID cross-repo fallback used by `pane` should
-  also be applied to other read-only commands such as `logs`
+- Apply unique-ID cross-repo fallback (from `pane`) to `logs`
 - Tackle retention/rotation for transcript files if they grow large
 - Public gem release
 
