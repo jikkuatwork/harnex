@@ -173,23 +173,53 @@ module Harnex
     )
     return nil unless status.success?
 
-    matches = stdout.each_line.filter_map do |line|
+    panes = stdout.each_line.filter_map do |line|
       pane_id, pane_pid, session_name, window_name = line.chomp.split("\t", 4)
       next if pane_id.to_s.empty?
-      next unless pane_pid.to_i == target_pid
 
       {
         target: pane_id,
         pane_id: pane_id,
+        pane_pid: pane_pid.to_i,
         session_name: session_name,
         window_name: window_name
       }
     end
 
+    pane_pids = panes.map { |p| p[:pane_pid] }.to_set
+
+    # Direct match first
+    matches = panes.select { |p| p[:pane_pid] == target_pid }
+
+    # If no direct match, walk up the process tree from target_pid
+    # to find an ancestor that is a tmux pane root process.
+    if matches.empty?
+      ancestor = parent_pid(target_pid)
+      while ancestor && ancestor > 1
+        if pane_pids.include?(ancestor)
+          matches = panes.select { |p| p[:pane_pid] == ancestor }
+          break
+        end
+        ancestor = parent_pid(ancestor)
+      end
+    end
+
     return nil unless matches.length == 1
 
-    matches.first
+    result = matches.first
+    result.delete(:pane_pid)
+    result
   rescue ArgumentError, Errno::ENOENT
+    nil
+  end
+
+  def parent_pid(pid)
+    stat = File.read("/proc/#{pid}/stat")
+    # Field 4 is ppid (fields are space-separated, field 1 is pid,
+    # field 2 is (comm) which may contain spaces, field 3 is state, field 4 is ppid)
+    parts = stat.match(/\A\d+\s+\(.*?\)\s+\S+\s+(\d+)/)
+    parts ? parts[1].to_i : nil
+  rescue Errno::ENOENT, Errno::EACCES
     nil
   end
 

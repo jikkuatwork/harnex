@@ -34,6 +34,22 @@ class StatusCommandTest < Minitest::Test
     assert_equal "beta", data.first["id"]
   end
 
+  def test_status_table_includes_repo_column
+    write_registry("gamma")
+
+    status = Harnex::Status.new([])
+    out, = capture_io { assert_equal 0, status.run }
+
+    assert_includes out, "REPO"
+  end
+
+  def test_truncate_repo_truncates_long_paths
+    status = Harnex::Status.new([])
+    result = status.send(:truncate_repo, "/very/long/path/to/some/deep/repo")
+    assert_operator result.length, :<=, Harnex::Status::REPO_WIDTH
+    assert result.start_with?("..")
+  end
+
   private
 
   def write_registry(id, description: nil)

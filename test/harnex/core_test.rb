@@ -208,4 +208,58 @@ class CoreTest < Minitest::Test
     port = Harnex.allocate_port("/tmp/fake", "test-id", 59876)
     assert_equal 59876, port
   end
+
+  # --- parent_pid ---
+
+  def test_parent_pid_returns_ppid_for_current_process
+    ppid = Harnex.parent_pid(Process.pid)
+    assert_equal Process.ppid, ppid
+  end
+
+  def test_parent_pid_returns_nil_for_nonexistent_pid
+    assert_nil Harnex.parent_pid(999_999_999)
+  end
+
+  # --- tmux_pane_for_pid: ancestor walk ---
+
+  def test_tmux_pane_for_pid_finds_ancestor_match
+    # Simulate: pane_pid is our ppid, but we query with our own pid (a descendant)
+    pane_list = "%99\t#{Process.ppid}\tharnex\tworker\n"
+    fake_status = Object.new.tap { |s| s.define_singleton_method(:success?) { true } }
+
+    original_capture2 = Open3.method(:capture2)
+    Open3.define_singleton_method(:capture2) do |*args|
+      if args.first == "tmux"
+        [pane_list, fake_status]
+      else
+        original_capture2.call(*args)
+      end
+    end
+
+    result = Harnex.tmux_pane_for_pid(Process.pid)
+    assert_equal "%99", result&.fetch(:target)
+    assert_equal "harnex", result&.fetch(:session_name)
+    assert_equal "worker", result&.fetch(:window_name)
+  ensure
+    Open3.define_singleton_method(:capture2, &original_capture2) if original_capture2
+  end
+
+  def test_tmux_pane_for_pid_prefers_direct_match
+    pane_list = "%99\t#{Process.pid}\tharnex\tworker\n"
+    fake_status = Object.new.tap { |s| s.define_singleton_method(:success?) { true } }
+
+    original_capture2 = Open3.method(:capture2)
+    Open3.define_singleton_method(:capture2) do |*args|
+      if args.first == "tmux"
+        [pane_list, fake_status]
+      else
+        original_capture2.call(*args)
+      end
+    end
+
+    result = Harnex.tmux_pane_for_pid(Process.pid)
+    assert_equal "%99", result&.fetch(:target)
+  ensure
+    Open3.define_singleton_method(:capture2, &original_capture2) if original_capture2
+  end
 end

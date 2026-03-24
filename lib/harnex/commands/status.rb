@@ -7,6 +7,7 @@ require "uri"
 module Harnex
   class Status
     DESCRIPTION_WIDTH = 30
+    REPO_WIDTH = 20
 
     def self.usage(program_name = "harnex status")
       <<~TEXT
@@ -97,8 +98,7 @@ module Harnex
     end
 
     def render_table(sessions)
-      columns = ["ID", "CLI", "PID", "PORT", "AGE", "STATE", "DESC"]
-      columns << "REPO" if @options[:all]
+      columns = ["ID", "CLI", "PID", "PORT", "AGE", "STATE", "REPO", "DESC"]
 
       rows = sessions.map { |session| table_row(session, columns) }
       widths = columns.to_h { |column| [column, ([column.length] + rows.map { |row| row.fetch(column).length }).max] }
@@ -120,7 +120,7 @@ module Harnex
         "STATE" => session.dig("input_state", "state").to_s.empty? ? "-" : session.dig("input_state", "state").to_s,
         "DESC" => truncate(session["description"])
       }
-      row["REPO"] = display_path(session["repo_root"]) if columns.include?("REPO")
+      row["REPO"] = truncate_repo(session["repo_root"])
       row
     end
 
@@ -154,6 +154,14 @@ module Harnex
       return text if text.length <= DESCRIPTION_WIDTH
 
       "#{text[0, DESCRIPTION_WIDTH - 3]}..."
+    end
+
+    def truncate_repo(path)
+      text = display_path(path)
+      return "-" if text.empty?
+      return text if text.length <= REPO_WIDTH
+
+      "..#{text[-(REPO_WIDTH - 2)..]}"
     end
 
     def display_path(path)
