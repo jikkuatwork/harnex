@@ -154,9 +154,18 @@ harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
   master's versions of session-state files
 - **Cleanup**: `git worktree remove <path>` then `git branch -d plan/<branch>`
 
+## Checking Status
+
+```bash
+harnex status           # current repo sessions
+harnex status --all     # all repos
+```
+
 ## What NOT to Do
 
 - **Never** launch agents with raw `tmux send-keys` or `tmux new-window`
 - **Never** use `--tmux NAME` where NAME differs from `--id`
+- **Never** pass `-- --cd <path>` to Claude sessions (unsupported flag)
 - **Never** poll with raw `tmux capture-pane` — use `harnex pane`
 - **Never** rely on `--wait-for-idle` alone — always use Fire & Watch
+- **Never** use `c-zai-dangerous` or direct CLI spawning outside harnex

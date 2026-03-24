@@ -1,6 +1,6 @@
 ---
 name: chain-implement
-description: End-to-end workflow from issue to shipped plans via harnex agents. Covers mapping, plan extraction, and the serial implement → review → fix loop.
+description: End-to-end workflow from issue to shipped plans via harnex agents. Covers mapping, plan extraction, and the serial plan → review → implement → review → fix loop.
 ---
 
 # Chain Implement
@@ -31,8 +31,18 @@ Issue (user + agent chat)
 [Plan Extraction] → thin-layer plans           ← skip if one plan suffices
   ↓
 Per plan (serial):
-  Implement (codex) → Review (claude) → Fix (codex) → next plan
+  Plan (codex) → Plan Review (claude) → Fix Plan (codex)
+    → Implement (codex) → Code Review (claude) → Fix Code (codex)
+    → Commit → next plan
 ```
+
+### Why two review phases?
+
+The plan review catches design problems before code is written. The code review
+catches implementation problems after. Skipping plan review leads to wasted
+implementation cycles when the plan itself is flawed. This was validated in
+production — adversarial plan/review cycles consistently produce better outcomes
+than jumping straight to implementation.
 
 ## Phase 1: Issue
 
@@ -112,24 +122,44 @@ Each plan goes through the full cycle. This is the walk-away part.
 ### Per-plan cycle
 
 ```
-1. Implement (codex)   — write code, run tests, commit per phase
-2. Review (claude)     — review implementation against plan
-3. Fix (codex)         — address review findings if needed
-4. → next plan
+1. Plan (codex)        — write/refine the plan if not already extracted
+2. Plan Review (claude) — check plan against codebase, flag issues
+3. Fix Plan (codex)    — address review findings
+4. Implement (codex)   — write code, run tests, commit per phase
+5. Code Review (claude) — review implementation against plan
+6. Fix Code (codex)    — address review findings if needed
+7. Commit              — final state on master
+8. → next plan
 ```
+
+Steps 1-3 can be skipped if the plan was already extracted and reviewed during
+the mapping phase, or if the issue is simple enough that the plan is obviously
+correct.
 
 ### Dispatch pattern
 
 For each plan NN, use the Fire & Watch pattern from the `dispatch` skill:
 
 ```bash
-# Implement
+# Steps 1-3: Plan convergence (skip if plan already extracted and reviewed)
+harnex run codex --id cx-plan-NN --tmux cx-plan-NN \
+  --context "Refine koder/plans/NN_label.md based on current codebase state."
+# Poll every 30s: harnex pane --id cx-plan-NN --lines 20
+# When done: harnex stop --id cx-plan-NN
+
+harnex run claude --id cl-rev-plan-NN --tmux cl-rev-plan-NN \
+  --context "Review koder/plans/NN_label.md. Check: accurate file/function refs? \
+Sequencing correct? Acceptance criteria testable? \
+Write review to koder/reviews/NN_label.md"
+# Poll → stop → if NEEDS FIXES, dispatch cx-fix-plan-NN
+
+# Step 4: Implement
 harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
   --context "Implement koder/plans/NN_label.md. Run tests when done. Commit after each phase."
 # Poll every 30s: harnex pane --id cx-impl-NN --lines 20
 # When done: harnex stop --id cx-impl-NN
 
-# Review
+# Steps 5-6: Code review + fix
 harnex run claude --id cl-rev-NN --tmux cl-rev-NN \
   --context "Review implementation of plan NN against koder/plans/NN_label.md. \
 Write review to koder/reviews/NN_label.md"
@@ -165,24 +195,39 @@ harnex pane --id cx-impl-NN --lines 20
 | Mapping plan | `cx-map-NN` | `cx-map-42` |
 | Map review | `cl-rev-map-NN` | `cl-rev-map-42` |
 | Plan extraction | `cx-extract-NN` | `cx-extract-42` |
-| Implement | `cx-impl-NN` | `cx-impl-42` |
-| Review | `cl-rev-NN` | `cl-rev-42` |
-| Fix | `cx-fix-NN` | `cx-fix-42` |
-| Plan fix | `cx-fix-plan-NN` | `cx-fix-plan-42` |
+| Plan write/refine | `cx-plan-NN` | `cx-plan-184` |
+| Plan review | `cl-rev-plan-NN` | `cl-rev-plan-184` |
+| Plan fix | `cx-fix-plan-NN` | `cx-fix-plan-184` |
+| Implement | `cx-impl-NN` | `cx-impl-184` |
+| Code review | `cl-rev-NN` | `cl-rev-184` |
+| Code fix | `cx-fix-NN` | `cx-fix-184` |
 
 **Rule**: Fresh instance per step. Don't reuse agents across steps — clean
 context avoids bleed.
 
+## Worktree Option
+
+By default, all work happens serially on master. Use worktrees only when:
+- The user explicitly requests isolation
+- You need to work on something else while a plan is being implemented
+
+See the `dispatch` skill for worktree setup and caveats.
+
 ## When Things Go Wrong
 
-**Review finds user-blocking question**: Stop the chain. Surface the question.
-Resume after the user answers.
+**Plan review finds user-blocking question**: Stop the chain. Surface the
+question. Resume after the user answers. This is exactly what the plan review
+phase is for — catching these before implementation begins.
 
-**Review finds P1**: Dispatch a fix agent (`cx-fix-NN`). Re-review after fix.
-Do not skip to the next plan with unresolved P1s.
+**Plan review finds P1**: Dispatch a plan fix agent (`cx-fix-plan-NN`).
+Re-review the plan. Do not proceed to implementation with unresolved P1s.
 
-**Implementation diverges from plan**: If minor (P3), note and continue. If
-major, stop and re-plan.
+**Code review finds P1**: Dispatch a code fix agent (`cx-fix-NN`). Re-review
+after fix. Do not skip to the next plan with unresolved P1s.
+
+**Implementation diverges from plan**: The implementer may discover the plan
+is wrong. If the divergence is minor (P3), note it and continue. If major,
+stop and re-plan.
 
 **Agent gets stuck**: Check `harnex pane --lines 20`. If blocked on a
 permission prompt or trust dialog, intervene. If confused, stop the agent and

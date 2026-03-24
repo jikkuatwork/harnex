@@ -177,8 +177,26 @@ fixed). Dispatch and chain-implement skills are ready — holm can drop its
 `knowledge-base/workflows/harnex/` docs and use
 `harnex skills install dispatch chain-implement` instead.
 
+### 2026-03-25: Upstreamed holm workflow improvements
+
+Holm's battle-tested chain-implement workflow had evolved beyond the gem's
+version through repeated use. Key improvements upstreamed:
+
+- **6-step per-plan cycle** (plan → plan review → fix plan → implement →
+  code review → fix code) replaces the old 3-step cycle. The plan review
+  phase catches design problems before code is written, preventing wasted
+  implementation cycles. Validated extensively — e.g., holm issue #122 ran
+  6 adversarial turns between agents before planning.
+- **Separate naming for plan review vs code review** (`cl-rev-plan-NN` vs
+  `cl-rev-NN`) so agents don't confuse which review they're doing.
+- **Worktree option** section added to chain-implement (delegates to dispatch).
+- **Dispatch guardrails** expanded: added `--cd` flag warning, `c-zai-dangerous`
+  warning, `harnex status` quick reference.
+
+Holm's `knowledge-base/workflows/harnex/` copies can now be removed — the
+gem is the source of truth.
+
 Potential next work:
-- Remove harnex workflow docs from holm, install gem skills instead
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
 - Tackle retention/rotation for transcript files if they grow large
