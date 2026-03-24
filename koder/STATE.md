@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-21
+Updated: 2026-03-24
 
 ## Current snapshot
 
@@ -39,6 +39,8 @@ Updated: 2026-03-21
   (read `koder/STATE.md`, inspect the worktree, align on the next step) and
   `close` for session wrap-up (update `koder/STATE.md`, clean up artifacts,
   leave a clear handoff).
+- Project-local skill symlinks added for `open` and `close`: `.claude/skills/`
+  for Claude Code, `.agents/skills/` for Codex.
 - README rewritten for non-users (quick "is this for me?" format). Usage
   details moved to GUIDE.md, command reference stays in TECHNICAL.md.
 - README, GUIDE, and recipe docs now present **fire-and-watch** as the primary

@@ -27,14 +27,21 @@ When the user asks to wrap up or close the current session, run this sequence:
 - Keep durable artifacts that are part of the intended result
 - If cleanup would discard ambiguous work, ask the user instead of guessing
 
-## 4. Verify the handoff
+## 4. Commit and clean the repo
+
+- Stage all session changes (code, docs, STATE.md updates) and commit with a clear message summarizing the session's work
+- Do NOT stage files that look like secrets, credentials, or large binaries — flag them to the user
+- After committing, run `git status --short` to confirm a clean working tree
+- If unrelated uncommitted changes remain, leave them alone — do not revert or commit work you did not produce
+
+## 5. Verify the handoff
 
 - Run the relevant tests or verification commands if code or docs changed
-- Check the final `git status --short` output for any leftover surprises
-- Give the user a concise summary of what changed and any remaining follow-up
+- Give the user a concise summary of what changed, the commit, and any remaining follow-up
+- The goal: the next `/open` should see a clean repo and an accurate `koder/STATE.md`
 
 ## Notes
 
 - Do NOT create or close issue docs unless the user explicitly asks
-- Do NOT commit, build, install, or publish anything unless the user explicitly asks
+- Do NOT build, install, or publish anything unless the user explicitly asks
 - If `koder/STATE.md` is already accurate, keep the update minimal rather than churning it
