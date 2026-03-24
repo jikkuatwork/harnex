@@ -12,8 +12,7 @@ Updated: 2026-03-25
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 185 minitest tests, all passing (2 pre-existing
-  skills test failures unrelated to core functionality).
+- Test suite: `test/` with 186 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -90,6 +89,13 @@ Updated: 2026-03-25
   PID (the agent's ancestor).
 - `harnex status` now always shows a truncated REPO column (20 chars, tail-
   truncated with `..` prefix), giving context without requiring `--all`.
+- New installable skills: `dispatch` (Fire & Watch pattern with 30s progressive
+  polling) and `chain-implement` (issue → mapping → plan extraction → serial
+  implement/review/fix loop). Install via `harnex skills install dispatch
+  chain-implement`.
+- `harnex skills install` now discovers all bundled skills dynamically and
+  accepts multiple skill names in one command. All 5 skills (chain-implement,
+  close, dispatch, harnex, open) are packaged in the gem.
 
 ## What harnex does
 
@@ -114,8 +120,8 @@ Harnex is a local PTY harness for interactive terminal agents.
   (`--until prompt`).
 - `harnex guide` prints the getting started guide.
 - `harnex recipes` lists and shows workflow recipes.
-- `harnex skills install [SKILL]` installs bundled skills into a repo for
-  Claude/Codex, defaulting to `harnex`.
+- `harnex skills install [SKILL...]` installs bundled skills into a repo for
+  Claude/Codex (accepts multiple names; defaults to `harnex`).
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
   behavior, stop sequence, and send-readiness waiting.
 - Session output is mirrored to the terminal, stored in a 64KB ring buffer for
@@ -166,15 +172,13 @@ See `koder/plans/` for details.
 
 ## Next step
 
-Gem v0.1.5 installed locally. Pane ancestor-walk fix and status REPO column
-are live.
-
-Two pre-existing skills test failures need investigation (skills install
-tests expect `close` and `open` in the available list but gem-packaged
-skills only includes `harnex`).
+Gem v0.1.5 installed locally. All 186 tests passing (skills test failures
+fixed). Dispatch and chain-implement skills are ready — holm can drop its
+`knowledge-base/workflows/harnex/` docs and use
+`harnex skills install dispatch chain-implement` instead.
 
 Potential next work:
-- Fix the 2 skills test failures
+- Remove harnex workflow docs from holm, install gem skills instead
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
 - Tackle retention/rotation for transcript files if they grow large
