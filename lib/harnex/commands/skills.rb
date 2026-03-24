@@ -7,16 +7,19 @@ module Harnex
 
     def self.usage
       <<~TEXT
-        Usage: harnex skills install [SKILL] [--global]
+        Usage: harnex skills install [SKILL...] [--global]
 
         Subcommands:
-          install     Install a bundled skill into the current repo
+          install     Install bundled skills into the current repo
 
         Options:
           --global    Install to ~/.claude/skills and ~/.codex/skills
                       instead of the current repo
 
-        Installs the #{DEFAULT_SKILL.inspect} skill only.
+        Available skills: #{bundled_skill_names.join(', ')}
+
+        With no SKILL argument, installs #{DEFAULT_SKILL.inspect}.
+        Pass one or more skill names to install specific skills.
 
         Without --global, copies the skill to .claude/skills/<skill>/
         in the current repo and symlinks .codex/skills/<skill> to it.
@@ -27,7 +30,7 @@ module Harnex
     end
 
     def self.bundled_skill_names
-      [DEFAULT_SKILL]
+      Dir.children(SKILLS_ROOT).select { |name| File.directory?(File.join(SKILLS_ROOT, name)) }.sort
     end
 
     def initialize(argv)
@@ -38,16 +41,22 @@ module Harnex
       subcommand = @argv.shift
       case subcommand
       when "install"
-        skill_name, global, help = parse_install_args(@argv)
+        skill_names, global, help = parse_install_args(@argv)
         if help
           puts self.class.usage
           return 0
         end
 
-        skill_source = resolve_skill_source(skill_name)
-        return missing_skill(skill_name) unless skill_source
+        skill_names.each do |skill_name|
+          skill_source = resolve_skill_source(skill_name)
+          unless skill_source
+            return missing_skill(skill_name)
+          end
 
-        global ? install_global(skill_name, skill_source) : install_local(skill_name, skill_source)
+          result = global ? install_global(skill_name, skill_source) : install_local(skill_name, skill_source)
+          return result unless result == 0
+        end
+        0
       when "-h", "--help", nil
         puts self.class.usage
         0
@@ -61,7 +70,7 @@ module Harnex
     private
 
     def parse_install_args(args)
-      skill_name = nil
+      skill_names = []
       global = false
       help = false
 
@@ -74,13 +83,13 @@ module Harnex
         when /\A-/
           raise "harnex skills: unknown option #{arg.inspect}"
         else
-          raise "harnex skills: too many arguments" if skill_name
-
-          skill_name = arg
+          skill_names << arg
         end
       end
 
-      [skill_name || DEFAULT_SKILL, global, help]
+      skill_names = [DEFAULT_SKILL] if skill_names.empty?
+
+      [skill_names, global, help]
     end
 
     def resolve_skill_source(skill_name)

@@ -39,6 +39,20 @@ class SkillsCommandTest < Minitest::Test
     end
   end
 
+  def test_install_multiple_skills
+    in_tmp_repo do |dir|
+      out, err = capture_io do
+        assert_equal 0, Harnex::Skills.new(["install", "dispatch", "chain-implement"]).run
+      end
+
+      assert_empty err
+      assert File.file?(File.join(dir, ".claude", "skills", "dispatch", "SKILL.md"))
+      assert File.file?(File.join(dir, ".claude", "skills", "chain-implement", "SKILL.md"))
+      assert File.symlink?(File.join(dir, ".codex", "skills", "dispatch"))
+      assert File.symlink?(File.join(dir, ".codex", "skills", "chain-implement"))
+    end
+  end
+
   def test_install_unknown_skill_returns_error_and_lists_available_skills
     in_tmp_repo do
       out, err = capture_io do
@@ -47,7 +61,7 @@ class SkillsCommandTest < Minitest::Test
 
       assert_empty out
       assert_match(/unknown skill "missing"/, err)
-      assert_match(/available skills: close, harnex, open/, err)
+      assert_match(/available skills: chain-implement, close, dispatch, harnex, open/, err)
     end
   end
 end
