@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
                   "and adds a control plane for discovery, messaging, and coordination."
   s.authors     = ["Jikku Jose"]
   s.email       = ["jikkujose@gmail.com"]
-  s.homepage    = "https://github.com/jikkujose/harnex"
+  s.homepage    = "https://github.com/jikkuatwork/harnex"
   s.license     = "MIT"
 
   s.required_ruby_version = ">= 3.0"
