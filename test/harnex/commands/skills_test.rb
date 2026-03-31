@@ -7,10 +7,43 @@ class SkillsCommandTest < Minitest::Test
     end
   end
 
-  def test_install_installs_dispatch_and_chain_implement
-    in_tmp_repo do |dir|
+  def with_tmp_home
+    Dir.mktmpdir("harnex-skills-home") do |home|
+      original_home = ENV["HOME"]
+      ENV["HOME"] = home
+      begin
+        yield home
+      ensure
+        ENV["HOME"] = original_home
+      end
+    end
+  end
+
+  def test_install_default_copies_to_home_directories
+    with_tmp_home do |home|
       out, err = capture_io do
         assert_equal 0, Harnex::Skills.new(["install"]).run
+      end
+
+      assert_empty err
+
+      # Skills copied to ~/.claude/skills/
+      assert File.file?(File.join(home, ".claude", "skills", "dispatch", "SKILL.md"))
+      assert File.file?(File.join(home, ".claude", "skills", "chain-implement", "SKILL.md"))
+      refute File.symlink?(File.join(home, ".claude", "skills", "dispatch"))
+
+      # ~/.codex/skills/ symlinked to ~/.claude/skills/
+      codex_dispatch = File.join(home, ".codex", "skills", "dispatch")
+      assert File.symlink?(codex_dispatch)
+      assert_equal File.join(home, ".claude", "skills", "dispatch"),
+                   File.readlink(codex_dispatch)
+    end
+  end
+
+  def test_install_local_copies_to_repo
+    in_tmp_repo do |dir|
+      out, err = capture_io do
+        assert_equal 0, Harnex::Skills.new(["install", "--local"]).run
       end
 
       assert_empty err
