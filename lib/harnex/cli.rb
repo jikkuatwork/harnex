@@ -108,7 +108,7 @@ module Harnex
           harnex logs --id main --follow
           harnex pane --id main --lines 40
           harnex send --id main --message "Summarize current progress."
-          harnex skills install close
+          harnex skills install
       TEXT
     end
   end

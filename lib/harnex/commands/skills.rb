@@ -3,11 +3,11 @@ require "fileutils"
 module Harnex
   class Skills
     SKILLS_ROOT = File.expand_path("../../../../skills", __FILE__)
-    DEFAULT_SKILL = "harnex"
+    INSTALL_SKILLS = %w[dispatch chain-implement].freeze
 
     def self.usage
       <<~TEXT
-        Usage: harnex skills install [SKILL...] [--global]
+        Usage: harnex skills install [--global]
 
         Subcommands:
           install     Install bundled skills into the current repo
@@ -16,21 +16,14 @@ module Harnex
           --global    Install to ~/.claude/skills and ~/.codex/skills
                       instead of the current repo
 
-        Available skills: #{bundled_skill_names.join(', ')}
+        Installs: #{INSTALL_SKILLS.join(', ')}
 
-        With no SKILL argument, installs #{DEFAULT_SKILL.inspect}.
-        Pass one or more skill names to install specific skills.
-
-        Without --global, copies the skill to .claude/skills/<skill>/
+        Without --global, copies each skill to .claude/skills/<skill>/
         in the current repo and symlinks .codex/skills/<skill> to it.
 
         With --global, symlinks both ~/.claude/skills/<skill> and
         ~/.codex/skills/<skill> to the bundled source.
       TEXT
-    end
-
-    def self.bundled_skill_names
-      Dir.children(SKILLS_ROOT).select { |name| File.directory?(File.join(SKILLS_ROOT, name)) }.sort
     end
 
     def initialize(argv)
@@ -70,7 +63,6 @@ module Harnex
     private
 
     def parse_install_args(args)
-      skill_names = []
       global = false
       help = false
 
@@ -83,25 +75,21 @@ module Harnex
         when /\A-/
           raise "harnex skills: unknown option #{arg.inspect}"
         else
-          skill_names << arg
+          warn("harnex skills install: unexpected argument #{arg.inspect}")
+          raise "harnex skills install takes no positional arguments"
         end
       end
 
-      skill_names = [DEFAULT_SKILL] if skill_names.empty?
-
-      [skill_names, global, help]
+      [INSTALL_SKILLS, global, help]
     end
 
     def resolve_skill_source(skill_name)
-      return nil unless self.class.bundled_skill_names.include?(skill_name)
-
-      File.join(SKILLS_ROOT, skill_name)
+      path = File.join(SKILLS_ROOT, skill_name)
+      File.directory?(path) ? path : nil
     end
 
     def missing_skill(skill_name)
-      warn("harnex skills: unknown skill #{skill_name.inspect}")
-      available = self.class.bundled_skill_names
-      warn("available skills: #{available.join(', ')}") unless available.empty?
+      warn("harnex skills: bundled skill #{skill_name.inspect} not found at #{SKILLS_ROOT}")
       1
     end
 
