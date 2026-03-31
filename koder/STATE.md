@@ -12,7 +12,7 @@ Updated: 2026-03-31
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 186 minitest tests, all passing.
+- Test suite: `test/` with 185 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -96,6 +96,9 @@ Updated: 2026-03-31
 - `harnex skills install` now discovers all bundled skills dynamically and
   accepts multiple skill names in one command. All 5 skills (chain-implement,
   close, dispatch, harnex, open) are packaged in the gem.
+- `harnex skills install` defaults to global install (`~/.claude/skills/`,
+  `~/.codex/skills/`). Use `--local` for repo-local installs. Global install
+  copies files (not symlinks) so skills survive gem updates.
 
 ## What harnex does
 
@@ -172,19 +175,15 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-03-31: Public gem release — almost there
+### 2026-03-31: v0.2.3 gem built, pending push
 
-Version bumped to **0.2.0**. README rewritten as a 10-second decision doc
-(install up top, clear why/when/what, command table, links to workflow skills).
-Gem builds cleanly, all 186 tests pass, `harnex-0.2.0.gem` is ready to push.
+`harnex-0.2.3.gem` is built and ready. Skills install now defaults to
+global (`~/.claude/`, `~/.codex/`) with `--local` opt-in.
 
-**Blocker:** RubyGems account has MFA enabled. `gem push` needs an OTP code
-that must be entered interactively. Next session: run
-`GEM_HOST_API_KEY=$RUBYGEMS_API_KEY gem push harnex-0.2.0.gem --otp <CODE>`
-to complete the release.
+**Immediate:** `gem push harnex-0.2.3.gem` (needs MFA OTP interactively).
 
 After the push lands:
-- Tag the release (`git tag v0.2.0 && git push --tags`)
+- Tag the release (`git tag v0.2.3 && git push --tags`)
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
 - Tackle retention/rotation for transcript files if they grow large
