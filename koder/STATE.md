@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-25
+Updated: 2026-03-31
 
 ## Current snapshot
 
@@ -172,35 +172,22 @@ See `koder/plans/` for details.
 
 ## Next step
 
-Gem v0.1.5 installed locally. All 186 tests passing (skills test failures
-fixed). Dispatch and chain-implement skills are ready — holm can drop its
-`knowledge-base/workflows/harnex/` docs and use
-`harnex skills install dispatch chain-implement` instead.
+### 2026-03-31: Public gem release — almost there
 
-### 2026-03-25: Upstreamed holm workflow improvements
+Version bumped to **0.2.0**. README rewritten as a 10-second decision doc
+(install up top, clear why/when/what, command table, links to workflow skills).
+Gem builds cleanly, all 186 tests pass, `harnex-0.2.0.gem` is ready to push.
 
-Holm's battle-tested chain-implement workflow had evolved beyond the gem's
-version through repeated use. Key improvements upstreamed:
+**Blocker:** RubyGems account has MFA enabled. `gem push` needs an OTP code
+that must be entered interactively. Next session: run
+`GEM_HOST_API_KEY=$RUBYGEMS_API_KEY gem push harnex-0.2.0.gem --otp <CODE>`
+to complete the release.
 
-- **6-step per-plan cycle** (plan → plan review → fix plan → implement →
-  code review → fix code) replaces the old 3-step cycle. The plan review
-  phase catches design problems before code is written, preventing wasted
-  implementation cycles. Validated extensively — e.g., holm issue #122 ran
-  6 adversarial turns between agents before planning.
-- **Separate naming for plan review vs code review** (`cl-rev-plan-NN` vs
-  `cl-rev-NN`) so agents don't confuse which review they're doing.
-- **Worktree option** section added to chain-implement (delegates to dispatch).
-- **Dispatch guardrails** expanded: added `--cd` flag warning, `c-zai-dangerous`
-  warning, `harnex status` quick reference.
-
-Holm's `knowledge-base/workflows/harnex/` copies can now be removed — the
-gem is the source of truth.
-
-Potential next work:
+After the push lands:
+- Tag the release (`git tag v0.2.0 && git push --tags`)
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
 - Tackle retention/rotation for transcript files if they grow large
-- Public gem release
 
 ## Confirmed bugs from earlier review (all fixed)
 
