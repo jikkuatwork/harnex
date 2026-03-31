@@ -12,6 +12,15 @@ gem install harnex
 
 Requires **Ruby 3.x**. No other dependencies.
 
+Then install workflow skills into your repo so agents can use them:
+
+```bash
+harnex skills install dispatch chain-implement open close
+```
+
+This adds orchestration skills (fire-and-watch, chain-implement, session
+lifecycle) that Claude Code and Codex pick up automatically.
+
 ## What it does
 
 ```bash
