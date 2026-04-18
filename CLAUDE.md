@@ -41,7 +41,10 @@ koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
 skills/open/SKILL.md             Session initialization workflow
 skills/close/SKILL.md            Session wrap-up workflow
-skills/harnex/SKILL.md           Skill file for Claude/Codex integration
+skills/harnex/SKILL.md           Core harnex skill for Claude/Codex
+skills/harnex-dispatch/SKILL.md  Fire & Watch dispatch pattern
+skills/harnex-chain/SKILL.md     End-to-end implement workflow
+skills/harnex-buddy/SKILL.md     Accountability partner for long-running work
 ```
 
 ## Key classes
@@ -97,6 +100,19 @@ Before delegating work over harnex, define the return channel first.
 Preferred pattern: tell the peer to send its final result back to your own
 `$HARNEX_ID` with `harnex send`. Do not rely on detached logs or tmux pane
 capture as the primary way to collect the answer.
+
+## Long-running work: spawn a buddy
+
+For any unattended or long-running work (overnight, multi-hour), spawn a
+**buddy** — a second harnex agent that watches the worker and nudges it if
+it stalls. The buddy is an LLM, so it reasons about what's happening rather
+than pattern-matching.
+
+The invoker (you) doesn't need to be a harnex session. Spawned agents get
+`$HARNEX_SPAWNER_PANE` — the stable tmux pane ID of whoever ran `harnex run`
+— so the buddy can reach back to you via `tmux send-keys`.
+
+See `recipes/03_buddy.md` for the full pattern.
 
 ## Development notes
 

@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-03-31
+Updated: 2026-04-18
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-03-31
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 185 minitest tests, all passing.
+- Test suite: `test/` with 191 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -89,13 +89,17 @@ Updated: 2026-03-31
   PID (the agent's ancestor).
 - `harnex status` now always shows a truncated REPO column (20 chars, tail-
   truncated with `..` prefix), giving context without requiring `--all`.
-- New installable skills: `dispatch` (Fire & Watch pattern with 30s progressive
-  polling) and `chain-implement` (issue → mapping → plan extraction → serial
-  implement/review/fix loop). Install via `harnex skills install dispatch
-  chain-implement`.
-- `harnex skills install` now discovers all bundled skills dynamically and
-  accepts multiple skill names in one command. All 5 skills (chain-implement,
-  close, dispatch, harnex, open) are packaged in the gem.
+- Installable skills namespaced as `harnex-dispatch`, `harnex-chain`,
+  `harnex-buddy`. Install via `harnex skills install`.
+- `harnex skills install` auto-removes deprecated skill names (`dispatch`,
+  `chain-implement`) during install. `harnex skills uninstall` removes all
+  installed skills.
+- New buddy recipe (`recipes/03_buddy.md`): spawn an accountability partner
+  for long-running sessions. The buddy polls `harnex pane`/`harnex status` and
+  nudges stalled workers via `harnex send`.
+- `$HARNEX_SPAWNER_PANE` env var: every spawned session receives the invoker's
+  stable tmux pane ID (`$TMUX_PANE`), enabling the return channel to non-harnex
+  invokers via `tmux send-keys`.
 - `harnex skills install` defaults to global install (`~/.claude/skills/`,
   `~/.codex/skills/`). Use `--local` for repo-local installs. Global install
   copies files (not symlinks) so skills survive gem updates.
@@ -152,7 +156,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 15 | Auto-stop session on task completion | open | P2 |
 | 16 | Platform-agnostic data directory (~/.harnex/) | open | P2 |
 | 17 | Multi-session coordination | open | P2 |
-| 18 | `harnex heart` — persistent presence via LLM monitor | open | P0 |
+| 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
 
 See `koder/issues/` for details.
 
@@ -177,18 +181,18 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-03-31: v0.2.3 gem built, pending push
+### 2026-04-18: v0.3.0 gem built locally, pending public push
 
-`harnex-0.2.3.gem` is built and ready. Skills install now defaults to
-global (`~/.claude/`, `~/.codex/`) with `--local` opt-in.
+`harnex-0.3.0.gem` built and installed locally. Buddy pattern, namespaced
+skills, spawner pane env var, and skills uninstall are all live and tested.
 
-**Immediate:** `gem push harnex-0.2.3.gem` (needs MFA OTP interactively).
+**Immediate:** `gem push harnex-0.3.0.gem` (needs MFA OTP interactively).
 
 After the push lands:
-- Tag the release (`git tag v0.2.3 && git push --tags`)
+- Tag the release (`git tag v0.3.0 && git push --tags`)
+- Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
-- Tackle retention/rotation for transcript files if they grow large
 
 ## Confirmed bugs from earlier review (all fixed)
 

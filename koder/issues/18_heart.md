@@ -1,157 +1,108 @@
 ---
 status: open
-priority: P0
+priority: P2
 created: 2026-04-18
-tags: core,design,llm
+updated: 2026-04-18
+tags: recipe,pattern
 ---
 
-# Issue 018: `harnex heart` — Persistent Presence for Stateless Agents
+# Issue 018: Buddy Pattern — Accountability Partner for Long-Running Sessions
 
 ## The Problem
 
-AI agents like Claude Code are stateless and reactive — invoked, respond, exit. They have no
-persistent presence. When a multi-step pipeline runs overnight, the only thing keeping it alive
-is a shell script or a human checking in. Both fail.
+AI agents are stateless and reactive. When a multi-step pipeline runs overnight,
+nothing recovers from simple failures. On 2026-04-18, an overnight automation died
+silently because one bad exit code killed everything — after training had already
+succeeded. The pipeline hadn't lost information; it had lost **continuous presence**.
 
-On 2026-04-18, an overnight automation script died silently because one bad exit code killed
-everything — after training had already succeeded. The machine stayed up, the state was all
-there, but nothing was driving the process forward. The pipeline hadn't lost information; it had
-lost **continuous presence**.
+## Design Principle
+
+**Harnex wraps the things you spawn, never yourself.** The human's session
+stays raw — you just run `claude` normally. Harnex is invisible infrastructure
+for workers.
 
 ## The Insight
 
-Heart is not a pipeline orchestrator. It's a **heartbeat monitor for running harnex sessions**.
+Harnex already has every primitive required: `harnex status` (detect stalls),
+`harnex pane` (read context), `harnex send` (nudge). The missing piece is a
+**usage pattern**, not code — plus one env var to close the return channel.
 
-It watches a running agent (via tmux pane + structured logs), uses an LLM to understand what's
-happening, and nudges the agent when it stalls or breaks. Like a human checking in — but
-reliable and tireless.
+## The Pattern: Spawn a Buddy
 
-The user's workflow: "do this overnight, involve heart so you won't die."
+For long-running work, the invoking agent spawns a second harnex session — a
+"buddy" — whose only job is to periodically check on the worker and nudge it
+if it stalls.
 
-## Design
+The buddy is itself an LLM agent, so it has intelligence for free. It can read
+the worker's pane, understand context, and compose a meaningful nudge. No
+special monitoring code, no LLM provider integration in harnex, no config files.
 
-### Core Loop
+```bash
+# The invoking agent spawns a worker...
+harnex run codex --id worker-42 --tmux
 
-```
-harnex heart <session-id> [--llm azure/gpt-5.4]
-```
-
-1. Read the tmux pane (via existing `harnex pane` internals)
-2. Read the tail of the session's JSONL log (structured breadcrumbs)
-3. Send both to an LLM: "is this session stalled? does it need a nudge?"
-4. If yes, compose and send a message via `harnex send`
-5. Sleep, repeat
-
-Heart is itself short-lived per iteration — it can be cron'd or run as a loop.
-
-### Existing Harnex Primitives Used
-
-- Tmux pane capture + follow mode (`harnex pane`)
-- Session state machine (prompt/busy/blocked detection)
-- Message injection (`harnex send`)
-- File watching with inotify + auto-delivery
-- Per-session HTTP API
-- Adapter-based screen parsing
-
-Heart adds the **intelligent monitoring layer** on top of these.
-
-### JSONL Log Convention
-
-The watched agent writes breadcrumbs to `<repo>/logs/NN_label.jsonl` — one JSON object per
-line, append-only. This gives heart structured context alongside the raw pane text.
-
-```jsonl
-{"ts":"2026-04-18T05:06:41+05:30","event":"step.started","step":"train","detail":"launching azure job"}
-{"ts":"2026-04-18T05:09:00+05:30","event":"step.progress","step":"train","detail":"job running, 3m elapsed"}
-{"ts":"2026-04-18T07:42:00+05:30","event":"step.succeeded","step":"train","detail":"training complete"}
+# ...and a buddy to watch it
+harnex run claude --id buddy-42 --tmux
+harnex send buddy-42 "You are an accountability partner for session worker-42.
+Every 5 minutes, run 'harnex pane --id worker-42' and 'harnex status --json'.
+If the worker appears stuck at a prompt for more than 10 minutes, nudge it
+with 'harnex send worker-42 <your nudge message>'. Keep watching until it
+finishes or is stopped."
 ```
 
-No rigid schema — heart's LLM reads these as context, not as structured state.
+The buddy uses existing harnex primitives — no new API surface needed.
 
-### LLM Integration
+## Return Channel: `$HARNEX_SPAWNER_PANE`
 
-#### Provider flag
+The invoker (human's Claude session) is not harnex-managed — it has no registry
+entry, no API server. So `harnex send` can't reach it. But it IS in a tmux pane.
 
-```
---llm azure/gpt-5.4
-```
+At spawn time, `harnex run` captures the invoker's `$TMUX_PANE` and passes it
+to the child session as `$HARNEX_SPAWNER_PANE`. This gives every spawned agent
+a return channel to its invoker without requiring the invoker to be harnex-managed:
 
-Format: `provider/model`. Parsed and routed to the matching provider class. Today only
-`azure/*` is implemented; the flag does nothing beyond routing, but ensures future providers
-(openai, anthropic, ollama) slot in by adding one file.
+```bash
+# The buddy reads the invoker's screen
+tmux capture-pane -t "$HARNEX_SPAWNER_PANE" -p
 
-#### Configuration
-
-```yaml
-# ~/.config/harnex/config.yml
-heart:
-  llm: azure/gpt-5.4
-  azure:
-    api_key: sk-...
-    endpoint: https://your-resource.openai.azure.com/...
+# The buddy types into the invoker
+tmux send-keys -t "$HARNEX_SPAWNER_PANE" "hey, you seem stuck!" Enter
 ```
 
-**Resolution order:**
-1. **Environment variables** override everything — `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`
-2. **`~/.config/harnex/config.yml`** — persistent defaults
-3. **CLI flags** — `--llm azure/gpt-5.4` overrides config file's `llm` value
+The buddy is an LLM — it can `capture-pane` first to check whether the invoker
+looks stalled before typing. The intelligence is in the buddy, not in harnex.
 
-Standard env var names only — no custom `HEART_*` vars.
-
-#### Architecture
-
-One abstract interface, one concrete implementation:
-
-```
-lib/harnex/heart/
-  llm/
-    base.rb           # chat(messages) -> String — the only method
-    azure_openai.rb   # Net::HTTP to Azure OpenAI
+**Implementation:** one line in `Session#child_env`:
+```ruby
+env["HARNEX_SPAWNER_PANE"] = ENV["TMUX_PANE"] if ENV["TMUX_PANE"]
 ```
 
-- `Base#chat(messages)` — takes an array of `{role:, content:}`, returns the response string
-- `AzureOpenai` — reads from config.yml, env vars override
-- No SDK — just `Net::HTTP` (harnex is stdlib-only)
+## What This Is
 
-Adding a second provider later = add a sibling file, no refactoring.
+- A **recipe** (like fire-and-watch and chain-implement), not a feature
+- Uses existing primitives: `status`, `pane`, `send`, `tmux send-keys`
+- The buddy is a regular harnex session — can be stopped, inspected, logged
+- The invoking agent controls the polling interval, stall threshold, and nudge
+  style through the prompt it sends the buddy
+- One small code change (`$HARNEX_SPAWNER_PANE`) to close the return channel
 
-### What Heart Is NOT
+## What This Is NOT
 
-- Not a pipeline engine or step runner
-- Not managing state.json / step types / retry policies
-- Not project-specific — works with any harnex session
+- Not a built-in stall timer or heartbeat system
+- Not an LLM integration inside harnex
+- Not a new command (`harnex heart` is not needed)
+- Not a config file or provider abstraction
+- Not a reason for the human to run `harnex run` on their own session
 
-### What Heart IS
+## Deliverables
 
-- A thin, intelligent monitor that gives Claude the one thing it lacks: persistent presence
-- Project-agnostic: any session can say "involve heart" and get watched
-- Transparent: reads pane + logs, reasons about state, nudges when needed
-- LLM-powered: understands context, doesn't just pattern-match
-
-## Acceptance Criteria
-
-- [ ] `harnex heart <session-id>` monitors a running session
-- [ ] Reads tmux pane via existing harnex internals
-- [ ] Reads JSONL log tail for structured context
-- [ ] Sends pane + log context to LLM for assessment
-- [ ] Sends nudge via `harnex send` when LLM detects a stall
-- [ ] `--llm provider/model` flag parsed and routed (azure/* implemented)
-- [ ] Config from `~/.config/harnex/config.yml`, env vars override
-- [ ] No external gem dependencies (Net::HTTP only)
-- [ ] Idempotent — safe to run repeatedly or via cron
-
-## Open Questions
-
-- **Nudge content**: Should the LLM compose the nudge message, or should heart have
-  templates ("continue where you left off", "the last step failed, retry")?
-- **Log discovery**: How does heart find the right JSONL file? Convention (glob `logs/*.jsonl`),
-  explicit flag, or registered in harnex session metadata?
-- **Polling interval**: Fixed (e.g., 60s), configurable, or adaptive based on LLM assessment?
-- **CLAUDE.md integration**: Should we document heart in global CLAUDE.md so any agent knows
-  how to write breadcrumbs and request heart monitoring?
+- [ ] Add `$HARNEX_SPAWNER_PANE` to `Session#child_env` (one line)
+- [ ] Recipe doc: `recipes/03_buddy.md`
+- [ ] Mention in CLAUDE.md / skill docs: "for long-running work, spawn a buddy"
+- [ ] Optional: mature into a skill (`/buddy`) if the pattern proves valuable
 
 ## Origin
 
-Born from MoMa (modern-mallu) Issue 006 — an overnight training pipeline that died silently.
-Originally scoped as a standalone tool (`~/Projects/heart`), refined to a harnex feature since
-harnex already owns session orchestration, pane monitoring, and message delivery.
+Born from MoMa Issue 006 — an overnight training pipeline that died silently.
+Originally scoped as an LLM-powered monitor (`harnex heart`), simplified through
+design review to a pure usage pattern over existing harnex primitives.

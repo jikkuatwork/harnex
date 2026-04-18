@@ -46,3 +46,25 @@ the submit sequence isn't being appended at all.
 Lingering Codex sessions after `harnex stop` during automated workflows. The
 supervisor believes the session is stopped but it's still running. Currently
 worked around by the user manually pressing Enter in the tmux window.
+
+## Additional Pattern: Stream Disconnect → Zombie (2026-04-18)
+
+During Holm Analysis 004, Codex sessions repeatedly hit OpenAI stream disconnects
+(`"stream disconnected before completion: response.failed event received"`). After
+a disconnect, Codex drops to its idle prompt. When `harnex stop` is called on
+these sessions, the `/exit` sequence is sent but not processed — the session
+persists as a zombie.
+
+Observed: `cx-impl-262b` and `cx-impl-263` both survived `harnex stop` and were
+still showing as `session` state 40+ minutes later. Required a second manual
+`harnex stop` to clean up.
+
+This is the same root cause (exit sequence not submitted) but a distinct trigger:
+the disconnect leaves Codex in a state where it may not be accepting input until
+the user interacts. `harnex send --message` also failed to get through to these
+sessions (timed out after 15s).
+
+Suggested fix directions:
+- After sending `/exit`, poll `harnex pane` or check PID liveness for N seconds
+- If process is still alive, escalate to SIGTERM → SIGKILL
+- Consider a `--force` flag that skips the exit sequence and kills the process

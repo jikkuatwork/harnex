@@ -3,17 +3,19 @@ require "fileutils"
 module Harnex
   class Skills
     SKILLS_ROOT = File.expand_path("../../../../skills", __FILE__)
-    INSTALL_SKILLS = %w[dispatch chain-implement].freeze
+    INSTALL_SKILLS = %w[harnex-dispatch harnex-chain harnex-buddy].freeze
+    DEPRECATED_SKILLS = %w[dispatch chain-implement].freeze
 
     def self.usage
       <<~TEXT
-        Usage: harnex skills install [--local]
+        Usage: harnex skills <subcommand> [--local]
 
         Subcommands:
           install     Install bundled skills (globally by default)
+          uninstall   Remove installed skills (globally by default)
 
         Options:
-          --local     Install to the current repo instead of globally
+          --local     Target the current repo instead of global ~/.claude/
 
         Installs: #{INSTALL_SKILLS.join(', ')}
 
@@ -33,13 +35,12 @@ module Harnex
       subcommand = @argv.shift
       case subcommand
       when "install"
-        skill_names, local, help = parse_install_args(@argv)
-        if help
-          puts self.class.usage
-          return 0
-        end
+        local, help = parse_args(@argv)
+        return (puts self.class.usage; 0) if help
 
-        skill_names.each do |skill_name|
+        remove_deprecated(local)
+
+        INSTALL_SKILLS.each do |skill_name|
           skill_source = resolve_skill_source(skill_name)
           unless skill_source
             return missing_skill(skill_name)
@@ -47,6 +48,14 @@ module Harnex
 
           result = local ? install_local(skill_name, skill_source) : install_global(skill_name, skill_source)
           return result unless result == 0
+        end
+        0
+      when "uninstall"
+        local, help = parse_args(@argv)
+        return (puts self.class.usage; 0) if help
+
+        (INSTALL_SKILLS + DEPRECATED_SKILLS).each do |skill_name|
+          local ? uninstall_local(skill_name) : uninstall_global(skill_name)
         end
         0
       when "-h", "--help", nil
@@ -61,7 +70,7 @@ module Harnex
 
     private
 
-    def parse_install_args(args)
+    def parse_args(args)
       local = false
       help = false
 
@@ -74,12 +83,12 @@ module Harnex
         when /\A-/
           raise "harnex skills: unknown option #{arg.inspect}"
         else
-          warn("harnex skills install: unexpected argument #{arg.inspect}")
-          raise "harnex skills install takes no positional arguments"
+          warn("harnex skills: unexpected argument #{arg.inspect}")
+          raise "harnex skills takes no positional arguments"
         end
       end
 
-      [INSTALL_SKILLS, local, help]
+      [local, help]
     end
 
     def resolve_skill_source(skill_name)
@@ -90,6 +99,12 @@ module Harnex
     def missing_skill(skill_name)
       warn("harnex skills: bundled skill #{skill_name.inspect} not found at #{SKILLS_ROOT}")
       1
+    end
+
+    def remove_deprecated(local)
+      DEPRECATED_SKILLS.each do |skill_name|
+        local ? uninstall_local(skill_name) : uninstall_global(skill_name)
+      end
     end
 
     def install_local(skill_name, skill_source)
@@ -140,6 +155,39 @@ module Harnex
       puts "symlinked #{codex_dir} -> #{claude_dir}"
 
       0
+    end
+
+    def uninstall_local(skill_name)
+      repo_root = Harnex.resolve_repo_root(Dir.pwd)
+      claude_dir = File.join(repo_root, ".claude", "skills", skill_name)
+      codex_dir = File.join(repo_root, ".codex", "skills", skill_name)
+
+      removed = false
+      if File.exist?(codex_dir) || File.symlink?(codex_dir)
+        FileUtils.rm_rf(codex_dir)
+        removed = true
+      end
+      if File.exist?(claude_dir) || File.symlink?(claude_dir)
+        FileUtils.rm_rf(claude_dir)
+        removed = true
+      end
+      puts "removed #{skill_name}" if removed
+    end
+
+    def uninstall_global(skill_name)
+      claude_dir = File.expand_path("~/.claude/skills/#{skill_name}")
+      codex_dir = File.expand_path("~/.codex/skills/#{skill_name}")
+
+      removed = false
+      if File.exist?(codex_dir) || File.symlink?(codex_dir)
+        FileUtils.rm_rf(codex_dir)
+        removed = true
+      end
+      if File.exist?(claude_dir) || File.symlink?(claude_dir)
+        FileUtils.rm_rf(claude_dir)
+        removed = true
+      end
+      puts "removed #{skill_name}" if removed
     end
 
     def relative_path(from:, to:)

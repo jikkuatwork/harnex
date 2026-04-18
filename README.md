@@ -18,8 +18,8 @@ Then install workflow skills into your repo so agents can use them:
 harnex skills install
 ```
 
-This adds orchestration skills (dispatch, chain-implement) that Claude
-Code and Codex pick up automatically.
+This adds orchestration skills (harnex-dispatch, harnex-chain, harnex-buddy)
+that Claude Code and Codex pick up automatically.
 
 ## What it does
 
@@ -92,10 +92,12 @@ harnex stop --id cl-review
 
 Harnex ships workflow skills that automate this pattern:
 
-- **[Dispatch](skills/dispatch/SKILL.md)** — the fire-and-watch pattern:
+- **[Dispatch](skills/harnex-dispatch/SKILL.md)** — the fire-and-watch pattern:
   spawn an agent, poll its screen, stop it when done
-- **[Chain Implement](skills/chain-implement/SKILL.md)** — end-to-end
-  issue-to-code workflow: plan, review plan, implement, review code, fix
+- **[Chain](skills/harnex-chain/SKILL.md)** — end-to-end issue-to-code
+  workflow: plan, review plan, implement, review code, fix
+- **[Buddy](skills/harnex-buddy/SKILL.md)** — spawn an accountability partner
+  for long-running or overnight work
 
 Install skills into your repo so agents can use them:
 
@@ -117,6 +119,17 @@ harnex skills install
 | `harnex guide` | Getting started walkthrough |
 | `harnex recipes` | Tested workflow patterns |
 | `harnex skills install` | Install bundled skills for Claude/Codex |
+| `harnex skills uninstall` | Remove installed skills |
+
+## Uninstalling
+
+```bash
+harnex skills uninstall   # remove skills from ~/.claude/ and ~/.codex/
+gem uninstall harnex
+```
+
+Run `harnex skills uninstall` before removing the gem — installed skills
+persist in `~/.claude/skills/` and won't be cleaned up by `gem uninstall`.
 
 ## Going deeper
 

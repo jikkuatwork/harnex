@@ -1,5 +1,5 @@
 ---
-name: dispatch
+name: harnex-dispatch
 description: Fire & Watch — the standard pattern for launching and monitoring harnex agent sessions. Use when dispatching implementation, review, or fix agents.
 ---
 
@@ -160,6 +160,23 @@ harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
 harnex status           # current repo sessions
 harnex status --all     # all repos
 ```
+
+## Buddy for Long-Running Dispatches
+
+If the dispatched work is expected to take a long time (overnight, multi-hour)
+or the user asks for unattended execution, spawn a buddy alongside the worker:
+
+```bash
+# Worker
+harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
+  --context "Implement koder/plans/NN_name.md. Run tests when done."
+
+# Buddy to watch it
+harnex run claude --id buddy-NN --tmux buddy-NN
+harnex send --id buddy-NN --message "Watch session cx-impl-NN. Poll every 5 min with harnex pane --id cx-impl-NN --lines 20. Nudge with harnex send if stuck for >10 min. Report back to \$HARNEX_SPAWNER_PANE when done."
+```
+
+The buddy replaces manual Fire & Watch polling. See `recipes/03_buddy.md`.
 
 ## What NOT to Do
 

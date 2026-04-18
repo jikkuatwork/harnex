@@ -16,6 +16,22 @@ class SessionTest < Minitest::Test
     assert_equal "implement auth module", env["HARNEX_DESCRIPTION"]
   end
 
+  def test_child_env_includes_spawner_pane_when_tmux_pane_set
+    ENV["TMUX_PANE"] = "%42"
+    session = build_session
+    env = session.send(:child_env)
+    assert_equal "%42", env["HARNEX_SPAWNER_PANE"]
+  ensure
+    ENV.delete("TMUX_PANE")
+  end
+
+  def test_child_env_omits_spawner_pane_when_tmux_pane_unset
+    ENV.delete("TMUX_PANE")
+    session = build_session
+    env = session.send(:child_env)
+    refute env.key?("HARNEX_SPAWNER_PANE")
+  end
+
   def test_status_payload_includes_description
     session = build_session(description: "implement auth module")
     payload = session.status_payload(include_input_state: false)

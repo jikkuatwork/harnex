@@ -192,6 +192,7 @@ module Harnex
         "HARNEX_SESSION_REPO_ROOT" => repo_root
       }
       env["HARNEX_DESCRIPTION"] = description if description
+      env["HARNEX_SPAWNER_PANE"] = ENV["TMUX_PANE"] if ENV["TMUX_PANE"]
       env
     end
 

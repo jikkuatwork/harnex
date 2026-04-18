@@ -1,5 +1,5 @@
 ---
-name: chain-implement
+name: harnex-chain
 description: End-to-end workflow from issue to shipped plans via harnex agents. Covers mapping, plan extraction, and the serial plan → review → implement → review → fix loop.
 ---
 
@@ -138,7 +138,7 @@ correct.
 
 ### Dispatch pattern
 
-For each plan NN, use the Fire & Watch pattern from the `dispatch` skill:
+For each plan NN, use the Fire & Watch pattern from the `harnex-dispatch` skill:
 
 ```bash
 # Steps 1-3: Plan convergence (skip if plan already extracted and reviewed)
@@ -211,7 +211,7 @@ By default, all work happens serially on master. Use worktrees only when:
 - The user explicitly requests isolation
 - You need to work on something else while a plan is being implemented
 
-See the `dispatch` skill for worktree setup and caveats.
+See the `harnex-dispatch` skill for worktree setup and caveats.
 
 ## When Things Go Wrong
 

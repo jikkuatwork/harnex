@@ -24,9 +24,22 @@ Check environment variables to understand your role:
 | `HARNEX_ID` | Your session ID |
 | `HARNEX_SESSION_REPO_ROOT` | Repo root this session is scoped to |
 | `HARNEX_SESSION_ID` | Internal instance identifier |
+| `HARNEX_SPAWNER_PANE` | Tmux pane ID (`%N`) of whoever spawned this session |
 
 If these are set, you are **inside a harnex session** and can send messages to
 peer sessions or spawn new worker sessions.
+
+`HARNEX_SPAWNER_PANE` is the stable tmux pane ID of the invoker — use it to
+reach back to the session that launched you, even if that session is not
+harnex-managed:
+
+```bash
+# Read the invoker's screen
+tmux capture-pane -t "$HARNEX_SPAWNER_PANE" -p
+
+# Type into the invoker
+tmux send-keys -t "$HARNEX_SPAWNER_PANE" "done — results in /tmp/result.md" Enter
+```
 
 ## Mode preference
 
@@ -283,6 +296,37 @@ harnex wait --id review-1
 Sessions can watch a shared file (e.g. `--watch ./tmp/tick.jsonl`). When the
 file changes, harnex injects a `file-change-hook: read <path>` message. If you
 receive this hook, read the file and act on its contents.
+
+## Buddy pattern — accountability for long-running work
+
+For any work that will take a long time (overnight pipelines, multi-hour
+implementations, unattended batch jobs), spawn a **buddy** — a second harnex
+session that watches the worker and nudges it if it stalls.
+
+```bash
+# Spawn the worker
+harnex run codex --id worker-42 --tmux worker-42
+harnex send --id worker-42 --message "Read and execute /tmp/task-42.md"
+
+# Spawn a buddy to watch it
+harnex run claude --id buddy-42 --tmux buddy-42
+harnex send --id buddy-42 --message "Read and execute /tmp/buddy-42.md"
+```
+
+The buddy's prompt tells it: poll `harnex pane` and `harnex status` every N
+minutes, nudge with `harnex send` if the worker stalls, report back to
+`$HARNEX_SPAWNER_PANE` when done.
+
+See `recipes/03_buddy.md` for the full pattern.
+
+**When to spawn a buddy:**
+- The user says "do this overnight" or "run this while I'm away"
+- The task is expected to take more than 30 minutes unattended
+- The user explicitly asks for a buddy or accountability partner
+
+**When NOT to spawn a buddy:**
+- Short tasks you're actively watching
+- The user hasn't asked for long-running autonomy
 
 ## Important rules
 
