@@ -46,6 +46,10 @@ Updated: 2026-04-18
 - README, GUIDE, and recipe docs now present **fire-and-watch** as the primary
   workflow: fresh worker per step, file handoffs between steps, Codex for
   planning/implementation/fixes, Claude for reviews.
+- README documents buddy pattern with concrete examples (stall monitor, doc
+  drift monitor) and the `$HARNEX_SPAWNER_PANE` non-harnex invoker pattern.
+- GUIDE.md updated: `harnex skills install` replaces manual symlinks, buddy
+  recipe listed, `$HARNEX_SPAWNER_PANE` return channel documented.
 - `recipes/` directory with tested workflow patterns:
   - `01_fire_and_watch` — atomic unit: spawn, send, pane poll, capture
   - `02_chain_implement` — batch implement→review→fix loop

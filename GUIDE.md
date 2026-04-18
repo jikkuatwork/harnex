@@ -161,9 +161,18 @@ After the worker finishes, inspect the screen:
 harnex pane --id review --lines 60
 ```
 
-Optional: if you're inside a harnex-managed session yourself and
-really want a callback, you can still use `$HARNEX_ID` as the return
-address. Treat that as secondary, not the main control flow.
+**Return channel for any tmux pane:** Every spawned session gets
+`$HARNEX_SPAWNER_PANE` — the tmux pane ID of whoever ran `harnex run`.
+The spawned agent can report back via `tmux send-keys`, even if the
+invoker isn't a harnex session:
+
+```bash
+tmux send-keys -t "$HARNEX_SPAWNER_PANE" "done — results in /tmp/result.md" Enter
+```
+
+If you're inside a harnex-managed session, you can also use
+`$HARNEX_ID` as the return address with `harnex send`. But file
+handoffs remain the preferred primary control flow.
 
 ## Stopping agents
 
@@ -205,20 +214,20 @@ an updated summary. Then review again with a fresh Claude instance.
 
 ## Teaching your agents about harnex
 
-Harnex ships a skill file that tells AI agents how to use harnex
-commands. To make it available globally:
+Harnex ships skill files that tell AI agents how to use harnex
+commands. Install them globally so every session picks them up:
 
 ```bash
-# For Claude Code
-ln -s /path/to/harnex/skills/harnex ~/.claude/skills/harnex
-
-# For Codex
-ln -s /path/to/harnex/skills/harnex ~/.codex/skills/harnex
+harnex skills install
 ```
 
-After this, any Claude or Codex session — in any repo — can use
-harnex commands without being taught how. The skill activates
+This copies the bundled skills (harnex-dispatch, harnex-chain,
+harnex-buddy) to `~/.claude/skills/` and symlinks `~/.codex/skills/`
+to them. After this, any Claude or Codex session — in any repo — can
+use harnex commands without being taught how. The skills activate
 automatically when agent collaboration is needed.
+
+For repo-local installs instead, use `--local`.
 
 ## Recipes
 
@@ -235,6 +244,9 @@ harnex recipes show 01     # read one
 - **Chain Implement** (`harnex recipes show 02`) — process a
   batch as repeated fire-and-watch: Codex plan/implement,
   Claude review, Codex fix, then review again if needed.
+- **Buddy** (`harnex recipes show 03`) — spawn an accountability
+  partner for overnight or long-running work. The buddy polls the
+  worker's screen and nudges it if it stalls.
 
 ## What's next
 
