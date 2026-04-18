@@ -32,6 +32,9 @@ module Harnex
       when "help"
         puts help(@argv[1])
         0
+      when "-v", "--version", "version"
+        puts "harnex #{Harnex::VERSION} (#{Harnex::RELEASE_DATE})"
+        0
       when "-h", "--help"
         puts usage
         0
