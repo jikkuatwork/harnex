@@ -148,6 +148,8 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 14 | Pane lookup fails for worktree/custom tmux sessions | **fixed** | P2 |
 | 15 | Auto-stop session on task completion | open | P2 |
 | 16 | Platform-agnostic data directory (~/.harnex/) | open | P2 |
+| 17 | Multi-session coordination | open | P2 |
+| 18 | `harnex heart` — persistent presence via LLM monitor | open | P0 |
 
 See `koder/issues/` for details.
 
