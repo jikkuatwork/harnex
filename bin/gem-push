@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GEM_FILE="${1:?Usage: bin/gem-push <gemfile>}"
+ENV_FILE="$(dirname "$0")/../.env"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Error: .env not found" >&2
+  exit 1
+fi
+
+KEY=$(grep '^RUBYGEMS_TOTP_KEY=' "$ENV_FILE" | cut -d'"' -f2)
+
+if [[ -z "$KEY" ]]; then
+  echo "Error: RUBYGEMS_TOTP_KEY not found in .env" >&2
+  exit 1
+fi
+
+OTP=$(echo "$KEY" | otp)
+gem push "$GEM_FILE" --otp "$OTP"

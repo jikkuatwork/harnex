@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-18
+Updated: 2026-04-19
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-04-18
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 191 minitest tests, all passing.
+- Test suite: `test/` with 193 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -107,6 +107,10 @@ Updated: 2026-04-18
 - `harnex skills install` defaults to global install (`~/.claude/skills/`,
   `~/.codex/skills/`). Use `--local` for repo-local installs. Global install
   copies files (not symlinks) so skills survive gem updates.
+- Codex adapter now latches `@banner_seen` on first detection, so state
+  detection survives stream disconnects that push the banner out of the
+  40-line window. Previously this caused `unknown` state and 120s send
+  timeouts requiring `--force` to work around.
 
 ## What harnex does
 
@@ -155,6 +159,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 10 | Inbox management (list/drop/TTL) | **fixed** | P2 |
 | 11 | Tmux pane capture | **fixed** | P3 |
 | 12 | State detection failures cause send/receive problems | **fixed** | P1 |
+| 19 | Codex banner scroll-out breaks state detection | **fixed** | P1 |
 | 13 | Atomic `send --wait-for-idle` | **fixed** | P1 |
 | 14 | Pane lookup fails for worktree/custom tmux sessions | **fixed** | P2 |
 | 15 | Auto-stop session on task completion | open | P2 |
@@ -185,15 +190,22 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-18: v0.3.0 gem built locally, pending public push
+### 2026-04-19: v0.3.1 ready — Codex banner scroll-out fix
 
-`harnex-0.3.0.gem` built and installed locally. Buddy pattern, namespaced
-skills, spawner pane env var, and skills uninstall are all live and tested.
+Fixed #19: Codex adapter's `input_state` no longer returns `unknown` after
+a stream disconnect pushes the banner out of the 40-line detection window.
+The adapter now latches `@banner_seen` on first detection and skips the
+banner re-check on subsequent frames. Two regression tests added (193 total).
 
-**Immediate:** `gem push harnex-0.3.0.gem` (needs MFA OTP interactively).
+**Immediate:** Build gem, push, tag.
+
+```bash
+gem build harnex.gemspec
+gem push harnex-0.3.1.gem   # needs MFA OTP
+git tag v0.3.1 && git push --tags
+```
 
 After the push lands:
-- Tag the release (`git tag v0.3.0 && git push --tags`)
 - Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`

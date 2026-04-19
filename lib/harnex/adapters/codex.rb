@@ -7,6 +7,7 @@ module Harnex
 
       def initialize(extra_args = [])
         super("codex", extra_args)
+        @banner_seen = false
       end
 
       def base_command
@@ -37,7 +38,10 @@ module Harnex
 
       def input_state(screen_text)
         lines = recent_lines(screen_text)
-        return super unless lines.any? { |line| line.include?("OpenAI Codex") || line.include?("gpt-") }
+        if lines.any? { |line| line.include?("OpenAI Codex") || line.include?("gpt-") }
+          @banner_seen = true
+        end
+        return super unless @banner_seen
 
         if lines.any? { |line| prompt_line?(line) }
           {

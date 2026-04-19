@@ -36,6 +36,34 @@ class CodexAdapterTest < Minitest::Test
     assert_nil state[:input_ready]
   end
 
+  # Regression: after a stream disconnect, error messages push the banner
+  # out of the 40-line detection window. The adapter should remember it
+  # saw the banner earlier and still detect prompt state.
+  def test_detects_prompt_after_banner_scrolls_out
+    # First frame: banner visible — latches @banner_seen
+    boot_screen = "OpenAI Codex (gpt-4.1)\n› type here\n"
+    @adapter.input_state(boot_screen)
+
+    # Second frame: banner gone (stream disconnect filled the screen),
+    # but Codex is back at a prompt
+    disconnect_screen = (["stream disconnected error line"] * 45).join("\n") + "\n› \n"
+    state = @adapter.input_state(disconnect_screen)
+    assert_equal "prompt", state[:state]
+    assert_equal true, state[:input_ready]
+  end
+
+  def test_session_state_after_banner_scrolls_out
+    # First frame: banner visible
+    boot_screen = "OpenAI Codex (gpt-4.1)\n› type here\n"
+    @adapter.input_state(boot_screen)
+
+    # Second frame: banner gone, agent is busy (no prompt marker)
+    busy_screen = (["Working on something..."] * 45).join("\n") + "\n"
+    state = @adapter.input_state(busy_screen)
+    assert_equal "session", state[:state]
+    assert_nil state[:input_ready]
+  end
+
   # Regression: OSC sequences in Codex TUI output caused greedy regex to
   # consume the entire buffer, making "OpenAI Codex" undetectable.
   def test_detects_prompt_through_osc_sequences
