@@ -190,22 +190,13 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-19: v0.3.1 ready — Codex banner scroll-out fix
+### 2026-04-19: v0.3.1 released
 
-Fixed #19: Codex adapter's `input_state` no longer returns `unknown` after
-a stream disconnect pushes the banner out of the 40-line detection window.
-The adapter now latches `@banner_seen` on first detection and skips the
-banner re-check on subsequent frames. Two regression tests added (193 total).
+v0.3.1 published to RubyGems and tagged. Fixed Codex adapter banner
+scroll-out bug (#19) — state detection now survives stream disconnects.
+Added `bin/gem-push` for automated OTP gem publishing.
 
-**Immediate:** Build gem, push, tag.
-
-```bash
-gem build harnex.gemspec
-gem push harnex-0.3.1.gem   # needs MFA OTP
-git tag v0.3.1 && git push --tags
-```
-
-After the push lands:
+**Next:**
 - Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
