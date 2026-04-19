@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-19
+Updated: 2026-04-20
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-04-19
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 193 minitest tests, all passing.
+- Test suite: `test/` with 197 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -111,6 +111,10 @@ Updated: 2026-04-19
   detection survives stream disconnects that push the banner out of the
   40-line window. Previously this caused `unknown` state and 120s send
   timeouts requiring `--force` to work around.
+- `normalized_screen_text` now preserves multi-byte UTF-8 characters from
+  BINARY PTY buffers (force_encoding + scrub instead of encode) and converts
+  column-1 cursor positioning (`\e[N;1H`) to newlines. Fixes Codex prompt
+  detection for TUIs that draw via cursor addressing rather than newlines.
 
 ## What harnex does
 
@@ -190,13 +194,19 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-19: v0.3.1 released
+### 2026-04-20: Fix Codex/Claude state detection from BINARY PTY buffers
 
-v0.3.1 published to RubyGems and tagged. Fixed Codex adapter banner
-scroll-out bug (#19) — state detection now survives stream disconnects.
-Added `bin/gem-push` for automated OTP gem publishing.
+Two bugs in `normalized_screen_text` broke Codex prompt detection:
+1. BINARY→UTF-8 encoding discarded multi-byte chars (›, •, ❯) — fixed
+   with `force_encoding(UTF_8).scrub("")`.
+2. Codex v0.121+ draws via cursor positioning, not newlines — column-1
+   cursor moves (`\e[N;1H`) now convert to newlines before CSI stripping.
+
+Verified end-to-end: `send --wait-for-idle` works for both Claude and
+Codex sessions.
 
 **Next:**
+- Release v0.3.3 with the state detection fix
 - Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`

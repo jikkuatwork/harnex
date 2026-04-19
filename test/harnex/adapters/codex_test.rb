@@ -73,6 +73,17 @@ class CodexAdapterTest < Minitest::Test
     assert_equal true, state[:input_ready]
   end
 
+  # Regression: Codex v0.121+ draws entirely with cursor positioning.
+  # The › prompt is placed via \e[N;1H rather than after a \n, so it
+  # was invisible to prompt_line? which checks line-start only.
+  def test_detects_prompt_from_cursor_positioned_output
+    # Simulate real Codex ring buffer: cursor-addressed TUI, no explicit newlines
+    screen = "\e[3;1H\e[2m│ >_ \e[1mOpenAI Codex\e[22m (v0.121.0) │\e[5;1H\e[2mmodel:     gpt-5.4\e[7;1H\e[0mSome answer text\e[32;1H\e[1m\xE2\x80\xBA\e[32;3H\e[22m\e[2mUse /skills\e[0m"
+    state = @adapter.input_state(screen)
+    assert_equal "prompt", state[:state]
+    assert_equal true, state[:input_ready]
+  end
+
   # --- build_send_payload ---
 
   def test_build_send_payload_with_text_and_submit

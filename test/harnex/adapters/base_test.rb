@@ -101,4 +101,38 @@ class BaseAdapterContractTest < Minitest::Test
     assert_includes result, "OpenAI Codex"
     assert_includes result, "› type here"
   end
+
+  # Regression: Codex draws with cursor positioning (\e[N;1H) rather than
+  # newlines. After escape stripping, the › prompt ended up mid-line, so
+  # prompt_line? (which checks line-start) never fired. Column-1 cursor
+  # moves must become newlines to preserve line structure.
+  def test_normalized_screen_text_converts_column1_cursor_to_newlines
+    adapter = Harnex::Adapters::Base.new("test")
+    # Real Codex output: BINARY buffer with cursor positioning
+    screen = "\e[30;1H\e[1m\xE2\x80\xBA\e[30;3H\e[22m\e[2mUse /skills\e[0m".dup.force_encoding(Encoding::BINARY)
+    result = adapter.send(:normalized_screen_text, screen)
+    # › should be at the start of a line after column-1 → newline conversion
+    assert result.lines.any? { |l| l.strip.start_with?("\u203A") },
+      "expected › at line start, got: #{result.inspect}"
+  end
+
+  def test_normalized_screen_text_preserves_non_column1_cursor
+    adapter = Harnex::Adapters::Base.new("test")
+    # Column 5 cursor positioning should NOT become a newline
+    screen = "hello\e[3;5Hworld"
+    result = adapter.send(:normalized_screen_text, screen)
+    refute_includes result, "\n", "non-column-1 cursor should not inject newlines"
+  end
+
+  # Regression: the output buffer is BINARY (ASCII-8BIT). The old
+  # .encode(UTF_8, invalid: :replace) path treated each byte individually,
+  # discarding valid multi-byte UTF-8 characters like › (U+203A) and •
+  # (U+2022). force_encoding + scrub preserves them.
+  def test_normalized_screen_text_preserves_multibyte_utf8_from_binary_buffer
+    adapter = Harnex::Adapters::Base.new("test")
+    # Simulate a BINARY-encoded buffer containing UTF-8 characters
+    screen = "\e[1m\xE2\x80\xBA type here\e[0m".dup.force_encoding(Encoding::BINARY)
+    result = adapter.send(:normalized_screen_text, screen)
+    assert_includes result, "\u203A", "› (U+203A) must survive BINARY→UTF-8 normalization"
+  end
 end
