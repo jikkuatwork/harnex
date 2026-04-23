@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-20
+Updated: 2026-04-23
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-04-20
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 197 minitest tests, all passing.
+- Test suite: `test/` with 202 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -170,6 +170,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 16 | Platform-agnostic data directory (~/.harnex/) | open | P2 |
 | 17 | Multi-session coordination | open | P2 |
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
+| 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 
 See `koder/issues/` for details.
 
@@ -194,19 +195,15 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-20: Fix Codex/Claude state detection from BINARY PTY buffers
+### 2026-04-23: v0.3.3 released — fixed --tmux greedy flag parsing (#20)
 
-Two bugs in `normalized_screen_text` broke Codex prompt detection:
-1. BINARY→UTF-8 encoding discarded multi-byte chars (›, •, ❯) — fixed
-   with `force_encoding(UTF_8).scrub("")`.
-2. Codex v0.121+ draws via cursor positioning, not newlines — column-1
-   cursor moves (`\e[N;1H`) now convert to newlines before CSI stripping.
-
-Verified end-to-end: `send --wait-for-idle` works for both Claude and
-Codex sessions.
+`tmux_name_arg?` was consuming `--`-prefixed flags as the optional
+window name when `cli_name` was already set. One-line guard added,
+5 regression tests. Gem built and installed locally; RubyGems push
+pending (needs OTP).
 
 **Next:**
-- Release v0.3.3 with the state detection fix
+- Push v0.3.3 to RubyGems (`gem push harnex-0.3.3.gem`)
 - Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
