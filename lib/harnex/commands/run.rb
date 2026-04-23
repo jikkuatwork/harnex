@@ -340,6 +340,7 @@ module Harnex
     def tmux_name_arg?(argv, index, cli_name)
       value = argv[index + 1]
       return false if value.nil? || value == "--" || wrapper_option_token?(value)
+      return false if value.start_with?("--")
       return true if cli_name
 
       cli_candidate_after?(argv, index + 2)

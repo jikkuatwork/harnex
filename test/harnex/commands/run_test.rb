@@ -78,6 +78,57 @@ class RunnerTest < Minitest::Test
     runner.send(:validate_unique_id!, repo_root)
   end
 
+  # --tmux flag parsing (issue #20)
+
+  def test_tmux_does_not_consume_following_flag_as_window_name
+    runner = Harnex::Runner.new(["codex", "--tmux", "--id", "cx-123"])
+    runner.send(:extract_wrapper_options, ["codex", "--tmux", "--id", "cx-123"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert opts[:tmux], "tmux should be enabled"
+    assert_nil opts[:tmux_name], "--id should not be consumed as tmux window name"
+    assert_equal "cx-123", opts[:id]
+  end
+
+  def test_tmux_does_not_consume_detach_flag
+    runner = Harnex::Runner.new(["codex", "--tmux", "--detach"])
+    runner.send(:extract_wrapper_options, ["codex", "--tmux", "--detach"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert opts[:tmux]
+    assert opts[:detach], "--detach should be parsed as its own flag"
+    assert_nil opts[:tmux_name]
+  end
+
+  def test_tmux_does_not_consume_unknown_double_dash_flag
+    runner = Harnex::Runner.new(["codex", "--tmux", "--name", "cx-p-322"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--tmux", "--name", "cx-p-322"])
+
+    opts = runner.instance_variable_get(:@options)
+    assert opts[:tmux]
+    assert_nil opts[:tmux_name], "--name should not be consumed as tmux window name"
+    assert_includes forwarded, "--name"
+    assert_includes forwarded, "cx-p-322"
+  end
+
+  def test_tmux_still_accepts_positional_window_name
+    runner = Harnex::Runner.new(["codex", "--tmux", "mywindow"])
+    runner.send(:extract_wrapper_options, ["codex", "--tmux", "mywindow"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert opts[:tmux]
+    assert_equal "mywindow", opts[:tmux_name]
+  end
+
+  def test_tmux_equals_syntax_unaffected
+    runner = Harnex::Runner.new(["codex", "--tmux=mywindow"])
+    runner.send(:extract_wrapper_options, ["codex", "--tmux=mywindow"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert opts[:tmux]
+    assert_equal "mywindow", opts[:tmux_name]
+  end
+
   def test_annotate_tmux_registry_persists_tmux_metadata
     repo_root = Dir.pwd
     id = "tmux-meta-#{$$}"
