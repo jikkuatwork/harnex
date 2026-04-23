@@ -1,7 +1,7 @@
 ---
 id: 20
 title: "--tmux greedily consumes next flag as window name"
-status: open
+status: fixed
 priority: P1
 created: 2026-04-23
 ---
