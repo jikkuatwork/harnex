@@ -114,6 +114,13 @@ The invoker (you) doesn't need to be a harnex session. Spawned agents get
 
 See `recipes/03_buddy.md` for the full pattern.
 
+## Releasing
+
+- `gem build harnex.gemspec` to build the gem
+- `bin/gem-push harnex-<VERSION>.gem` to push — it reads the TOTP key
+  from `.env` and generates the OTP automatically. Do not read `.env`
+  yourself or generate OTP inline.
+
 ## Development notes
 
 - Ruby 3.x, stdlib only (no gems)
