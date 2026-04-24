@@ -162,6 +162,8 @@ harnex pane --id cx-impl-NN --lines 20 --follow
 
 When the agent is done (at prompt, work committed):
 
+Stop each completed session as soon as its commit lands.
+
 ```bash
 harnex stop --id cx-impl-NN
 ```
