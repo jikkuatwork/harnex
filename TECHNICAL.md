@@ -503,19 +503,21 @@ and `Inbox` classes use `ConditionVariable` for signaling.
 
 ## Skill Files
 
-Harnex ships a skill file that teaches AI agents how to use
-harnex commands. The file lives at:
+Harnex ships bundled skills that teach agents the orchestration workflow and
+dispatch discipline. The canonical collaboration skill is:
 
 ```
-skills/harnex/SKILL.md
+skills/harnex-dispatch/SKILL.md
 ```
 
 ### What's in the skill
 
-The skill tells agents:
+The dispatch skill tells agents:
 
 - How to detect they're inside a harnex session (env vars)
-- How to send messages, check status, spawn workers
+- How to define return channels before delegation
+- How to send short, file-referenced tasks with explicit reply instructions
+- How to send messages, check status, spawn workers, and stop safely
 - How to use `--context`, `--force`, `--no-wait`
 - Relay header format and behavior
 - Collaboration patterns (reply, supervisor, file watch)
@@ -531,8 +533,8 @@ Skill files use YAML frontmatter:
 
 ```yaml
 ---
-name: harnex
-description: Collaborate with other AI agents...
+name: harnex-dispatch
+description: Fire & Watch dispatch pattern...
 allowed-tools: Bash(harnex *)
 ---
 ```
@@ -540,41 +542,36 @@ allowed-tools: Bash(harnex *)
 The `allowed-tools` field grants the agent permission to run
 `harnex` commands without asking for approval each time.
 
-### Symlinking the skill
+### Installing bundled skills
 
-To make the skill available globally (not just in the harnex
-repo), symlink it into each agent's skill directory:
+Use the installer command instead of manual symlinks:
 
 ```bash
-# For Claude Code
-ln -s /path/to/harnex/skills/harnex \
-      ~/.claude/skills/harnex
-
-# For Codex
-ln -s /path/to/harnex/skills/harnex \
-      ~/.codex/skills/harnex
+harnex skills install            # all canonical skills
+harnex skills install harnex     # compatibility alias -> harnex-dispatch
+harnex skills install --local    # install into current repo only
 ```
 
-After symlinking, any Claude or Codex session — in any repo —
-can use harnex commands. The skill activates automatically
-when the user mentions agent collaboration or when a relay
-message arrives.
+Compatibility aliases accepted by the installer:
+
+- `harnex` -> `harnex-dispatch`
+- `dispatch` -> `harnex-dispatch`
+- `chain-implement` -> `harnex-chain`
 
 ### Skill directory structure
 
 ```
  ~/.claude/skills/
-   └── harnex -> /path/to/harnex/skills/harnex
+   └── harnex-dispatch
          └── SKILL.md
 
  ~/.codex/skills/
-   └── harnex -> /path/to/harnex/skills/harnex
+   └── harnex-dispatch -> ~/.claude/skills/harnex-dispatch
          └── SKILL.md
 ```
 
-The symlink points to the `skills/harnex/` directory (not the
-file directly), so updates to `SKILL.md` in the repo are
-picked up immediately.
+Deprecated installed names (`harnex`, `dispatch`, `chain-implement`) are
+cleaned automatically during install and uninstall.
 
 ## Known Limitations
 

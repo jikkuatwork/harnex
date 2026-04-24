@@ -41,7 +41,6 @@ koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
 skills/open/SKILL.md             Session initialization workflow
 skills/close/SKILL.md            Session wrap-up workflow
-skills/harnex/SKILL.md           Core harnex skill for Claude/Codex
 skills/harnex-dispatch/SKILL.md  Fire & Watch dispatch pattern
 skills/harnex-chain/SKILL.md     End-to-end implement workflow
 skills/harnex-buddy/SKILL.md     Accountability partner for long-running work
@@ -81,7 +80,7 @@ May override:
 
 Check `$HARNEX_ID` and `$HARNEX_SESSION_CLI` to confirm. You can use
 `harnex send`, `harnex status`, and `harnex wait` to coordinate with
-peer sessions. See `skills/harnex/SKILL.md` for full usage patterns.
+peer sessions. See `skills/harnex-dispatch/SKILL.md` for full usage patterns.
 
 When starting a peer CLI session on the user's behalf, default to a
 visible interactive tmux session via `harnex run <cli> --tmux` so the

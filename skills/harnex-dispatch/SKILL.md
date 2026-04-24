@@ -1,11 +1,92 @@
 ---
 name: harnex-dispatch
 description: Fire & Watch — the standard pattern for launching and monitoring harnex agent sessions. Use when dispatching implementation, review, or fix agents.
+allowed-tools: Bash(harnex *)
 ---
 
 # Dispatch — Fire & Watch
 
 Every harnex agent dispatch follows three phases: **spawn**, **watch**, **stop**.
+Before spawn, always decide the return channel and message contract.
+
+## Detect your context
+
+Check env vars first to know whether you are inside a harnex-managed session:
+
+| Variable | Meaning |
+|----------|---------|
+| `HARNEX_SESSION_CLI` | Which CLI this session is (`claude` or `codex`) |
+| `HARNEX_ID` | Your session ID |
+| `HARNEX_SESSION_REPO_ROOT` | Repo root the session is scoped to |
+| `HARNEX_SESSION_ID` | Internal harnex instance ID |
+| `HARNEX_SPAWNER_PANE` | tmux pane ID (`%N`) of the invoker |
+
+If these are present, you can coordinate peers directly with `harnex send`,
+`harnex status`, and `harnex wait`. `HARNEX_SPAWNER_PANE` is the fallback
+return channel to the invoker via `tmux send-keys`.
+
+## Return Channel First
+
+Define how results come back before delegating work.
+
+- Inside harnex: require peers to send final results back to your own
+  `HARNEX_ID` via `harnex send --id "$HARNEX_ID" ...`
+- Outside harnex: require a concrete return path (for example a specific file
+  in the repo or an explicit tmux pane message)
+
+Do not delegate work without an explicit completion contract.
+
+## Send Hygiene
+
+### Keep prompts short; reference files for long instructions
+
+```bash
+cat > /tmp/task-impl-NN.md <<'EOF'
+Detailed instructions here...
+EOF
+
+harnex send --id cx-impl-NN --message "Read /tmp/task-impl-NN.md. Reply with final status to harnex id $HARNEX_ID."
+```
+
+Long inline messages are brittle in PTYs. Use plan/issue files or temp files.
+
+### Require explicit reply instruction in every delegated task
+
+```bash
+harnex send --id cl-rev-NN --message "Review koder/plans/NN_name.md. When done send findings to harnex id $HARNEX_ID."
+```
+
+## Relay Headers
+
+Messages sent from one harnex session to another are auto-wrapped:
+
+```
+[harnex relay from=<cli> id=<sender_id> at=<timestamp>]
+<message body>
+```
+
+When you receive a relay header, treat it as an actionable prompt from the
+peer. Respond using `harnex send --id <sender_id> ...` unless instructed
+otherwise.
+
+## Practical Reply/Delegate Patterns
+
+Reply to a peer:
+
+```bash
+harnex send --id <TARGET_ID> --message "<result>"
+```
+
+Delegate and force a return path:
+
+```bash
+harnex send --id cx-impl-NN --message "$(cat <<EOF
+Implement koder/plans/NN_name.md.
+Run tests before finishing.
+When done, send one summary line back to harnex id $HARNEX_ID.
+EOF
+)"
+```
 
 ## 1. Spawn
 

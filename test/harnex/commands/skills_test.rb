@@ -60,7 +60,7 @@ class SkillsCommandTest < Minitest::Test
   def test_install_removes_deprecated_skills
     with_tmp_home do |home|
       # Pre-install old-named skills
-      %w[dispatch chain-implement].each do |old_name|
+      %w[harnex dispatch chain-implement].each do |old_name|
         dir = File.join(home, ".claude", "skills", old_name)
         FileUtils.mkdir_p(dir)
         File.write(File.join(dir, "SKILL.md"), "old")
@@ -69,6 +69,7 @@ class SkillsCommandTest < Minitest::Test
       capture_io { Harnex::Skills.new(["install"]).run }
 
       # Old names removed
+      refute File.exist?(File.join(home, ".claude", "skills", "harnex"))
       refute File.exist?(File.join(home, ".claude", "skills", "dispatch"))
       refute File.exist?(File.join(home, ".claude", "skills", "chain-implement"))
 
@@ -78,15 +79,19 @@ class SkillsCommandTest < Minitest::Test
     end
   end
 
-  def test_install_rejects_positional_arguments
-    in_tmp_repo do
-      _out, err = capture_io do
-        assert_raises(RuntimeError) do
-          Harnex::Skills.new(["install", "harnex-dispatch"]).run
-        end
+  def test_install_harnex_alias_installs_dispatch_without_harnex_dir
+    in_tmp_repo do |dir|
+      out, err = capture_io do
+        assert_equal 0, Harnex::Skills.new(["install", "harnex", "--local"]).run
       end
 
-      assert_match(/unexpected argument/, err)
+      assert_empty err
+      assert_includes out, "harnex-dispatch"
+      assert File.file?(File.join(dir, ".claude", "skills", "harnex-dispatch", "SKILL.md"))
+      refute File.exist?(File.join(dir, ".claude", "skills", "harnex"))
+      refute File.exist?(File.join(dir, ".codex", "skills", "harnex"))
+      refute File.exist?(File.join(dir, ".claude", "skills", "harnex-chain"))
+      refute File.exist?(File.join(dir, ".claude", "skills", "harnex-buddy"))
     end
   end
 
@@ -123,7 +128,7 @@ class SkillsCommandTest < Minitest::Test
   def test_uninstall_also_removes_deprecated_names
     with_tmp_home do |home|
       # Manually create old-named skills
-      %w[dispatch chain-implement].each do |old_name|
+      %w[harnex dispatch chain-implement].each do |old_name|
         dir = File.join(home, ".claude", "skills", old_name)
         FileUtils.mkdir_p(dir)
         File.write(File.join(dir, "SKILL.md"), "old")
@@ -131,6 +136,7 @@ class SkillsCommandTest < Minitest::Test
 
       capture_io { Harnex::Skills.new(["uninstall"]).run }
 
+      refute File.exist?(File.join(home, ".claude", "skills", "harnex"))
       refute File.exist?(File.join(home, ".claude", "skills", "dispatch"))
       refute File.exist?(File.join(home, ".claude", "skills", "chain-implement"))
     end

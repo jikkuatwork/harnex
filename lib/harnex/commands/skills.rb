@@ -4,20 +4,26 @@ module Harnex
   class Skills
     SKILLS_ROOT = File.expand_path("../../../../skills", __FILE__)
     INSTALL_SKILLS = %w[harnex-dispatch harnex-chain harnex-buddy].freeze
-    DEPRECATED_SKILLS = %w[dispatch chain-implement].freeze
+    DEPRECATED_SKILLS = %w[harnex dispatch chain-implement].freeze
+    SKILL_ALIASES = {
+      "harnex" => "harnex-dispatch",
+      "dispatch" => "harnex-dispatch",
+      "chain-implement" => "harnex-chain"
+    }.freeze
 
     def self.usage
       <<~TEXT
-        Usage: harnex skills <subcommand> [--local]
+        Usage: harnex skills <subcommand> [SKILL...] [--local]
 
         Subcommands:
-          install     Install bundled skills (globally by default)
+          install     Install bundled skills (globally by default; optional skill names)
           uninstall   Remove installed skills (globally by default)
 
         Options:
           --local     Target the current repo instead of global ~/.claude/
 
         Installs: #{INSTALL_SKILLS.join(', ')}
+        Aliases: harnex|dispatch -> harnex-dispatch, chain-implement -> harnex-chain
 
         By default, copies each skill to ~/.claude/skills/<skill>/
         and symlinks ~/.codex/skills/<skill> to it.
@@ -35,12 +41,13 @@ module Harnex
       subcommand = @argv.shift
       case subcommand
       when "install"
-        local, help = parse_args(@argv)
+        local, help, requested_skills = parse_args(@argv, allow_positional: true)
         return (puts self.class.usage; 0) if help
 
         remove_deprecated(local)
+        install_skills = requested_skills.empty? ? INSTALL_SKILLS : canonical_skill_names(requested_skills)
 
-        INSTALL_SKILLS.each do |skill_name|
+        install_skills.each do |skill_name|
           skill_source = resolve_skill_source(skill_name)
           unless skill_source
             return missing_skill(skill_name)
@@ -51,7 +58,7 @@ module Harnex
         end
         0
       when "uninstall"
-        local, help = parse_args(@argv)
+        local, help, = parse_args(@argv)
         return (puts self.class.usage; 0) if help
 
         (INSTALL_SKILLS + DEPRECATED_SKILLS).each do |skill_name|
@@ -70,9 +77,10 @@ module Harnex
 
     private
 
-    def parse_args(args)
+    def parse_args(args, allow_positional: false)
       local = false
       help = false
+      positional = []
 
       args.each do |arg|
         case arg
@@ -83,12 +91,16 @@ module Harnex
         when /\A-/
           raise "harnex skills: unknown option #{arg.inspect}"
         else
-          warn("harnex skills: unexpected argument #{arg.inspect}")
-          raise "harnex skills takes no positional arguments"
+          if allow_positional
+            positional << arg
+          else
+            warn("harnex skills: unexpected argument #{arg.inspect}")
+            raise "harnex skills takes no positional arguments"
+          end
         end
       end
 
-      [local, help]
+      [local, help, positional]
     end
 
     def resolve_skill_source(skill_name)
@@ -105,6 +117,14 @@ module Harnex
       DEPRECATED_SKILLS.each do |skill_name|
         local ? uninstall_local(skill_name) : uninstall_global(skill_name)
       end
+    end
+
+    def canonical_skill_names(skill_names)
+      skill_names.map { |name| canonical_skill_name(name) }.uniq
+    end
+
+    def canonical_skill_name(skill_name)
+      SKILL_ALIASES.fetch(skill_name, skill_name)
     end
 
     def install_local(skill_name, skill_source)
