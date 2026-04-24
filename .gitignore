@@ -3,3 +3,4 @@
 Gemfile.lock
 koder/scratch/
 .env
+.claude/scheduled_tasks.lock
