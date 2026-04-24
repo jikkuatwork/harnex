@@ -9,6 +9,10 @@ allowed-tools: Bash(harnex *)
 Every harnex agent dispatch follows three phases: **spawn**, **watch**, **stop**.
 Before spawn, always decide the return channel and message contract.
 
+`harnex-dispatch` is the canonical home for lifecycle mechanics only.
+For orchestrator role boundaries, phase gates, and chain-level parallel policy,
+see `harnex-chain`.
+
 ## Detect your context
 
 Check env vars first to know whether you are inside a harnex-managed session:
@@ -183,11 +187,16 @@ harnex stop --id cx-impl-NN
 
 | Step | ID pattern | tmux window | Example |
 |------|-----------|-------------|---------|
+| Mapping | `cx-map-NN` | `cx-map-NN` | `cx-map-42` |
+| Map review | `cx-rev-map-NN` | `cx-rev-map-NN` | `cx-rev-map-42` |
+| Map fix | `cx-fix-map-NN` | `cx-fix-map-NN` | `cx-fix-map-42` |
 | Implement | `cx-impl-NN` | `cx-impl-NN` | `cx-impl-42` |
 | Review | `cl-rev-NN` | `cl-rev-NN` | `cl-rev-42` |
 | Fix | `cx-fix-NN` | `cx-fix-NN` | `cx-fix-42` |
 | Plan write | `cx-plan-NN` | `cx-plan-NN` | `cx-plan-42` |
+| Plan review | `cx-rev-plan-NN` | `cx-rev-plan-NN` | `cx-rev-plan-42` |
 | Plan fix | `cx-fix-plan-NN` | `cx-fix-plan-NN` | `cx-fix-plan-42` |
+| Buddy | `buddy-NN` | `buddy-NN` | `buddy-42` |
 
 **Rule**: Always use `--tmux <same-as-id>` so the tmux window name matches
 the session ID. Never use a different tmux name.
@@ -222,7 +231,7 @@ git commit -m "docs(plan-NN): add plan"
 
 # Create worktree
 WORKTREE="$(pwd)/../$(basename $(pwd))-plan-NN"
-git worktree add ${WORKTREE} -b plan/NN_name master
+git worktree add ${WORKTREE} -b plan/NN_name main
 
 # Launch from worktree
 cd ${WORKTREE}
@@ -247,19 +256,17 @@ harnex status --all     # all repos
 ## Buddy for Long-Running Dispatches
 
 If the dispatched work is expected to take a long time (overnight, multi-hour)
-or the user asks for unattended execution, spawn a buddy alongside the worker:
+or the user asks for unattended execution, spawn a buddy alongside the worker.
+Dispatch mechanics stay here; buddy monitoring mechanics live in
+`harnex-buddy`.
 
 ```bash
-# Worker
-harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
-  --context "Implement koder/plans/NN_name.md. Run tests when done."
-
-# Buddy to watch it
 harnex run claude --id buddy-NN --tmux buddy-NN
-harnex send --id buddy-NN --message "Watch session cx-impl-NN. Poll every 5 min with harnex pane --id cx-impl-NN --lines 20. Nudge with harnex send if stuck for >10 min. Report back to \$HARNEX_SPAWNER_PANE when done."
+harnex send --id buddy-NN --message "Watch session cx-impl-NN. Follow skills/harnex-buddy/SKILL.md and report completion to \$HARNEX_SPAWNER_PANE."
 ```
 
-The buddy replaces manual Fire & Watch polling. See `recipes/03_buddy.md`.
+For activation conditions, poll/stall/nudge loop, return channel details, and
+buddy cleanup, use `harnex-buddy`.
 
 ## What NOT to Do
 

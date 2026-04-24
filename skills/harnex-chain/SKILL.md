@@ -9,6 +9,9 @@ Take an issue from design through to shipped code via harnex agents. This
 skill defines chain semantics (phase order, quality gates, escalation), while
 spawn/watch/stop mechanics come from `harnex-dispatch`.
 
+For naming (`--tmux <same-as-id>`) and worktree operational rules, use
+`harnex-dispatch`.
+
 ## Orchestrator Role
 
 - Claude is the orchestrator only: dispatches sessions, watches progress,
@@ -45,8 +48,7 @@ Per plan (serial on main):
 ```
 
 The serial loop is the default path. For each step, use `harnex-dispatch`
-Fire & Watch for lifecycle operations, including stop timing in
-`skills/harnex-dispatch/SKILL.md#3-stop`.
+Fire & Watch for lifecycle operations and stop-after-commit timing.
 
 ## Phase 1: Issue
 
@@ -107,14 +109,19 @@ Capacity rule:
   (global cap, not per lane).
 
 Lifecycle rule:
-- Use `harnex-dispatch` Fire & Watch for spawn/watch mechanics.
-- Stop timing is defined in `skills/harnex-dispatch/SKILL.md#3-stop`.
-- Stop each completed session as soon as its commit lands.
+- Use `harnex-dispatch` Fire & Watch, including poll cadence and stop timing.
 
 Implementation rule:
 - Serial implementation on `main` is the default.
 - Parallel implementation is allowed only with explicit user request and
   worktree isolation (see `harnex-dispatch` worktree guidance).
+
+## Unattended Monitoring
+
+For overnight, unattended, or >30-minute steps, use `harnex-buddy`.
+Buddy activation criteria, monitoring loop (poll/stall/nudge), return channel
+via `$HARNEX_SPAWNER_PANE`, and buddy cleanup are canonical in
+`harnex-buddy`.
 
 ## Failure and Escalation
 
@@ -123,18 +130,3 @@ Implementation rule:
 - Implementation diverges materially from plan: stop and re-plan.
 - Worker is stuck or blocked by prompt/dialog: intervene, then continue with a
   fresh worker if needed.
-
-## Naming Conventions
-
-Use stable IDs per step, with fresh sessions per step (no session reuse):
-- Mapping: `cx-map-NN`
-- Map review: `cx-rev-map-NN`
-- Map fix: `cx-fix-map-NN`
-- Plan write: `cx-plan-NN`
-- Plan review: `cx-rev-plan-NN`
-- Plan fix: `cx-fix-plan-NN`
-- Implement: `cx-impl-NN`
-- Code review: `cx-rev-NN`
-- Code fix: `cx-fix-NN`
-
-For run/watch/stop command patterns, use `harnex-dispatch` directly.

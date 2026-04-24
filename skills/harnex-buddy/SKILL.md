@@ -11,6 +11,9 @@ agent that watches the worker and nudges it if it stalls.
 The buddy is an LLM, so it has intelligence for free. It reads the worker's
 screen, reasons about whether it's stuck, and composes a meaningful nudge.
 
+Dispatch workers via `harnex-dispatch` first. This skill owns only buddy
+behavior after the worker is already running.
+
 ## When to activate
 
 - User says "do this overnight" or "run this while I'm away"
@@ -20,12 +23,11 @@ screen, reasons about whether it's stuck, and composes a meaningful nudge.
 
 ## Spawn the buddy
 
-After dispatching the worker, spawn a buddy alongside it:
+After dispatching the worker with `harnex-dispatch`, spawn a buddy alongside
+it. Keep ID/tmux naming consistent with `harnex-dispatch` (`--tmux` matches
+`--id`):
 
 ```bash
-# Worker already running
-harnex run codex --id worker-42 --tmux worker-42
-
 # Spawn its buddy
 harnex run claude --id buddy-42 --tmux buddy-42
 ```
@@ -36,17 +38,17 @@ Write a task file with the watching instructions, then send it:
 
 ```bash
 cat > /tmp/buddy-42.md <<'EOF'
-You are an accountability partner for harnex session `worker-42`.
+You are an accountability partner for harnex session `cx-impl-42`.
 
 Your job:
 1. Every 5 minutes, check on the worker:
-   - `harnex pane --id worker-42 --lines 30`
-   - `harnex status --id worker-42 --json`
+   - `harnex pane --id cx-impl-42 --lines 20`
+   - `harnex status --id cx-impl-42 --json`
 2. If the worker appears stuck at a prompt for more than 10 minutes
    with no progress, nudge it:
-   - `harnex send --id worker-42 --message "You appear to have stalled. Continue with your current task."`
+   - `harnex send --id cx-impl-42 --message "You appear to have stalled. Continue with your current task."`
 3. If the worker has exited, report back to the invoker:
-   - `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-42 has exited. Check results." Enter`
+   - `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "cx-impl-42 has exited. Check results." Enter`
 4. Keep watching until the worker finishes or is stopped.
 
 Do not interfere with work in progress. Only nudge when clearly stalled.
@@ -76,12 +78,8 @@ The invoker does NOT need to be a harnex session. It just needs to be in tmux.
 
 ## Naming convention
 
-| Role | ID pattern | Example |
-|------|-----------|---------|
-| Worker | `worker-NN` | `worker-42` |
-| Buddy | `buddy-NN` | `buddy-42` |
-
-Match the buddy ID to the worker it watches.
+Use naming from `harnex-dispatch`: set `--tmux <same-as-id>` for every
+session and keep the buddy ID paired with the worker step ID.
 
 ## Cleanup
 
@@ -93,6 +91,8 @@ harnex stop --id buddy-42
 
 ## Notes
 
+- For chain orchestration, phase gates, and the 5-concurrent parallel planning
+  cap, see `harnex-chain`.
 - One buddy per worker, or one buddy watching multiple sessions
 - The buddy is a regular harnex session — stop, inspect, log it like any other
 - Tune polling and thresholds in the buddy's prompt, not in harnex config
