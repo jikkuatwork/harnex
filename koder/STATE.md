@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-23
+Updated: 2026-04-24
 
 ## Current snapshot
 
@@ -115,6 +115,17 @@ Updated: 2026-04-23
   BINARY PTY buffers (force_encoding + scrub instead of encode) and converts
   column-1 cursor positioning (`\e[N;1H`) to newlines. Fixes Codex prompt
   detection for TUIs that draw via cursor addressing rather than newlines.
+- Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
+  - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
+    installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
+    cross-refs cleaned in CLAUDE.md/TECHNICAL.md (AGENTS.md/CODEX.md are
+    symlinks).
+  - Unit B (`a95771c`): `harnex-chain` rewritten with Orchestrator Role and
+    Parallel Variant (global 5-concurrent Codex cap, worktrees only on
+    explicit request); stop-on-commit rule added to `harnex-dispatch` #3-stop.
+  - Unit D (`34a09a8`): cross-reference audit across the 3 remaining skills;
+    every mechanic has one canonical owner, non-owners reference by name; no
+    duplicated prose block larger than 3 lines / 1 paragraph.
 
 ## What harnex does
 
@@ -171,6 +182,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 17 | Multi-session coordination | open | P2 |
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
+| 21 | Skill catalogue cohesion | **fixed** | P2 |
 
 See `koder/issues/` for details.
 
@@ -187,6 +199,9 @@ See `koder/issues/` for details.
 | 07 | Inbox management (#10) | **done** |
 | 08 | Pane capture (#11) | **done** |
 | 09 | Atomic send --wait-for-idle (#13) | **done** |
+| 21a | Collapse `harnex` into `harnex-dispatch` (#21 Unit A) | **done** |
+| 21b | Rewrite `harnex-chain` (#21 Unit B) | **done** |
+| 21d | Cross-reference audit (#21 Unit D) | **done** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -195,15 +210,14 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-23: v0.3.3 released — fixed --tmux greedy flag parsing (#20)
+### 2026-04-24: v0.3.4 released — issue #21 skill catalogue cohesion
 
-`tmux_name_arg?` was consuming `--`-prefixed flags as the optional
-window name when `cli_name` was already set. One-line guard added,
-5 regression tests. Gem built and installed locally; RubyGems push
-pending (needs OTP).
+Three parallel plans (21a/b/d) written, reviewed, fixed, then implemented
+serially on `main`. Plans, plan reviews, and code reviews live under
+`koder/plans/21*.md` and `koder/reviews/21*.md`. Full suite (202 tests,
+519 assertions) green at HEAD. Gem pushed to RubyGems.
 
 **Next:**
-- Push v0.3.3 to RubyGems (`gem push harnex-0.3.3.gem`)
 - Test buddy pattern end-to-end with a real long-running dispatch
 - Build a third adapter (aider, cursor, etc.) to naturally drive #06
 - Apply unique-ID cross-repo fallback (from `pane`) to `logs`
