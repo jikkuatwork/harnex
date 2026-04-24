@@ -1,9 +1,11 @@
 ---
 id: 21
 title: "Skill catalogue cohesion — design the harnex skills as a coordinated set"
-status: open
+status: resolved
 priority: P2
 created: 2026-04-24
+resolved: 2026-04-24
+resolution: "Shipped in harnex v0.3.4 — units A (collapse harnex→dispatch), B (rewrite harnex-chain), D (cross-reference audit)."
 ---
 
 # Issue 21: Skill Catalogue Cohesion
