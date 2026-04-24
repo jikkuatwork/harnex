@@ -84,12 +84,11 @@ Narrow purpose, no overlap, fine.
 
 ## Context
 
-- Raised during holm v0.100.4 session (2026-04-24) after a 7-way parallel
-  plan-write + 7-way parallel plan-review run for Issue 224 (thinness gate).
-- The orchestrator forgot to stop idle committed sessions, which prolonged
-  throttling on the stragglers. Root cause: parallel-within-chain isn't owned
-  by any skill, so the serial chain mental model and the single-session
-  dispatch mental model collided.
-- See holm `knowledge-base/skills/harnex-dispatch/SKILL.md` for the
-  precision rewrite that captured the stop-early rule for the single-session
-  case; `harnex-chain` needs an analogous refresh for the multi-session case.
+Raised after a session that ran N plan-writes and N plan-reviews in parallel
+against a single mapping. The orchestrator left committed sessions at prompt
+instead of stopping them promptly, prolonging Azure throttling on the
+stragglers. Root cause: parallel-within-chain isn't owned by any skill, so
+the serial chain mental model and the single-session dispatch mental model
+collided. A precision rewrite of `harnex-dispatch` captured the stop-early
+rule for the single-session case; `harnex-chain` needs an analogous refresh
+for the multi-session case.
