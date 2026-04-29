@@ -36,6 +36,77 @@ class RunnerTest < Minitest::Test
     assert_equal 45.0, runner.instance_variable_get(:@options)[:inbox_ttl]
   end
 
+  def test_extract_wrapper_options_bare_watch_enables_babysitter
+    runner = Harnex::Runner.new(["codex", "--watch"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert opts[:watch_enabled]
+    assert_nil opts[:watch]
+  end
+
+  def test_extract_wrapper_options_legacy_watch_path_with_space_is_preserved
+    runner = Harnex::Runner.new(["codex", "--watch", "NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch", "NOTES.md"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    refute opts[:watch_enabled]
+    assert_equal "NOTES.md", opts[:watch]
+  end
+
+  def test_extract_wrapper_options_legacy_watch_equals_path_is_preserved
+    runner = Harnex::Runner.new(["codex", "--watch=NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch=NOTES.md"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    refute opts[:watch_enabled]
+    assert_equal "NOTES.md", opts[:watch]
+  end
+
+  def test_extract_wrapper_options_watch_file_sets_file_hook_path
+    runner = Harnex::Runner.new(["codex", "--watch-file", "NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch-file", "NOTES.md"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert_equal "NOTES.md", opts[:watch]
+  end
+
+  def test_extract_wrapper_options_allows_babysitter_and_file_hook_together
+    runner = Harnex::Runner.new(["--watch", "--watch-file", "NOTES.md", "codex"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["--watch", "--watch-file", "NOTES.md", "codex"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert opts[:watch_enabled]
+    assert_equal "NOTES.md", opts[:watch]
+  end
+
+  def test_extract_wrapper_options_parses_stall_after_and_max_resumes
+    runner = Harnex::Runner.new(["codex", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
+    runner.send(:extract_wrapper_options, ["codex", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal 300.0, opts[:stall_after_s]
+    assert_equal 2, opts[:max_resumes]
+  end
+
+  def test_extract_wrapper_options_rejects_negative_max_resumes
+    runner = Harnex::Runner.new(["codex", "--max-resumes", "-1"])
+
+    assert_raises(OptionParser::InvalidArgument) do
+      runner.send(:extract_wrapper_options, ["codex", "--max-resumes", "-1"])
+    end
+  end
+
   def test_runner_uses_env_default_for_inbox_ttl
     with_env("HARNEX_INBOX_TTL" => "12.5") do
       runner = Harnex::Runner.new([])

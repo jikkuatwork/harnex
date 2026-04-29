@@ -1,5 +1,6 @@
 require "digest"
 require "fileutils"
+require "optparse"
 require "securerandom"
 require "set"
 require "socket"
@@ -35,6 +36,32 @@ module Harnex
     status.success? ? output.strip : File.expand_path(path)
   rescue StandardError
     File.expand_path(path)
+  end
+
+  def parse_duration_seconds(value, option_name:)
+    text = value.to_s.strip
+    raise OptionParser::InvalidArgument, "#{option_name} requires a value" if text.empty?
+
+    match = text.match(/\A([0-9]+(?:\.[0-9]+)?)([smhSMH]?)\z/)
+    unless match
+      raise OptionParser::InvalidArgument,
+            "#{option_name} must be a positive duration (examples: 30, 30s, 5m, 2h)"
+    end
+
+    amount = Float(match[1])
+    multiplier =
+      case match[2].downcase
+      when "", "s" then 1.0
+      when "m" then 60.0
+      when "h" then 3600.0
+      else
+        raise OptionParser::InvalidArgument, "#{option_name} has an unsupported duration suffix"
+      end
+
+    seconds = amount * multiplier
+    raise OptionParser::InvalidArgument, "#{option_name} must be greater than 0" if seconds <= 0.0
+
+    seconds
   end
 
   def repo_key(repo_root)

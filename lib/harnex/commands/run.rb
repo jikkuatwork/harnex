@@ -6,10 +6,12 @@ module Harnex
   class Runner
     DEFAULT_TIMEOUT = 5.0
     KNOWN_FLAGS = %w[
-      --id --description --detach --tmux --host --port --watch --context --timeout --inbox-ttl --help
+      --id --description --detach --tmux --host --port --watch --watch-file
+      --stall-after --max-resumes --context --timeout --inbox-ttl --help
     ].freeze
     VALUE_FLAGS = %w[
-      --id --description --host --port --watch --context --timeout --inbox-ttl
+      --id --description --host --port --watch --watch-file --stall-after
+      --max-resumes --context --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -23,13 +25,18 @@ module Harnex
           --tmux [NAME]      Run in a tmux window (implies --detach)
           --host HOST        Bind host for the local API (default: #{DEFAULT_HOST})
           --port PORT        Force a specific local API port
-          --watch PATH       Auto-send a file-change hook on modification
+          --watch            Enable blocking babysitter mode (foreground only)
+          --stall-after DUR  Force-resume threshold (default: #{RunWatcher::DEFAULT_STALL_AFTER_S.to_i}s)
+          --max-resumes N    Max forced resumes before escalation (default: #{RunWatcher::DEFAULT_MAX_RESUMES})
+          --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           -h, --help         Show this help
 
         Notes:
+          Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
+          Bare `--watch` enables the babysitter.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
           Wrapper options may appear before or after <cli>.
@@ -43,6 +50,9 @@ module Harnex
         description: nil,
         host: DEFAULT_HOST,
         port: nil,
+        watch_enabled: false,
+        stall_after_s: RunWatcher::DEFAULT_STALL_AFTER_S,
+        max_resumes: RunWatcher::DEFAULT_MAX_RESUMES,
         watch: nil,
         context: nil,
         detach: false,
@@ -69,8 +79,11 @@ module Harnex
       effective_child_args = apply_context(child_args)
       adapter = Harnex.build_adapter(cli_name, effective_child_args)
       @options[:detach] = true if @options[:tmux]
+      validate_watch_mode!
 
-      if @options[:detach]
+      if @options[:watch_enabled]
+        run_watch_mode(adapter, repo_root)
+      elsif @options[:detach]
         run_detached(adapter, cli_name, child_args, repo_root)
       else
         run_foreground(adapter, repo_root)
@@ -90,8 +103,23 @@ module Harnex
       if @options[:tmux]
         run_in_tmux(cli_name, child_args, repo_root)
       else
-        run_headless(adapter, repo_root)
+        result = run_headless(adapter, repo_root)
+        result[:exit_code]
       end
+    end
+
+    def run_watch_mode(adapter, repo_root)
+      Session.validate_binary!(adapter.build_command)
+
+      result = run_headless(adapter, repo_root, emit_payload: false)
+      return result[:exit_code] unless result[:ok]
+
+      RunWatcher.new(
+        id: @options[:id],
+        repo_root: repo_root,
+        stall_after_s: @options[:stall_after_s],
+        max_resumes: @options[:max_resumes]
+      ).run
     end
 
     def run_in_tmux(cli_name, child_args, repo_root)
@@ -101,7 +129,7 @@ module Harnex
       tmux_cmd += ["--description", @options[:description]] if @options[:description]
       tmux_cmd += ["--host", @options[:host]]
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
-      tmux_cmd += ["--watch", @options[:watch]] if @options[:watch]
+      tmux_cmd += ["--watch-file", @options[:watch]] if @options[:watch]
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
@@ -137,7 +165,7 @@ module Harnex
       0
     end
 
-    def run_headless(adapter, repo_root)
+    def run_headless(adapter, repo_root, emit_payload: true)
       log_dir = File.join(Harnex::STATE_DIR, "logs")
       FileUtils.mkdir_p(log_dir)
       log_path = File.join(log_dir, "#{@options[:id]}.log")
@@ -159,7 +187,7 @@ module Harnex
       Process.detach(child_pid)
 
       registry = wait_for_registration(repo_root)
-      return registration_timeout(@options[:id]) unless registry
+      return { ok: false, exit_code: registration_timeout(@options[:id]) } unless registry
 
       payload = {
         ok: true,
@@ -172,11 +200,18 @@ module Harnex
         output_log_path: Harnex.output_log_path(repo_root, @options[:id])
       }
       payload[:description] = @options[:description] if @options[:description]
-      puts JSON.generate(payload)
-      0
+      puts JSON.generate(payload) if emit_payload
+      { ok: true, exit_code: 0, registry: registry, payload: payload }
     end
 
     private
+
+    def validate_watch_mode!
+      return unless @options[:watch_enabled]
+      return unless @options[:detach]
+
+      raise OptionParser::InvalidOption, "--watch is only supported in foreground mode"
+    end
 
     def validate_unique_id!(repo_root)
       existing = Harnex.read_registry(repo_root, @options[:id])
@@ -294,10 +329,42 @@ module Harnex
         when /\A--port=(.+)\z/
           @options[:port] = Integer(required_option_value("--port", Regexp.last_match(1)))
         when "--watch"
-          index += 1
-          @options[:watch] = required_option_value(arg, argv[index])
+          value = argv[index + 1]
+          if value.nil? || value == "--" || wrapper_option_token?(value)
+            @options[:watch_enabled] = true
+          else
+            index += 1
+            @options[:watch] = required_option_value(arg, argv[index])
+          end
         when /\A--watch=(.+)\z/
           @options[:watch] = required_option_value("--watch", Regexp.last_match(1))
+        when "--watch-file"
+          index += 1
+          @options[:watch] = required_option_value(arg, argv[index])
+        when /\A--watch-file=(.+)\z/
+          @options[:watch] = required_option_value("--watch-file", Regexp.last_match(1))
+        when "--stall-after"
+          index += 1
+          @options[:stall_after_s] = Harnex.parse_duration_seconds(
+            required_option_value(arg, argv[index]),
+            option_name: "--stall-after"
+          )
+        when /\A--stall-after=(.+)\z/
+          @options[:stall_after_s] = Harnex.parse_duration_seconds(
+            required_option_value("--stall-after", Regexp.last_match(1)),
+            option_name: "--stall-after"
+          )
+        when "--max-resumes"
+          index += 1
+          @options[:max_resumes] = parse_non_negative_integer(
+            required_option_value(arg, argv[index]),
+            option_name: "--max-resumes"
+          )
+        when /\A--max-resumes=(.+)\z/
+          @options[:max_resumes] = parse_non_negative_integer(
+            required_option_value("--max-resumes", Regexp.last_match(1)),
+            option_name: "--max-resumes"
+          )
         when "--context"
           index += 1
           @options[:context] = required_option_value(arg, argv[index])
@@ -358,7 +425,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|context|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|timeout|inbox-ttl)=/
           nil
         else
           return true
@@ -372,7 +439,19 @@ module Harnex
     def wrapper_option_token?(arg)
       KNOWN_FLAGS.include?(arg) ||
         arg == "-h" ||
-        arg.start_with?("--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--context=", "--timeout=", "--inbox-ttl=")
+        arg.start_with?(
+          "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
+          "--stall-after=", "--max-resumes=", "--context=", "--timeout=", "--inbox-ttl="
+        )
+    end
+
+    def parse_non_negative_integer(value, option_name:)
+      integer = Integer(value)
+      raise OptionParser::InvalidArgument, "#{option_name} must be 0 or greater" if integer.negative?
+
+      integer
+    rescue ArgumentError
+      raise OptionParser::InvalidArgument, "#{option_name} must be an integer"
     end
 
     def default_inbox_ttl

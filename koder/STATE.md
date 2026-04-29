@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-24
+Updated: 2026-04-29
 
 ## Current snapshot
 
@@ -12,7 +12,7 @@ Updated: 2026-04-24
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 202 minitest tests, all passing.
+- Test suite: `test/` with 216 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -126,6 +126,18 @@ Updated: 2026-04-24
   - Unit D (`34a09a8`): cross-reference audit across the 3 remaining skills;
     every mechanic has one canonical owner, non-owners reference by name; no
     duplicated prose block larger than 3 lines / 1 paragraph.
+- Issue #22 (built-in dispatch monitoring) is now tracked by layered plans:
+  `koder/plans/22_mapping.md` (mapping), `koder/plans/23_log_mtime.md`
+  (Layer 1), `koder/plans/24_watch.md` (Layer 2), and
+  `koder/plans/25_presets.md` (Layer 3).
+- Layer 2 is now implemented: `harnex run --watch` starts a blocking
+  babysitter loop (foreground-only), uses live `agent_state` + `log_idle_s`,
+  sends bounded forced `resume` nudges, and exits with watcher-specific
+  status codes (`0` exited, `2` escalated, `1` operational error).
+- `run` now preserves file-hook compatibility while adding babysitter mode:
+  - bare `--watch` enables babysitter
+  - `--watch PATH` / `--watch=PATH` still configure legacy file-hook
+  - `--watch-file PATH` is the canonical file-hook flag
 
 ## What harnex does
 
@@ -183,6 +195,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 | 21 | Skill catalogue cohesion | **fixed** | P2 |
+| 22 | Built-in dispatch monitoring | open | P2 |
 
 See `koder/issues/` for details.
 
@@ -202,6 +215,10 @@ See `koder/issues/` for details.
 | 21a | Collapse `harnex` into `harnex-dispatch` (#21 Unit A) | **done** |
 | 21b | Rewrite `harnex-chain` (#21 Unit B) | **done** |
 | 21d | Cross-reference audit (#21 Unit D) | **done** |
+| 23 | Log-mtime activity tracking (#22 Layer 1) | **done** |
+| 24 | Blocking `run --watch` babysitter (#22 Layer 2) | **done** |
+| 25 | Phase presets for `run --watch` (#22 Layer 3) | **planned** |
+| 26 | Watch events stream / diagnostics (#22 Layer 4) | **planned** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -210,17 +227,18 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-24: v0.3.4 released — issue #21 skill catalogue cohesion
+### 2026-04-29: issue #22 layers 1-2 shipped
 
-Three parallel plans (21a/b/d) written, reviewed, fixed, then implemented
-serially on `main`. Plans, plan reviews, and code reviews live under
-`koder/plans/21*.md` and `koder/reviews/21*.md`. Full suite (202 tests,
-519 assertions) green at HEAD. Gem pushed to RubyGems.
+Layer 1 (`koder/plans/23_log_mtime.md`) and Layer 2
+(`koder/plans/24_watch.md`) are implemented and tested. `run --watch` now
+supports bounded foreground babysitting with legacy file-hook compatibility.
 
 **Next:**
-- Test buddy pattern end-to-end with a real long-running dispatch
-- Build a third adapter (aider, cursor, etc.) to naturally drive #06
-- Apply unique-ID cross-repo fallback (from `pane`) to `logs`
+- Implement Layer 3 presets (`koder/plans/25_presets.md`) without expanding
+  scope into events/disconnect-regex work
+- Keep `run --watch PATH` / `--watch=PATH` compatibility covered while layering
+  presets on top of current parser behavior
+- Re-run full suite and update issue #22 status after Layer 3 lands
 
 ## Confirmed bugs from earlier review (all fixed)
 
