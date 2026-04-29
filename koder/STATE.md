@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-29
+Updated: 2026-04-30
 
 ## Current snapshot
 
@@ -227,7 +227,11 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-29: issue #22 fully shipped (layers 1–4)
+### 2026-04-30: v0.4.0 released — issue #22 fully shipped (layers 1–4)
+
+Pushed `harnex-0.4.0` to RubyGems. Version bump commit `71ad244`.
+
+
 
 All four layers of built-in dispatch monitoring landed serially on `main`:
 
