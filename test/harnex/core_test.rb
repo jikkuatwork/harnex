@@ -188,6 +188,21 @@ class CoreTest < Minitest::Test
     refute_equal a, b
   end
 
+  # --- events_log_path ---
+
+  def test_events_log_path_includes_repo_key
+    path = Harnex.events_log_path("/tmp/repo", "worker-1")
+    assert path.include?(Harnex.repo_key("/tmp/repo"))
+    assert path.end_with?("--worker-1.jsonl")
+    assert path.include?("events")
+  end
+
+  def test_events_log_path_differs_across_repos
+    a = Harnex.events_log_path("/tmp/repo-a", "worker")
+    b = Harnex.events_log_path("/tmp/repo-b", "worker")
+    refute_equal a, b
+  end
+
   # --- allocate_port ---
 
   def test_allocate_port_returns_integer

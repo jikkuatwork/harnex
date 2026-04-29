@@ -7,8 +7,10 @@ class CliTest < Minitest::Test
     assert_match(/Usage:/, out)
     assert_match(/harnex run <cli>/, out)
     assert_match(/harnex logs --id ID/, out)
+    assert_match(/harnex events --id ID/, out)
     assert_match(/harnex pane --id ID/, out)
     assert_match(/logs\s+Read session output transcripts/, out)
+    assert_match(/events\s+Stream per-session JSONL runtime events/, out)
     assert_match(/pane\s+Capture the current tmux pane/, out)
   end
 
@@ -16,6 +18,12 @@ class CliTest < Minitest::Test
     cli = Harnex::CLI.new(["help", "logs"])
     out, = capture_io { assert_equal 0, cli.run }
     assert_match(/Usage: harnex logs/, out)
+  end
+
+  def test_help_events_returns_events_usage
+    cli = Harnex::CLI.new(["help", "events"])
+    out, = capture_io { assert_equal 0, cli.run }
+    assert_match(/Usage: harnex events/, out)
   end
 
   def test_help_pane_returns_pane_usage
@@ -28,6 +36,12 @@ class CliTest < Minitest::Test
     cli = Harnex::CLI.new(["logs", "--help"])
     out, = capture_io { assert_equal 0, cli.run }
     assert_match(/--follow/, out)
+  end
+
+  def test_events_command_dispatches_to_events_help
+    cli = Harnex::CLI.new(["events", "--help"])
+    out, = capture_io { assert_equal 0, cli.run }
+    assert_match(/--snapshot/, out)
   end
 
   def test_pane_command_dispatches_to_pane_help

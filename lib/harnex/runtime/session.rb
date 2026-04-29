@@ -6,7 +6,7 @@ module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :output_log_path
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :output_log_path, :events_log_path
 
     def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, inbox_ttl: Inbox::DEFAULT_TTL)
       @adapter = adapter
@@ -19,17 +19,21 @@ module Harnex
       @description = nil if @description.empty?
       @registry_path = Harnex.registry_path(repo_root, @id)
       @output_log_path = Harnex.output_log_path(repo_root, @id)
+      @events_log_path = Harnex.events_log_path(repo_root, @id)
       @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
       @port = Harnex.allocate_port(repo_root, @id, port, host: host)
       @mutex = Mutex.new
       @inject_mutex = Mutex.new
+      @events_mutex = Mutex.new
       @injected_count = 0
       @last_injected_at = nil
       @started_at = Time.now
       @server = nil
       @reader = nil
       @output_log = nil
+      @events_log = nil
+      @events_log_seq = 0
       @writer = nil
       @pid = nil
       @term_signal = nil
@@ -60,8 +64,10 @@ module Harnex
     def run(validate_binary: true)
       validate_binary! if validate_binary
       prepare_output_log
+      prepare_events_log
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
+      emit_event("started", pid: @pid)
 
       install_signal_handlers
       sync_window_size
@@ -78,6 +84,7 @@ module Harnex
       _, status = Process.wait2(pid)
       @term_signal = status.signaled? ? status.termsig : nil
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
+      emit_exit_event
 
       output_thread.join(1)
       input_thread&.kill
@@ -91,6 +98,7 @@ module Harnex
       cleanup_registry
       @reader&.close unless @reader&.closed?
       @output_log&.close unless @output_log&.closed?
+      @events_log&.close unless @events_log&.closed?
       @writer&.close unless @writer&.closed?
     end
 
@@ -109,7 +117,8 @@ module Harnex
         started_at: @started_at.iso8601,
         last_injected_at: @last_injected_at&.iso8601,
         injected_count: @injected_count,
-        output_log_path: output_log_path
+        output_log_path: output_log_path,
+        events_log_path: events_log_path
       }
       payload.merge!(log_activity_snapshot)
       payload[:description] = description if description
@@ -169,6 +178,7 @@ module Harnex
         input_state: payload[:input_state],
         force: payload[:force]
       )
+        .tap { emit_send_event(text, force: payload[:force]) }
     end
 
     def sync_window_size
@@ -328,6 +338,14 @@ module Harnex
       @output_log_failed = false
     end
 
+    def prepare_events_log
+      @events_log&.close unless @events_log&.closed?
+      @events_log = File.open(events_log_path, "ab")
+      @events_log.sync = true
+      @events_log_failed = false
+      @events_log_seq = 0
+    end
+
     def install_signal_handlers
       %w[INT TERM HUP QUIT].each do |signal_name|
         Signal.trap(signal_name) { forward_signal(signal_name) }
@@ -363,6 +381,42 @@ module Harnex
 
       @output_log_failed = true
       warn("harnex: failed to write output log #{output_log_path}: #{e.message}")
+    end
+
+    def emit_send_event(text, force:)
+      compact = text.to_s
+      truncated = compact.length > 200
+      preview = truncated ? "#{compact[0, 200]}…" : compact
+      emit_event("send", msg: preview, msg_truncated: truncated, forced: !!force)
+    end
+
+    def emit_exit_event
+      payload = { code: @exit_code }
+      payload[:signal] = @term_signal if @term_signal
+      emit_event("exited", **payload)
+    end
+
+    def emit_event(type, **payload)
+      @events_mutex.synchronize do
+        return unless @events_log
+
+        @events_log_seq += 1
+        event = {
+          schema_version: 1,
+          seq: @events_log_seq,
+          ts: Time.now.utc.iso8601,
+          id: id,
+          type: type
+        }.merge(payload)
+        @events_log.write(JSON.generate(event))
+        @events_log.write("\n")
+        @events_log.flush
+      end
+    rescue StandardError => e
+      return if defined?(@events_log_failed) && @events_log_failed
+
+      @events_log_failed = true
+      warn("harnex: failed to write events log #{events_log_path}: #{e.message}")
     end
 
     def log_activity_snapshot

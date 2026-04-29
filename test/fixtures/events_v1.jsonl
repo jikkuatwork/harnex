@@ -1,0 +1,3 @@
+{"schema_version":1,"seq":1,"ts":"2026-04-29T10:00:00Z","id":"main","type":"started","pid":12345}
+{"schema_version":1,"seq":2,"ts":"2026-04-29T10:00:05Z","id":"main","type":"send","msg":"resume","msg_truncated":false,"forced":true}
+{"schema_version":1,"seq":3,"ts":"2026-04-29T10:00:09Z","id":"main","type":"exited","code":0}

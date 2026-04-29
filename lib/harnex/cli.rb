@@ -21,6 +21,8 @@ module Harnex
         Status.new(@argv.drop(1)).run
       when "logs"
         Logs.new(@argv.drop(1)).run
+      when "events"
+        Events.new(@argv.drop(1)).run
       when "pane"
         Pane.new(@argv.drop(1)).run
       when "recipes"
@@ -59,6 +61,8 @@ module Harnex
         Status.usage
       when "logs"
         Logs.usage
+      when "events"
+        Events.usage
       when "pane"
         Pane.usage
       when "recipes"
@@ -81,6 +85,7 @@ module Harnex
           harnex stop --id ID [options]
           harnex status [options]
           harnex logs --id ID [options]
+          harnex events --id ID [options]
           harnex pane --id ID [options]
           harnex help [command]
 
@@ -91,6 +96,7 @@ module Harnex
           stop    Send the adapter stop sequence to a session
           status  List live sessions
           logs    Read session output transcripts
+          events  Stream per-session JSONL runtime events
           pane    Capture the current tmux pane for a live session
           recipes List and read workflow recipes
           guide   Show the getting started guide
@@ -109,6 +115,7 @@ module Harnex
           harnex run codex -- --cd /path/to/repo
           harnex status
           harnex logs --id main --follow
+          harnex events --id main --snapshot
           harnex pane --id main --lines 40
           harnex send --id main --message "Summarize current progress."
           harnex skills install

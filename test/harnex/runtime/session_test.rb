@@ -44,6 +44,12 @@ class SessionTest < Minitest::Test
     assert_equal Harnex.output_log_path(Dir.pwd, session.id), payload[:output_log_path]
   end
 
+  def test_status_payload_includes_events_log_path
+    session = build_session
+    payload = session.status_payload(include_input_state: false)
+    assert_equal Harnex.events_log_path(Dir.pwd, session.id), payload[:events_log_path]
+  end
+
   def test_status_payload_sets_log_activity_fields_to_nil_when_log_missing
     session = build_session
     FileUtils.rm_f(session.output_log_path)
@@ -106,6 +112,56 @@ class SessionTest < Minitest::Test
   ensure
     output_log = session.instance_variable_get(:@output_log)
     output_log&.close unless output_log&.closed?
+  end
+
+  def test_events_log_records_started_and_exited_round_trip
+    session = build_session
+    session.send(:prepare_events_log)
+    session.send(:emit_event, "started", pid: 12_345)
+    session.instance_variable_set(:@exit_code, 0)
+    session.send(:emit_exit_event)
+
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    assert_equal %w[started exited], rows.map { |row| row["type"] }
+    assert_equal [1, 2], rows.map { |row| row["seq"] }
+    assert_equal 12_345, rows[0]["pid"]
+    assert_equal 0, rows[1]["code"]
+  ensure
+    events_log = session.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+  end
+
+  def test_inject_via_adapter_emits_send_event_with_preview_fields
+    session = build_session
+    session.send(:prepare_events_log)
+
+    session.adapter.define_singleton_method(:wait_for_sendable) do |_snapshot_fn, submit:, enter_only:, force:|
+      ""
+    end
+    session.adapter.define_singleton_method(:build_send_payload) do |text:, submit:, enter_only:, screen_text:, force:|
+      {
+        steps: [{ text: text, newline: true }],
+        input_state: { "state" => "prompt" },
+        force: force
+      }
+    end
+    session.define_singleton_method(:inject_sequence) do |_steps|
+      { ok: true, bytes_written: 205, injected_count: 1, newline: true }
+    end
+
+    text = "x" * 205
+    result = session.inject_via_adapter(text: text, submit: true, enter_only: false, force: true)
+    row = JSON.parse(File.readlines(session.events_log_path).last)
+
+    assert_equal "send", row["type"]
+    assert_equal true, row["forced"]
+    assert_equal true, row["msg_truncated"]
+    assert_equal 201, row["msg"].length
+    assert_equal "…", row["msg"][-1]
+    assert_equal true, result[:force]
+  ensure
+    events_log = session.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
   end
 
   def test_persist_registry_preserves_tmux_metadata

@@ -140,6 +140,12 @@ module Harnex
     File.join(output_dir, "#{session_file_slug(repo_root, id)}.log")
   end
 
+  def events_log_path(repo_root, id)
+    events_dir = File.join(STATE_DIR, "events")
+    FileUtils.mkdir_p(events_dir)
+    File.join(events_dir, "#{session_file_slug(repo_root, id)}.jsonl")
+  end
+
   def session_file_slug(repo_root, id)
     slug = id_key(id)
     slug = "default" if slug.empty?
