@@ -105,12 +105,43 @@ Install skills so agents can use them:
 harnex skills install
 ```
 
+## Built-in dispatch monitoring
+
+For unattended dispatches, use `--watch` instead of writing a bash poll loop:
+
+```bash
+harnex run codex --id cx-impl-42 --tmux cx-impl-42 --watch --preset impl \
+  --context "Implement koder/plans/42_plan.md. Run tests and commit when done."
+```
+
+`--watch` runs a foreground babysitter that checks session activity every 60s,
+force-resumes on stall up to a cap, and exits when the target session exits or
+the resume cap is reached.
+
+Presets map to stall policy defaults:
+
+- `impl` -> `--stall-after 8m --max-resumes 1`
+- `plan` -> `--stall-after 3m --max-resumes 2`
+- `gate` -> `--stall-after 15m --max-resumes 0`
+
+Explicit `--stall-after` and `--max-resumes` flags override preset defaults.
+
+For structured subscriptions, stream JSONL events:
+
+```bash
+harnex events --id cx-impl-42 | jq -c '.'
+```
+
+Schema details and compatibility policy are documented in
+[docs/events.md](docs/events.md).
+
 ## Long-running and overnight work
 
-A **buddy** is a second agent that watches something and acts on it.
-It's just another harnex session — no special monitoring code, no
-configuration. The buddy is an LLM, so it reasons about what it sees
-rather than pattern-matching.
+For plain "force-resume on stall" recovery, use
+`harnex run --watch --preset impl`.
+
+A **buddy** is for richer reasoning: doc drift checks, semantic sanity checks,
+and multi-session correlation. It's still just another harnex session.
 
 ### Example: keep a worker from stalling
 
@@ -168,12 +199,13 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 
 | Command | What it does |
 |---------|-------------|
-| `harnex run <cli>` | Start an agent (`--tmux` for a visible window, `--detach` for background) |
+| `harnex run <cli>` | Start an agent (`--tmux` visible, `--detach` background, `--watch` built-in monitoring) |
 | `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until done) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
 | `harnex status` | List running sessions (`--json` for full payloads) |
 | `harnex pane --id <id>` | Capture the agent's tmux screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
+| `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex wait --id <id>` | Block until exit or a target state |
 | `harnex guide` | Getting started walkthrough |
 | `harnex recipes` | Tested workflow patterns |

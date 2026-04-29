@@ -8,6 +8,11 @@ description: Spawn an accountability partner for long-running harnex sessions. U
 For any long-running or unattended work, spawn a **buddy** — a second harnex
 agent that watches the worker and nudges it if it stalls.
 
+For plain stall recovery (force-resume on inactivity), prefer
+`harnex run --watch --preset impl`. Use a buddy when you need reasoning that
+policy checks cannot provide (doc drift, semantic checks, multi-session
+correlation).
+
 The buddy is an LLM, so it has intelligence for free. It reads the worker's
 screen, reasons about whether it's stuck, and composes a meaningful nudge.
 

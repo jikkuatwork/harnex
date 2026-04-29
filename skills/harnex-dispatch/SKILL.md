@@ -119,10 +119,26 @@ harnex run codex --id cx-impl-NN --tmux cx-impl-NN \
   --context "Read and execute /tmp/task-impl-NN.md"
 ```
 
+### Built-in monitoring (`--watch`)
+
+For unattended implementation runs where you only need stall policy (not
+Claude-side reasoning), bundle dispatch and monitoring in one command:
+
+```bash
+harnex run codex --id cx-impl-42 --tmux cx-impl-42 --watch --preset impl
+```
+
+`--preset impl` applies the standard 8m stall threshold with one forced resume.
+Trade-off: `--watch` is foreground-blocking and policy-only (`stall-after` +
+`max-resumes`). Use pane polling (and buddy when needed) for richer reasoning.
+
 ## 2. Watch
 
 Poll the agent's screen with `harnex pane`. Checking is cheap — a 20-line
 tail is a few hundred bytes.
+
+For structured orchestration, prefer `harnex events --id <id>` over pane-text
+scraping.
 
 **Default: poll every 30 seconds.** This is fine for most work. The check
 itself costs almost nothing and catches completion quickly.

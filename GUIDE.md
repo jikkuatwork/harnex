@@ -49,6 +49,17 @@ automatically when the agent is ready. You don't have to wait
 or retry. Queueing exists, but the default workflow should still be
 one task per fresh worker.
 
+For unattended dispatch, prefer built-in monitoring over external poll loops:
+
+```bash
+harnex run codex --id impl --tmux impl --watch --preset impl
+```
+
+This adds a foreground watcher that checks idle activity and performs bounded
+force-resume nudges. For full flag behavior and event-stream consumers, see
+[TECHNICAL.md](TECHNICAL.md) and the built-in monitoring section in
+[README.md](README.md).
+
 ## Seeing what's running
 
 ```bash

@@ -14,17 +14,21 @@ harnex run claude --id review
 harnex run codex -- --cd ~/other/repo
 ```
 
-| Flag            | What it does                          |
-|-----------------|---------------------------------------|
-| `--id ID`       | Name this session (default: random)   |
-| `--description` | Store a short session description     |
-| `--detach`      | Run in background, no terminal        |
-| `--tmux [NAME]` | Run in a tmux window you can watch    |
-| `--host HOST`   | Bind a specific API host              |
-| `--port PORT`   | Force a specific API port             |
-| `--context TXT` | Give the agent a task on startup      |
-| `--watch PATH`  | Notify agent when a file changes      |
-| `--timeout SEC` | Wait budget for detached registration |
+| Flag                | What it does                                                        |
+|---------------------|---------------------------------------------------------------------|
+| `--id ID`           | Name this session (default: random)                                 |
+| `--description`     | Store a short session description                                   |
+| `--detach`          | Run in background, no terminal                                      |
+| `--tmux [NAME]`     | Run in a tmux window you can watch                                  |
+| `--host HOST`       | Bind a specific API host                                            |
+| `--port PORT`       | Force a specific API port                                           |
+| `--watch`           | Enable blocking babysitter mode (foreground only)                   |
+| `--stall-after DUR` | Idle threshold before force-resume (default: `480s`)                |
+| `--max-resumes N`   | Max forced resumes before escalation (default: `1`)                 |
+| `--preset NAME`     | Watch preset (`impl`, `plan`, `gate`), requires `--watch`           |
+| `--watch-file PATH` | Auto-send a file-change hook (`--watch PATH`/`--watch=PATH` legacy) |
+| `--context TXT`     | Give the agent a task on startup                                    |
+| `--timeout SEC`     | Wait budget for detached registration                               |
 
 ### `harnex send` — Talk to a running agent
 
@@ -61,12 +65,20 @@ failures for up to the given timeout.
 ### `harnex status` — See running agents
 
 ```
-  ID       CLI     AGE      STATE
-  worker   codex   36s ago  prompt
-  review   claude   8s ago  busy
+ID      CLI    PID    PORT   AGE  IDLE  STATE   REPO   DESC
+worker  codex  12345  43123  36s  12s   prompt  ~/...  -
+review  claude 12346  43124   8s  -     busy    ~/...  -
 ```
 
-Use `--json` for full payloads. Use `--all` for all repos.
+Text mode includes an `IDLE` column derived from `log_idle_s` (`-` means no
+transcript activity yet).
+
+Use `--json` for full payloads. JSON includes:
+
+- `log_mtime` (ISO8601 or `null`) — transcript file mtime
+- `log_idle_s` (Integer or `null`) — seconds since last transcript write
+
+Use `--all` for all repos.
 
 ### `harnex wait` — Wait for an agent to finish
 
@@ -160,11 +172,53 @@ harnex run codex --id impl-1 --tmux cx-p1 \
 ### File watching
 
 ```bash
-harnex run codex --id worker --watch ./tmp/status.jsonl
+harnex run codex --id worker --watch-file ./tmp/status.jsonl
 ```
 
 Agent gets notified when the file changes. File doesn't need to
 exist at startup.
+
+Legacy compatibility: `--watch PATH` and `--watch=PATH` still configure
+file-hook mode.
+
+## harnex events
+
+`harnex events` streams structured per-session JSONL for orchestrators and
+monitoring tooling.
+
+```bash
+harnex events --id worker
+harnex events --id worker --snapshot
+harnex events --id worker --from 2026-04-29T10:00:00Z
+harnex events --id worker | jq -c '.'
+```
+
+| Flag | What it does |
+|------|---------------|
+| `--id ID` | Session ID to inspect (required) |
+| `--[no-]follow` | Stream appended events (default: follow) |
+| `--snapshot` | Print current event file and exit (`--no-follow`) |
+| `--from TS` | Replay floor (ISO-8601, inclusive; `ts >= from`) |
+| `--repo PATH` | Resolve ID from a specific repo root |
+| `--cli CLI` | Filter active-session resolution by CLI |
+
+Exit codes:
+
+- `0` — snapshot completed, or follow mode observed `type: "exited"`
+- `1` — operational error (missing stream/session, invalid `--from`,
+  stream truncated/disappeared, lookup failure)
+
+Transport file (append-only JSONL):
+
+```
+~/.local/state/harnex/events/<repo_hash>--<id>.jsonl
+```
+
+Each row uses schema v1 with envelope fields `schema_version`, `seq`, `ts`,
+`id`, and `type`. Emitted today: `started`, `send`, `exited`. `send.msg` is a
+200-character preview with `msg_truncated` when shortened.
+
+Schema details and compatibility guarantees are in [docs/events.md](docs/events.md).
 
 ## Architecture
 
@@ -218,6 +272,8 @@ When you run `harnex run codex --id worker`:
       ~/.local/state/harnex/sessions/<repo_hash>--<id>.json
       and open transcript file:
       ~/.local/state/harnex/output/<repo_hash>--<id>.log
+      and open events file:
+      ~/.local/state/harnex/events/<repo_hash>--<id>.jsonl
  8. Start background threads:
       - PTY reader (screen buffer)
       - State machine (adapter parses screen for state)
