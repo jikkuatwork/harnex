@@ -195,7 +195,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 | 21 | Skill catalogue cohesion | **fixed** | P2 |
-| 22 | Built-in dispatch monitoring | open | P2 |
+| 22 | Built-in dispatch monitoring | **fixed** | P2 |
 
 See `koder/issues/` for details.
 
@@ -217,8 +217,8 @@ See `koder/issues/` for details.
 | 21d | Cross-reference audit (#21 Unit D) | **done** |
 | 23 | Log-mtime activity tracking (#22 Layer 1) | **done** |
 | 24 | Blocking `run --watch` babysitter (#22 Layer 2) | **done** |
-| 25 | Phase presets for `run --watch` (#22 Layer 3) | **planned** |
-| 26 | Watch events stream / diagnostics (#22 Layer 4) | **planned** |
+| 25 | Phase presets for `run --watch` (#22 Layer 3) | **done** |
+| 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -227,18 +227,40 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-04-29: issue #22 layers 1-2 shipped
+### 2026-04-29: issue #22 fully shipped (layers 1–4)
 
-Layer 1 (`koder/plans/23_log_mtime.md`) and Layer 2
-(`koder/plans/24_watch.md`) are implemented and tested. `run --watch` now
-supports bounded foreground babysitting with legacy file-hook compatibility.
+All four layers of built-in dispatch monitoring landed serially on `main`:
+
+- **Layer 1** (`23_log_mtime.md`, commit `31bf7b5`) — `log_mtime` and
+  `log_idle_s` exposed in status payload + `IDLE` column in text mode.
+- **Layer 2** (`24_watch.md`, commit `7e511a8`) — `harnex run --watch
+  --stall-after --max-resumes` blocking babysitter; legacy `--watch PATH`
+  file-hook preserved via `--watch-file` rename.
+- **Layer 3** (`25_presets.md`, commit `21c1517`) — `--preset
+  impl|plan|gate` resolves stall/resume defaults; explicit flags override.
+- **Layer 4** (`26_events.md`, commit `63c37ad`) — `harnex events --id`
+  JSONL stream with v1 schema (envelope: `schema_version`, `seq`, `ts`,
+  `id`, `type`); emits `started`, `send`, `exited`. `send.msg` truncated
+  to 200 chars with `msg_truncated` flag. File transport at
+  `~/.local/state/harnex/events/<repo>--<id>.jsonl`. Docs: `docs/events.md`.
+
+Plans, mapping doc, and STATE updates committed on `main`. Full suite
+green at HEAD: 235 runs, 666 assertions, 0 failures.
+
+**Layer 5 (deferred):** disconnect-regex detection. File as separate
+issue if real-world stalls show disconnect dominates.
+
+**Outstanding (from L4 contract):** Layer 2 watcher does not yet emit
+`resume` / `log_active` / `log_idle` events into the JSONL stream. The
+contract is documented in `docs/events.md`; retrofit is a small
+follow-up (touch `commands/watch.rb` only).
 
 **Next:**
-- Implement Layer 3 presets (`koder/plans/25_presets.md`) without expanding
-  scope into events/disconnect-regex work
-- Keep `run --watch PATH` / `--watch=PATH` compatibility covered while layering
-  presets on top of current parser behavior
-- Re-run full suite and update issue #22 status after Layer 3 lands
+- (optional) bump version + release gem
+- Retrofit Layer 2 watcher to emit `resume` / `log_*` events per the
+  documented contract
+- Test buddy pattern end-to-end with a real long-running dispatch
+- Build a third adapter (aider, cursor, etc.) to naturally drive #06
 
 ## Confirmed bugs from earlier review (all fixed)
 

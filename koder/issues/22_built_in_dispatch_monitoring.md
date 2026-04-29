@@ -1,7 +1,8 @@
 ---
-status: open
+status: fixed
 priority: P2
 created: 2026-04-29
+resolved: 2026-04-29
 tags: monitoring,dispatch,orchestration
 ---
 
