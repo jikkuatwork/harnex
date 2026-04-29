@@ -111,6 +111,7 @@ module Harnex
         injected_count: @injected_count,
         output_log_path: output_log_path
       }
+      payload.merge!(log_activity_snapshot)
       payload[:description] = description if description
 
       if watch
@@ -362,6 +363,24 @@ module Harnex
 
       @output_log_failed = true
       warn("harnex: failed to write output log #{output_log_path}: #{e.message}")
+    end
+
+    def log_activity_snapshot
+      return { log_mtime: nil, log_idle_s: nil } unless File.file?(output_log_path)
+      return { log_mtime: nil, log_idle_s: nil } if File.size?(output_log_path).nil?
+
+      mtime = File.mtime(output_log_path)
+      idle_seconds = (Time.now - mtime).to_i
+      idle_seconds = 0 if idle_seconds.negative?
+      {
+        log_mtime: mtime.iso8601,
+        log_idle_s: idle_seconds
+      }
+    rescue StandardError
+      {
+        log_mtime: nil,
+        log_idle_s: nil
+      }
     end
 
     def screen_snapshot

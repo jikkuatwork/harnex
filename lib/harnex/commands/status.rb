@@ -98,7 +98,7 @@ module Harnex
     end
 
     def render_table(sessions)
-      columns = ["ID", "CLI", "PID", "PORT", "AGE", "STATE", "REPO", "DESC"]
+      columns = ["ID", "CLI", "PID", "PORT", "AGE", "IDLE", "STATE", "REPO", "DESC"]
 
       rows = sessions.map { |session| table_row(session, columns) }
       widths = columns.to_h { |column| [column, ([column.length] + rows.map { |row| row.fetch(column).length }).max] }
@@ -117,6 +117,7 @@ module Harnex
         "PID" => session["pid"].to_s,
         "PORT" => session["port"].to_s,
         "AGE" => timeago(session["started_at"]),
+        "IDLE" => format_idle(session["log_idle_s"]),
         "STATE" => session.dig("input_state", "state").to_s.empty? ? "-" : session.dig("input_state", "state").to_s,
         "DESC" => truncate(session["description"])
       }
@@ -133,7 +134,22 @@ module Harnex
 
       seconds = (Time.now - Time.parse(timestamp.to_s)).to_i
       seconds = 0 if seconds.negative?
+      compact_duration(seconds)
+    rescue StandardError
+      timestamp.to_s
+    end
 
+    def format_idle(idle_seconds)
+      return "-" if idle_seconds.nil?
+
+      seconds = Integer(idle_seconds)
+      seconds = 0 if seconds.negative?
+      compact_duration(seconds)
+    rescue StandardError
+      "-"
+    end
+
+    def compact_duration(seconds)
       case seconds
       when 0...60
         "#{seconds}s"
@@ -144,8 +160,6 @@ module Harnex
       else
         "#{seconds / 86_400}d"
       end
-    rescue StandardError
-      timestamp.to_s
     end
 
     def truncate(value)

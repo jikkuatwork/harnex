@@ -44,6 +44,41 @@ class SessionTest < Minitest::Test
     assert_equal Harnex.output_log_path(Dir.pwd, session.id), payload[:output_log_path]
   end
 
+  def test_status_payload_sets_log_activity_fields_to_nil_when_log_missing
+    session = build_session
+    FileUtils.rm_f(session.output_log_path)
+
+    payload = session.status_payload(include_input_state: false)
+
+    assert_nil payload[:log_mtime]
+    assert_nil payload[:log_idle_s]
+  end
+
+  def test_status_payload_reports_log_activity_and_later_output_advances_mtime
+    session = build_session
+    session.send(:prepare_output_log)
+    session.send(:record_output, "first\n".b)
+
+    stale = Time.now - 120
+    File.utime(stale, stale, session.output_log_path)
+
+    payload_before = session.status_payload(include_input_state: false)
+    assert_kind_of String, payload_before[:log_mtime]
+    assert_kind_of Integer, payload_before[:log_idle_s]
+    mtime_before = Time.iso8601(payload_before[:log_mtime])
+
+    session.send(:record_output, "second\n".b)
+    payload_after = session.status_payload(include_input_state: false)
+    assert_kind_of String, payload_after[:log_mtime]
+    assert_kind_of Integer, payload_after[:log_idle_s]
+    mtime_after = Time.iso8601(payload_after[:log_mtime])
+
+    assert_operator mtime_after, :>, mtime_before
+  ensure
+    output_log = session.instance_variable_get(:@output_log)
+    output_log&.close unless output_log&.closed?
+  end
+
   def test_session_uses_configured_inbox_ttl
     session = build_session(inbox_ttl: 42.5)
     assert_in_delta 42.5, session.inbox.instance_variable_get(:@ttl), 0.0001
