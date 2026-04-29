@@ -7,11 +7,11 @@ module Harnex
     DEFAULT_TIMEOUT = 5.0
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
-      --stall-after --max-resumes --context --timeout --inbox-ttl --help
+      --stall-after --max-resumes --preset --context --timeout --inbox-ttl --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --context --timeout --inbox-ttl
+      --max-resumes --preset --context --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -28,6 +28,7 @@ module Harnex
           --watch            Enable blocking babysitter mode (foreground only)
           --stall-after DUR  Force-resume threshold (default: #{RunWatcher::DEFAULT_STALL_AFTER_S.to_i}s)
           --max-resumes N    Max forced resumes before escalation (default: #{RunWatcher::DEFAULT_MAX_RESUMES})
+          --preset NAME      Watch preset: impl, plan, gate (requires --watch)
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
@@ -37,6 +38,7 @@ module Harnex
         Notes:
           Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
           Bare `--watch` enables the babysitter.
+          Explicit --stall-after/--max-resumes values override --preset defaults.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
           Wrapper options may appear before or after <cli>.
@@ -52,7 +54,10 @@ module Harnex
         port: nil,
         watch_enabled: false,
         stall_after_s: RunWatcher::DEFAULT_STALL_AFTER_S,
+        stall_after_explicit: false,
         max_resumes: RunWatcher::DEFAULT_MAX_RESUMES,
+        max_resumes_explicit: false,
+        preset: nil,
         watch: nil,
         context: nil,
         detach: false,
@@ -80,6 +85,7 @@ module Harnex
       adapter = Harnex.build_adapter(cli_name, effective_child_args)
       @options[:detach] = true if @options[:tmux]
       validate_watch_mode!
+      resolve_watch_preset!
 
       if @options[:watch_enabled]
         run_watch_mode(adapter, repo_root)
@@ -349,22 +355,31 @@ module Harnex
             required_option_value(arg, argv[index]),
             option_name: "--stall-after"
           )
+          @options[:stall_after_explicit] = true
         when /\A--stall-after=(.+)\z/
           @options[:stall_after_s] = Harnex.parse_duration_seconds(
             required_option_value("--stall-after", Regexp.last_match(1)),
             option_name: "--stall-after"
           )
+          @options[:stall_after_explicit] = true
         when "--max-resumes"
           index += 1
           @options[:max_resumes] = parse_non_negative_integer(
             required_option_value(arg, argv[index]),
             option_name: "--max-resumes"
           )
+          @options[:max_resumes_explicit] = true
         when /\A--max-resumes=(.+)\z/
           @options[:max_resumes] = parse_non_negative_integer(
             required_option_value("--max-resumes", Regexp.last_match(1)),
             option_name: "--max-resumes"
           )
+          @options[:max_resumes_explicit] = true
+        when "--preset"
+          index += 1
+          @options[:preset] = required_option_value(arg, argv[index])
+        when /\A--preset=(.+)\z/
+          @options[:preset] = required_option_value("--preset", Regexp.last_match(1))
         when "--context"
           index += 1
           @options[:context] = required_option_value(arg, argv[index])
@@ -427,6 +442,8 @@ module Harnex
           index += 1
         when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|timeout|inbox-ttl)=/
           nil
+        when /\A--preset=/
+          nil
         else
           return true
         end
@@ -441,8 +458,26 @@ module Harnex
         arg == "-h" ||
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
-          "--stall-after=", "--max-resumes=", "--context=", "--timeout=", "--inbox-ttl="
+          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--timeout=", "--inbox-ttl="
         )
+    end
+
+    def resolve_watch_preset!
+      preset_name = @options[:preset]
+      return if preset_name.nil?
+
+      unless @options[:watch_enabled]
+        raise "harnex run: --preset requires --watch"
+      end
+
+      preset = WatchPresets.fetch(preset_name)
+      unless preset
+        valid = WatchPresets.valid_names.join(", ")
+        raise "harnex run: unknown --preset #{preset_name.inspect} (valid: #{valid})"
+      end
+
+      @options[:stall_after_s] = preset[:stall_after_s] unless @options[:stall_after_explicit]
+      @options[:max_resumes] = preset[:max_resumes] unless @options[:max_resumes_explicit]
     end
 
     def parse_non_negative_integer(value, option_name:)

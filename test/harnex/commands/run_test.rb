@@ -1,6 +1,13 @@
 require_relative "../../test_helper"
 
 class RunnerTest < Minitest::Test
+  def resolve_watch_options(argv)
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:resolve_watch_preset!)
+    runner.instance_variable_get(:@options)
+  end
+
   def with_env(overrides)
     saved = {}
     overrides.each do |key, value|
@@ -105,6 +112,42 @@ class RunnerTest < Minitest::Test
     assert_raises(OptionParser::InvalidArgument) do
       runner.send(:extract_wrapper_options, ["codex", "--max-resumes", "-1"])
     end
+  end
+
+  def test_resolve_watch_preset_applies_defaults_for_impl_plan_and_gate
+    expectations = {
+      "impl" => [8 * 60.0, 1],
+      "plan" => [3 * 60.0, 2],
+      "gate" => [15 * 60.0, 0]
+    }
+
+    expectations.each do |preset, (stall_after_s, max_resumes)|
+      options = resolve_watch_options(["codex", "--watch", "--preset", preset])
+      assert_equal stall_after_s, options[:stall_after_s]
+      assert_equal max_resumes, options[:max_resumes]
+    end
+  end
+
+  def test_resolve_watch_preset_keeps_explicit_stall_after
+    options = resolve_watch_options(["codex", "--watch", "--preset", "impl", "--stall-after", "20m"])
+    assert_equal 20 * 60.0, options[:stall_after_s]
+    assert_equal 1, options[:max_resumes]
+  end
+
+  def test_resolve_watch_preset_rejects_unknown_name
+    runner = Harnex::Runner.new(["codex", "--watch", "--preset", "foo"])
+    runner.send(:extract_wrapper_options, ["codex", "--watch", "--preset", "foo"])
+
+    error = assert_raises(RuntimeError) { runner.send(:resolve_watch_preset!) }
+    assert_equal 'harnex run: unknown --preset "foo" (valid: impl, plan, gate)', error.message
+  end
+
+  def test_resolve_watch_preset_requires_watch_mode
+    runner = Harnex::Runner.new(["codex", "--preset", "impl"])
+    runner.send(:extract_wrapper_options, ["codex", "--preset", "impl"])
+
+    error = assert_raises(RuntimeError) { runner.send(:resolve_watch_preset!) }
+    assert_equal "harnex run: --preset requires --watch", error.message
   end
 
   def test_runner_uses_env_default_for_inbox_ttl
