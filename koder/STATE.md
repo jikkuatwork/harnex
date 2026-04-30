@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-04-30
+Updated: 2026-05-01
 
 ## Current snapshot
 
@@ -138,6 +138,12 @@ Updated: 2026-04-30
   - bare `--watch` enables babysitter
   - `--watch PATH` / `--watch=PATH` still configure legacy file-hook
   - `--watch-file PATH` is the canonical file-hook flag
+- Issues #23 (dispatch telemetry) and #24 (Layer 5 disconnect detection)
+  filed 2026-04-30. Plan #27 for issue #23 committed (`57c3f5e`, 410 lines)
+  on 2026-05-01 — answers all 7 open design questions, additive `usage` /
+  `git` / `summary` event types, consolidated `koder/DISPATCH.jsonl` writer,
+  `actual.cost_usd` always null (no harnex pricing table). Implementation
+  deferred to next session.
 
 ## What harnex does
 
@@ -196,6 +202,8 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 | 21 | Skill catalogue cohesion | **fixed** | P2 |
 | 22 | Built-in dispatch monitoring | **fixed** | P2 |
+| 23 | Dispatch telemetry capture | open (plan committed) | P2 |
+| 24 | Layer 5 codex stream-disconnect detection | open | P1 |
 
 See `koder/issues/` for details.
 
@@ -219,6 +227,7 @@ See `koder/issues/` for details.
 | 24 | Blocking `run --watch` babysitter (#22 Layer 2) | **done** |
 | 25 | Phase presets for `run --watch` (#22 Layer 3) | **done** |
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
+| 27 | Dispatch telemetry capture (#23) | plan committed, impl pending |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -226,6 +235,52 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-01: plan #27 (issue #23) committed; resume with implementation
+
+Goal of next session: dispatch implementation of `koder/plans/27_dispatch_telemetry.md`,
+then dispatch plan + impl for issue #24 (Layer 5 disconnect detection).
+
+**Operational note — Codex stream disconnect is real (issue #24 reproduction):**
+The plan-23 dispatch lived through the very failure mode issue #24 documents.
+
+- `cx-plan-23` (Codex, gpt-5.5 high) was spawned twice. Both attempts entered
+  the heavy pre-write reasoning phase (~150K-300K input loaded), announced
+  "writing now", then froze with token counters static at ~1.87K-2.26K out
+  while the spinner clock kept ticking. No output flushed; pane content
+  identical for 3+ minutes apart from the cosmetic clock repaint. Pattern
+  matches the cx-p-h23 incident exactly.
+- Restarting with **Claude (cl-plan-23)** shipped the plan in one pass
+  (~3 minutes thinking → 410-line plan committed). Same brief content,
+  same source files.
+- `cx-impl-23` (Codex implementer, attempted next) showed the same early
+  warning signs (140K in / 1.6K out at 7m, similar reasoning-pre-write
+  pattern). Stopped before committing any code.
+
+**Recommended dispatch policy until issue #24 ships:**
+- Use **Claude** (`cl-*`) for any task that loads >50K input tokens of
+  context before writing — i.e. plan-write and code-impl on plans that
+  reference multiple source files. Codex/Azure stalls are concentrated in
+  this regime.
+- Codex (`cx-*`) is still fine for narrow, high-output-ratio tasks (small
+  diffs, single-file edits, test-loop iteration).
+
+**Plan for next session:**
+1. Dispatch `cl-impl-23` against `koder/plans/27_dispatch_telemetry.md`.
+   The plan is structured as 4 phases with green-test gates between
+   commits — re-use `/tmp/cx-impl-23-brief.md` (still on disk; rename
+   target ID in tmux send-keys at the end). Expected wall-clock ~30-60min.
+2. Dispatch `cl-plan-24` for issue #24. Brief should mirror the #23 brief
+   shape: read issue + linked transcript samples, answer the 6 open
+   design questions, ship one plan file (`koder/plans/28_disconnect_detection.md`).
+3. Dispatch `cl-impl-24` against plan #28.
+4. After #24 ships, the disconnect detector itself will surface future
+   Codex stalls cleanly — the dispatch policy above can be revisited.
+
+**Carry-over briefs on disk:**
+- `/tmp/cx-plan-23-brief.md` — used by both Codex attempts and the Claude
+  retry; contains the targeted-grep instructions for the 6.4MB transcript.
+- `/tmp/cx-impl-23-brief.md` — Tier B, 4-phase, green-tests-per-commit.
 
 ### 2026-04-30: v0.4.0 released — issue #22 fully shipped (layers 1–4)
 
