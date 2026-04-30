@@ -15,11 +15,10 @@ When dispatching agents (especially Codex), there is no mechanical record of:
 - code change footprint (LOC added/removed, files changed, commits)
 - operational health (stalls, force-resumes, disconnects, compactions)
 
-This blocks empirical calibration of the consumer side's "dispatch profiles"
-(in holm: `knowledge-base/codex/profiles.json` — named buckets like `trivial`,
-`everyday`, `coding`, `hard-reason`, `frontier` mapping task kinds to
-model+effort combos). Without per-dispatch actuals, profile predictions can
-never be refined from real data.
+This blocks empirical calibration of the consumer side's dispatch
+recommendations table (in holm: `knowledge-base/codex/recommendations.md`).
+Without per-dispatch actuals, predicted ranges cannot be refined from
+real data.
 
 ## Goal
 
@@ -78,12 +77,12 @@ fields explicitly `null`.
    (e.g. `usage`, `git`, `summary`)? Write a separate consolidated
    summary file via `--summary-out PATH`? **Both** (recommended — events
    for raw fidelity, summary for downstream tooling)?
-3. **Predicted-data input**: how does the orchestrator pass profile
-   metadata (name, level, predicted ranges) to harnex?
-   - `--profile <name>` + `--profiles-json <path>` resolves predicted
-     ranges from the consumer's profiles.json
-   - `--meta '{"profile":"coding","predicted":{...}}'` raw JSON pass-through
-   - Both, with `--profile` as the ergonomic default
+3. **Predicted-data input**: predicted-data input is raw JSON via
+   `--meta` only. The orchestrator passes
+   `--meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{...}}'`.
+   Harnex does not resolve named dispatch buckets or read a lookup file. The
+   consumer's `recommendations.md` table guides what predicted ranges to
+   pass, but harnex remains unaware of that table.
 4. **LOC capture**: harnex doesn't currently know about git. Add minimal
    git awareness (`start_sha` recorded at dispatch, `end_sha` recorded at
    exit, `git diff --shortstat` run at exit)? Or leave LOC capture to a
@@ -91,7 +90,7 @@ fields explicitly `null`.
 5. **Cost calculation**: per-model price table — where does it live?
    - Inside harnex (centralized, harnex maintains); pro: consumers don't
      duplicate; con: harnex now tracks pricing
-   - In the consumer's `profiles.json` (per-consumer, pluggable); pro: harnex
+   - In the consumer's recommendation metadata (per-consumer, pluggable); pro: harnex
      stays generic; con: each consumer maintains
    - Always nullable in `actual.cost_usd`, computed downstream by the
      consumer; pro: cleanest separation; con: extra pipeline step
@@ -108,20 +107,20 @@ fields explicitly `null`.
 ## Acceptance criteria
 
 - New CLI flags accepted by `harnex run`:
-  - `--profile <name>` (or chosen alternative — plan picks)
   - `--summary-out <path>` (default `<repo>/koder/DISPATCH.jsonl` if a
     project's `koder/` directory exists)
-  - Predicted-range passthrough mechanism (per plan's choice)
+  - `--meta '{"model":"...","effort":"...","predicted":{...}}'` for
+    predicted-range passthrough
 - On session end, harnex emits new event types into the events stream
   with all token / duration / op-health fields populated.
 - harnex writes one complete consolidated record to the summary file with
   `meta`, `predicted`, `actual` blocks per the schema doc — non-extractable
   fields explicitly `null`.
-- Existing dispatches that don't pass `--profile` continue to work
+- Existing dispatches that don't pass predicted metadata continue to work
   unchanged. No regression on the 235-test suite.
 - New tests cover:
   - End-to-end capture path on a mock codex session
-  - Predicted passthrough with and without profiles.json
+  - Predicted passthrough with and without `predicted` metadata provided
   - Non-extractable field nullability
   - Schema additive-only check (envelope still valid for legacy consumers)
 - New behavior documented (extend `docs/events.md` and/or add
@@ -131,7 +130,7 @@ fields explicitly `null`.
 
 - Calibration / analysis of the resulting JSONL (deferred to consumer until
   ~10 records exist).
-- Predicted range population in any consumer's profiles.json.
+- Predicted range population in any consumer's recommendations table.
 - Cost ceiling enforcement / dispatch refusal.
 - Multi-agent (claude / aider) telemetry — codex first; design should
   not foreclose later expansion.
@@ -151,9 +150,8 @@ fields explicitly `null`.
 
 ## Consumer reference
 
-- holm dispatch profiles: `knowledge-base/codex/profiles.json` (in holm repo)
+- holm recommendations table: `knowledge-base/codex/recommendations.md` (in holm repo)
 - holm DISPATCH schema: `koder/DISPATCH.schema.md` (in holm repo)
-- holm picker rationale: `knowledge-base/codex/picker.md` (in holm repo)
 
 These ship in holm's Phase 1 (separate dispatch, parallel to this issue's
 plan-write).
@@ -161,9 +159,8 @@ plan-write).
 ## Notes
 
 - This is the first harnex feature driven by a downstream consumer's
-  empirical needs. The design should generalize — other consumers may
-  want their own profiles.json schemas. Keep the `--profile` resolution
-  protocol simple enough that any JSON file mapping `name → {model, effort,
-  predicted}` works.
+  empirical needs. The design should generalize — consumers choose their
+  own recommendation systems, and harnex only accepts raw `--meta`
+  predicted data without any name-resolution layer.
 - Events schema additions count as a Layer 5 contribution to the events
   bus (Layer 4 was the bus itself). Document accordingly.
