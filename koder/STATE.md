@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-01
+Updated: 2026-05-01 (v0.5.0 released)
 
 ## Current snapshot
 
@@ -235,6 +235,16 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-01: v0.5.0 released — issue #23 dispatch telemetry shipped
+
+Pushed `harnex-0.5.0` to RubyGems. Version bump commit `7be6ca4`, tag `v0.5.0`.
+Includes plan-27's four phase commits: `--meta` intake, `usage`/`git`/`summary`
+event capture, consolidated `koder/DISPATCH.jsonl` records, and the docs/review
+pass. 259 tests green.
+
+The next engineering step is issue #24 (Layer 5 disconnect detection):
+write `koder/plans/28_disconnect_detection.md`, then implement it.
 
 ### 2026-05-01: issue #23 shipped; continue with issue #24
 
