@@ -12,7 +12,7 @@ Updated: 2026-05-01
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 216 minitest tests, all passing.
+- Test suite: `test/` with 259 minitest tests, all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -138,12 +138,12 @@ Updated: 2026-05-01
   - bare `--watch` enables babysitter
   - `--watch PATH` / `--watch=PATH` still configure legacy file-hook
   - `--watch-file PATH` is the canonical file-hook flag
-- Issues #23 (dispatch telemetry) and #24 (Layer 5 disconnect detection)
-  filed 2026-04-30. Plan #27 for issue #23 committed (`57c3f5e`, 410 lines)
-  on 2026-05-01 — answers all 7 open design questions, additive `usage` /
-  `git` / `summary` event types, consolidated `koder/DISPATCH.jsonl` writer,
-  `actual.cost_usd` always null (no harnex pricing table). Implementation
-  deferred to next session.
+- Issue #23 (dispatch telemetry) is implemented via plan #27: `harnex run`
+  accepts `--meta` and `--summary-out`, sessions emit additive `usage` /
+  `git` / `summary` events, Codex parses the session-end token marker,
+  consolidated dispatch records append to `koder/DISPATCH.jsonl`, and
+  `actual.cost_usd` / `tests_*` stay explicitly null in v1. Issue #24
+  (Layer 5 disconnect detection) remains open.
 
 ## What harnex does
 
@@ -202,7 +202,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 | 21 | Skill catalogue cohesion | **fixed** | P2 |
 | 22 | Built-in dispatch monitoring | **fixed** | P2 |
-| 23 | Dispatch telemetry capture | open (plan committed) | P2 |
+| 23 | Dispatch telemetry capture | **fixed** | P2 |
 | 24 | Layer 5 codex stream-disconnect detection | open | P1 |
 
 See `koder/issues/` for details.
@@ -227,7 +227,7 @@ See `koder/issues/` for details.
 | 24 | Blocking `run --watch` babysitter (#22 Layer 2) | **done** |
 | 25 | Phase presets for `run --watch` (#22 Layer 3) | **done** |
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
-| 27 | Dispatch telemetry capture (#23) | plan committed, impl pending |
+| 27 | Dispatch telemetry capture (#23) | **done** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -236,10 +236,11 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-01: plan #27 (issue #23) committed; resume with implementation
+### 2026-05-01: issue #23 shipped; continue with issue #24
 
-Goal of next session: dispatch implementation of `koder/plans/27_dispatch_telemetry.md`,
-then dispatch plan + impl for issue #24 (Layer 5 disconnect detection).
+Issue #23 dispatch telemetry is implemented in the required four phase commits.
+The next engineering step is issue #24 (Layer 5 disconnect detection):
+write `koder/plans/28_disconnect_detection.md`, then implement it.
 
 **Operational note — Codex stream disconnect is real (issue #24 reproduction):**
 The plan-23 dispatch lived through the very failure mode issue #24 documents.
@@ -266,15 +267,11 @@ The plan-23 dispatch lived through the very failure mode issue #24 documents.
   diffs, single-file edits, test-loop iteration).
 
 **Plan for next session:**
-1. Dispatch `cl-impl-23` against `koder/plans/27_dispatch_telemetry.md`.
-   The plan is structured as 4 phases with green-test gates between
-   commits — re-use `/tmp/cx-impl-23-brief.md` (still on disk; rename
-   target ID in tmux send-keys at the end). Expected wall-clock ~30-60min.
-2. Dispatch `cl-plan-24` for issue #24. Brief should mirror the #23 brief
+1. Dispatch `cl-plan-24` for issue #24. Brief should mirror the #23 brief
    shape: read issue + linked transcript samples, answer the 6 open
    design questions, ship one plan file (`koder/plans/28_disconnect_detection.md`).
-3. Dispatch `cl-impl-24` against plan #28.
-4. After #24 ships, the disconnect detector itself will surface future
+2. Dispatch `cl-impl-24` against plan #28.
+3. After #24 ships, the disconnect detector itself will surface future
    Codex stalls cleanly — the dispatch policy above can be revisited.
 
 **Carry-over briefs on disk:**

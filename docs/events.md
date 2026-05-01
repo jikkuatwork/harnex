@@ -89,3 +89,39 @@ harnex events --id worker --snapshot --from 2026-04-29T10:00:00Z
 Layer 4 defines the bus and schema. In a follow-up layer, watcher-owned
 producers can publish `resume`, `log_active`, and `log_idle` events to this
 same stream. `harnex events` remains a read-only consumer surface.
+
+## 8. Layer 5: dispatch telemetry
+
+Layer 5 adds dispatch telemetry events without changing schema version `1`.
+The additions are optional for legacy consumers: existing event types keep
+their fields, and new event types can be ignored by readers that do not need
+telemetry.
+
+New optional fields on existing event types:
+
+- `started.meta` (Object, optional): parsed verbatim from `harnex run --meta`.
+  It is absent when `--meta` is not provided.
+- `exited.reason` (String, optional): one of `success`, `failure`, `timeout`,
+  or `disconnected`.
+
+New event types:
+
+- `usage`: emitted once after the wrapped process exits and before `exited`.
+  It includes nullable `input_tokens`, `output_tokens`, `reasoning_tokens`,
+  `cached_tokens`, `total_tokens`, and `agent_session_id`.
+- `git`: emitted when git metadata is available. `phase: "start"` includes
+  `sha` and `branch`; `phase: "end"` includes `sha`, `loc_added`,
+  `loc_removed`, `files_changed`, and `commits`.
+- `summary`: emitted last before `exited`. It includes `path` (String or
+  `null`) and `exit` (`success`, `failure`, `timeout`, or `disconnected`).
+
+Example telemetry sequence:
+
+```json
+{"schema_version":1,"seq":1,"ts":"2026-05-01T11:30:00Z","id":"cx-i-372","type":"started","pid":12345,"meta":{"issue":"23","plan":"27","predicted":{"input_tokens":[200000,800000]}}}
+{"schema_version":1,"seq":2,"ts":"2026-05-01T11:30:00Z","id":"cx-i-372","type":"git","phase":"start","sha":"a8114695c1f0","branch":"main"}
+{"schema_version":1,"seq":3,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"usage","input_tokens":104158,"output_tokens":2709,"reasoning_tokens":870,"cached_tokens":250880,"total_tokens":106867,"agent_session_id":"019ddf05-0f03-7d70-904f-23db7f00640f"}
+{"schema_version":1,"seq":4,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"git","phase":"end","sha":"abc1234567","loc_added":312,"loc_removed":65,"files_changed":7,"commits":1}
+{"schema_version":1,"seq":5,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"summary","path":"/home/u/proj/koder/DISPATCH.jsonl","exit":"success"}
+{"schema_version":1,"seq":6,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"exited","code":0,"reason":"success"}
+```

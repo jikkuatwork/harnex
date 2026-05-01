@@ -141,13 +141,35 @@ class EventsCommandTest < Minitest::Test
     type_map = rows.to_h { |row| [row.fetch("type"), row] }
     assert type_map.key?("started")
     assert type_map.key?("send")
+    assert type_map.key?("usage")
+    assert type_map.key?("git")
+    assert type_map.key?("summary")
     assert type_map.key?("exited")
 
     assert_kind_of Integer, type_map.fetch("started").fetch("pid")
+    assert_kind_of Hash, type_map.fetch("started").fetch("meta")
     assert_kind_of String, type_map.fetch("send").fetch("msg")
     assert_includes [true, false], type_map.fetch("send").fetch("msg_truncated")
     assert_includes [true, false], type_map.fetch("send").fetch("forced")
+
+    usage = type_map.fetch("usage")
+    %w[input_tokens output_tokens reasoning_tokens cached_tokens total_tokens].each do |field|
+      assert_kind_of Integer, usage.fetch(field)
+    end
+    assert_kind_of String, usage.fetch("agent_session_id")
+
+    git_events = rows.select { |row| row["type"] == "git" }
+    assert_equal %w[start end], git_events.map { |row| row["phase"] }
+    assert_kind_of String, git_events[0].fetch("sha")
+    assert_kind_of String, git_events[0].fetch("branch")
+    %w[loc_added loc_removed files_changed commits].each do |field|
+      assert_kind_of Integer, git_events[1].fetch(field)
+    end
+
+    assert_kind_of String, type_map.fetch("summary").fetch("path")
+    assert_includes %w[success failure timeout disconnected], type_map.fetch("summary").fetch("exit")
     assert_kind_of Integer, type_map.fetch("exited").fetch("code")
+    assert_includes %w[success failure timeout disconnected], type_map.fetch("exited").fetch("reason")
   end
 
   private

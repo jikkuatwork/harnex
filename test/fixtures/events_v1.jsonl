@@ -1,3 +1,7 @@
-{"schema_version":1,"seq":1,"ts":"2026-04-29T10:00:00Z","id":"main","type":"started","pid":12345}
-{"schema_version":1,"seq":2,"ts":"2026-04-29T10:00:05Z","id":"main","type":"send","msg":"resume","msg_truncated":false,"forced":true}
-{"schema_version":1,"seq":3,"ts":"2026-04-29T10:00:09Z","id":"main","type":"exited","code":0}
+{"schema_version":1,"seq":1,"ts":"2026-04-29T10:00:00Z","id":"main","type":"started","pid":12345,"meta":{"issue":"23","predicted":{"input_tokens":[100,200]}}}
+{"schema_version":1,"seq":2,"ts":"2026-04-29T10:00:01Z","id":"main","type":"git","phase":"start","sha":"a8114695c1f0","branch":"main"}
+{"schema_version":1,"seq":3,"ts":"2026-04-29T10:00:05Z","id":"main","type":"send","msg":"resume","msg_truncated":false,"forced":true}
+{"schema_version":1,"seq":4,"ts":"2026-04-29T10:00:08Z","id":"main","type":"usage","input_tokens":104158,"output_tokens":2709,"reasoning_tokens":870,"cached_tokens":250880,"total_tokens":106867,"agent_session_id":"019ddf05-0f03-7d70-904f-23db7f00640f"}
+{"schema_version":1,"seq":5,"ts":"2026-04-29T10:00:08Z","id":"main","type":"git","phase":"end","sha":"abc1234567","loc_added":312,"loc_removed":65,"files_changed":7,"commits":1}
+{"schema_version":1,"seq":6,"ts":"2026-04-29T10:00:09Z","id":"main","type":"summary","path":"/home/u/proj/koder/DISPATCH.jsonl","exit":"success"}
+{"schema_version":1,"seq":7,"ts":"2026-04-29T10:00:09Z","id":"main","type":"exited","code":0,"reason":"success"}
