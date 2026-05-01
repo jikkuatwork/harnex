@@ -84,6 +84,13 @@ module Harnex
     text.to_s.gsub(/\e\[[0-9;]*[a-zA-Z]/, "")
   end
 
+  def default_summary_out_path(repo_root)
+    koder_dir = File.join(repo_root.to_s, "koder")
+    return nil unless File.directory?(koder_dir)
+
+    File.join(koder_dir, "DISPATCH.jsonl")
+  end
+
   def git_capture_start(repo_root)
     sha = git_output(repo_root, "rev-parse", "HEAD")
     branch = git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD")

@@ -9,10 +9,37 @@ module Harnex
     USAGE_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens agent_session_id
     ].freeze
+    class EventCounters
+      def initialize
+        @counts = {
+          stalls: 0,
+          force_resumes: 0,
+          disconnections: 0,
+          compactions: 0
+        }
+      end
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :output_log_path, :events_log_path
+      def record(type)
+        case type.to_s
+        when "log_idle"
+          @counts[:stalls] += 1
+        when "resume"
+          @counts[:force_resumes] += 1
+        when "disconnect", "disconnection"
+          @counts[:disconnections] += 1
+        when "compaction"
+          @counts[:compactions] += 1
+        end
+      end
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, inbox_ttl: Inbox::DEFAULT_TTL)
+      def snapshot
+        @counts.dup
+      end
+    end
+
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path
+
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -22,6 +49,8 @@ module Harnex
       @description = description.to_s.strip
       @description = nil if @description.empty?
       @meta = meta
+      @summary_out = summary_out.to_s.strip
+      @summary_out = nil if @summary_out.empty?
       @registry_path = Harnex.registry_path(repo_root, @id)
       @output_log_path = Harnex.output_log_path(repo_root, @id)
       @events_log_path = Harnex.events_log_path(repo_root, @id)
@@ -39,9 +68,12 @@ module Harnex
       @output_log = nil
       @events_log = nil
       @events_log_seq = 0
+      @event_counters = EventCounters.new
       @git_start = {}
       @git_end = {}
       @usage_summary = {}
+      @ended_at = nil
+      @exit_reason = nil
       @writer = nil
       @pid = nil
       @term_signal = nil
@@ -93,9 +125,14 @@ module Harnex
       _, status = Process.wait2(pid)
       @term_signal = status.signaled? ? status.termsig : nil
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
+      @ended_at = Time.now
 
       output_thread.join(1)
       emit_session_end_telemetry
+      @exit_reason = classify_exit
+      summary_record = build_summary_record
+      append_summary_record(summary_record)
+      emit_summary_event
       emit_exit_event
       input_thread&.kill
       watch_thread&.kill
@@ -431,10 +468,118 @@ module Harnex
       )
     end
 
+    def emit_summary_event
+      emit_event("summary", path: summary_out, exit: @exit_reason)
+    end
+
     def emit_exit_event
       payload = { code: @exit_code }
       payload[:signal] = @term_signal if @term_signal
+      payload[:reason] = @exit_reason if @exit_reason
       emit_event("exited", **payload)
+    end
+
+    def classify_exit
+      return "timeout" if @exit_code == 124
+      return "failure" unless @exit_code == 0
+      return "success" if session_summary_present?
+
+      "disconnected"
+    end
+
+    def session_summary_present?
+      @usage_summary.values.any? { |value| !value.nil? }
+    end
+
+    def build_summary_record
+      {
+        meta: build_summary_meta,
+        predicted: summary_predicted_payload,
+        actual: build_summary_actual
+      }
+    end
+
+    def build_summary_meta
+      info = Harnex.host_info
+      passthrough = meta_hash
+
+      {
+        id: id,
+        tmux_session: id,
+        description: description,
+        started_at: @started_at.iso8601,
+        ended_at: @ended_at&.iso8601,
+        harness: "harnex",
+        harness_version: Harnex.harness_version,
+        agent: adapter.key,
+        agent_version: nil,
+        agent_provider: nil,
+        agent_deployment: nil,
+        host: info[:host],
+        platform: info[:platform],
+        orchestrator: passthrough["orchestrator"],
+        orchestrator_session: passthrough["orchestrator_session"],
+        chain_id: passthrough["chain_id"],
+        parent_dispatch_id: passthrough["parent_dispatch_id"],
+        tier: passthrough["tier"],
+        phase: passthrough["phase"],
+        issue: passthrough["issue"],
+        plan: passthrough["plan"],
+        task_brief: passthrough["task_brief"],
+        repo: repo_root,
+        branch: @git_start[:branch],
+        start_sha: @git_start[:sha],
+        end_sha: @git_end[:sha]
+      }
+    end
+
+    def build_summary_actual
+      counters = @event_counters.snapshot
+      counters[:disconnections] = [counters[:disconnections], 1].max if @exit_reason == "disconnected"
+
+      {
+        model: meta_hash["model"],
+        effort: meta_hash["effort"],
+        duration_s: @ended_at ? (@ended_at - @started_at).to_i : nil,
+        input_tokens: @usage_summary[:input_tokens],
+        output_tokens: @usage_summary[:output_tokens],
+        reasoning_tokens: @usage_summary[:reasoning_tokens],
+        cached_tokens: @usage_summary[:cached_tokens],
+        cost_usd: nil,
+        loc_added: @git_end[:loc_added],
+        loc_removed: @git_end[:loc_removed],
+        files_changed: @git_end[:files_changed],
+        commits: @git_end[:commits],
+        exit: @exit_reason,
+        stalls: counters[:stalls],
+        force_resumes: counters[:force_resumes],
+        disconnections: counters[:disconnections],
+        compactions: counters[:compactions],
+        tests_run: nil,
+        tests_passed: nil,
+        tests_failed: nil
+      }
+    end
+
+    def summary_predicted_payload
+      predicted = meta_hash["predicted"]
+      predicted.is_a?(Hash) ? predicted : {}
+    end
+
+    def meta_hash
+      meta.is_a?(Hash) ? meta : {}
+    end
+
+    def append_summary_record(record)
+      return unless summary_out
+
+      FileUtils.mkdir_p(File.dirname(summary_out))
+      File.open(summary_out, "ab") do |file|
+        file.write(JSON.generate(record))
+        file.write("\n")
+      end
+    rescue StandardError => e
+      warn("harnex: failed to write dispatch summary #{summary_out}: #{e.message}")
     end
 
     def normalized_usage_summary(summary)
@@ -455,6 +600,7 @@ module Harnex
     end
 
     def emit_event(type, **payload)
+      @event_counters.record(type)
       @events_mutex.synchronize do
         return unless @events_log
 

@@ -169,14 +169,23 @@ class SessionTest < Minitest::Test
       session = build_session(
         adapter: Harnex::Adapters::Codex.new,
         command: [RbConfig.ruby, "-e", code, repo],
-        repo_root: repo
+        repo_root: repo,
+        description: "dispatch telemetry",
+        meta: {
+          "model" => "gpt-5.3-codex",
+          "effort" => "high",
+          "issue" => "23",
+          "plan" => "27",
+          "predicted" => { "input_tokens" => [100, 200] }
+        },
+        summary_out: File.join(repo, "koder", "DISPATCH.jsonl")
       )
       silence_session_stdout(session)
 
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started git usage git exited], rows.map { |row| row["type"] }
+      assert_equal %w[started git usage git summary exited], rows.map { |row| row["type"] }
 
       git_start = rows[1]
       assert_equal "start", git_start["phase"]
@@ -197,8 +206,116 @@ class SessionTest < Minitest::Test
       assert_equal 0, git_end["loc_removed"]
       assert_equal 1, git_end["files_changed"]
       assert_equal 1, git_end["commits"]
-      assert_equal 0, rows[4]["code"]
+
+      summary = rows[4]
+      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), summary["path"]
+      assert_equal "success", summary["exit"]
+      assert_equal 0, rows[5]["code"]
+      assert_equal "success", rows[5]["reason"]
+
+      record = JSON.parse(File.read(summary["path"]).lines.last)
+      assert_equal session.id, record.dig("meta", "id")
+      assert_equal "dispatch telemetry", record.dig("meta", "description")
+      assert_equal "harnex", record.dig("meta", "harness")
+      assert_equal Harnex::VERSION, record.dig("meta", "harness_version")
+      assert_equal "codex", record.dig("meta", "agent")
+      assert_equal repo, record.dig("meta", "repo")
+      assert_equal "23", record.dig("meta", "issue")
+      assert_equal "27", record.dig("meta", "plan")
+      assert_equal({ "input_tokens" => [100, 200] }, record["predicted"])
+      assert_equal "gpt-5.3-codex", record.dig("actual", "model")
+      assert_equal "high", record.dig("actual", "effort")
+      assert_kind_of Integer, record.dig("actual", "duration_s")
+      assert_equal 104_158, record.dig("actual", "input_tokens")
+      assert_nil record.dig("actual", "cost_usd")
+      assert_equal 1, record.dig("actual", "loc_added")
+      assert_equal 1, record.dig("actual", "files_changed")
+      assert_equal 1, record.dig("actual", "commits")
+      assert_equal "success", record.dig("actual", "exit")
+      assert_equal 0, record.dig("actual", "force_resumes")
+      assert_nil record.dig("actual", "tests_run")
     end
+  end
+
+  def test_summary_record_uses_null_actuals_and_disconnected_exit_without_summary_marker
+    Dir.mktmpdir("harnex-session-summary") do |repo|
+      summary_path = File.join(repo, "DISPATCH.jsonl")
+      session = build_session(
+        command: [RbConfig.ruby, "-e", "puts 'no usage marker'"],
+        repo_root: repo,
+        summary_out: summary_path
+      )
+      silence_session_stdout(session)
+
+      assert_equal 0, session.run(validate_binary: false)
+
+      rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+      assert_equal %w[started usage summary exited], rows.map { |row| row["type"] }
+      assert_equal "disconnected", rows[-2]["exit"]
+      assert_equal "disconnected", rows[-1]["reason"]
+
+      record = JSON.parse(File.read(summary_path).lines.last)
+      assert_equal({}, record["predicted"])
+      assert_nil record.dig("actual", "input_tokens")
+      assert_nil record.dig("actual", "output_tokens")
+      assert_nil record.dig("actual", "reasoning_tokens")
+      assert_nil record.dig("actual", "cached_tokens")
+      assert_nil record.dig("actual", "cost_usd")
+      assert_equal "disconnected", record.dig("actual", "exit")
+      assert_equal 1, record.dig("actual", "disconnections")
+      assert_nil record.dig("actual", "tests_passed")
+    end
+  end
+
+  def test_summary_event_has_nil_path_when_no_summary_path_resolves
+    Dir.mktmpdir("harnex-session-summary") do |repo|
+      session = build_session(
+        command: [RbConfig.ruby, "-e", "exit 0"],
+        repo_root: repo
+      )
+      silence_session_stdout(session)
+
+      assert_equal 0, session.run(validate_binary: false)
+
+      rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+      assert_equal %w[started usage summary exited], rows.map { |row| row["type"] }
+      assert_nil rows[-2]["path"]
+      refute File.exist?(File.join(repo, "koder", "DISPATCH.jsonl"))
+    end
+  end
+
+  def test_summary_write_failure_warns_without_crashing_exit
+    Dir.mktmpdir("harnex-session-summary") do |repo|
+      session = build_session(
+        command: [RbConfig.ruby, "-e", "exit 0"],
+        repo_root: repo,
+        summary_out: repo
+      )
+      silence_session_stdout(session)
+
+      _out, err = capture_io { assert_equal 0, session.run(validate_binary: false) }
+
+      assert_match(/failed to write dispatch summary/, err)
+      rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+      assert_equal "summary", rows[-2]["type"]
+      assert_equal repo, rows[-2]["path"]
+      assert_equal "exited", rows[-1]["type"]
+    end
+  end
+
+  def test_event_counters_tally_reserved_operational_events
+    counters = Harnex::Session::EventCounters.new
+    %w[resume log_idle compaction disconnection disconnect].each { |type| counters.record(type) }
+
+    assert_equal(
+      {
+        stalls: 1,
+        force_resumes: 1,
+        disconnections: 2,
+        compactions: 1
+      },
+      counters.snapshot
+    )
   end
 
   def test_inject_via_adapter_emits_send_event_with_preview_fields
@@ -279,7 +396,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
+  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -290,6 +407,7 @@ class SessionTest < Minitest::Test
       id: "session-#{SecureRandom.hex(4)}",
       description: description,
       meta: meta,
+      summary_out: summary_out,
       inbox_ttl: inbox_ttl
     )
   end

@@ -47,6 +47,10 @@ class RunnerTest < Minitest::Test
     assert_includes Harnex::Runner.usage, "--meta JSON"
   end
 
+  def test_usage_documents_summary_out
+    assert_includes Harnex::Runner.usage, "--summary-out PATH"
+  end
+
   def test_extract_wrapper_options_parses_meta_json
     runner = Harnex::Runner.new(["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
@@ -75,6 +79,42 @@ class RunnerTest < Minitest::Test
     end
 
     assert_match(/--meta must be a JSON object/, error.message)
+  end
+
+  def test_extract_wrapper_options_parses_summary_out
+    runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert_equal "tmp/dispatch.jsonl", opts[:summary_out]
+  end
+
+  def test_resolve_summary_out_defaults_when_koder_dir_exists
+    Dir.mktmpdir("harnex-summary-repo") do |repo|
+      FileUtils.mkdir_p(File.join(repo, "koder"))
+      runner = Harnex::Runner.new(["codex"])
+
+      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), runner.send(:resolve_summary_out, repo)
+    end
+  end
+
+  def test_resolve_summary_out_returns_nil_without_koder_dir
+    Dir.mktmpdir("harnex-summary-repo") do |repo|
+      runner = Harnex::Runner.new(["codex"])
+
+      assert_nil runner.send(:resolve_summary_out, repo)
+    end
+  end
+
+  def test_resolve_summary_out_expands_explicit_path
+    Dir.mktmpdir("harnex-summary-repo") do |repo|
+      runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
+      runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])
+
+      assert_equal File.join(repo, "tmp", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
+    end
   end
 
   def test_extract_wrapper_options_bare_watch_enables_babysitter

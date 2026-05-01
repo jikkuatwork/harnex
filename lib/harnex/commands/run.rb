@@ -7,11 +7,12 @@ module Harnex
     DEFAULT_TIMEOUT = 5.0
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
-      --stall-after --max-resumes --preset --context --meta --timeout --inbox-ttl --help
+      --stall-after --max-resumes --preset --context --meta --summary-out
+      --timeout --inbox-ttl --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --timeout --inbox-ttl
+      --max-resumes --preset --context --meta --summary-out --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -32,6 +33,7 @@ module Harnex
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
           --meta JSON        Attach parsed JSON metadata to the started event
+          --summary-out PATH Append dispatch telemetry summary JSONL to PATH
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           -h, --help         Show this help
@@ -62,6 +64,7 @@ module Harnex
         watch: nil,
         context: nil,
         meta: nil,
+        summary_out: nil,
         detach: false,
         tmux: false,
         tmux_name: nil,
@@ -81,6 +84,7 @@ module Harnex
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
 
       repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
+      @options[:summary_out] = resolve_summary_out(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
       effective_child_args = apply_context(child_args)
@@ -140,6 +144,7 @@ module Harnex
       tmux_cmd += ["--watch-file", @options[:watch]] if @options[:watch]
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
+      tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
@@ -243,6 +248,7 @@ module Harnex
         watch: watch,
         description: @options[:description],
         meta: @options[:meta],
+        summary_out: @options[:summary_out],
         inbox_ttl: @options[:inbox_ttl]
       )
     end
@@ -394,6 +400,11 @@ module Harnex
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
         when /\A--meta=(.+)\z/
           @options[:meta] = parse_meta(required_option_value("--meta", Regexp.last_match(1)))
+        when "--summary-out"
+          index += 1
+          @options[:summary_out] = required_option_value(arg, argv[index])
+        when /\A--summary-out=(.+)\z/
+          @options[:summary_out] = required_option_value("--summary-out", Regexp.last_match(1))
         when "--timeout"
           index += 1
           @options[:timeout] = Float(required_option_value(arg, argv[index]))
@@ -449,7 +460,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|timeout|inbox-ttl)=/
           nil
         when /\A--preset=/
           nil
@@ -467,7 +478,8 @@ module Harnex
         arg == "-h" ||
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
-          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--timeout=", "--inbox-ttl="
+          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--summary-out=",
+          "--timeout=", "--inbox-ttl="
         )
     end
 
@@ -505,6 +517,13 @@ module Harnex
       raise OptionParser::InvalidOption, "--meta must be a JSON object"
     rescue JSON::ParserError => e
       raise OptionParser::InvalidOption, "--meta must be valid JSON: #{e.message}"
+    end
+
+    def resolve_summary_out(repo_root)
+      configured = @options[:summary_out]
+      return Harnex.default_summary_out_path(repo_root) if configured.nil?
+
+      File.expand_path(configured, repo_root)
     end
 
     def default_inbox_ttl
