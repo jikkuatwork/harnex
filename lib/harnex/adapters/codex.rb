@@ -56,6 +56,25 @@ module Harnex
         end
       end
 
+      def parse_session_summary(transcript_tail)
+        summary = empty_session_summary
+        text = transcript_tail.to_s
+
+        if (match = text.match(/Token usage:\s+total=([\d,]+)\s+input=([\d,]+)(?:\s+\(\+\s+([\d,]+)\s+cached\))?\s+output=([\d,]+)(?:\s+\(reasoning\s+([\d,]+)\))?/))
+          summary[:total_tokens] = parse_token_count(match[1])
+          summary[:input_tokens] = parse_token_count(match[2])
+          summary[:cached_tokens] = parse_token_count(match[3])
+          summary[:output_tokens] = parse_token_count(match[4])
+          summary[:reasoning_tokens] = parse_token_count(match[5])
+        end
+
+        if (match = text.match(/codex resume\s+([0-9a-f-]{36})/))
+          summary[:agent_session_id] = match[1]
+        end
+
+        summary
+      end
+
       def send_wait_seconds(submit:, enter_only:)
         return 0.0 unless submit
         return 0.0 if enter_only
@@ -100,6 +119,23 @@ module Harnex
       end
 
       protected
+
+      def empty_session_summary
+        {
+          input_tokens: nil,
+          output_tokens: nil,
+          reasoning_tokens: nil,
+          cached_tokens: nil,
+          total_tokens: nil,
+          agent_session_id: nil
+        }
+      end
+
+      def parse_token_count(value)
+        return nil if value.nil?
+
+        Integer(value.delete(","))
+      end
 
       def submit_delay_ms(text)
         extra = (text.to_s.bytesize / 1024.0 * SUBMIT_DELAY_PER_KB_MS).ceil

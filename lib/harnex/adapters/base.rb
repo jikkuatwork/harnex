@@ -39,6 +39,10 @@ module Harnex
         }
       end
 
+      def parse_session_summary(_transcript_tail)
+        {}
+      end
+
       def send_wait_seconds(submit:, enter_only:)
         0.0
       end

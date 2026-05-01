@@ -83,6 +83,10 @@ class BaseAdapterContractTest < Minitest::Test
     assert_equal "quit\r", writer.string
   end
 
+  def test_parse_session_summary_defaults_to_empty_hash
+    assert_equal({}, Harnex::Adapters::Base.new("test").parse_session_summary("anything"))
+  end
+
   # Regression: OSC regex was greedy and consumed text between multiple
   # OSC sequences (e.g. \e]10;?\e\\ ... \e]11;?\e\\), eating the entire
   # screen buffer. Non-greedy *? fix preserves printable content.

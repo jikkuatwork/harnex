@@ -84,6 +84,41 @@ class CodexAdapterTest < Minitest::Test
     assert_equal true, state[:input_ready]
   end
 
+  # --- parse_session_summary ---
+
+  def test_parse_session_summary_extracts_token_usage_and_resume_id
+    tail = <<~TEXT
+      Token usage: total=106,867 input=104,158 (+ 250,880 cached) output=2,709 (reasoning 870)
+      To continue this session, run codex resume 019ddf05-0f03-7d70-904f-23db7f00640f
+    TEXT
+
+    assert_equal(
+      {
+        input_tokens: 104_158,
+        output_tokens: 2_709,
+        reasoning_tokens: 870,
+        cached_tokens: 250_880,
+        total_tokens: 106_867,
+        agent_session_id: "019ddf05-0f03-7d70-904f-23db7f00640f"
+      },
+      @adapter.parse_session_summary(tail)
+    )
+  end
+
+  def test_parse_session_summary_returns_nil_fields_for_garbage
+    assert_equal(
+      {
+        input_tokens: nil,
+        output_tokens: nil,
+        reasoning_tokens: nil,
+        cached_tokens: nil,
+        total_tokens: nil,
+        agent_session_id: nil
+      },
+      @adapter.parse_session_summary("no usage marker here")
+    )
+  end
+
   # --- build_send_payload ---
 
   def test_build_send_payload_with_text_and_submit

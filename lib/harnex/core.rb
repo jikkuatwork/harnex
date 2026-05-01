@@ -64,6 +64,60 @@ module Harnex
     seconds
   end
 
+  def harness_version
+    VERSION
+  end
+
+  def host_info
+    {
+      host: Socket.gethostname,
+      platform: RUBY_PLATFORM
+    }
+  rescue StandardError
+    {
+      host: nil,
+      platform: RUBY_PLATFORM
+    }
+  end
+
+  def strip_ansi(text)
+    text.to_s.gsub(/\e\[[0-9;]*[a-zA-Z]/, "")
+  end
+
+  def git_capture_start(repo_root)
+    sha = git_output(repo_root, "rev-parse", "HEAD")
+    branch = git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
+    return {} if sha.empty? || branch.empty?
+
+    {
+      sha: sha,
+      branch: branch
+    }
+  rescue StandardError
+    {}
+  end
+
+  def git_capture_end(repo_root, start_sha)
+    start_sha = start_sha.to_s.strip
+    return {} if start_sha.empty?
+
+    end_sha = git_output(repo_root, "rev-parse", "HEAD")
+    range = "#{start_sha}..#{end_sha}"
+    shortstat = git_output(repo_root, "diff", "--shortstat", range)
+    commits = Integer(git_output(repo_root, "rev-list", "--count", range))
+    stats = parse_git_shortstat(shortstat)
+
+    {
+      sha: end_sha,
+      loc_added: stats.fetch(:loc_added),
+      loc_removed: stats.fetch(:loc_removed),
+      files_changed: stats.fetch(:files_changed),
+      commits: commits
+    }
+  rescue StandardError
+    {}
+  end
+
   def repo_key(repo_root)
     Digest::SHA256.hexdigest(repo_root)[0, 16]
   end
@@ -315,5 +369,20 @@ module Harnex
       hook_message: "file-change-hook: read #{display_path}",
       debounce_seconds: WATCH_DEBOUNCE_SECONDS
     )
+  end
+
+  def git_output(repo_root, *args)
+    stdout, _stderr, status = Open3.capture3("git", "-C", repo_root.to_s, *args)
+    raise "git #{args.join(' ')} failed" unless status.success?
+
+    stdout.strip
+  end
+
+  def parse_git_shortstat(text)
+    {
+      files_changed: text.to_s[/(\d+)\s+files?\s+changed/, 1].to_i,
+      loc_added: text.to_s[/(\d+)\s+insertions?\(\+\)/, 1].to_i,
+      loc_removed: text.to_s[/(\d+)\s+deletions?\(-\)/, 1].to_i
+    }
   end
 end

@@ -104,6 +104,44 @@ class CoreTest < Minitest::Test
     refute msg.include?("\n")
   end
 
+  def test_harness_version_returns_loaded_version
+    assert_equal Harnex::VERSION, Harnex.harness_version
+  end
+
+  def test_host_info_returns_host_and_platform_keys
+    info = Harnex.host_info
+    assert info.key?(:host)
+    assert_equal RUBY_PLATFORM, info[:platform]
+  end
+
+  def test_strip_ansi_removes_basic_csi_sequences
+    assert_equal "red plain", Harnex.strip_ansi("\e[31mred\e[0m plain")
+  end
+
+  def test_git_capture_start_and_end
+    Dir.mktmpdir("harnex-git-capture") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "README.md"), "one\n")
+      system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
+      system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "one", out: File::NULL, err: File::NULL)
+
+      start = Harnex.git_capture_start(repo)
+      File.write(File.join(repo, "README.md"), "one\ntwo\n")
+      system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
+      system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "two", out: File::NULL, err: File::NULL)
+
+      finish = Harnex.git_capture_end(repo, start[:sha])
+
+      assert_match(/\A[0-9a-f]{40}\z/, start[:sha])
+      refute_empty start[:branch]
+      assert_match(/\A[0-9a-f]{40}\z/, finish[:sha])
+      assert_equal 1, finish[:loc_added]
+      assert_equal 0, finish[:loc_removed]
+      assert_equal 1, finish[:files_changed]
+      assert_equal 1, finish[:commits]
+    end
+  end
+
   # --- current_session_context ---
 
   def test_current_session_context_returns_nil_when_missing

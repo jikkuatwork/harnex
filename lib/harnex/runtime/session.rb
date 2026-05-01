@@ -5,6 +5,10 @@ require "pty"
 module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
+    TRANSCRIPT_TAIL_BYTES = 16 * 1024
+    USAGE_FIELDS = %i[
+      input_tokens output_tokens reasoning_tokens cached_tokens total_tokens agent_session_id
+    ].freeze
 
     attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :output_log_path, :events_log_path
 
@@ -35,6 +39,9 @@ module Harnex
       @output_log = nil
       @events_log = nil
       @events_log_seq = 0
+      @git_start = {}
+      @git_end = {}
+      @usage_summary = {}
       @writer = nil
       @pid = nil
       @term_signal = nil
@@ -69,6 +76,7 @@ module Harnex
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
       emit_started_event
+      emit_git_start_event
 
       install_signal_handlers
       sync_window_size
@@ -85,9 +93,10 @@ module Harnex
       _, status = Process.wait2(pid)
       @term_signal = status.signaled? ? status.termsig : nil
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
-      emit_exit_event
 
       output_thread.join(1)
+      emit_session_end_telemetry
+      emit_exit_event
       input_thread&.kill
       watch_thread&.kill
       @exit_code
@@ -397,10 +406,52 @@ module Harnex
       emit_event("started", **payload)
     end
 
+    def emit_git_start_event
+      @git_start = Harnex.git_capture_start(repo_root)
+      return if @git_start.empty?
+
+      emit_event("git", phase: "start", sha: @git_start[:sha], branch: @git_start[:branch])
+    end
+
+    def emit_session_end_telemetry
+      @usage_summary = normalized_usage_summary(adapter.parse_session_summary(transcript_tail))
+      emit_event("usage", **@usage_summary)
+
+      @git_end = Harnex.git_capture_end(repo_root, @git_start[:sha])
+      return if @git_end.empty?
+
+      emit_event(
+        "git",
+        phase: "end",
+        sha: @git_end[:sha],
+        loc_added: @git_end[:loc_added],
+        loc_removed: @git_end[:loc_removed],
+        files_changed: @git_end[:files_changed],
+        commits: @git_end[:commits]
+      )
+    end
+
     def emit_exit_event
       payload = { code: @exit_code }
       payload[:signal] = @term_signal if @term_signal
       emit_event("exited", **payload)
+    end
+
+    def normalized_usage_summary(summary)
+      summary ||= {}
+      USAGE_FIELDS.to_h { |field| [field, summary[field] || summary[field.to_s]] }
+    end
+
+    def transcript_tail
+      return "" unless File.file?(output_log_path)
+
+      File.open(output_log_path, "rb") do |file|
+        size = file.size
+        file.seek([size - TRANSCRIPT_TAIL_BYTES, 0].max)
+        Harnex.strip_ansi(file.read.to_s)
+      end
+    rescue StandardError
+      ""
     end
 
     def emit_event(type, **payload)
