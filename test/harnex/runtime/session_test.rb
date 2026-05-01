@@ -131,6 +131,21 @@ class SessionTest < Minitest::Test
     events_log&.close unless events_log&.closed?
   end
 
+  def test_started_event_includes_meta_when_provided
+    session = build_session(meta: { "issue" => "23", "predicted" => { "input_tokens" => [1, 2] } })
+    session.send(:prepare_events_log)
+    session.instance_variable_set(:@pid, 12_345)
+    session.send(:emit_started_event)
+
+    row = JSON.parse(File.readlines(session.events_log_path).last)
+    assert_equal "started", row["type"]
+    assert_equal 12_345, row["pid"]
+    assert_equal({ "issue" => "23", "predicted" => { "input_tokens" => [1, 2] } }, row["meta"])
+  ensure
+    events_log = session.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+  end
+
   def test_inject_via_adapter_emits_send_event_with_preview_fields
     session = build_session
     session.send(:prepare_events_log)
@@ -209,7 +224,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], description: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
+  def build_session(command: ["ruby"], description: nil, meta: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
     adapter = Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -219,6 +234,7 @@ class SessionTest < Minitest::Test
       host: "127.0.0.1",
       id: "session-#{SecureRandom.hex(4)}",
       description: description,
+      meta: meta,
       inbox_ttl: inbox_ttl
     )
   end

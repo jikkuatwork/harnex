@@ -43,6 +43,40 @@ class RunnerTest < Minitest::Test
     assert_equal 45.0, runner.instance_variable_get(:@options)[:inbox_ttl]
   end
 
+  def test_usage_documents_meta
+    assert_includes Harnex::Runner.usage, "--meta JSON"
+  end
+
+  def test_extract_wrapper_options_parses_meta_json
+    runner = Harnex::Runner.new(["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert_equal({ "predicted" => { "input_tokens" => [1, 2] }, "issue" => "23" }, opts[:meta])
+  end
+
+  def test_extract_wrapper_options_rejects_invalid_meta_json
+    runner = Harnex::Runner.new(["codex", "--meta", "{"])
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:extract_wrapper_options, ["codex", "--meta", "{"])
+    end
+
+    assert_match(/--meta must be valid JSON/, error.message)
+  end
+
+  def test_extract_wrapper_options_rejects_meta_json_array
+    runner = Harnex::Runner.new(["codex", "--meta", "[]"])
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:extract_wrapper_options, ["codex", "--meta", "[]"])
+    end
+
+    assert_match(/--meta must be a JSON object/, error.message)
+  end
+
   def test_extract_wrapper_options_bare_watch_enables_babysitter
     runner = Harnex::Runner.new(["codex", "--watch"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch"])

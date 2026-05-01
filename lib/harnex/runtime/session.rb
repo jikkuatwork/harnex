@@ -6,9 +6,9 @@ module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :output_log_path, :events_log_path
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :output_log_path, :events_log_path
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, inbox_ttl: Inbox::DEFAULT_TTL)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, inbox_ttl: Inbox::DEFAULT_TTL)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -17,6 +17,7 @@ module Harnex
       @watch = watch
       @description = description.to_s.strip
       @description = nil if @description.empty?
+      @meta = meta
       @registry_path = Harnex.registry_path(repo_root, @id)
       @output_log_path = Harnex.output_log_path(repo_root, @id)
       @events_log_path = Harnex.events_log_path(repo_root, @id)
@@ -67,7 +68,7 @@ module Harnex
       prepare_events_log
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
-      emit_event("started", pid: @pid)
+      emit_started_event
 
       install_signal_handlers
       sync_window_size
@@ -388,6 +389,12 @@ module Harnex
       truncated = compact.length > 200
       preview = truncated ? "#{compact[0, 200]}…" : compact
       emit_event("send", msg: preview, msg_truncated: truncated, forced: !!force)
+    end
+
+    def emit_started_event
+      payload = { pid: @pid }
+      payload[:meta] = meta if meta
+      emit_event("started", **payload)
     end
 
     def emit_exit_event

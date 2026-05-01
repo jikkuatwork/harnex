@@ -7,11 +7,11 @@ module Harnex
     DEFAULT_TIMEOUT = 5.0
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
-      --stall-after --max-resumes --preset --context --timeout --inbox-ttl --help
+      --stall-after --max-resumes --preset --context --meta --timeout --inbox-ttl --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --timeout --inbox-ttl
+      --max-resumes --preset --context --meta --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -31,6 +31,7 @@ module Harnex
           --preset NAME      Watch preset: impl, plan, gate (requires --watch)
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
+          --meta JSON        Attach parsed JSON metadata to the started event
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           -h, --help         Show this help
@@ -60,6 +61,7 @@ module Harnex
         preset: nil,
         watch: nil,
         context: nil,
+        meta: nil,
         detach: false,
         tmux: false,
         tmux_name: nil,
@@ -137,6 +139,7 @@ module Harnex
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
       tmux_cmd += ["--watch-file", @options[:watch]] if @options[:watch]
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
+      tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
@@ -239,6 +242,7 @@ module Harnex
         id: @options[:id],
         watch: watch,
         description: @options[:description],
+        meta: @options[:meta],
         inbox_ttl: @options[:inbox_ttl]
       )
     end
@@ -385,6 +389,11 @@ module Harnex
           @options[:context] = required_option_value(arg, argv[index])
         when /\A--context=(.+)\z/
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
+        when "--meta"
+          index += 1
+          @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
+        when /\A--meta=(.+)\z/
+          @options[:meta] = parse_meta(required_option_value("--meta", Regexp.last_match(1)))
         when "--timeout"
           index += 1
           @options[:timeout] = Float(required_option_value(arg, argv[index]))
@@ -440,7 +449,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|timeout|inbox-ttl)=/
           nil
         when /\A--preset=/
           nil
@@ -458,7 +467,7 @@ module Harnex
         arg == "-h" ||
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
-          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--timeout=", "--inbox-ttl="
+          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--timeout=", "--inbox-ttl="
         )
     end
 
@@ -487,6 +496,15 @@ module Harnex
       integer
     rescue ArgumentError
       raise OptionParser::InvalidArgument, "#{option_name} must be an integer"
+    end
+
+    def parse_meta(value)
+      parsed = JSON.parse(value)
+      return parsed if parsed.is_a?(Hash)
+
+      raise OptionParser::InvalidOption, "--meta must be a JSON object"
+    rescue JSON::ParserError => e
+      raise OptionParser::InvalidOption, "--meta must be valid JSON: #{e.message}"
     end
 
     def default_inbox_ttl
