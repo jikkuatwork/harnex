@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
 
   s.required_ruby_version = ">= 3.0"
 
-  s.files         = Dir["lib/**/*.rb", "bin/*", "LICENSE", "README.md", "GUIDE.md", "TECHNICAL.md", "recipes/*.md", "skills/**/*"]
+  s.files         = Dir["lib/**/*.rb", "bin/*", "LICENSE", "README.md", "CHANGELOG.md", "GUIDE.md", "TECHNICAL.md", "recipes/*.md", "skills/**/*"]
   s.bindir        = "bin"
   s.executables   = ["harnex"]
 
