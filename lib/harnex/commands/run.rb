@@ -8,7 +8,7 @@ module Harnex
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --timeout --inbox-ttl --help
+      --timeout --inbox-ttl --legacy-pty --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
@@ -36,6 +36,9 @@ module Harnex
           --summary-out PATH Append dispatch telemetry summary JSONL to PATH
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
+          --legacy-pty       (codex only) Use the legacy PTY adapter instead of
+                             the JSON-RPC `app-server` adapter. Deprecated; will
+                             be removed in 0.7.0.
           -h, --help         Show this help
 
         Notes:
@@ -70,6 +73,7 @@ module Harnex
         tmux_name: nil,
         timeout: DEFAULT_TIMEOUT,
         inbox_ttl: default_inbox_ttl,
+        legacy_pty: false,
         help: false
       }
     end
@@ -88,7 +92,7 @@ module Harnex
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
       effective_child_args = apply_context(child_args)
-      adapter = Harnex.build_adapter(cli_name, effective_child_args)
+      adapter = Harnex.build_adapter(cli_name, effective_child_args, legacy_pty: @options[:legacy_pty])
       @options[:detach] = true if @options[:tmux]
       validate_watch_mode!
       resolve_watch_preset!
@@ -146,6 +150,7 @@ module Harnex
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
+      tmux_cmd += ["--legacy-pty"] if @options[:legacy_pty]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
       window_name = @options[:tmux_name] || @options[:id]
@@ -254,7 +259,7 @@ module Harnex
     end
 
     def adapter_repo_path(cli_name, child_args)
-      Harnex.build_adapter(cli_name, child_args).infer_repo_path(child_args)
+      Harnex.build_adapter(cli_name, child_args, legacy_pty: @options[:legacy_pty]).infer_repo_path(child_args)
     end
 
     def apply_context(child_args)
@@ -415,6 +420,8 @@ module Harnex
           @options[:inbox_ttl] = Float(required_option_value(arg, argv[index]))
         when /\A--inbox-ttl=(.+)\z/
           @options[:inbox_ttl] = Float(required_option_value("--inbox-ttl", Regexp.last_match(1)))
+        when "--legacy-pty"
+          @options[:legacy_pty] = true
         else
           if cli_name.nil?
             cli_name = arg
@@ -454,7 +461,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux"
+        when "-h", "--help", "--detach", "--tmux", "--legacy-pty"
           nil
         when /\A--tmux=/
           nil

@@ -349,10 +349,10 @@ module Harnex
     false
   end
 
-  def build_adapter(cli, argv)
+  def build_adapter(cli, argv, legacy_pty: false)
     raise ArgumentError, "cli is required" if cli.to_s.strip.empty?
 
-    Adapters.build(cli, argv)
+    Adapters.build(cli, argv, legacy_pty: legacy_pty)
   end
 
   def session_cli(session)

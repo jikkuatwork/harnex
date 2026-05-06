@@ -25,7 +25,7 @@ module Harnex
           @counts[:stalls] += 1
         when "resume"
           @counts[:force_resumes] += 1
-        when "disconnect", "disconnection"
+        when "disconnect", "disconnection", "disconnected"
           @counts[:disconnections] += 1
         when "compaction"
           @counts[:compactions] += 1
@@ -105,6 +105,13 @@ module Harnex
       validate_binary! if validate_binary
       prepare_output_log
       prepare_events_log
+
+      return run_jsonrpc if adapter.transport == :stdio_jsonrpc
+
+      run_pty
+    end
+
+    def run_pty
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
       emit_started_event
@@ -193,6 +200,18 @@ module Harnex
     end
 
     def inject_stop
+      if adapter.transport == :stdio_jsonrpc
+        @inject_mutex.synchronize do
+          begin
+            adapter.interrupt
+          rescue StandardError
+            nil
+          end
+          @state_machine.force_busy!
+        end
+        return { ok: true, signal: "interrupt_sent" }
+      end
+
       raise "session is not running" unless pid && Harnex.alive_pid?(pid)
 
       @inject_mutex.synchronize do
@@ -204,6 +223,10 @@ module Harnex
     end
 
     def inject_via_adapter(text:, submit:, enter_only:, force: false)
+      if adapter.transport == :stdio_jsonrpc
+        return inject_via_jsonrpc(text: text, force: force)
+      end
+
       snapshot = adapter.wait_for_sendable(method(:screen_snapshot), submit: submit, enter_only: enter_only, force: force)
       payload = adapter.build_send_payload(
         text: text,
@@ -228,8 +251,32 @@ module Harnex
         .tap { emit_send_event(text, force: payload[:force]) }
     end
 
+    def inject_via_jsonrpc(text:, force: false)
+      turn_id = nil
+      @inject_mutex.synchronize do
+        turn_id = adapter.dispatch(prompt: text)
+        @state_machine.force_busy!
+        @injected_count += 1
+        @last_injected_at = Time.now
+        persist_registry
+      end
+
+      emit_send_event(text, force: force)
+      {
+        ok: true,
+        cli: adapter.key,
+        bytes_written: text.to_s.bytesize,
+        injected_count: @injected_count,
+        newline: false,
+        input_state: adapter.input_state(nil),
+        force: force,
+        turn_id: turn_id
+      }
+    end
+
     def sync_window_size
       return unless STDIN.tty?
+      return unless @writer
 
       @writer.winsize = STDIN.winsize
     rescue StandardError
@@ -241,6 +288,154 @@ module Harnex
     end
 
     private
+
+    def run_jsonrpc
+      adapter.on_notification { |msg| handle_rpc_notification(msg) }
+      adapter.on_disconnect { |err| handle_rpc_disconnect(err) }
+
+      adapter.start_rpc(env: child_env, cwd: repo_root)
+      @pid = adapter.pid
+      emit_started_event
+      emit_git_start_event
+
+      install_signal_handlers
+      @server = ApiServer.new(self)
+      @server.start
+      persist_registry
+
+      watch_thread = start_watch_thread
+      @inbox.start
+
+      if @pid
+        begin
+          _, status = Process.wait2(@pid)
+          @term_signal = status.signaled? ? status.termsig : nil
+          @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
+        rescue Errno::ECHILD
+          @exit_code = 0
+        end
+      else
+        @rpc_done_lock = Mutex.new
+        @rpc_done_cond = ConditionVariable.new
+        @rpc_done_lock.synchronize { @rpc_done_cond.wait(@rpc_done_lock) until @rpc_done }
+        @exit_code = 0
+      end
+      @ended_at = Time.now
+
+      emit_session_end_telemetry
+      @exit_reason = classify_exit
+      summary_record = build_summary_record
+      append_summary_record(summary_record)
+      emit_summary_event
+      emit_exit_event
+      watch_thread&.kill
+      @exit_code
+    ensure
+      @inbox.stop
+      @server&.stop
+      begin
+        adapter.close
+      rescue StandardError
+        nil
+      end
+      persist_exit_status
+      cleanup_registry
+      @output_log&.close unless @output_log&.closed?
+      @events_log&.close unless @events_log&.closed?
+    end
+
+    def signal_rpc_done!
+      @rpc_done = true
+      if defined?(@rpc_done_lock) && @rpc_done_lock
+        @rpc_done_lock.synchronize { @rpc_done_cond&.signal }
+      end
+    end
+
+    def handle_rpc_notification(message)
+      method = message["method"]
+      params = message["params"] || {}
+
+      case method
+      when "thread/started"
+        @rpc_thread_id = params["threadId"] || params["thread_id"]
+      when "turn/started"
+        emit_event("turn_started", turnId: params["turnId"] || params["turn_id"])
+      when "turn/completed"
+        @last_completed_at = Time.now
+        payload = { turnId: params["turnId"] || params["turn_id"] }
+        payload[:status] = params["status"] if params["status"]
+        payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"]
+        emit_event("task_complete", **payload)
+      when "item/completed"
+        emit_event("item_completed", item: params["item"])
+        text = render_item_text(params["item"])
+        record_synthesized(text) if text
+      when "thread/compacted"
+        emit_event("compaction", **params)
+      when "thread/tokenUsage/updated"
+        # Surfaced via status fields in Phase 4; no event spam.
+        @token_usage = params["usage"] || params
+      when "thread/status/changed"
+        # State machine reflects RPC state; no event needed.
+        nil
+      when "account/rateLimits/updated"
+        @rate_limits = params
+      when "error"
+        emit_event("disconnected", source: "error_notification", message: params["message"])
+        signal_rpc_done!
+      end
+    rescue StandardError => e
+      warn("harnex: rpc notification handler error: #{e.message}")
+    end
+
+    def handle_rpc_disconnect(error)
+      msg = error.is_a?(Hash) ? error["message"] : error&.message
+      emit_event("disconnected", source: "transport", message: msg) rescue nil
+      signal_rpc_done!
+    end
+
+    def render_item_text(item)
+      return nil unless item.is_a?(Hash)
+
+      type = item["type"] || item["kind"]
+      case type
+      when "agent_message", "assistant_message"
+        item["text"] || item.dig("message", "text")
+      when "tool_call"
+        name = item["name"] || item.dig("tool", "name") || "tool"
+        params = item["params"] || item["arguments"]
+        "tool: #{name}#{params ? " #{summarize(params)}" : ""}"
+      else
+        item["text"]
+      end
+    end
+
+    def summarize(value)
+      str = value.is_a?(String) ? value : JSON.generate(value)
+      str.length > 120 ? "#{str[0, 117]}..." : str
+    rescue StandardError
+      ""
+    end
+
+    def record_synthesized(text)
+      return if text.nil? || text.to_s.empty?
+
+      payload = text.to_s.dup
+      payload << "\n" unless payload.end_with?("\n")
+      bytes = payload.b
+      @mutex.synchronize do
+        append_output_log(bytes)
+        @output_buffer << bytes
+        overflow = @output_buffer.bytesize - OUTPUT_BUFFER_LIMIT
+        @output_buffer = @output_buffer.byteslice(overflow, OUTPUT_BUFFER_LIMIT) if overflow.positive?
+      end
+      begin
+        STDOUT.write(payload)
+        STDOUT.flush
+      rescue StandardError
+        nil
+      end
+    end
 
     def child_env
       env = {

@@ -16,17 +16,17 @@ module Harnex
       !key.to_s.strip.empty?
     end
 
-    # Phase 1: gated behind HARNEX_CODEX_APPSERVER. Phase 3 flips the
-    # default; legacy `Codex` becomes opt-in via `--legacy-pty`.
+    # Phase 3 flipped the default — `codex` resolves to CodexAppServer.
+    # Legacy PTY adapter is reachable via `legacy_pty: true` (driven by
+    # `harnex run codex --legacy-pty`). Will be removed in 0.7.0.
     def codex_appserver_enabled?
-      value = ENV["HARNEX_CODEX_APPSERVER"].to_s.strip.downcase
-      %w[1 true yes on].include?(value)
+      true
     end
 
     def build(key, extra_args = [], legacy_pty: false)
       key_str = key.to_s
-      if key_str == "codex" && !legacy_pty && codex_appserver_enabled?
-        return CodexAppServer.new(extra_args)
+      if key_str == "codex"
+        return legacy_pty ? Codex.new(extra_args) : CodexAppServer.new(extra_args)
       end
 
       adapter_class = registry[key_str]

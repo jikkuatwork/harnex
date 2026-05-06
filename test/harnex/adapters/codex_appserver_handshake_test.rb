@@ -78,24 +78,14 @@ class CodexAppServerHandshakeTest < Minitest::Test
     assert_includes description[:notification_methods], "turn/completed"
   end
 
-  def test_feature_flag_gates_default_codex_build
-    ENV.delete("HARNEX_CODEX_APPSERVER")
-    refute Harnex::Adapters.codex_appserver_enabled?
-    assert_kind_of Harnex::Adapters::Codex, Harnex::Adapters.build("codex")
-
-    ENV["HARNEX_CODEX_APPSERVER"] = "1"
+  def test_codex_default_resolves_to_appserver
     assert Harnex::Adapters.codex_appserver_enabled?
     assert_kind_of Harnex::Adapters::CodexAppServer, Harnex::Adapters.build("codex")
-  ensure
-    ENV.delete("HARNEX_CODEX_APPSERVER")
   end
 
   def test_legacy_pty_kwarg_forces_legacy_adapter
-    ENV["HARNEX_CODEX_APPSERVER"] = "1"
     assert_kind_of Harnex::Adapters::Codex,
       Harnex::Adapters.build("codex", [], legacy_pty: true)
-  ensure
-    ENV.delete("HARNEX_CODEX_APPSERVER")
   end
 
   def test_base_command_is_codex_app_server
