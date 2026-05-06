@@ -203,7 +203,7 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal "turn/start", request["method"]
     assert_equal "thr-session", request.dig("params", "threadId")
     assert_equal "[harnex session id=ax-29-a] ok",
-      request.dig("params", "input", "content", 0, "text")
+      request.dig("params", "input", 0, "text")
   ensure
     close_stubbed_rpc(handles) if handles
   end
@@ -225,7 +225,7 @@ class SessionJsonrpcTest < Minitest::Test
 
     request = turn_requests.pop
     assert_equal "turn/start", request["method"]
-    assert_equal "hello", request.dig("params", "input", "content", 0, "text")
+    assert_equal "hello", request.dig("params", "input", 0, "text")
   ensure
     close_stubbed_rpc(handles) if handles
   end

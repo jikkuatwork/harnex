@@ -38,8 +38,7 @@ module Harnex
 
       def initialize(extra_args = [])
         super("codex", extra_args)
-        @initial_prompt = extra_args.join(" ").strip
-        @initial_prompt = nil if @initial_prompt.empty?
+        @initial_prompt = extract_initial_prompt(extra_args)
         @client = nil
         @thread_id = nil
         @current_turn_id = nil
@@ -133,7 +132,7 @@ module Harnex
         ensure_thread!
         params = {
           threadId: @thread_id,
-          input: { content: [{ type: "text", text: prompt.to_s }] }
+          input: [{ type: "text", text: prompt.to_s }]
         }
         params[:model] = model if model
         params[:effort] = effort if effort
@@ -183,7 +182,22 @@ module Harnex
         return if @thread_id
 
         result = @client.request("thread/start", {})
-        @thread_id = result["threadId"] || result["thread_id"]
+        @thread_id = extract_thread_id(result)
+      end
+
+      def extract_thread_id(payload)
+        return nil unless payload.is_a?(Hash)
+
+        payload.dig("thread", "id") || payload["threadId"] || payload["thread_id"]
+      end
+
+      def extract_initial_prompt(extra_args)
+        return nil unless extra_args.is_a?(Array)
+
+        prefixed = extra_args.find { |a| a.is_a?(String) && a.start_with?("[harnex session id=") }
+        return prefixed if prefixed && !prefixed.empty?
+
+        nil
       end
 
       def perform_handshake
@@ -207,7 +221,7 @@ module Harnex
 
         case method
         when "thread/started"
-          @thread_id ||= params["threadId"] || params["thread_id"]
+          @thread_id ||= extract_thread_id(params)
         when "turn/started"
           @current_turn_id = params["turnId"] || params["turn_id"]
           @state = :busy
