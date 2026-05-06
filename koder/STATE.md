@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (issue #27 substrate pivot — `cl-plan-27` dispatched)
+Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblocked)
 
 ## Current snapshot
 
@@ -201,12 +201,12 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |
 | 20 | `--tmux` greedily consumes next flag as window name | **fixed** | P1 |
 | 21 | Skill catalogue cohesion | **fixed** | P2 |
-| 22 | Built-in dispatch monitoring | **fixed** | P2 |
+| 22 | Built-in dispatch monitoring | **fixed** (Codex side closed by #27) | P2 |
 | 23 | Dispatch telemetry capture | **fixed** | P2 |
-| 24 | Layer 5 codex stream-disconnect detection | **superseded by #27** | P1 |
-| 25 | First-class task-complete signal for dispatched workers | **superseded by #27** | P1 |
+| 24 | Layer 5 codex stream-disconnect detection | **closed by #27 in 0.6.0** | P1 |
+| 25 | First-class task-complete signal for dispatched workers | **closed by #27 in 0.6.0** | P1 |
 | 26 | `harnex status` silently filters by repo, missing worktree sessions | open | P2 |
-| 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **active (plan-write)** | P1 |
+| 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **shipped in 0.6.0** | P1 |
 
 See `koder/issues/` for details.
 
@@ -231,6 +231,7 @@ See `koder/issues/` for details.
 | 25 | Phase presets for `run --watch` (#22 Layer 3) | **done** |
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
+| 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -239,82 +240,64 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-06: Issue #27 active — Codex `app-server` replatform (P1, blocks holm 0.6.0)
+### 2026-05-06: v0.6.0 shipped — Codex `app-server` adapter (issue #27 closed)
 
-A substrate audit on 2026-05-06 (filed at `koder/scratch/01_from_holm.md`)
-found that every Codex pain point in the last six weeks (banner scroll-out,
-log-mtime misfires, missing task-complete, stream disconnects) traces to one
-root: harnex scrapes tmux pane text for state. Codex 0.128+ ships
-`codex app-server` — JSON-RPC over stdio, used in production by OpenAI's own
-`codex-plugin-cc`. The fix is architectural: stop scraping, start RPC.
+`harnex 0.6.0` is on RubyGems. Tag `v0.6.0` is on `origin`. **Holm is
+unblocked** — bump its harnex dep to `~> 0.6` to consume.
 
-Issue #27 supersedes by construction:
-- #22 (Codex side only — `claude`/`generic` still use the PTY adapter + watch loop)
-- #24 (disconnect detection — `error` notifications replace pane regex)
-- #25 (first-class task-complete — `turn/completed` is the structured signal)
+**What landed:**
 
-**Holm is blocked on the harnex 0.6.0 release.** Tier A, ~6–8h Codex
-wall-clock estimated across the chain.
+- Plan-28 implemented across 5 phase commits
+  (`1ec5528`/`3fca46e`/`769a5b7`/`a870907`/`ec835d3`) plus the
+  `13ac91c` gemspec follow-up that includes `CHANGELOG.md` in the package.
+- Codex now speaks JSON-RPC over stdio via `codex app-server`. Pane
+  scraping retired for Codex; `claude`/`generic`/legacy `codex.rb`
+  (behind `--legacy-pty`) untouched.
+- New: `harnex wait --until task_complete`,
+  `harnex doctor` (Codex ≥0.128.0 preflight),
+  `last_completed_at`/`model`/`effort`/`auto_disconnects` in
+  `status --json`.
+- `Adapter#describe` hook lands as forward-compat for holm #271's Lane
+  Skills (post-0.6.0).
+- Test suite at HEAD: 289 runs, 0 failures, 1 integration skip
+  (CODEX_INTEGRATION=1 gate).
 
-**Chain status (as of dispatch):** `cl-plan-27` (Claude) fired in tmux to
-write `koder/plans/28_codex_appserver_adapter.md`. Claude chosen over Codex
-because the read budget loads >50K input tokens across 10 files (the
-138 KB `ServerNotification.json`, the 350 LOC `app-server.mjs` reference, the
-152 LOC `codex.rb` being replaced, etc.) — exactly the regime where Codex/Azure
-stalls have been concentrated (cx-p-h23 incident pattern documented below).
+**Closed-by-construction in 0.6.0:**
 
-- Brief: `/tmp/cl-plan-27-brief.md`
-- Output target: `koder/plans/28_codex_appserver_adapter.md` (≤500 LOC Markdown)
-- Reference scratch note: `koder/scratch/01_from_holm.md` (read budget,
-  hygiene items, forward-compat notes)
-- Reference impl: `~/Projects/outside_projects/codex-plugin-cc/` pinned at
-  `807e03ac9d5aa23bc395fdec8c3767500a86b3cf` (verify before reading)
+- #24 (disconnect detection — JSON-RPC error responses + subprocess exit
+  + parse errors replace pane regex)
+- #25 (`turn/completed` is the structured task-complete signal)
+- #22 (Codex side; `claude`/`generic` keep the `--watch --stall-after`
+  machinery)
 
-**Hygiene items the plan must address (from the scratch note):**
+**Cross-repo:** CHANGELOG references holm #201 (resolved from harnex
+side) and holm #271 (substrate v2 meta — owns the Lane Skills follow-on).
 
-1. Regenerate JSON schema fresh on this machine
-   (`codex app-server generate-json-schema --out /tmp/codex-schema-latest`);
-   flag drift from the notifications enumerated in Issue #27.
-2. Event naming: keep existing `task_complete` (Option B from the scratch
-   note) and populate it from `turn/completed` notifications. Don't churn
-   the existing event taxonomy.
-3. Release artifacts: bump `lib/harnex/version.rb` to `0.6.0`; **create
-   `CHANGELOG.md`** (does not exist today); document `--legacy-pty`
-   migration flag; document the Codex CLI ≥0.128.0 requirement; add a
-   `harnex doctor` preflight per Risk #3 in Issue #27.
-4. `--legacy-pty` placement: per-invocation CLI flag at `harnex run`
-   (not env, not config file — debuggable, no stale-config carryover).
-5. Test fixture cap: <50 KB checked in (full schema bundle is 1.27 MB).
-   Floor: hand-extracted `ServerNotification.json` slice covering only
-   the notifications and request methods we actually issue.
+**Two P2 corrections applied during impl:**
 
-**Forward-compat (don't preclude, don't implement):** holm Issue 271's
-"Lane Skills" lane will collapse SKILL.md surfaces into a
-`harnex agents-guide [section]` subcommand post-0.6.0. Adapter design
-should leave room for `Adapter#describe`-style capability self-description
-and in-repo Markdown guides under `lib/harnex/guides/`. Use short-form
-session codes (`cx-i`, `cx-p`, `cx-r`, `cx-f`, `cx-cr`, `cx-cf`, `cx-m`)
-in any examples.
+1. `error` is NOT a server notification in the live schema. Disconnect
+   detection sources from JSON-RPC error responses, subprocess
+   exit/error, and parse errors (matches `app-server.mjs:142-205` of the
+   reference impl pinned at `807e03ac`).
+2. The new transport has no PTY. Synthesized transcript writes to BOTH
+   the output log AND STDOUT so `--tmux` and `harnex pane` keep working.
 
-**Closed-by-construction issues to flip on 0.6.0 release:** #22 (Codex
-side), #24, #25. CHANGELOG entry should reference holm Issue #271 (the
-substrate v2 meta-issue) and holm #201 (cross-repo, no harnex action).
+**Dispatch policy note** (worth recording for future planning):
+this was the last plan that **had** to ship via Claude under the
+"Codex stalls on >50K input contexts" workaround. From 0.6.0 onward,
+Codex stalls become observable via `turn/completed` not arriving — the
+policy can relax. cl-impl-28 (Claude) finished all 5 phases in ~94 min
+wall-clock, ~$10.44 spend, 0 stalls.
 
-**Next session steps after restart (in order):**
+### Recommended next engineering step
 
-1. `harnex status --id cl-plan-27` and `harnex pane --id cl-plan-27`
-   — check progress / output.
-2. When the plan is committed to `main` (worker stops on commit per the
-   chain pattern), review at `koder/plans/28_codex_appserver_adapter.md`.
-3. If the plan is solid: dispatch `cl-rev-28` for plan-review against the
-   five hygiene items above plus standard plan-review checks.
-4. If review finds gaps: dispatch `cl-fix-28` to address them; loop until
-   review passes.
-5. Plan locks → chain into TDD test-suite scaffolding → impl →
-   code-review → fix-impl → release (CHANGELOG + version bump + gem push).
+Most-likely next P2 work item by priority order is **#26**
+(`harnex status` silently filters by repo, missing worktree sessions).
+Other open P2s: #04 (output streaming phase 3), #06 (full adapter
+abstraction), #15 (auto-stop on task complete), #16 (`~/.harnex/`
+data dir), #17 (multi-session coordination), #18 (buddy-as-code).
 
-This supersedes the prior "next step" recommendation (issue #24, plan-28
-disconnect detection); that work is now closed by construction via #27.
+User-driven choice — none are blockers post-0.6.0.
 
 ### 2026-05-01: v0.5.0 released — issue #23 dispatch telemetry shipped
 
