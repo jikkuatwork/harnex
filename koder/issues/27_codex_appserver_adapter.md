@@ -1,7 +1,9 @@
 ---
-status: open
+status: closed
+closed_in: harnex-0.6.0
 priority: P1
 created: 2026-05-06
+resolved: 2026-05-06
 tags: dispatch,monitoring,resilience,codex,architecture
 ---
 
@@ -9,10 +11,10 @@ tags: dispatch,monitoring,resilience,codex,architecture
 
 ## Status
 
-**Open. P1.** Filed 2026-05-06 after a substrate-audit session in
-`holmhq/holm` that revealed the architecturally correct fix for our
-recurring pain points: stop scraping tmux panes for state and start
-talking to Codex's own structured RPC.
+**Closed. Shipped in harnex 0.6.0 on 2026-05-06.** Filed 2026-05-06
+after a substrate-audit session in `holmhq/holm` that revealed the
+architecturally correct fix for our recurring pain points: stop scraping
+tmux panes for state and start talking to Codex's own structured RPC.
 
 This issue **supersedes** the originally-planned point fixes:
 
