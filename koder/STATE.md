@@ -237,6 +237,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | open (Commit 1/3 landed) | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
+| 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | open | P2 |
 
 See `koder/issues/` for details.
 
