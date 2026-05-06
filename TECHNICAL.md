@@ -575,77 +575,43 @@ Harnex uses Ruby threads, not processes:
 All shared state is protected by `Mutex`. The `SessionState`
 and `Inbox` classes use `ConditionVariable` for signaling.
 
-## Skill Files
+## Agent Guides
 
-Harnex ships bundled skills that teach agents the orchestration workflow and
-dispatch discipline. The canonical collaboration skill is:
+Harnex ships agent-facing guidance as Markdown files packaged inside the gem:
 
 ```
-skills/harnex-dispatch/SKILL.md
+guides/01_dispatch.md
+guides/02_chain.md
+guides/03_buddy.md
+guides/04_monitoring.md
+guides/05_naming.md
 ```
 
-### What's in the skill
-
-The dispatch skill tells agents:
-
-- How to detect they're inside a harnex session (env vars)
-- How to define return channels before delegation
-- How to send short, file-referenced tasks with explicit reply instructions
-- How to send messages, check status, spawn workers, and stop safely
-- How to use `--context`, `--force`, `--no-wait`
-- Relay header format and behavior
-- Collaboration patterns (reply, supervisor, file watch)
-- Safety rules (confirm before sending, no auto-loops)
-
-### How agents load skills
-
-Claude and Codex both support a `skills/` directory. When a
-skill is present, the agent can use harnex commands without
-being told how — the skill provides the instructions.
-
-Skill files use YAML frontmatter:
-
-```yaml
----
-name: harnex-dispatch
-description: Fire & Watch dispatch pattern...
-allowed-tools: Bash(harnex *)
----
-```
-
-The `allowed-tools` field grants the agent permission to run
-`harnex` commands without asking for approval each time.
-
-### Installing bundled skills
-
-Use the installer command instead of manual symlinks:
+The files are exposed through the CLI:
 
 ```bash
-harnex skills install            # all canonical skills
-harnex skills install harnex     # compatibility alias -> harnex-dispatch
-harnex skills install --local    # install into current repo only
+harnex agents-guide
+harnex agents-guide dispatch
+harnex agents-guide monitoring
 ```
 
-Compatibility aliases accepted by the installer:
+### What's in the guides
 
-- `harnex` -> `harnex-dispatch`
-- `dispatch` -> `harnex-dispatch`
-- `chain-implement` -> `harnex-chain`
+The agent guides cover:
 
-### Skill directory structure
+- Detecting harnex session context through environment variables
+- Defining return channels before delegation
+- Short prompts that reference task files
+- Relay header behavior for harnex-to-harnex messages
+- Fire and Watch dispatch lifecycle
+- Chain implementation phase gates
+- Buddy monitoring for unattended work
+- Completion signals, event/log/pane monitoring, and wall-clock caps
+- Session ID, task file, and done marker naming conventions
 
-```
- ~/.claude/skills/
-   └── harnex-dispatch
-         └── SKILL.md
-
- ~/.codex/skills/
-   └── harnex-dispatch -> ~/.claude/skills/harnex-dispatch
-         └── SKILL.md
-```
-
-Deprecated installed names (`harnex`, `dispatch`, `chain-implement`) are
-cleaned automatically during install and uninstall.
+Older releases shipped `harnex skills install`; that installer was removed in
+0.6.1. Agents now discover harnex directly with `harnex --help` and
+`harnex agents-guide`.
 
 ## Known Limitations
 

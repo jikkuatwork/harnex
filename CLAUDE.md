@@ -12,9 +12,6 @@ handoff document between agent sessions.
 
 Always check STATE.md at the start of a session to orient yourself.
 If you complete work, update STATE.md before ending.
-Bundled session lifecycle skills follow the same pattern:
-- `open` — initialize the session by reading `koder/STATE.md` and checking the worktree
-- `close` — update `koder/STATE.md`, clean up session artifacts, and leave a handoff
 
 ## What is harnex?
 
@@ -29,7 +26,8 @@ bin/harnex                       CLI entry point
 lib/harnex.rb                    Loader (requires all modules)
 lib/harnex/core.rb               Constants, env, registry, port allocation
 lib/harnex/cli.rb                Top-level command dispatch
-lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs, pane)
+lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs, pane, agents-guide)
+guides/                           Agent-facing CLI guide topics
 lib/harnex/runtime/              Session, state machine, inbox, API server
 lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
@@ -39,11 +37,6 @@ test/                            Minitest suite (174 tests)
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
-skills/open/SKILL.md             Session initialization workflow
-skills/close/SKILL.md            Session wrap-up workflow
-skills/harnex-dispatch/SKILL.md  Fire & Watch dispatch pattern
-skills/harnex-chain/SKILL.md     End-to-end implement workflow
-skills/harnex-buddy/SKILL.md     Accountability partner for long-running work
 ```
 
 ## Key classes
@@ -80,7 +73,7 @@ May override:
 
 Check `$HARNEX_ID` and `$HARNEX_SESSION_CLI` to confirm. You can use
 `harnex send`, `harnex status`, and `harnex wait` to coordinate with
-peer sessions. See `skills/harnex-dispatch/SKILL.md` for full usage patterns.
+peer sessions. See `harnex agents-guide dispatch` for full usage patterns.
 
 When starting a peer CLI session on the user's behalf, default to a
 visible interactive tmux session via `harnex run <cli> --tmux` so the
@@ -137,12 +130,8 @@ both, in order:
 7. Clean up the local `.gem` artifact: `rm harnex-<VERSION>.gem`.
 8. Update `koder/STATE.md` with what shipped and the unblock state.
 
-Skill files are bundled in the gem (`s.files` glob includes
-`skills/**/*`). If `skills/` content changed in this release, also
-run `harnex skills uninstall && harnex skills install` so the
-globally installed copies under `~/.claude/skills/` and
-`~/.codex/skills/` come from the published gem rather than the dev
-checkout. If `skills/` did not change, this step is optional.
+Agent guides are bundled in the gem (`s.files` glob includes
+`guides/*.md`) and are available through `harnex agents-guide`.
 
 ## Development notes
 

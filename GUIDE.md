@@ -223,22 +223,21 @@ If the review finds issues, spawn another fresh Codex worker and tell
 it to read `/tmp/review-13.md`, fix the findings, run tests, and write
 an updated summary. Then review again with a fresh Claude instance.
 
-## Teaching your agents about harnex
+## Teaching agents about harnex
 
-Harnex ships skill files that tell AI agents how to use harnex
-commands. Install them globally so every session picks them up:
+Harnex ships its agent guidance in the CLI. No skill install or
+project-local docs are required:
 
 ```bash
-harnex skills install
+harnex agents-guide             # list all agent guide topics
+harnex agents-guide dispatch    # Fire and Watch lifecycle
+harnex agents-guide monitoring  # completion signals and polling
+harnex agents-guide naming      # session IDs and artifact names
 ```
 
-This copies the bundled skills (harnex-dispatch, harnex-chain,
-harnex-buddy) to `~/.claude/skills/` and symlinks `~/.codex/skills/`
-to them. After this, any Claude or Codex session — in any repo — can
-use harnex commands without being taught how. The skills activate
-automatically when agent collaboration is needed.
-
-For repo-local installs instead, use `--local`.
+Tell an agent to run `harnex --help` and then `harnex agents-guide`.
+The guides cover dispatch, chain implementation, buddies, monitoring,
+and naming conventions.
 
 ## Recipes
 
@@ -248,6 +247,7 @@ from the CLI:
 ```bash
 harnex recipes             # list all recipes
 harnex recipes show 01     # read one
+harnex agents-guide        # deeper agent-facing guidance
 ```
 
 - **Fire and Watch** (`harnex recipes show 01`) — send work to a

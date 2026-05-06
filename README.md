@@ -12,14 +12,17 @@ gem install harnex
 
 Requires **Ruby 3.x**. No other dependencies.
 
-Then install workflow skills into your repo so agents can use them:
+Then ask the CLI what to do next:
 
 ```bash
-harnex skills install
+harnex
+harnex --help
+harnex agents-guide
 ```
 
-This adds orchestration skills (harnex-dispatch, harnex-chain, harnex-buddy)
-that Claude Code and Codex pick up automatically.
+`harnex agents-guide` is the agent-facing reference for dispatch, chain,
+buddy, monitoring, and naming patterns. It is packaged in the gem; no skills
+or project-local docs are required.
 
 ## What it does
 
@@ -90,19 +93,23 @@ harnex send --id cl-review --message "Review changes against /tmp/plan.md, write
 harnex stop --id cl-review
 ```
 
-Harnex ships workflow skills that automate this pattern:
+Harnex ships CLI-readable agent guides for this pattern:
 
-- **[Dispatch](skills/harnex-dispatch/SKILL.md)** — the fire-and-watch pattern:
+- **[Dispatch](guides/01_dispatch.md)** — the fire-and-watch pattern:
   spawn an agent, poll its screen, stop it when done
-- **[Chain](skills/harnex-chain/SKILL.md)** — end-to-end issue-to-code
+- **[Chain](guides/02_chain.md)** — end-to-end issue-to-code
   workflow: plan, review plan, implement, review code, fix
-- **[Buddy](skills/harnex-buddy/SKILL.md)** — spawn an accountability partner
+- **[Buddy](guides/03_buddy.md)** — spawn an accountability partner
   for long-running or overnight work
+- **[Monitoring](guides/04_monitoring.md)** — completion signals and
+  poll/watch patterns
+- **[Naming](guides/05_naming.md)** — session IDs, task files, done markers
 
-Install skills so agents can use them:
+Read them from the installed CLI:
 
 ```bash
-harnex skills install
+harnex agents-guide dispatch
+harnex agents-guide monitoring
 ```
 
 ## Built-in dispatch monitoring
@@ -110,7 +117,7 @@ harnex skills install
 For unattended dispatches, use `--watch` instead of writing a bash poll loop:
 
 ```bash
-harnex run codex --id cx-impl-42 --tmux cx-impl-42 --watch --preset impl \
+harnex run codex --id cx-impl-42 --watch --preset impl \
   --context "Implement koder/plans/42_plan.md. Run tests and commit when done."
 ```
 
@@ -208,19 +215,18 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex wait --id <id>` | Block until exit or a target state |
 | `harnex guide` | Getting started walkthrough |
+| `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
 | `harnex recipes` | Tested workflow patterns |
-| `harnex skills install` | Install bundled skills for Claude/Codex |
-| `harnex skills uninstall` | Remove installed skills |
 
 ## Uninstalling
 
 ```bash
-harnex skills uninstall   # remove skills from ~/.claude/ and ~/.codex/
 gem uninstall harnex
 ```
 
-Run `harnex skills uninstall` before removing the gem — installed skills
-persist in `~/.claude/skills/` and won't be cleaned up by `gem uninstall`.
+If you installed harnex skills with an older release, those copies are no
+longer used. Remove stale `~/.claude/skills/harnex-*` or
+`~/.codex/skills/harnex-*` entries manually if you want to clean them up.
 
 ## Going deeper
 
