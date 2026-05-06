@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (#15 fixed — --auto-stop tears down one-shot sessions after first completion)
+Updated: 2026-05-07 (freeze in effect — #30 next; no feature work until contract gate lands)
 
 ## Current snapshot
 
@@ -276,6 +276,85 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-07 (late): freeze — #30 only next session
+
+**Freeze in effect.** No new feature work or releases until issue #30
+(test schema truth + contract gate against
+`codex app-server generate-json-schema --out`) lands. Rationale: the
+last 24h shipped six JSON-RPC issues (#29 → #30 → #31 → #32 → #33 →
+#34). All but #34 trace back to one root cause: harnex's tests
+stubbed harnex's own (wrong) assumptions instead of validating
+against Codex's real schema, so green CI hid 100% production
+breakage on the default JSON-RPC path. #30 fixes that root cause;
+nothing else is worth doing first.
+
+**This session shipped:**
+
+- `0e407ab` — `--auto-stop` flag on `harnex run` (#15). Fires once
+  after first JSON-RPC `task_complete` event or after first
+  busy→prompt transition on PTY adapters. Reuses #31's
+  `terminate_subprocess` plumbing on JSON-RPC. `inject_stop` is now
+  idempotent via a `@stop_requested` guard. New tests in
+  `session_test.rb`, `run_test.rb`, `generic_test.rb`. Generic
+  adapter gained an `input_state` so prompt detection works for
+  arbitrary CLIs.
+- `ad9b70a` — filed #34 (P2): `-m MODEL` silently forwarded to
+  `codex app-server`, which doesn't accept that flag — boot
+  disconnects with `message: null`. Use
+  `-c model=NAME -c model_reasoning_effort=NAME` instead. (Codex
+  user config already defaults to `gpt-5.5` + `xhigh`, so most
+  dispatches don't need overrides at all.)
+- `58797af` — fixed #31: JSON-RPC `harnex stop` now actually
+  terminates the codex subprocess via `turn/interrupt` then async
+  TERM/KILL (preserves the fast-return contract).
+- `776c0d1` — bumped #31 to P1 with stress-test evidence; backfilled
+  STATE.md issue table with #30/#31/#32/#33.
+- `e41b01e` — released **0.6.4** (JSON-RPC approval mediator,
+  `boot_failure` classification commit 1/3 of #32, `--legacy-pty`
+  kept as long-term fallback).
+
+**Test count:** 319 runs, 960 assertions, 0 failures (was 308).
+
+**One ergonomic find worth not forgetting:** explicit
+`-m gpt-5.5 -c model_reasoning_effort=xhigh` flags via `harnex run
+... -- -m ...` boot-disconnect on JSON-RPC because `codex app-server`
+rejects `-m`. Translation: just don't pass model overrides — the
+user's `~/.codex/config.toml` already pins `gpt-5.5` + `xhigh`. If an
+override is genuinely needed, use `-- -c model=NAME` (TOML form).
+Filed as #34.
+
+**Architectural conversation worth recording.** Mid-session the
+operator floated reverting the JSON-RPC pivot in favor of a custom
+PTY-wrapping API. After discussion: **PTY API rejected.** It would
+re-introduce regex-against-UI for token capture, lose the approval
+mediator (forcing `--dangerously-bypass-approvals-and-sandbox`
+permanently), regress disconnect classification to text heuristics,
+and put harnex on a treadmill of "codex tweaked the UI" bandaids
+forever. The last 24h's pain is not the architecture — it is **0.6.0
+shipping without contract testing**. #30 is the corrective.
+`--legacy-pty` stays as the long-term fallback for visual/interactive
+work; JSON-RPC stays the default for autonomous worker dispatch.
+
+### Next session (no other agenda)
+
+1. Read `koder/issues/30_test_schema_truth.md` end-to-end before
+   touching anything.
+2. Implement the contract gate: capture
+   `codex app-server generate-json-schema --out` to a checked-in
+   fixture, then add tests that validate harnex's outgoing
+   `turn/start` / approval-response payloads against it AND tests
+   that validate harnex's parsing of representative real Codex
+   responses (real `Thread` objects in `thread/start`, etc.).
+3. Rewrite the existing JSON-RPC test stubs in
+   `codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
+   to match Codex's actual schema rather than harnex's old wrong
+   assumptions.
+4. CI hook: any drift in the schema fixture should fail the build,
+   not silently update.
+5. After #30 lands, freeze lifts. Backlog order then:
+   #32 Commits 2/3 + 3/3 → #34 (early-reject `-m` on JSON-RPC) →
+   #33 (token capture) → 0.6.5 release.
 
 ### 2026-05-06 (post-0.6.4): issue #31 fixed
 

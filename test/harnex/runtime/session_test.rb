@@ -421,7 +421,7 @@ class SessionTest < Minitest::Test
     calls = Queue.new
     session = build_session(adapter: adapter, auto_stop: true)
     session.send(:prepare_output_log)
-    session.define_singleton_method(:inject_stop) do
+    session.define_singleton_method(:inject_stop) do |turn_id: nil|
       calls << :stop
       { ok: true, signal: "test_stop" }
     end
