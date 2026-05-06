@@ -1,5 +1,5 @@
 ---
-status: open
+status: fixed
 priority: P1
 created: 2026-05-06
 tags: appserver,jsonrpc,stop,subprocess,hygiene

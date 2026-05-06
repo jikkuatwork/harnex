@@ -33,6 +33,8 @@ module Harnex
       ].freeze
 
       EVENTS = %w[task_complete turn_started item_completed disconnected].freeze
+      STOP_TERM_GRACE_SECONDS = 0.5
+      STOP_KILL_GRACE_SECONDS = 1.0
 
       # Server→client approval requests harnex auto-approves so dispatched
       # codex workers can run autonomously. Codex sends these via JSON-RPC
@@ -192,6 +194,13 @@ module Harnex
         @client.close
         @client = nil
         @state = :disconnected
+      end
+
+      def terminate_subprocess(term_grace_seconds: STOP_TERM_GRACE_SECONDS, kill_grace_seconds: STOP_KILL_GRACE_SECONDS)
+        @client&.terminate_process(
+          term_grace_seconds: term_grace_seconds,
+          kill_grace_seconds: kill_grace_seconds
+        )
       end
 
       def pid
@@ -381,6 +390,26 @@ module Harnex
           @reader_thread&.join(2)
         end
 
+        def terminate_process(term_grace_seconds:, kill_grace_seconds:)
+          return false unless @pid
+
+          begin
+            Process.kill("TERM", @pid)
+          rescue Errno::ESRCH
+            return true
+          end
+
+          return true if wait_for_process_exit(@pid, term_grace_seconds)
+
+          begin
+            Process.kill("KILL", @pid)
+          rescue Errno::ESRCH
+            return true
+          end
+
+          wait_for_process_exit(@pid, kill_grace_seconds)
+        end
+
         private
 
         def write_line(message)
@@ -478,6 +507,20 @@ module Harnex
           true
         rescue Errno::ESRCH, Errno::EPERM
           false
+        end
+
+        def wait_for_process_exit(pid, timeout_seconds)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds.to_f
+          loop do
+            return true unless process_alive?(pid)
+
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            break if remaining <= 0
+
+            sleep([0.05, remaining].min)
+          end
+
+          !process_alive?(pid)
         end
       end
     end

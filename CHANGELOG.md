@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- JSON-RPC Codex sessions now terminate their `codex app-server`
+  subprocess on `harnex stop`: harnex preserves the existing
+  `turn/interrupt` request, then sends TERM with a bounded KILL
+  fallback so the runner can release the API port and registry entry.
+
 ## [0.6.4] — 2026-05-06
 
 ### Fixed

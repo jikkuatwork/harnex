@@ -215,6 +215,15 @@ module Harnex
           end
           @state_machine.force_busy!
         end
+        if adapter.respond_to?(:terminate_subprocess)
+          Thread.new do
+            begin
+              adapter.terminate_subprocess
+            rescue Errno::ESRCH, StandardError
+              nil
+            end
+          end
+        end
         return { ok: true, signal: "interrupt_sent" }
       end
 

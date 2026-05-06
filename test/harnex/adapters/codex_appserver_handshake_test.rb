@@ -53,12 +53,14 @@ class CodexAppServerHandshakeTest < Minitest::Test
   end
 
   def test_close_joins_read_thread
-    Thread.new do
+    server_thread = Thread.new do
       init_line = @server_in.gets
       init = JSON.parse(init_line)
       @server_out.write(JSON.generate({ jsonrpc: "2.0", id: init["id"], result: {} }) + "\n")
       @server_out.flush
       @server_in.gets # consume initialized
+    rescue IOError
+      nil
     end
 
     @adapter.start_rpc(read_io: @client_in, write_io: @client_out, pid: nil)
@@ -68,6 +70,37 @@ class CodexAppServerHandshakeTest < Minitest::Test
     @adapter.close
 
     assert_equal :disconnected, @adapter.state
+  ensure
+    server_thread&.join(1)
+  end
+
+  def test_terminate_process_uses_kill_fallback_when_term_does_not_exit
+    client = Adapter::JsonRpcClient.new(read_io: @client_in, write_io: @client_out, pid: 4242)
+    waits = []
+    calls = []
+
+    client.define_singleton_method(:wait_for_process_exit) do |pid, timeout_seconds|
+      waits << [pid, timeout_seconds]
+      false
+    end
+
+    Process.stub(:kill, ->(signal, pid) { calls << [signal, pid]; 1 }) do
+      refute client.terminate_process(term_grace_seconds: 0.01, kill_grace_seconds: 0.02)
+    end
+
+    assert_equal [["TERM", 4242], ["KILL", 4242]], calls
+    assert_equal [[4242, 0.01], [4242, 0.02]], waits
+  end
+
+  def test_terminate_process_treats_missing_pid_as_already_stopped
+    client = Adapter::JsonRpcClient.new(read_io: @client_in, write_io: @client_out, pid: 4242)
+    calls = []
+
+    Process.stub(:kill, ->(signal, pid) { calls << [signal, pid]; raise Errno::ESRCH }) do
+      assert_equal true, client.terminate_process(term_grace_seconds: 0.01, kill_grace_seconds: 0.02)
+    end
+
+    assert_equal [["TERM", 4242]], calls
   end
 
   def test_transport_advertises_stdio_jsonrpc

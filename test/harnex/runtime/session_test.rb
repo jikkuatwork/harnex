@@ -1,6 +1,7 @@
 require_relative "../../test_helper"
 
 require "rbconfig"
+require "timeout"
 
 class SessionTest < Minitest::Test
   def test_validate_binary_raises_for_missing_binary
@@ -349,6 +350,23 @@ class SessionTest < Minitest::Test
   ensure
     events_log = session.instance_variable_get(:@events_log)
     events_log&.close unless events_log&.closed?
+  end
+
+  def test_jsonrpc_inject_stop_interrupts_then_terminates_subprocess
+    adapter = Harnex::Adapters::CodexAppServer.new
+    calls = Queue.new
+
+    adapter.define_singleton_method(:interrupt) { calls << :interrupt }
+    adapter.define_singleton_method(:terminate_subprocess) { calls << :terminate_subprocess }
+
+    result = Harnex.stub(:allocate_port, 45_000) do
+      session = build_session(command: adapter.build_command, adapter: adapter)
+      session.inject_stop
+    end
+
+    assert_equal({ ok: true, signal: "interrupt_sent" }, result)
+    observed = Timeout.timeout(2) { [calls.pop, calls.pop] }
+    assert_equal [:interrupt, :terminate_subprocess], observed
   end
 
   def test_persist_registry_preserves_tmux_metadata

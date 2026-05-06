@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (0.6.4 prep — JSON-RPC approval mediator landed; #32 Commit 1 landed; legacy-pty kept as long-term fallback)
+Updated: 2026-05-06 (#31 fixed — JSON-RPC stop now terminates codex app-server subprocesses)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-06 (0.6.4 prep — JSON-RPC approval mediator landed; #32 Commi
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 308 minitest tests (1 integration skip behind
+- Test suite: `test/` with 311 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -134,6 +134,11 @@ Updated: 2026-05-06 (0.6.4 prep — JSON-RPC approval mediator landed; #32 Commi
   classification on JSON-RPC, commit `8196ae1`) lands the baseline
   detector. Commits 2 (ensure-block telemetry write) and 3 (optional
   last_error capture) still TODO.
+- Issue #31 is fixed: `harnex stop` for the JSON-RPC Codex adapter
+  preserves the existing `turn/interrupt` request, then terminates the
+  `codex app-server` subprocess with bounded TERM/KILL fallback. The
+  normal JSON-RPC runner teardown now releases the API port and removes
+  the registry entry after stop.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -229,7 +234,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 28 | Make harnex agent-discoverable from the CLI alone | **resolved in 0.6.1** | P1 |
 | 29 | App-server `--context` and `harnex send` parity | **fixed** | P1 |
 | 30 | Test stubs mirror harnex assumptions, not Codex schema | open | P1 |
-| 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | open | **P1** |
+| 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | open (Commit 1/3 landed) | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
 
@@ -264,6 +269,27 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-06 (post-0.6.4): issue #31 fixed
+
+`harnex stop` now closes default JSON-RPC Codex sessions for real. The
+stop path still sends `turn/interrupt`, then `CodexAppServer` sends
+TERM to the tracked `codex app-server` PID and escalates to KILL after
+a bounded grace period. `Errno::ESRCH` is treated as already stopped,
+so stop remains safe across process-exit races.
+
+**Verification for the #31 commit:**
+
+- Adapter stop tests cover TERM→KILL fallback and already-gone PID
+  handling with `Process.kill` stubbed.
+- Session stop test covers `interrupt` followed by JSON-RPC subprocess
+  termination while preserving the `{"ok":true,"signal":"interrupt_sent"}`
+  response shape.
+- Full suite is expected to remain green at 311 tests; re-run before
+  release if additional commits land.
+
+**Recommended next step:** if this patch is accepted, release it as
+0.6.5, then continue #32 Commit 2/3 and #33 as previously queued.
 
 ### 2026-05-06 (late): 0.6.4 ready to release
 
