@@ -1,7 +1,7 @@
 ---
 id: 10
 title: "Inbox management — list, drop, clear, and TTL for queued messages"
-status: open
+status: resolved
 priority: P2
 created: 2026-03-15
 ---

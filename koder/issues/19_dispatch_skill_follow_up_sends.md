@@ -1,7 +1,7 @@
 ---
 id: 19
 title: "Dispatch skill should document follow-up send pattern"
-status: open
+status: superseded
 priority: P2
 created: 2026-04-19
 ---

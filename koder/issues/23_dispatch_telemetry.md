@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # Issue 23 — Dispatch telemetry: capture token / duration / cost actuals
 
 **Status**: open

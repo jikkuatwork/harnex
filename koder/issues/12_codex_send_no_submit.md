@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # Issue 12: State detection failures cause send/receive problems
 
 Priority: P1

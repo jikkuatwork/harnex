@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # Issue 03: API & Command Design Audit
 
 **Status**: fixed

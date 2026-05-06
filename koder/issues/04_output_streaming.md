@@ -1,3 +1,7 @@
+---
+status: backlog
+---
+
 # Issue 04: Output Streaming
 
 **Status**: open (P3 — remaining work is low priority)

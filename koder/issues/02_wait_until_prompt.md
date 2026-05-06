@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # Issue 02: Wait-Until-Prompt Mode
 
 **Status**: fixed

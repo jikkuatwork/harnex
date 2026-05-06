@@ -1,3 +1,7 @@
+---
+status: superseded
+---
+
 # Issue 24 — Layer 5: codex stream-disconnect detection
 
 **Status**: closed (harnex 0.6.0)

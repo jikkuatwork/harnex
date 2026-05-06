@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # Issue 01: Clean Stop Primitive
 
 **Status**: fixed

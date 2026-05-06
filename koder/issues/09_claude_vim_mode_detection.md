@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "Claude adapter doesn't detect vim normal mode as sendable state"
-status: open
+status: resolved
 priority: P2
 created: 2026-03-15
 ---

@@ -1,3 +1,7 @@
+---
+status: resolved
+---
+
 # 05 — Inbox fast-path deadlock
 
 **Priority:** P1

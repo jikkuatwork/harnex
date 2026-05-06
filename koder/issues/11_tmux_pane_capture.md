@@ -1,7 +1,7 @@
 ---
 id: 11
 title: "Pane capture — clean screen snapshot for tmux sessions"
-status: open
+status: resolved
 priority: P3
 created: 2026-03-15
 ---
