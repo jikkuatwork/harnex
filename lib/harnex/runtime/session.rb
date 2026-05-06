@@ -229,7 +229,7 @@ module Harnex
 
     def inject_via_adapter(text:, submit:, enter_only:, force: false)
       if adapter.transport == :stdio_jsonrpc
-        return inject_via_jsonrpc(text: text, force: force)
+        return inject_via_jsonrpc(text: text, submit: submit, enter_only: enter_only, force: force)
       end
 
       snapshot = adapter.wait_for_sendable(method(:screen_snapshot), submit: submit, enter_only: enter_only, force: force)
@@ -256,25 +256,36 @@ module Harnex
         .tap { emit_send_event(text, force: payload[:force]) }
     end
 
-    def inject_via_jsonrpc(text:, force: false)
+    def inject_via_jsonrpc(text:, submit:, enter_only:, force: false)
+      payload = adapter.build_send_payload(
+        text: text,
+        submit: submit,
+        enter_only: enter_only,
+        screen_text: nil,
+        force: force
+      )
+      dispatch = payload.fetch(:dispatch).dup
+      dispatch[:model] = meta_hash["model"] if meta_hash["model"] && !dispatch.key?(:model)
+      dispatch[:effort] = meta_hash["effort"] if meta_hash["effort"] && !dispatch.key?(:effort)
+
       turn_id = nil
       @inject_mutex.synchronize do
-        turn_id = adapter.dispatch(prompt: text)
+        turn_id = adapter.dispatch(**dispatch)
         @state_machine.force_busy!
         @injected_count += 1
         @last_injected_at = Time.now
         persist_registry
       end
 
-      emit_send_event(text, force: force)
+      emit_send_event(dispatch.fetch(:prompt, text), force: payload[:force])
       {
         ok: true,
         cli: adapter.key,
-        bytes_written: text.to_s.bytesize,
+        bytes_written: dispatch.fetch(:prompt, text).to_s.bytesize,
         injected_count: @injected_count,
         newline: false,
-        input_state: adapter.input_state(nil),
-        force: force,
+        input_state: payload[:input_state],
+        force: payload[:force],
         turn_id: turn_id
       }
     end
@@ -300,6 +311,7 @@ module Harnex
 
       adapter.start_rpc(env: child_env, cwd: repo_root)
       @pid = adapter.pid
+      @state_machine.force_prompt!
       emit_started_event
       emit_git_start_event
 
@@ -310,6 +322,7 @@ module Harnex
 
       watch_thread = start_watch_thread
       @inbox.start
+      dispatch_initial_prompt
 
       if @pid
         begin
@@ -364,9 +377,11 @@ module Harnex
       when "thread/started"
         @rpc_thread_id = params["threadId"] || params["thread_id"]
       when "turn/started"
+        @state_machine.force_busy!
         emit_event("turn_started", turnId: params["turnId"] || params["turn_id"])
       when "turn/completed"
         @last_completed_at = Time.now
+        @state_machine.force_prompt!
         payload = { turnId: params["turnId"] || params["turn_id"] }
         payload[:status] = params["status"] if params["status"]
         payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"]
@@ -386,6 +401,7 @@ module Harnex
       when "account/rateLimits/updated"
         @rate_limits = params
       when "error"
+        @state_machine.force_busy!
         emit_event("disconnected", source: "error_notification", message: params["message"])
         signal_rpc_done!
       end
@@ -395,8 +411,18 @@ module Harnex
 
     def handle_rpc_disconnect(error)
       msg = error.is_a?(Hash) ? error["message"] : error&.message
+      @state_machine.force_busy!
       emit_event("disconnected", source: "transport", message: msg) rescue nil
       signal_rpc_done!
+    end
+
+    def dispatch_initial_prompt
+      return unless adapter.respond_to?(:initial_prompt)
+
+      prompt = adapter.initial_prompt
+      return if prompt.to_s.empty?
+
+      inject_via_jsonrpc(text: prompt, submit: true, enter_only: false, force: false)
     end
 
     def render_item_text(item)

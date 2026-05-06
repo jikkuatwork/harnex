@@ -85,6 +85,38 @@ class CodexAppServerLifecycleTest < Minitest::Test
     server
   end
 
+  def test_build_send_payload_maps_context_to_turn_dispatch
+    @adapter.instance_variable_set(:@state, :prompt)
+
+    payload = @adapter.build_send_payload(
+      text: "[harnex session id=ax-29-a] ok",
+      submit: true,
+      enter_only: false,
+      screen_text: "ignored",
+      force: false
+    )
+
+    assert_equal({ prompt: "[harnex session id=ax-29-a] ok" }, payload[:dispatch])
+    assert_equal({ state: "prompt", input_ready: true }, payload[:input_state])
+    assert_equal false, payload[:force]
+  end
+
+  def test_build_send_payload_force_maps_harnex_send_while_busy
+    @adapter.instance_variable_set(:@state, :busy)
+
+    payload = @adapter.build_send_payload(
+      text: "hello",
+      submit: true,
+      enter_only: false,
+      screen_text: nil,
+      force: true
+    )
+
+    assert_equal({ prompt: "hello" }, payload[:dispatch])
+    assert_equal({ state: "busy", input_ready: false }, payload[:input_state])
+    assert_equal true, payload[:force]
+  end
+
   # 1. Golden turn lifecycle
   def test_golden_turn_lifecycle
     boot

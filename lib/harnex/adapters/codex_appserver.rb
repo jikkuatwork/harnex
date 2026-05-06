@@ -34,10 +34,12 @@ module Harnex
 
       EVENTS = %w[task_complete turn_started item_completed disconnected].freeze
 
-      attr_reader :thread_id, :current_turn_id, :last_completed_at
+      attr_reader :thread_id, :current_turn_id, :last_completed_at, :initial_prompt
 
       def initialize(extra_args = [])
         super("codex", extra_args)
+        @initial_prompt = extra_args.join(" ").strip
+        @initial_prompt = nil if @initial_prompt.empty?
         @client = nil
         @thread_id = nil
         @current_turn_id = nil
@@ -53,6 +55,10 @@ module Harnex
 
       def base_command
         ["codex", "app-server"]
+      end
+
+      def build_command
+        base_command
       end
 
       def describe
@@ -76,10 +82,19 @@ module Harnex
         }
       end
 
-      # The screen-based send path is not used for stdio_jsonrpc.
-      # Session#run_jsonrpc routes through #dispatch instead.
-      def build_send_payload(*)
-        raise NotImplementedError, "codex_appserver uses #dispatch, not screen-based send"
+      def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
+        state = input_state(nil)
+        if !force && submit && !enter_only && state[:input_ready] != true
+          raise ArgumentError, blocked_message(state, enter_only: enter_only)
+        end
+        raise ArgumentError, "Codex app-server cannot stage input without submitting it" unless submit || enter_only
+        raise ArgumentError, "Codex app-server does not support submit-only input" if enter_only
+
+        {
+          dispatch: { prompt: text.to_s },
+          input_state: state,
+          force: force
+        }
       end
 
       # No-op: closing the subprocess is handled via #close.
@@ -219,6 +234,12 @@ module Harnex
         stdin_io, stdout_io, _stderr_io, wait_thr =
           Open3.popen3(spawn_env, *build_command, **opts)
         [wait_thr.pid, stdin_io, stdout_io]
+      end
+
+      def blocked_message(state, enter_only:)
+        return super if enter_only
+
+        "Codex app-server is not at a prompt; wait and retry or use `harnex send --force` (state: #{state[:state]})"
       end
 
       # Minimal JSON-RPC 2.0 client. One JSON object per line.

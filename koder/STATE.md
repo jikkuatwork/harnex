@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (v0.6.1 verified locally — CLI-native agent guides; skills installer removed)
+Updated: 2026-05-06 (harnex#29 fixed — app-server context/send parity; suite green)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-06 (v0.6.1 verified locally — CLI-native agent guides; skills
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 289 minitest tests (1 integration skip behind
+- Test suite: `test/` with 293 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -107,6 +107,10 @@ Updated: 2026-05-06 (v0.6.1 verified locally — CLI-native agent guides; skills
   BINARY PTY buffers (force_encoding + scrub instead of encode) and converts
   column-1 cursor positioning (`\e[N;1H`) to newlines. Fixes Codex prompt
   detection for TUIs that draw via cursor addressing rather than newlines.
+- Issue #29 is now fixed: Codex app-server maps `--context` and
+  `harnex send` into JSON-RPC `turn/start` dispatches, keeps initial prompt
+  text out of the `codex app-server` argv, and syncs prompt/busy state so
+  inbox delivery works without `--legacy-pty`.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -200,6 +204,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 26 | `harnex status` silently filters by repo, missing worktree sessions | open | P2 |
 | 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **shipped in 0.6.0** | P1 |
 | 28 | Make harnex agent-discoverable from the CLI alone | **resolved in 0.6.1** | P1 |
+| 29 | App-server `--context` and `harnex send` parity | **fixed** | P1 |
 
 See `koder/issues/` for details.
 

@@ -36,6 +36,13 @@ module Harnex
       end
     end
 
+    def force_prompt!
+      @mutex.synchronize do
+        @state = :prompt
+        @condvar.broadcast
+      end
+    end
+
     def wait_for_prompt(timeout)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
       @mutex.synchronize do

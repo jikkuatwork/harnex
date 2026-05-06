@@ -32,6 +32,89 @@ class SessionJsonrpcTest < Minitest::Test
     File.binread(@session.output_log_path)
   end
 
+  def wait_for(timeout: 1.0)
+    deadline = Time.now + timeout
+    until yield
+      return false if Time.now > deadline
+      sleep 0.01
+    end
+    true
+  end
+
+  def start_session_with_stubbed_rpc(adapter:, session:, turn_requests:)
+    server_in, client_out = IO.pipe
+    client_in, server_out = IO.pipe
+    original_start = adapter.method(:start_rpc)
+
+    adapter.define_singleton_method(:start_rpc) do |env: nil, cwd: nil|
+      original_start.call(env: env, cwd: cwd, read_io: client_in, write_io: client_out, pid: nil)
+    end
+
+    server = Thread.new do
+      loop do
+        readable = IO.select([server_in], nil, nil, 2.0)
+        break unless readable
+
+        line = server_in.gets
+        break unless line
+
+        req = JSON.parse(line)
+        next unless req["id"]
+
+        case req["method"]
+        when "initialize"
+          server_out.write(JSON.generate({ jsonrpc: "2.0", id: req["id"], result: {} }) + "\n")
+        when "thread/start"
+          server_out.write(JSON.generate({ jsonrpc: "2.0", id: req["id"], result: { "threadId" => "thr-session" } }) + "\n")
+        when "turn/start"
+          turn_requests << req
+          server_out.write(JSON.generate({ jsonrpc: "2.0", id: req["id"], result: { "turnId" => "trn-session" } }) + "\n")
+          server_out.write(JSON.generate({
+            jsonrpc: "2.0",
+            method: "turn/completed",
+            params: { "turnId" => "trn-session", "status" => "completed" }
+          }) + "\n")
+        else
+          server_out.write(JSON.generate({
+            jsonrpc: "2.0",
+            id: req["id"],
+            error: { code: -32601, message: "unexpected #{req['method']}" }
+          }) + "\n")
+        end
+        server_out.flush
+      end
+    rescue IOError, Errno::EPIPE
+      nil
+    end
+
+    runner = Thread.new { session.run(validate_binary: false) }
+
+    [runner, server, server_in, client_out, client_in, server_out]
+  end
+
+  def close_stubbed_rpc(handles)
+    runner, server, server_in, client_out, client_in, server_out = handles
+    [server_out, client_out, client_in, server_in].each do |io|
+      io.close unless io.closed?
+    rescue StandardError
+      nil
+    end
+    runner&.join(2)
+    runner&.kill if runner&.alive?
+    server&.join(1)
+    server&.kill if server&.alive?
+  end
+
+  def build_jsonrpc_session(adapter, id:)
+    Harnex::Session.new(
+      adapter: adapter,
+      command: adapter.build_command,
+      repo_root: @tmp,
+      host: "127.0.0.1",
+      id: id
+    )
+  end
+
   def test_turn_completed_emits_task_complete_event
     fanout("thread/started", { "threadId" => "thr-a" })
     fanout("turn/started", { "turnId" => "trn-a" })
@@ -106,5 +189,44 @@ class SessionJsonrpcTest < Minitest::Test
     server&.join(1)
     @adapter.close
     [server_in, client_out, client_in, server_out].each { |io| io.close rescue nil }
+  end
+
+  def test_jsonrpc_session_dispatches_initial_appserver_context
+    adapter = Harnex::Adapters::CodexAppServer.new(["[harnex session id=ax-29-a] ok"])
+    session = build_jsonrpc_session(adapter, id: "test-context")
+    turn_requests = Queue.new
+    handles = start_session_with_stubbed_rpc(adapter: adapter, session: session, turn_requests: turn_requests)
+
+    assert wait_for { !turn_requests.empty? }, "expected initial context to dispatch a turn"
+    request = turn_requests.pop
+
+    assert_equal "turn/start", request["method"]
+    assert_equal "thr-session", request.dig("params", "threadId")
+    assert_equal "[harnex session id=ax-29-a] ok",
+      request.dig("params", "input", "content", 0, "text")
+  ensure
+    close_stubbed_rpc(handles) if handles
+  end
+
+  def test_jsonrpc_inbox_delivers_harnex_send_when_prompt
+    adapter = Harnex::Adapters::CodexAppServer.new
+    session = build_jsonrpc_session(adapter, id: "test-send")
+    turn_requests = Queue.new
+    handles = start_session_with_stubbed_rpc(adapter: adapter, session: session, turn_requests: turn_requests)
+
+    assert wait_for { session.status_payload(include_input_state: false)[:agent_state] == "prompt" },
+      "expected JSON-RPC session state machine to become prompt"
+
+    result = session.inbox.enqueue(text: "hello", submit: true, enter_only: false)
+
+    assert_equal true, result[:ok]
+    assert_equal "delivered", result[:status]
+    assert wait_for { !turn_requests.empty? }, "expected harnex send to dispatch a turn"
+
+    request = turn_requests.pop
+    assert_equal "turn/start", request["method"]
+    assert_equal "hello", request.dig("params", "input", "content", 0, "text")
+  ensure
+    close_stubbed_rpc(handles) if handles
   end
 end
