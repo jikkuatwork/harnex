@@ -17,6 +17,16 @@ module Harnex
           --follow      Keep streaming appended output until session exit
           --lines N     Print the last N lines before following (default: #{DEFAULT_LINES})
           -h, --help    Show this help
+
+        Common patterns:
+          #{program_name} --id cx-i-42 --lines 80
+          #{program_name} --id cx-i-42 --follow
+          #{program_name} --id cx-i-42 --repo /path/to/repo --lines 200
+
+        Gotchas:
+          logs reads the persisted transcript, not the live tmux screen.
+          Use pane when you need the current TUI view or prompt text.
+          --follow streams until the live session exits.
       TEXT
     end
 

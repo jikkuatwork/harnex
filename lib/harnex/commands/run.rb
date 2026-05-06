@@ -48,6 +48,17 @@ module Harnex
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
           Wrapper options may appear before or after <cli>.
+
+        Common patterns:
+          #{program_name} codex --id cx-i-42 --tmux cx-i-42 --context "Read /tmp/task-impl-42.md"
+          #{program_name} codex --id cx-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
+          #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
+
+        Gotchas:
+          Always pair --id and --tmux with the same value for delegated work.
+          Passing --tmux without --id creates a random harnex session ID.
+          --watch is foreground-only; do not combine it with --tmux or --detach.
+          Use -- before child CLI flags when a flag could be parsed by harnex.
       TEXT
     end
 

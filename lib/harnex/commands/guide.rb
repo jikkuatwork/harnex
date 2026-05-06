@@ -7,6 +7,15 @@ module Harnex
         Usage: harnex guide
 
         Print the getting started guide.
+
+        Common patterns:
+          harnex guide
+          harnex agents-guide
+          harnex recipes
+
+        Gotchas:
+          guide is short human onboarding.
+          agents-guide is the deeper operational reference for dispatching agents.
       TEXT
     end
 

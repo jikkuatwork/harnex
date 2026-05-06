@@ -23,6 +23,16 @@ module Harnex
 
         Sends the adapter stop sequence to the session.
         Use `harnex wait --id ID` afterward to block until the session finishes.
+
+        Common patterns:
+          #{program_name} --id cx-i-42
+          #{program_name} --id cx-i-42 --repo /path/to/repo
+          #{program_name} --id cx-i-42 --timeout 15
+
+        Gotchas:
+          Stop only after verifying the worker's result landed.
+          For tmux sessions, stop targets the harnex session ID, not the tmux name.
+          If a session is in another repo/worktree, pass --repo or run status --all.
       TEXT
     end
 

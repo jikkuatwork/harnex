@@ -16,6 +16,15 @@ module Harnex
           harnex agents-guide show 01
           harnex agents-guide show dispatch
           harnex agents-guide monitoring
+
+        Common patterns:
+          harnex agents-guide dispatch
+          harnex agents-guide chain
+          harnex agents-guide naming
+
+        Gotchas:
+          Agent guides replace the old harnex skills install flow.
+          They are packaged with the gem and require no external project docs.
       TEXT
     end
 

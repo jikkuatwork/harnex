@@ -10,6 +10,7 @@ class CliTest < Minitest::Test
     assert_match(/harnex events --id ID/, out)
     assert_match(/harnex pane --id ID/, out)
     assert_match(/harnex agents-guide \[topic\]/, out)
+    assert_match(/harnex doctor/, out)
     assert_match(/logs\s+Read session output transcripts/, out)
     assert_match(/events\s+Stream per-session JSONL runtime events/, out)
     assert_match(/pane\s+Capture the current tmux pane/, out)
@@ -38,6 +39,12 @@ class CliTest < Minitest::Test
     cli = Harnex::CLI.new(["help", "agents-guide"])
     out, = capture_io { assert_equal 0, cli.run }
     assert_match(/Usage: harnex agents-guide/, out)
+  end
+
+  def test_help_doctor_returns_doctor_usage
+    cli = Harnex::CLI.new(["help", "doctor"])
+    out, = capture_io { assert_equal 0, cli.run }
+    assert_match(/Usage: harnex doctor/, out)
   end
 
   def test_logs_command_dispatches_to_logs_help

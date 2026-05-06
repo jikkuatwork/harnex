@@ -38,7 +38,19 @@ module Harnex
     end
 
     def self.usage(program_name = "harnex send")
-      build_parser({}, program_name).to_s
+      <<~TEXT
+        #{build_parser({}, program_name)}
+        Common patterns:
+          #{program_name} --id cx-i-42 --message "Read /tmp/task-impl-42.md" --wait-for-idle --timeout 900
+          #{program_name} --id cx-i-42 --message "Continue with the current task." --force
+          #{program_name} --id "$HARNEX_ID" --message "Worker finished; tests passed."
+
+        Gotchas:
+          --wait-for-idle is a turn fence, not proof that the whole task is done.
+          Use --no-wait for fire-and-forget delivery only when another monitor owns completion.
+          Long prompts are more reliable when written to a file and referenced by path.
+          Messages between harnex sessions get relay headers unless --no-relay is used.
+      TEXT
     end
 
     def initialize(argv)

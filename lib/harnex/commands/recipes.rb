@@ -17,6 +17,15 @@ module Harnex
           harnex recipes list
           harnex recipes show 01
           harnex recipes show fire_and_watch
+
+        Common patterns:
+          harnex recipes show 01   # Fire and Watch
+          harnex recipes show 02   # Chain Implement
+          harnex recipes show 03   # Buddy
+
+        Gotchas:
+          Recipes are compact command walkthroughs.
+          Use `harnex agents-guide` for the deeper agent-facing guide.
       TEXT
     end
 

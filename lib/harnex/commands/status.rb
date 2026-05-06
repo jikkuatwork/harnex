@@ -19,6 +19,16 @@ module Harnex
           --all        List sessions across all repos
           --json       Output JSON instead of a table
           -h, --help   Show this help
+
+        Common patterns:
+          #{program_name}
+          #{program_name} --all
+          #{program_name} --id cx-i-42 --json
+
+        Gotchas:
+          By default, status filters to the current repo root.
+          Use --all when supervising workers launched from sibling worktrees.
+          A prompt-like state is not a completion signal by itself.
       TEXT
     end
 

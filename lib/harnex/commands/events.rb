@@ -18,6 +18,16 @@ module Harnex
           --snapshot      Print current events and exit (alias for --no-follow)
           --from TS       Replay floor (ISO-8601, inclusive)
           -h, --help      Show this help
+
+        Common patterns:
+          #{program_name} --id cx-i-42 --snapshot
+          #{program_name} --id cx-i-42
+          #{program_name} --id cx-i-42 --from 2026-05-06T10:00:00Z --snapshot
+
+        Gotchas:
+          events is structured JSONL; logs is human transcript text.
+          Default mode follows live events. Use --snapshot to print and exit.
+          Use wait --until task_complete when you only need a completion fence.
       TEXT
     end
 

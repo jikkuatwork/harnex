@@ -24,6 +24,16 @@ module Harnex
           --repo PATH     Resolve session using PATH's repo root (default: current repo)
           --timeout SECS  Maximum time to wait in seconds (default: unlimited)
           -h, --help      Show this help
+
+        Common patterns:
+          #{program_name} --id cx-i-42 --until task_complete --timeout 900
+          #{program_name} --id cx-i-42 --until prompt --timeout 120
+          #{program_name} --id cx-i-42
+
+        Gotchas:
+          task_complete is an event predicate; prompt/busy are live state polls.
+          Prompt state alone does not prove work acceptance. Verify artifacts/tests.
+          Without --timeout, wait can block indefinitely.
       TEXT
     end
 

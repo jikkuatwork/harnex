@@ -73,6 +73,8 @@ module Harnex
         Guide.usage
       when "agents-guide"
         AgentsGuide.usage
+      when "doctor"
+        Doctor.usage
       else
         usage
       end
@@ -90,6 +92,7 @@ module Harnex
           harnex events --id ID [options]
           harnex pane --id ID [options]
           harnex agents-guide [topic]
+          harnex doctor
           harnex help [command]
 
         Commands:
@@ -124,6 +127,7 @@ module Harnex
           harnex events --id main --snapshot
           harnex pane --id main --lines 40
           harnex agents-guide dispatch
+          harnex doctor
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

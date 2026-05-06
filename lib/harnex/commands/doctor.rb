@@ -12,6 +12,14 @@ module Harnex
         Currently verifies that Codex CLI is installed and at version
         >= #{MIN_CODEX_VERSION} (required for the JSON-RPC `app-server`
         adapter).
+
+        Common patterns:
+          harnex doctor
+          harnex doctor --help
+
+        Gotchas:
+          doctor validates local adapter prerequisites; it does not start sessions.
+          Run it after installing or upgrading Codex CLI.
       TEXT
     end
 
