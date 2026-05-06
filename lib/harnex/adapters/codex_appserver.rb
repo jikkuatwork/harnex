@@ -34,6 +34,20 @@ module Harnex
 
       EVENTS = %w[task_complete turn_started item_completed disconnected].freeze
 
+      # Server→client approval requests harnex auto-approves so dispatched
+      # codex workers can run autonomously. Codex sends these via JSON-RPC
+      # when its sandbox/approval policy needs a client decision; without
+      # a handler the client returns -32601 and codex blocks the operation.
+      # Permissions / user-input / dynamic-tool / auth-refresh requests
+      # have richer response shapes and are deliberately not auto-handled
+      # — they fall through to -32601 until a use case appears.
+      APPROVAL_RESPONSES = {
+        "applyPatchApproval"                    => { decision: "approved" },
+        "execCommandApproval"                   => { decision: "approved" },
+        "item/commandExecution/requestApproval" => { decision: "approved" },
+        "item/fileChange/requestApproval"       => { decision: "accept" }
+      }.freeze
+
       attr_reader :thread_id, :current_turn_id, :last_completed_at, :initial_prompt
 
       def initialize(extra_args = [])
@@ -56,8 +70,13 @@ module Harnex
         ["codex", "app-server"]
       end
 
+      # The harnex-context entry (set by `--context`) is delivered via
+      # JSON-RPC `turn/start`, not as a CLI argument — codex app-server
+      # rejects positional input and would exit immediately. Operator-
+      # supplied codex flags (passed via `harnex run codex -- ...`) are
+      # appended so e.g. `-c sandbox_mode=danger-full-access` works.
       def build_command
-        base_command
+        base_command + cli_extra_args
       end
 
       def describe
@@ -120,11 +139,19 @@ module Harnex
         end
 
         @client.on_notification { |msg| handle_notification(msg) }
+        @client.on_request { |method, params| handle_server_request(method, params) }
         @client.on_disconnect { |err| handle_disconnect(err) }
         @client.start
         perform_handshake
         @state = :prompt
         self
+      end
+
+      # Auto-approve known approval-style requests so dispatched workers
+      # can run without a human-in-the-loop. Returns the response body to
+      # serialize as JSON-RPC `result`, or `nil` to fall through to -32601.
+      def handle_server_request(method, _params)
+        APPROVAL_RESPONSES[method]
       end
 
       def dispatch(prompt:, model: nil, effort: nil)
@@ -200,6 +227,12 @@ module Harnex
         nil
       end
 
+      # Codex CLI flags only — strips the harnex-context entry that
+      # `--context` smuggles through @extra_args.
+      def cli_extra_args
+        @extra_args.reject { |a| a.is_a?(String) && a.start_with?("[harnex session id=") }
+      end
+
       def perform_handshake
         @client.request("initialize", {
           clientInfo: {
@@ -270,6 +303,7 @@ module Harnex
           @id_mutex = Mutex.new
           @write_mutex = Mutex.new
           @notification_handler = nil
+          @request_handler = nil
           @disconnect_handler = nil
           @disconnect_signaled = false
           @closed = false
@@ -278,6 +312,13 @@ module Harnex
 
         def on_notification(&block)
           @notification_handler = block
+        end
+
+        # Handler for server-initiated requests (id + method). The block
+        # receives (method, params) and returns the response body for the
+        # JSON-RPC `result` field, or nil to reject with -32601.
+        def on_request(&block)
+          @request_handler = block
         end
 
         def on_disconnect(&block)
@@ -381,11 +422,7 @@ module Harnex
 
         def dispatch_message(message)
           if message["id"] && message["method"]
-            write_line({
-              jsonrpc: "2.0",
-              id: message["id"],
-              error: { code: -32601, message: "Unsupported server request: #{message['method']}" }
-            })
+            handle_server_request(message)
             return
           end
 
@@ -404,6 +441,29 @@ module Harnex
           end
 
           @notification_handler&.call(message) if message["method"]
+        end
+
+        def handle_server_request(message)
+          result =
+            begin
+              @request_handler&.call(message["method"], message["params"] || {})
+            rescue StandardError
+              nil
+            end
+
+          if result.nil?
+            write_line({
+              jsonrpc: "2.0",
+              id: message["id"],
+              error: { code: -32601, message: "Unsupported server request: #{message['method']}" }
+            })
+          else
+            write_line({
+              jsonrpc: "2.0",
+              id: message["id"],
+              result: result
+            })
+          end
         end
 
         def signal_disconnect(error)

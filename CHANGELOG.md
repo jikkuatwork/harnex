@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- JSON-RPC adapter (`codex app-server`): harnex now mediates Codex's
+  server-to-client approval requests via the protocol — auto-approves
+  `applyPatchApproval`, `execCommandApproval`,
+  `item/commandExecution/requestApproval`, and
+  `item/fileChange/requestApproval`. Previously the adapter rejected
+  every server-side request with `-32601 "Unsupported server request"`,
+  which meant Codex's default sandbox blocked shell exec, file changes,
+  git commits, and package-manager invocations whenever a dispatched
+  worker tried to do real work. Autonomous worker dispatches now run
+  cleanly under the default sandbox without needing
+  `--dangerously-bypass-approvals-and-sandbox` or
+  `-c sandbox_mode=danger-full-access`.
+- `CodexAppServer#build_command` now appends operator-supplied codex
+  flags (passed via `harnex run codex -- -c key=value`) while still
+  filtering out the harnex-context entry that `--context` smuggles
+  through `@extra_args` (codex `app-server` rejects positional input).
+
+### Changed
+
+- `--legacy-pty` is now a long-term supported fallback rather than a
+  deprecated path. The 0.7.0-removal plan is dropped — the legacy PTY
+  adapter remains the right tool for interactive/TUI use cases and for
+  any operator who prefers terminal-native Codex chrome. JSON-RPC
+  remains the default for autonomous worker dispatches and structured
+  observability.
+
 ## [0.6.3] — 2026-05-06
 
 ### Fixed

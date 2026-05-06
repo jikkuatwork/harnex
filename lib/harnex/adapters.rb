@@ -18,7 +18,8 @@ module Harnex
 
     # Phase 3 flipped the default — `codex` resolves to CodexAppServer.
     # Legacy PTY adapter is reachable via `legacy_pty: true` (driven by
-    # `harnex run codex --legacy-pty`). Will be removed in 0.7.0.
+    # `harnex run codex --legacy-pty`); kept as a long-term supported
+    # fallback for interactive/TUI use cases.
     def codex_appserver_enabled?
       true
     end

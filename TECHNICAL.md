@@ -330,6 +330,16 @@ The adapter reads the screen and returns a state hash:
 - Notifications (`turn/started`, `turn/completed`, `item/completed`,
   `error`, `thread/compacted`, …) fan into the events log.
   `task_complete` is the harnex-side event for `turn/completed`.
+- **Approval mediation**: Codex's app-server protocol delegates
+  sandbox/approval decisions to the JSON-RPC client via server-to-
+  client requests. Harnex auto-approves `applyPatchApproval`,
+  `execCommandApproval`, `item/commandExecution/requestApproval`, and
+  `item/fileChange/requestApproval`, so autonomous workers can run
+  shell commands, write files, commit, and invoke package managers
+  under Codex's default sandbox without any bypass flag. Other
+  server-to-client requests (permissions, user-input, dynamic-tool,
+  auth-refresh) currently fall through to `-32601` until use cases
+  appear.
 - Disconnect is detected from JSON-RPC error responses, subprocess
   EOF, parse errors, or a server `error` notification — no screen
   regex required.
@@ -339,7 +349,7 @@ The adapter reads the screen and returns a state hash:
 - See `docs/codex-appserver.md` for the full mapping table and
   troubleshooting.
 
-#### Codex Adapter (legacy PTY — `--legacy-pty`, removal in 0.7.0)
+#### Codex Adapter (legacy PTY — `--legacy-pty`, long-term fallback)
 
 - Launches with `--no-alt-screen` for inline screen output
 - Detects prompt by looking for `›` prefix in recent lines

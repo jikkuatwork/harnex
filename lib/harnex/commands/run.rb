@@ -37,8 +37,9 @@ module Harnex
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           --legacy-pty       (codex only) Use the legacy PTY adapter instead of
-                             the JSON-RPC `app-server` adapter. Deprecated; will
-                             be removed in 0.7.0.
+                             the JSON-RPC `app-server` adapter. Long-term
+                             supported fallback for interactive/TUI use; JSON-RPC
+                             remains the default for autonomous dispatches.
           -h, --help         Show this help
 
         Notes:

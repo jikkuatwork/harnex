@@ -105,16 +105,19 @@ $ harnex doctor
 {"ok":true,"checks":[{"name":"codex","required":">= 0.128.0","ok":true,"found":"0.128.0"}]}
 ```
 
-## Emergency fallback: `--legacy-pty`
+## Long-term fallback: `--legacy-pty`
 
-The pre-0.6.0 PTY adapter is reachable for one minor release:
+The pre-0.6.0 PTY adapter remains available as a long-term supported
+fallback:
 
 ```
 harnex run codex --legacy-pty
 ```
 
-This is deprecated and will be removed in 0.7.0. File a bug if you
-find yourself reaching for it.
+It's the right tool when you want the full Codex TUI live in tmux —
+status bars, tool diffs, ANSI panels — that the headless `app-server`
+backend doesn't render. JSON-RPC remains the default and is recommended
+for autonomous worker dispatches; legacy-pty is for interactive/TUI use.
 
 ## Troubleshooting
 

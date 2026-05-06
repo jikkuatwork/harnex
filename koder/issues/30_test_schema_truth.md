@@ -110,8 +110,10 @@ Two scenarios that must pass without `--legacy-pty`:
 - Further Codex schema coverage (e.g. `thread/resume`, error notifications).
   Those can come later; this issue focuses on `thread/start` + `turn/start`,
   the two paths that actually broke #29 twice.
-- Removing `--legacy-pty`. Still scheduled for 0.7.0; this issue is
-  prerequisite work.
+- Removing `--legacy-pty`. The 0.7.0-removal plan was dropped — the
+  legacy PTY adapter is now a long-term supported fallback for
+  interactive/TUI use. This issue still stands as a quality fix for
+  the JSON-RPC test stubs regardless.
 
 ## References
 
