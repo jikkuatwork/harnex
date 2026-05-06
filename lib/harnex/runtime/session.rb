@@ -74,6 +74,7 @@ module Harnex
       @usage_summary = {}
       @ended_at = nil
       @exit_reason = nil
+      @turn_started_seen = false
       @last_completed_at = nil
       @writer = nil
       @pid = nil
@@ -377,6 +378,7 @@ module Harnex
       when "thread/started"
         @rpc_thread_id = params["threadId"] || params["thread_id"]
       when "turn/started"
+        @turn_started_seen = true
         @state_machine.force_busy!
         emit_event("turn_started", turnId: params["turnId"] || params["turn_id"])
       when "turn/completed"
@@ -707,10 +709,19 @@ module Harnex
 
     def classify_exit
       return "timeout" if @exit_code == 124
+      return "success" if @exit_code == 0 && session_summary_present?
+      return "boot_failure" if boot_failure_exit?
       return "failure" unless @exit_code == 0
-      return "success" if session_summary_present?
 
       "disconnected"
+    end
+
+    def boot_failure_exit?
+      return false unless adapter.transport == :stdio_jsonrpc
+      return false if @turn_started_seen
+
+      lifetime = (@ended_at || Time.now) - @started_at
+      lifetime <= 5
     end
 
     def session_summary_present?
@@ -761,7 +772,9 @@ module Harnex
 
     def build_summary_actual
       counters = @event_counters.snapshot
-      counters[:disconnections] = [counters[:disconnections], 1].max if @exit_reason == "disconnected"
+      if %w[disconnected boot_failure].include?(@exit_reason)
+        counters[:disconnections] = [counters[:disconnections], 1].max
+      end
 
       {
         model: meta_hash["model"],

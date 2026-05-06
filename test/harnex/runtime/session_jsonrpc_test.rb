@@ -159,6 +159,28 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal 1, counters[:compactions]
   end
 
+  def test_classify_exit_marks_short_pre_turn_jsonrpc_exit_as_boot_failure
+    @session.instance_variable_set(:@exit_code, nil)
+    @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 1)
+
+    assert_equal "boot_failure", @session.send(:classify_exit)
+  end
+
+  def test_classify_exit_keeps_post_turn_short_exit_as_disconnected
+    fanout("turn/started", { "turnId" => "trn-boot" })
+    @session.instance_variable_set(:@exit_code, 0)
+    @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 1)
+
+    assert_equal "disconnected", @session.send(:classify_exit)
+  end
+
+  def test_classify_exit_keeps_late_pre_turn_exit_as_disconnected
+    @session.instance_variable_set(:@exit_code, 0)
+    @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 6)
+
+    assert_equal "disconnected", @session.send(:classify_exit)
+  end
+
   def test_inject_via_jsonrpc_calls_dispatch
     server_in, client_out = IO.pipe
     client_in, server_out = IO.pipe
