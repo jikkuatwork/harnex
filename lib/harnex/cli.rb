@@ -29,8 +29,6 @@ module Harnex
         Recipes.new(@argv.drop(1)).run
       when "guide"
         Guide.new.run
-      when "skills"
-        Skills.new(@argv.drop(1)).run
       when "doctor"
         Doctor.new(@argv.drop(1)).run
       when "help"
@@ -71,8 +69,6 @@ module Harnex
         Recipes.usage
       when "guide"
         Guide.usage
-      when "skills"
-        Skills.usage
       else
         usage
       end
@@ -102,7 +98,6 @@ module Harnex
           pane    Capture the current tmux pane for a live session
           recipes List and read workflow recipes
           guide   Show the getting started guide
-          skills  Install bundled skills into a repo or globally
           doctor  Run preflight checks for adapter dependencies
           help    Show command help
 
@@ -121,7 +116,6 @@ module Harnex
           harnex events --id main --snapshot
           harnex pane --id main --lines 40
           harnex send --id main --message "Summarize current progress."
-          harnex skills install
       TEXT
     end
   end
