@@ -74,6 +74,7 @@ module Harnex
       @usage_summary = {}
       @ended_at = nil
       @exit_reason = nil
+      @last_completed_at = nil
       @writer = nil
       @pid = nil
       @term_signal = nil
@@ -186,6 +187,10 @@ module Harnex
       payload[:input_state] = adapter.input_state(screen_snapshot) if include_input_state
       payload[:agent_state] = @state_machine.to_s
       payload[:inbox] = @inbox.stats
+      payload[:last_completed_at] = @last_completed_at&.iso8601
+      payload[:model] = meta_hash["model"]
+      payload[:effort] = meta_hash["effort"]
+      payload[:auto_disconnects] = @event_counters.snapshot[:disconnections]
       payload
     end
 

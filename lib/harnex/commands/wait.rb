@@ -7,14 +7,20 @@ module Harnex
   class Waiter
     POLL_INTERVAL = 0.5
 
+    EVENT_PREDICATES = %w[task_complete].freeze
+
     def self.usage(program_name = "harnex wait")
       <<~TEXT
         Usage: #{program_name} [options]
 
         Options:
           --id ID         Session ID to wait for (required)
-          --until STATE   Wait until session reaches STATE (e.g. "prompt")
-                          Without --until, waits for session exit (default)
+          --until STATE   Wait until session reaches STATE. Supported:
+                            task_complete   (events JSONL — fires on
+                                             turn/completed; adapter-agnostic)
+                            <other>         (agent_state HTTP poll, e.g.
+                                             "prompt", "busy")
+                          Without --until, waits for session exit (default).
           --repo PATH     Resolve session using PATH's repo root (default: current repo)
           --timeout SECS  Maximum time to wait in seconds (default: unlimited)
           -h, --help      Show this help
@@ -42,13 +48,113 @@ module Harnex
       raise "--id is required for harnex wait" unless @options[:id]
 
       if @options[:until_state]
-        wait_until_state
+        if EVENT_PREDICATES.include?(@options[:until_state])
+          wait_until_event(@options[:until_state])
+        else
+          wait_until_state
+        end
       else
         wait_until_exit
       end
     end
 
     private
+
+    def wait_until_event(predicate)
+      repo_root = Harnex.resolve_repo_root(@options[:repo_path])
+      events_path = Harnex.events_log_path(repo_root, @options[:id])
+      registry = Harnex.read_registry(repo_root, @options[:id])
+      start_time = Time.now
+      deadline = @options[:timeout] ? start_time + @options[:timeout] : nil
+
+      unless registry || File.exist?(events_path)
+        warn("harnex wait: no session found with id #{@options[:id].inspect}")
+        return 1
+      end
+
+      offset = 0
+      task_complete_seen = false
+
+      # Replay existing events first — we may already be past the predicate.
+      if File.exist?(events_path)
+        File.open(events_path, "r") do |f|
+          f.each_line do |line|
+            offset = f.pos
+            event = parse_event(line)
+            next unless event
+            task_complete_seen = true if event["type"] == "task_complete"
+            if matches?(event, predicate, task_complete_seen)
+              return emit_event_match(event, start_time)
+            end
+          end
+        end
+      end
+
+      target_pid = registry && registry["pid"]
+
+      loop do
+        if target_pid && !Harnex.alive_pid?(target_pid)
+          waited = (Time.now - start_time).round(1)
+          puts JSON.generate(ok: false, id: @options[:id], state: "exited", waited_seconds: waited)
+          return 1
+        end
+
+        if deadline && Time.now >= deadline
+          waited = (Time.now - start_time).round(1)
+          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", waited_seconds: waited)
+          return 124
+        end
+
+        if File.exist?(events_path) && File.size(events_path) > offset
+          File.open(events_path, "r") do |f|
+            f.seek(offset)
+            f.each_line do |line|
+              event = parse_event(line)
+              next unless event
+              task_complete_seen = true if event["type"] == "task_complete"
+              if matches?(event, predicate, task_complete_seen)
+                offset = f.pos
+                return emit_event_match(event, start_time)
+              end
+            end
+            offset = f.pos
+          end
+        end
+
+        sleep 0.1
+      end
+    end
+
+    def parse_event(line)
+      JSON.parse(line)
+    rescue JSON::ParserError
+      nil
+    end
+
+    def matches?(event, predicate, task_complete_seen)
+      type = event["type"]
+      case predicate
+      when "task_complete"
+        type == "task_complete"
+      when "prompt"
+        type == "task_complete" ||
+          (task_complete_seen && type == "agent_state" && event["state"] == "prompt")
+      else
+        false
+      end
+    end
+
+    def emit_event_match(event, start_time)
+      waited = (Time.now - start_time).round(1)
+      puts JSON.generate(
+        ok: true,
+        id: @options[:id],
+        event: event["type"],
+        seq: event["seq"],
+        waited_seconds: waited
+      )
+      0
+    end
 
     def wait_until_state
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
