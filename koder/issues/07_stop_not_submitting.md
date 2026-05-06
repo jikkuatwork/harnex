@@ -1,7 +1,7 @@
 ---
 id: 7
 title: "`harnex stop` types /exit but doesn't submit it"
-status: open
+status: resolved
 priority: P1
 created: 2026-03-15
 ---

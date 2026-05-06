@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-04-18
 updated: 2026-04-18

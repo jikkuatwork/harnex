@@ -1,7 +1,7 @@
 ---
 id: 8
 title: "Send to fresh Codex session times out before first prompt"
-status: open
+status: resolved
 priority: P2
 created: 2026-03-15
 ---
