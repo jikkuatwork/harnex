@@ -29,10 +29,10 @@ harnex
 From the CLI alone, with no external docs, no skills installed, and no
 installation hint:
 
-- [ ] See what harnex does: PTY harness for terminal AI agents.
-- [ ] Discover that there is deeper guidance for agents specifically.
-- [ ] Read the dispatch, chain, buddy, and monitoring patterns.
-- [ ] Find naming conventions, monitoring patterns, and recipe usage.
+- [x] See what harnex does: PTY harness for terminal AI agents.
+- [x] Discover that there is deeper guidance for agents specifically.
+- [x] Read the dispatch, chain, buddy, and monitoring patterns.
+- [x] Find naming conventions, monitoring patterns, and recipe usage.
 
 ## Status
 

@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (v0.6.1 prepared — CLI-native agent guides; skills installer removed)
+Updated: 2026-05-06 (v0.6.1 verified locally — CLI-native agent guides; skills installer removed)
 
 ## Current snapshot
 
@@ -233,10 +233,11 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-06: v0.6.1 prepared — agent-discoverable CLI (issue #28 resolved)
+### 2026-05-06: v0.6.1 verified locally — agent-discoverable CLI (issue #28 resolved)
 
 `harnex 0.6.1` removes the old skill installer and makes agent guidance
-discoverable from the installed CLI alone.
+discoverable from the installed CLI alone. Local gem build/install has been
+verified; tag `v0.6.1` is the release marker for this work.
 
 **What landed:**
 
@@ -252,11 +253,18 @@ discoverable from the installed CLI alone.
 - Optional `man harnex` support was deferred because `md2man` is not available
   locally and the CLI-native guide path satisfies acceptance.
 
-**Verification so far:**
+**Verification:**
 
 - Full suite: 289 runs, 891 assertions, 0 failures, 1 integration skip.
-- Acceptance path checked from the repo with `ruby -Ilib bin/harnex`,
-  `ruby -Ilib bin/harnex --help`, and `ruby -Ilib bin/harnex agents-guide`.
+- Built `harnex-0.6.1.gem`; packaged file list includes `guides/*.md` and
+  excludes `skills/`.
+- Installed locally with `gem install ./harnex-0.6.1.gem`.
+- PATH smoke: `harnex --version` returns `harnex 0.6.1 (2026-05-06)`.
+- Acceptance path checked from the installed gem: `harnex`, `harnex --help`,
+  `harnex agents-guide`, `harnex agents-guide monitoring`, and
+  `harnex help run`.
+- Removed surface checked: `harnex skills --help` now fails with unknown
+  command.
 
 **Recommended next engineering step:**
 
