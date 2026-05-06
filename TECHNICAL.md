@@ -28,6 +28,7 @@ harnex run codex -- --cd ~/other/repo
 | `--preset NAME`     | Watch preset (`impl`, `plan`, `gate`), requires `--watch`           |
 | `--watch-file PATH` | Auto-send a file-change hook (`--watch PATH`/`--watch=PATH` legacy) |
 | `--context TXT`     | Give the agent a task on startup                                    |
+| `--auto-stop`       | With `--context`, stop after the first task completion              |
 | `--timeout SEC`     | Wait budget for detached registration                               |
 
 ### `harnex send` — Talk to a running agent

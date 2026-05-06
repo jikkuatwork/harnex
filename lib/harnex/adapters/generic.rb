@@ -9,6 +9,17 @@ module Harnex
       def base_command
         [@cli_name]
       end
+
+      def input_state(screen_text)
+        if recent_lines(screen_text).any? { |line| prompt_line?(line) }
+          {
+            state: "prompt",
+            input_ready: true
+          }
+        else
+          super
+        end
+      end
     end
   end
 end

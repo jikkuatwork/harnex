@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (#31 fixed — JSON-RPC stop now terminates codex app-server subprocesses)
+Updated: 2026-05-07 (#15 fixed — --auto-stop tears down one-shot sessions after first completion)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-06 (#31 fixed — JSON-RPC stop now terminates codex app-server
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 311 minitest tests (1 integration skip behind
+- Test suite: `test/` with 319 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -139,6 +139,12 @@ Updated: 2026-05-06 (#31 fixed — JSON-RPC stop now terminates codex app-server
   `codex app-server` subprocess with bounded TERM/KILL fallback. The
   normal JSON-RPC runner teardown now releases the API port and removes
   the registry entry after stop.
+- Issue #15 is fixed: `harnex run --auto-stop` now requires `--context`
+  and stops one-shot sessions after the first completion. JSON-RPC Codex
+  uses the structured `task_complete` event; PTY adapters arm after the
+  initial context launch and stop on the next prompt after busy. The path
+  reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
+  interrupt plus TERM/KILL teardown as manual `harnex stop`.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -219,7 +225,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 19 | Codex banner scroll-out breaks state detection | **fixed** | P1 |
 | 13 | Atomic `send --wait-for-idle` | **fixed** | P1 |
 | 14 | Pane lookup fails for worktree/custom tmux sessions | **fixed** | P2 |
-| 15 | Auto-stop session on task completion | open | P2 |
+| 15 | Auto-stop session on task completion | **fixed** | P2 |
 | 16 | Platform-agnostic data directory (~/.harnex/) | open | P2 |
 | 17 | Multi-session coordination | open | P2 |
 | 18 | Buddy pattern — accountability partner for long-running sessions | open | P2 |

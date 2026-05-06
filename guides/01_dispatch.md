@@ -63,6 +63,20 @@ harnex run codex --id cx-i-NN --tmux cx-i-NN \
   --context "Read and execute /tmp/task-impl-NN.md"
 ```
 
+For one-shot context dispatches that should clean themselves up, add
+`--auto-stop`. It requires `--context`, fires once on the first task
+completion, and does not keep the session alive for later reuse. This keeps
+parallel orchestration compact:
+
+```bash
+for i in 1 2 3; do
+  harnex run codex --id w-$i --tmux w-$i --detach \
+    --context "Read and execute /tmp/task-$i.md" --auto-stop &
+done
+for i in 1 2 3; do harnex wait --id w-$i & done
+wait
+```
+
 Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer
 matches `harnex status` or `harnex pane --id`.

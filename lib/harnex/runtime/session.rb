@@ -39,7 +39,7 @@ module Harnex
 
     attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -60,6 +60,8 @@ module Harnex
       @mutex = Mutex.new
       @inject_mutex = Mutex.new
       @events_mutex = Mutex.new
+      @stop_mutex = Mutex.new
+      @auto_stop_mutex = Mutex.new
       @injected_count = 0
       @last_injected_at = nil
       @started_at = Time.now
@@ -76,6 +78,10 @@ module Harnex
       @exit_reason = nil
       @turn_started_seen = false
       @last_completed_at = nil
+      @auto_stop = !!auto_stop
+      @auto_stop_fired = false
+      @auto_stop_seen_busy = false
+      @stop_requested = false
       @writer = nil
       @pid = nil
       @term_signal = nil
@@ -116,6 +122,7 @@ module Harnex
     def run_pty
       @reader, @writer, @pid = PTY.spawn(child_env, *command)
       @writer.sync = true
+      arm_auto_stop_after_initial_context
       emit_started_event
       emit_git_start_event
 
@@ -205,11 +212,17 @@ module Harnex
       inject_sequence([{ text: text, newline: newline }])
     end
 
-    def inject_stop
+    def inject_stop(turn_id: nil)
+      unless adapter.transport == :stdio_jsonrpc
+        raise "session is not running" unless pid && Harnex.alive_pid?(pid)
+      end
+
+      return { ok: true, signal: "already_requested" } if stop_requested!
+
       if adapter.transport == :stdio_jsonrpc
         @inject_mutex.synchronize do
           begin
-            adapter.interrupt
+            adapter.interrupt(turn_id: turn_id)
           rescue StandardError
             nil
           end
@@ -226,8 +239,6 @@ module Harnex
         end
         return { ok: true, signal: "interrupt_sent" }
       end
-
-      raise "session is not running" unless pid && Harnex.alive_pid?(pid)
 
       @inject_mutex.synchronize do
         adapter.inject_exit(@writer)
@@ -397,6 +408,7 @@ module Harnex
         payload[:status] = params["status"] if params["status"]
         payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"]
         emit_event("task_complete", **payload)
+        schedule_auto_stop("task_complete", turn_id: payload[:turnId])
       when "item/completed"
         emit_event("item_completed", item: params["item"])
         text = render_item_text(params["item"])
@@ -653,7 +665,9 @@ module Harnex
         @output_buffer = @output_buffer.byteslice(overflow, OUTPUT_BUFFER_LIMIT) if overflow.positive?
         @output_buffer.dup
       end
-      @state_machine.update(snapshot)
+      old_state = @state_machine.to_s.to_sym
+      new_state = @state_machine.update(snapshot)
+      handle_auto_stop_pty_transition(old_state, new_state)
     end
 
     def append_output_log(chunk)
@@ -714,6 +728,55 @@ module Harnex
       payload[:signal] = @term_signal if @term_signal
       payload[:reason] = @exit_reason if @exit_reason
       emit_event("exited", **payload)
+    end
+
+    def stop_requested!
+      @stop_mutex.synchronize do
+        return true if @stop_requested
+
+        @stop_requested = true
+        false
+      end
+    end
+
+    def arm_auto_stop_after_initial_context
+      return unless @auto_stop
+      return unless adapter.transport == :pty
+
+      @auto_stop_mutex.synchronize { @auto_stop_seen_busy = true }
+      @state_machine.force_busy!
+    end
+
+    def handle_auto_stop_pty_transition(old_state, new_state)
+      return unless @auto_stop
+      return unless adapter.transport == :pty
+
+      seen_busy = @auto_stop_mutex.synchronize do
+        @auto_stop_seen_busy ||= old_state == :busy || new_state == :busy
+      end
+      schedule_auto_stop("prompt_after_busy") if seen_busy && new_state == :prompt
+    end
+
+    def schedule_auto_stop(reason, turn_id: nil)
+      return unless @auto_stop
+
+      should_fire = @auto_stop_mutex.synchronize do
+        if @auto_stop_fired
+          false
+        else
+          @auto_stop_fired = true
+          true
+        end
+      end
+      return unless should_fire
+
+      Thread.new do
+        begin
+          inject_stop(turn_id: turn_id)
+        rescue StandardError => e
+          warn("harnex: auto-stop failed after #{reason}: #{e.message}")
+        end
+      end
     end
 
     def classify_exit

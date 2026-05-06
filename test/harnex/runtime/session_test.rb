@@ -356,7 +356,7 @@ class SessionTest < Minitest::Test
     adapter = Harnex::Adapters::CodexAppServer.new
     calls = Queue.new
 
-    adapter.define_singleton_method(:interrupt) { calls << :interrupt }
+    adapter.define_singleton_method(:interrupt) { |turn_id: nil| calls << [:interrupt, turn_id] }
     adapter.define_singleton_method(:terminate_subprocess) { calls << :terminate_subprocess }
 
     result = Harnex.stub(:allocate_port, 45_000) do
@@ -366,7 +366,78 @@ class SessionTest < Minitest::Test
 
     assert_equal({ ok: true, signal: "interrupt_sent" }, result)
     observed = Timeout.timeout(2) { [calls.pop, calls.pop] }
-    assert_equal [:interrupt, :terminate_subprocess], observed
+    assert_equal [[:interrupt, nil], :terminate_subprocess], observed
+  end
+
+  def test_inject_stop_is_idempotent
+    adapter = Harnex::Adapters::CodexAppServer.new
+    calls = Queue.new
+
+    adapter.define_singleton_method(:interrupt) { |turn_id: nil| calls << [:interrupt, turn_id] }
+    adapter.define_singleton_method(:terminate_subprocess) { calls << :terminate_subprocess }
+
+    session = Harnex.stub(:allocate_port, 45_001) do
+      build_session(command: adapter.build_command, adapter: adapter)
+    end
+
+    assert_equal({ ok: true, signal: "interrupt_sent" }, session.inject_stop)
+    assert_equal({ ok: true, signal: "already_requested" }, session.inject_stop)
+
+    observed = Timeout.timeout(2) { [calls.pop, calls.pop] }
+    assert_equal [[:interrupt, nil], :terminate_subprocess], observed
+    refute wait_for_queue(calls, timeout: 0.1)
+  end
+
+  def test_auto_stop_jsonrpc_fires_after_first_task_complete
+    adapter = Harnex::Adapters::CodexAppServer.new
+    calls = Queue.new
+    session = build_session(command: adapter.build_command, adapter: adapter, auto_stop: true)
+    session.send(:prepare_events_log)
+    session.define_singleton_method(:inject_stop) do |turn_id: nil|
+      calls << [:stop, turn_id]
+      { ok: true, signal: "test_stop" }
+    end
+
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => { "turnId" => "trn-1", "status" => "completed" }
+    })
+
+    assert_equal [:stop, "trn-1"], Timeout.timeout(2) { calls.pop }
+
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => { "turnId" => "trn-2", "status" => "completed" }
+    })
+
+    refute wait_for_queue(calls, timeout: 0.1)
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+  end
+
+  def test_auto_stop_pty_fires_after_busy_then_prompt
+    adapter = Harnex::Adapters::Generic.new("ruby")
+    calls = Queue.new
+    session = build_session(adapter: adapter, auto_stop: true)
+    session.send(:prepare_output_log)
+    session.define_singleton_method(:inject_stop) do
+      calls << :stop
+      { ok: true, signal: "test_stop" }
+    end
+
+    session.send(:arm_auto_stop_after_initial_context)
+    session.send(:record_output, "working\n".b)
+    refute wait_for_queue(calls, timeout: 0.1)
+
+    session.send(:record_output, "> ".b)
+    assert_equal :stop, Timeout.timeout(2) { calls.pop }
+
+    session.send(:record_output, "\n> ".b)
+    refute wait_for_queue(calls, timeout: 0.1)
+  ensure
+    output_log = session&.instance_variable_get(:@output_log)
+    output_log&.close unless output_log&.closed?
   end
 
   def test_persist_registry_preserves_tmux_metadata
@@ -414,7 +485,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL)
+  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -426,8 +497,15 @@ class SessionTest < Minitest::Test
       description: description,
       meta: meta,
       summary_out: summary_out,
-      inbox_ttl: inbox_ttl
+      inbox_ttl: inbox_ttl,
+      auto_stop: auto_stop
     )
+  end
+
+  def wait_for_queue(queue, timeout:)
+    Timeout.timeout(timeout) { queue.pop }
+  rescue Timeout::Error
+    nil
   end
 
   def silence_session_stdout(session)

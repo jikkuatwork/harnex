@@ -1,7 +1,7 @@
 ---
 id: 15
 title: "Auto-stop session when wrapped agent returns to prompt after task completion"
-status: open
+status: fixed
 priority: P2
 created: 2026-03-22
 ---

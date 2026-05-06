@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `harnex run --auto-stop` for one-shot `--context` dispatches.
+  JSON-RPC Codex sessions stop after the first `task_complete` event,
+  while PTY-backed sessions stop after the initial context turn returns
+  to a prompt. The shutdown path reuses `harnex stop`, including the
+  JSON-RPC TERM/KILL fallback.
+
 ### Fixed
 
 - JSON-RPC Codex sessions now terminate their `codex app-server`

@@ -8,7 +8,7 @@ module Harnex
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --timeout --inbox-ttl --legacy-pty --help
+      --timeout --inbox-ttl --auto-stop --legacy-pty --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
@@ -32,6 +32,7 @@ module Harnex
           --preset NAME      Watch preset: impl, plan, gate (requires --watch)
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
+          --auto-stop        Stop after the first task completion from --context
           --meta JSON        Attach parsed JSON metadata to the started event
           --summary-out PATH Append dispatch telemetry summary JSONL to PATH
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
@@ -45,6 +46,7 @@ module Harnex
         Notes:
           Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
           Bare `--watch` enables the babysitter.
+          --auto-stop requires --context and fires once after the first completion.
           Explicit --stall-after/--max-resumes values override --preset defaults.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
@@ -52,6 +54,7 @@ module Harnex
 
         Common patterns:
           #{program_name} codex --id cx-i-42 --tmux cx-i-42 --context "Read /tmp/task-impl-42.md"
+          #{program_name} codex --id cx-i-42 --tmux cx-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
           #{program_name} codex --id cx-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
@@ -80,6 +83,7 @@ module Harnex
         context: nil,
         meta: nil,
         summary_out: nil,
+        auto_stop: false,
         detach: false,
         tmux: false,
         tmux_name: nil,
@@ -98,6 +102,7 @@ module Harnex
       end
 
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
+      validate_auto_stop_context!
 
       repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
       @options[:summary_out] = resolve_summary_out(repo_root)
@@ -159,6 +164,7 @@ module Harnex
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
       tmux_cmd += ["--watch-file", @options[:watch]] if @options[:watch]
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
+      tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
@@ -266,7 +272,8 @@ module Harnex
         description: @options[:description],
         meta: @options[:meta],
         summary_out: @options[:summary_out],
-        inbox_ttl: @options[:inbox_ttl]
+        inbox_ttl: @options[:inbox_ttl],
+        auto_stop: @options[:auto_stop]
       )
     end
 
@@ -412,6 +419,8 @@ module Harnex
           @options[:context] = required_option_value(arg, argv[index])
         when /\A--context=(.+)\z/
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
+        when "--auto-stop"
+          @options[:auto_stop] = true
         when "--meta"
           index += 1
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
@@ -473,7 +482,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--legacy-pty"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--legacy-pty"
           nil
         when /\A--tmux=/
           nil
@@ -518,6 +527,13 @@ module Harnex
 
       @options[:stall_after_s] = preset[:stall_after_s] unless @options[:stall_after_explicit]
       @options[:max_resumes] = preset[:max_resumes] unless @options[:max_resumes_explicit]
+    end
+
+    def validate_auto_stop_context!
+      return unless @options[:auto_stop]
+      return if @options[:context]
+
+      raise OptionParser::InvalidOption, "harnex run: --auto-stop requires --context"
     end
 
     def parse_non_negative_integer(value, option_name:)

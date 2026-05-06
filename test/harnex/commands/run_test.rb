@@ -43,8 +43,31 @@ class RunnerTest < Minitest::Test
     assert_equal 45.0, runner.instance_variable_get(:@options)[:inbox_ttl]
   end
 
+  def test_extract_wrapper_options_parses_auto_stop
+    runner = Harnex::Runner.new(["codex", "--context", "do work", "--auto-stop"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--context", "do work", "--auto-stop"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert opts[:auto_stop]
+  end
+
+  def test_auto_stop_requires_context
+    runner = Harnex::Runner.new(["codex", "--auto-stop"])
+    runner.send(:extract_wrapper_options, ["codex", "--auto-stop"])
+
+    error = assert_raises(OptionParser::InvalidOption) { runner.send(:validate_auto_stop_context!) }
+
+    assert_match(/--auto-stop requires --context/, error.message)
+  end
+
   def test_usage_documents_meta
     assert_includes Harnex::Runner.usage, "--meta JSON"
+  end
+
+  def test_usage_documents_auto_stop
+    assert_includes Harnex::Runner.usage, "--auto-stop"
   end
 
   def test_usage_documents_summary_out
