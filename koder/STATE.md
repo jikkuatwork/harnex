@@ -12,7 +12,8 @@ Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblock
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
   - `lib/harnex/cli.rb`
-- Test suite: `test/` with 259 minitest tests, all passing.
+- Test suite: `test/` with 289 minitest tests (1 integration skip behind
+  `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
