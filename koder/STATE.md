@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (harnex 0.6.3 shipped — issue #29 properly fixed; 0.6.2 was a no-op against real Codex)
+Updated: 2026-05-06 (0.6.4 prep — JSON-RPC approval mediator landed; #32 Commit 1 landed; legacy-pty kept as long-term fallback)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-06 (harnex 0.6.3 shipped — issue #29 properly fixed; 0.6.2 wa
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 293 minitest tests (1 integration skip behind
+- Test suite: `test/` with 308 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -111,6 +111,29 @@ Updated: 2026-05-06 (harnex 0.6.3 shipped — issue #29 properly fixed; 0.6.2 wa
   `harnex send` into JSON-RPC `turn/start` dispatches, keeps initial prompt
   text out of the `codex app-server` argv, and syncs prompt/busy state so
   inbox delivery works without `--legacy-pty`.
+- **JSON-RPC approval mediator (commit `2811f94`, on-deck for 0.6.4)**:
+  harnex now handles codex app-server's server-to-client approval
+  requests via the protocol — auto-approves `applyPatchApproval`,
+  `execCommandApproval`, `item/commandExecution/requestApproval`, and
+  `item/fileChange/requestApproval`. Previously every server-side
+  request fell through to `-32601 "Unsupported server request"`, which
+  blocked codex's shell exec / file changes / git / package managers
+  under the default sandbox. Autonomous worker dispatches now run
+  cleanly under the default codex sandbox without
+  `--dangerously-bypass-approvals-and-sandbox` or any `-c sandbox_mode`
+  override. `CodexAppServer#build_command` also fixed: `@extra_args`
+  propagate (so operators can still tune codex with
+  `harnex run codex -- -c key=value`) but the harnex-context entry
+  that `--context` smuggles through is filtered out (codex app-server
+  rejects positional input).
+- **`--legacy-pty` policy**: kept as a long-term supported fallback
+  for interactive/TUI use rather than a 0.7.0-removal target. JSON-RPC
+  remains the default; legacy-pty is the right choice when you want
+  the full Codex TUI live in tmux.
+- Issue #32 is partially in flight: Commit 1 (boot_failure
+  classification on JSON-RPC, commit `8196ae1`) lands the baseline
+  detector. Commits 2 (ensure-block telemetry write) and 3 (optional
+  last_error capture) still TODO.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -237,6 +260,49 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-06 (late): 0.6.4 ready to release
+
+Two commits landed this session that should ship as **harnex 0.6.4**:
+
+1. `2811f94` — JSON-RPC approval mediator + `--legacy-pty` long-term
+   fallback. Fixes the silent "every shell exec gets blocked" bug in
+   the JSON-RPC adapter; reverses the 0.7.0-removal plan for
+   `--legacy-pty`. End-to-end smoke verified (12 shell execs through
+   default codex sandbox, no bypass flags). Touches code, tests, and
+   gem-bundled docs (CHANGELOG, TECHNICAL.md, run help text,
+   codex-appserver doc).
+2. `8196ae1` — issue #32 Commit 1 of 3: boot_failure classification
+   for sub-5s pre-turn JSON-RPC exits. Codex co-authored.
+
+**Full suite green at HEAD: 308 runs, 0 failures.**
+
+**Release sequence (next session):**
+
+1. `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
+   — confirm green at HEAD before tagging.
+2. Bump `lib/harnex/version.rb` from `0.6.3` → `0.6.4`.
+3. Move CHANGELOG `[Unreleased]` block to `[0.6.4] — <date>`.
+4. `gem build harnex.gemspec` → produces `harnex-0.6.4.gem`.
+5. `bin/gem-push harnex-0.6.4.gem` (auto OTP from `.env`).
+6. `git tag -a v0.6.4 -m "harnex 0.6.4 — JSON-RPC approval mediator + legacy-pty kept indefinitely"`,
+   `git push origin main && git push origin v0.6.4`.
+7. `gem install harnex` — pull new version into local install.
+   Verify with `harnex --version` (must be `0.6.4`).
+8. Smoke-test: `harnex run codex --tmux smoke --context "echo OK and stop"`
+   — confirm autonomous JSON-RPC dispatch works against the installed
+   gem (sanity check, since 0.6.4's headline is the mediator fix).
+9. `rm harnex-0.6.4.gem` (cleanup local artifact).
+
+**After 0.6.4 ships, finish issue #32:**
+
+- Redispatch `cx-impl-32` in JSON-RPC mode (no flags needed now —
+  the mediator handles everything). The brief at
+  `/tmp/cx-impl-32-brief.md` was deleted at session close, so write a
+  fresh one. Targets: ensure-block telemetry write so DISPATCH row
+  appends even on early-boot raise, plus optional `last_error`
+  capture. Existing Commit 1 (`8196ae1`) is the baseline.
+- After #32 closes, dispatch `cx-impl-33` for JSON-RPC token capture.
 
 ### 2026-05-06: v0.6.3 shipped — real #29 fix (0.6.2 didn't actually work)
 
