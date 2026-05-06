@@ -1,10 +1,20 @@
 # Issue 24 — Layer 5: codex stream-disconnect detection
 
-**Status**: open
+**Status**: superseded
 **Priority**: P1
 **Filed**: 2026-04-30
+**Superseded by**: `27_codex_appserver_adapter.md` (2026-05-06)
 **Tier**: B (plan → impl → diff-sanity)
 **Sister**: extends issue 22 (built-in dispatch monitoring) — explicitly deferred from L4 close as Layer 5.
+
+> **2026-05-06 — Closed by construction via Issue 27.**
+> The architectural pivot to `codex app-server` JSON-RPC transport
+> replaces pane regex matching with structured `error` notifications
+> from the server. Detection is no longer heuristic; it is delivered
+> by Codex itself as a typed event. The acceptance criteria below
+> (90s detection latency, regex matching, frozen-token heuristic) all
+> become irrelevant when the transport is RPC. See
+> `27_codex_appserver_adapter.md` for the rebuild plan.
 
 ## Problem
 

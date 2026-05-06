@@ -1,7 +1,8 @@
 ---
-status: open
+status: superseded
 priority: P1
 created: 2026-05-02
+superseded_by: 27_codex_appserver_adapter
 tags: monitoring,dispatch,orchestration,completion
 ---
 
@@ -9,9 +10,19 @@ tags: monitoring,dispatch,orchestration,completion
 
 ## Status
 
-**Open.** Filed after a real incident (holm 2026-05-01 → 02 overnight chain)
-where an orchestrator sat idle for ~6 hours waiting on a completion event
-that never came.
+**Superseded by Issue 27 (2026-05-06).** The architectural pivot to
+`codex app-server` transport delivers `turn/completed` as a
+first-class JSON-RPC notification — the exact "positive signal a worker
+has completed its task" this issue spec'd. Both proposals (heuristic
+adapter detection + worker-side `harnex done` callback) become
+unnecessary when the transport itself emits structured completion
+events. The 6-hour overnight idle incident this issue was filed for
+becomes structurally impossible post-#27. See
+`27_codex_appserver_adapter.md`.
+
+Originally filed after a real incident (holm 2026-05-01 → 02 overnight
+chain) where an orchestrator sat idle for ~6 hours waiting on a
+completion event that never came.
 
 Sister issues:
 - `22_built_in_dispatch_monitoring.md` (fixed) — log-mtime + bounded resume

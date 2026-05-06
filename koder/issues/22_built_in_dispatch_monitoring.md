@@ -6,6 +6,14 @@ resolved: 2026-04-29
 tags: monitoring,dispatch,orchestration
 ---
 
+> **2026-05-06 update — Codex side superseded by Issue 27.**
+> The log-mtime + bounded-resume work shipped in v0.4.0 still applies for
+> `claude` and `generic` adapters. For Codex, Issue 27 replatforms the
+> adapter onto `codex app-server` JSON-RPC, which delivers
+> `turn/completed` and `error` notifications natively — making the
+> external babysitter loop obsolete for Codex specifically. See
+> `27_codex_appserver_adapter.md`.
+
 # Issue 22: Built-in Dispatch Monitoring (log-mtime activity + bounded auto-resume)
 
 ## The Problem
