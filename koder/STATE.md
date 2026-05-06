@@ -228,6 +228,10 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **shipped in 0.6.0** | P1 |
 | 28 | Make harnex agent-discoverable from the CLI alone | **resolved in 0.6.1** | P1 |
 | 29 | App-server `--context` and `harnex send` parity | **fixed** | P1 |
+| 30 | Test stubs mirror harnex assumptions, not Codex schema | open | P1 |
+| 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | open | **P1** |
+| 32 | DISPATCH telemetry row not written on early-boot disconnect | open (Commit 1/3 landed) | P1 |
+| 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
 
 See `koder/issues/` for details.
 

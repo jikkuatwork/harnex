@@ -1,6 +1,6 @@
 ---
 status: open
-priority: P2
+priority: P1
 created: 2026-05-06
 tags: appserver,jsonrpc,stop,subprocess,hygiene
 ---
@@ -80,3 +80,12 @@ ps -p <X-pid>   # must show "no such process"
   `harnex status` at `state=prompt` until I sent `kill -TERM 2269150`.
 - See `koder/STATE.md` "2026-05-06: v0.6.3 shipped" entry, **Follow-up
   issues** subsection.
+- **2026-05-06 (post-0.6.4) stress-test evidence**: a 7-parallel
+  JSON-RPC stress test plus the earlier `mint-cod` smoke session left
+  8 subprocesses dangling at `state=prompt` after `harnex stop` on
+  each. `harnex status --all` continued to list every one of them;
+  full cleanup required `kill -TERM` against each PID returned in the
+  status table. This is what bumped the priority from P2 → P1: the
+  bug is one stress test away from filling the local registry with
+  ghost sessions and exhausting Codex auth slots in any
+  multi-dispatch workflow.
