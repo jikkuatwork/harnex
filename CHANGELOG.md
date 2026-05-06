@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.2] — 2026-05-06
+
+### Fixed
+
+- App-server adapter: `--context` delivery and `harnex send` mid-session
+  now succeed without `--legacy-pty`. Previously both raised
+  `NotImplementedError` from `build_send_payload` on the stdio_jsonrpc
+  transport — `--context` boot fired a `disconnected source=transport`
+  event and the session never registered; `harnex send` timed out at
+  120s with `delivery timed out`. Closes #29.
+
+### Notes
+
+- `--legacy-pty` is no longer required for any normal dispatch flow.
+  Removal still scheduled for 0.7.0 per the 0.6.1 deprecation note.
+
 ## [0.6.1] — 2026-05-06
 
 ### Added
