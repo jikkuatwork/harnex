@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (harnex#29 fixed — app-server context/send parity; suite green)
+Updated: 2026-05-06 (harnex 0.6.2 shipped — issue #29 app-server context/send parity)
 
 ## Current snapshot
 
@@ -237,6 +237,27 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-06: v0.6.2 shipped — app-server `--context` + `harnex send` parity (issue #29)
+
+`harnex 0.6.2` is on RubyGems. Tag `v0.6.2` is on `origin`. Local install
+verified (`harnex --version` → `0.6.2`, `harnex doctor` green on codex 0.128.0).
+
+**What landed:**
+
+- Codex `app-server` adapter now maps `--context` and `harnex send` into
+  JSON-RPC `turn/start` dispatches (commit `ec46add`). Initial prompt text
+  stays out of the `codex app-server` argv; prompt/busy state syncs so inbox
+  delivery works without `--legacy-pty`.
+- 228 LOC across adapter + session + 2 new test files; 4 new tests.
+- Suite at HEAD: 293 runs, 0 failures.
+
+**Holm follow-up (cross-repo):** bump harnex dep on holm side, smoke-test
+`--context` + `harnex send` without `--legacy-pty`, drop legacy references.
+
+**Recommended next engineering step:** open P2 backlog unchanged — most
+likely **#26** (`harnex status` silently filters by repo, missing worktree
+sessions). Other P2s: #04 phase 3, #06, #15, #16, #17.
 
 ### 2026-05-06: v0.6.1 verified locally — agent-discoverable CLI (issue #28 resolved)
 
