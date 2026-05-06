@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.6.3] — 2026-05-06
+
+### Fixed
+
+- JSON-RPC adapter (`codex app-server`): `--context` boot injection now
+  succeeds against real Codex CLI. Three schema mismatches in
+  `Adapters::CodexAppServer` caused 100% session disconnect on boot
+  with `"Invalid request: invalid type: null, expected a string"`:
+  - `ensure_thread!` and the `thread/started` notification handler read
+    `result["threadId"]`, but Codex's actual `thread/start` response is
+    `{"thread": {"id": "..."}}`. With `@thread_id = nil`, the subsequent
+    `turn/start` sent `threadId: null` and Codex's serde rejected it.
+  - `dispatch` sent `input: { content: [{type, text}] }`, but
+    `TurnStartParams.input` is an **array** of `UserInput`. Now sends
+    `input: [{type: "text", text: "..."}]`.
+  - `initialize` joined ALL `extra_args` into `@initial_prompt`, which
+    prepended Codex CLI flags (e.g. `-m gpt-5.5-mini -c
+    model_reasoning_effort=low`) into the prompt content. Now extracts
+    only the harnex-prefixed context element.
+
+  Re-opens and properly closes #29. The 0.6.2 fix shipped clean tests
+  but the test stubs mirrored harnex's wrong assumptions instead of
+  Codex's actual JSON-RPC schema, so production was 100% broken on the
+  default JSON-RPC path.
+
+### Notes
+
+- Test stubs in `codex_appserver_lifecycle_test.rb` and
+  `session_jsonrpc_test.rb` still mirror harnex's old assumptions.
+  Tracked as a follow-up (test rewrite using `codex app-server
+  generate-json-schema` as the source of truth, plus a contract-test
+  gate). Existing tests remain green; the structural improvement does
+  not block this release.
+- `--legacy-pty` remains as the documented fallback. Removal still
+  scheduled for 0.7.0 once test-rewrite + contract gate land.
+
 ## [0.6.2] — 2026-05-06
 
 ### Fixed

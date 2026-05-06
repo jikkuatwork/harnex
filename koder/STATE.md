@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-06 (harnex 0.6.2 shipped — issue #29 app-server context/send parity)
+Updated: 2026-05-06 (harnex 0.6.3 shipped — issue #29 properly fixed; 0.6.2 was a no-op against real Codex)
 
 ## Current snapshot
 
@@ -237,6 +237,81 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-06: v0.6.3 shipped — real #29 fix (0.6.2 didn't actually work)
+
+Pushed `harnex-0.6.3` to RubyGems. Cross-repo bug-find + spike from the
+holm orchestrator session, finished from there.
+
+**Why 0.6.3**: holm-side stress test (4 concurrent JSON-RPC sessions
+with `--context` + `--meta` + `--summary-out`) had 100% boot-time
+disconnect rate against unpatched 0.6.2. Error: `"Invalid request:
+invalid type: null, expected a string"` at events seq:3, ~1s after
+spawn. Symptom *looked* identical to the pre-0.6.2 #29 bug except the
+underlying error message changed (was `NotImplementedError` from
+`build_send_payload`, now a serde rejection).
+
+Root-caused via direct spike: ran `codex app-server` with raw stdin
+JSON-RPC frames and observed the actual response shape. Three
+schema-mismatch bugs in `lib/harnex/adapters/codex_appserver.rb`:
+
+1. **Wrong response key** — `ensure_thread!` read `result["threadId"]`
+   but Codex returns `{"result": {"thread": {"id": "..."}}}`. So
+   `@thread_id` stayed nil and `turn/start` sent `threadId: null`.
+2. **Wrong `input` shape** — `TurnStartParams.input` is an array, not
+   an object containing `content`.
+3. **Prompt extraction** — `extra_args.join(" ")` mixed Codex CLI flags
+   into the user-visible prompt.
+
+Why tests passed despite the bugs: stubs in
+`codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
+respond with field names harnex *expected* rather than Codex's actual
+response shape. Tests validated harnex against itself. Test rewrite is
+a P1 follow-up — see new issue.
+
+**Validation**: post-patch session `cx-spike-1` (no `--legacy-pty`,
+no model override, plain `--context "..."`) ran end-to-end in ~17s:
+`started → git start → send → turn_started → item_completed
+(commandExecution exitCode:0) → agentMessage "Done." (final_answer) →
+task_complete`. `harnex wait --until task_complete` returned cleanly
+with `seq:9, waited_seconds:0.0`. Telemetry record landed in
+`koder/DISPATCH.jsonl` of holm with full meta block + harness_version
+0.6.3.
+
+**Files touched**:
+- `lib/harnex/adapters/codex_appserver.rb` (~10 LOC, 3 patches +
+  helper extraction)
+- `test/harnex/runtime/session_jsonrpc_test.rb` (2 lines — assertions
+  updated from `input.content[0].text` to `input[0].text` to match
+  the corrected `dispatch` payload shape)
+- `CHANGELOG.md` — 0.6.3 entry
+- `lib/harnex/version.rb` — version bump
+- `koder/STATE.md` — this entry
+
+**Test status**: full suite green post-patch. The two `SessionJsonrpcTest`
+methods that asserted the old `input.content[0]` shape were updated.
+Restructuring tests with Codex-schema-true fixtures (real `Thread`
+objects in `thread/start` responses, contract gate against
+`codex app-server generate-json-schema`) is P1 follow-up.
+
+**Cross-repo evidence** (gitignored, on glasscube):
+- `~/.local/state/harnex/events/829f11fd3f06ce6d--cx-stress-{1,2,3,4}.jsonl`
+  — pre-patch failure traces (4/4 disconnect)
+- `~/.local/state/harnex/events/829f11fd3f06ce6d--cx-spike-1.jsonl`
+  — post-patch success trace
+- `~/Projects/holmhq/holm/master/koder/analysis/260_harnex_062_capability_review/INDEX.md`
+  — capability review + drift audit + stress-test plan that surfaced this
+- `~/Projects/harnex/koder/scratch/03_from_holm.md` — handoff note (was the
+  baton if we'd pivoted to a fresh harnex session; ended up finishing in
+  the holm orchestrator session instead)
+
+**Follow-up issues to file**:
+- Test rewrite: use Codex's actual schema as the source of truth in
+  stubs; add a contract-test gate that validates harnex's outgoing
+  JSON-RPC payloads against `codex app-server generate-json-schema --out`.
+- `inject_exit` is a no-op for the JSON-RPC adapter. `harnex stop`
+  only sends `turn/interrupt` and the subprocess lives on at
+  `state=prompt`. Full termination currently requires `kill -TERM <pid>`.
 
 ### 2026-05-06: v0.6.2 shipped — app-server `--context` + `harnex send` parity (issue #29)
 
