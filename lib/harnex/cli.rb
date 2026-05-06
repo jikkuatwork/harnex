@@ -29,6 +29,8 @@ module Harnex
         Recipes.new(@argv.drop(1)).run
       when "guide"
         Guide.new.run
+      when "agents-guide"
+        AgentsGuide.new(@argv.drop(1)).run
       when "doctor"
         Doctor.new(@argv.drop(1)).run
       when "help"
@@ -69,6 +71,8 @@ module Harnex
         Recipes.usage
       when "guide"
         Guide.usage
+      when "agents-guide"
+        AgentsGuide.usage
       else
         usage
       end
@@ -85,6 +89,7 @@ module Harnex
           harnex logs --id ID [options]
           harnex events --id ID [options]
           harnex pane --id ID [options]
+          harnex agents-guide [topic]
           harnex help [command]
 
         Commands:
@@ -98,10 +103,13 @@ module Harnex
           pane    Capture the current tmux pane for a live session
           recipes List and read workflow recipes
           guide   Show the getting started guide
+          agents-guide
+                  Show agent dispatch, chain, buddy, monitoring, and naming guides
           doctor  Run preflight checks for adapter dependencies
           help    Show command help
 
         New to harnex? Start with: harnex guide
+        Working with agents (dispatching tasks)? Read: harnex agents-guide
 
         Notes:
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
@@ -115,6 +123,7 @@ module Harnex
           harnex logs --id main --follow
           harnex events --id main --snapshot
           harnex pane --id main --lines 40
+          harnex agents-guide dispatch
           harnex send --id main --message "Summarize current progress."
       TEXT
     end
