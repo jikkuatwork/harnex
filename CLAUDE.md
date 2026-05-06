@@ -115,10 +115,34 @@ See `recipes/03_buddy.md` for the full pattern.
 
 ## Releasing
 
-- `gem build harnex.gemspec` to build the gem
-- `bin/gem-push harnex-<VERSION>.gem` to push — it reads the TOTP key
-  from `.env` and generates the OTP automatically. Do not read `.env`
-  yourself or generate OTP inline.
+The harnex gem and the harnex CLI on `PATH` live on the **same
+machine**. Pushing the gem to RubyGems does NOT update the local
+binary — that's a separate `gem install`. Skipping it leaves
+`harnex *` invocations running an older version with the older
+adapter behavior, which silently breaks dispatch flows. Always do
+both, in order:
+
+1. `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
+   — tests must be green at HEAD before tagging.
+2. `gem build harnex.gemspec` — produces `harnex-<VERSION>.gem`.
+3. `bin/gem-push harnex-<VERSION>.gem` — pushes to RubyGems. Reads
+   the TOTP key from `.env` and generates the OTP automatically. Do
+   NOT read `.env` yourself or generate OTP inline.
+4. `git tag -a v<VERSION> -m "harnex <VERSION> — <summary>"` then
+   `git push origin main && git push origin v<VERSION>`.
+5. `gem install harnex` — pulls the just-published version into the
+   local install. **Do not skip this.** Verify with
+   `harnex --version` (must match the new VERSION).
+6. Smoke-test a relevant new surface (e.g. `harnex doctor` on 0.6.0).
+7. Clean up the local `.gem` artifact: `rm harnex-<VERSION>.gem`.
+8. Update `koder/STATE.md` with what shipped and the unblock state.
+
+Skill files are bundled in the gem (`s.files` glob includes
+`skills/**/*`). If `skills/` content changed in this release, also
+run `harnex skills uninstall && harnex skills install` so the
+globally installed copies under `~/.claude/skills/` and
+`~/.codex/skills/` come from the published gem rather than the dev
+checkout. If `skills/` did not change, this step is optional.
 
 ## Development notes
 
