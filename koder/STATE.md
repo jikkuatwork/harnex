@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — #30 next; no feature work until contract gate lands)
+Updated: 2026-05-07 (freeze in effect — plan 29 drafted for #30; ready to execute)
 
 ## Current snapshot
 
@@ -269,6 +269,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
+| 29 | Test schema truth + contract gate (#30) | **draft** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -276,6 +277,53 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-07 (later): plan 29 drafted for #30; auto-approval enum bug surfaced
+
+**Plan 29** (`koder/plans/29_test_schema_truth.md`) is drafted, 6
+commits each green at HEAD:
+
+1. Schema fixture — capture relevant subset of `codex app-server
+   generate-json-schema --out` to `test/fixtures/codex_schema/`
+   (~150 KB, 16 files; pinned to codex 0.128.0)
+2. Stdlib JSON Schema validator — Draft-7 subset under
+   `test/support/json_schema_validator.rb` (~250 LOC). Project is
+   stdlib-only, so vendoring rather than `json_schemer`
+3. Outgoing payload contract tests — capture every JSON line from
+   `JsonRpcClient#write_line`, validate against the matching schema.
+   Cases: `initialize`, `thread/start`, `turn/start` (×3 variants),
+   `turn/interrupt`, all four auto-approval responses
+4. Realistic incoming-response stubs — replace `{"threadId" =>
+   "thr-1"}` literals in `codex_appserver_lifecycle_test.rb` /
+   `session_jsonrpc_test.rb` with schema-shaped
+   `Fixtures::Codex.thread_start_response(...)` builders
+5. Adapter fixes surfaced by the contract tests (see bug below);
+   drop `extract_thread_id` and `dispatch` fallback chains
+6. Drift gate — `test/harnex/contract/schema_freshness_test.rb`
+   runs `codex app-server generate-json-schema` at test time, diffs
+   against fixture, fails with actionable refresh hint. Skips
+   gracefully when codex isn't on PATH
+
+**Bug surfaced while scoping (Phase 5 will fix):**
+`APPROVAL_RESPONSES["item/commandExecution/requestApproval"]` sends
+`{decision: "approved"}` but the response schema is
+`CommandExecutionApprovalDecision`, whose enum is
+`accept | acceptForSession | decline | cancel | ...` — `"approved"`
+belongs to the *other* enum (`ReviewDecision`, used by
+`applyPatchApproval` and `execCommandApproval`). Almost certainly
+invalid since the JSON-RPC mediator landed in 0.6.4. Verify
+production impact at Phase 5 impl time; ship the fix regardless
+because the schema is unambiguous.
+
+**Architectural conversation:** floated extracting a Ruby library
+that wraps `codex app-server`. **Rejected for now.** harnex touches
+~5 request methods and ~10 notification types out of Codex's 234
+schemas — full library is 90%+ unused. #30's contract gate solves
+the bug class at far lower cost. Followup worth keeping in mind
+after #30: a thin in-repo `Harnex::Adapters::CodexAppServer::Protocol`
+module with named typed methods (e.g.
+`thread_start(params) → typed`) and built-in validation. Phase 4's
+`Fixtures::Codex` builders are already a step toward that.
 
 ### 2026-05-07 (late): freeze — #30 only next session
 
@@ -338,23 +386,18 @@ work; JSON-RPC stays the default for autonomous worker dispatch.
 
 ### Next session (no other agenda)
 
-1. Read `koder/issues/30_test_schema_truth.md` end-to-end before
-   touching anything.
-2. Implement the contract gate: capture
-   `codex app-server generate-json-schema --out` to a checked-in
-   fixture, then add tests that validate harnex's outgoing
-   `turn/start` / approval-response payloads against it AND tests
-   that validate harnex's parsing of representative real Codex
-   responses (real `Thread` objects in `thread/start`, etc.).
-3. Rewrite the existing JSON-RPC test stubs in
-   `codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
-   to match Codex's actual schema rather than harnex's old wrong
-   assumptions.
-4. CI hook: any drift in the schema fixture should fail the build,
-   not silently update.
-5. After #30 lands, freeze lifts. Backlog order then:
-   #32 Commits 2/3 + 3/3 → #34 (early-reject `-m` on JSON-RPC) →
-   #33 (token capture) → 0.6.5 release.
+Execute plan 29 (`koder/plans/29_test_schema_truth.md`) starting at
+Phase 1 — schema fixture capture. Plan is fully scoped; just walk it.
+Each phase is one commit; full suite must stay green between commits.
+
+After #30 lands:
+
+1. Backlog: #32 Commits 2/3 + 3/3 → #34 (early-reject `-m` on
+   JSON-RPC) → #33 (token capture) → 0.6.5 release.
+2. Followup worth keeping: in-repo
+   `Harnex::Adapters::CodexAppServer::Protocol` module with typed
+   methods + boundary validation, building on the `Fixtures::Codex`
+   builders introduced in Phase 4 of plan 29.
 
 ### 2026-05-06 (post-0.6.4): issue #31 fixed
 
