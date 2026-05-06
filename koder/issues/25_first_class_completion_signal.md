@@ -1,5 +1,6 @@
 ---
-status: superseded
+status: closed
+closed_in: harnex-0.6.0
 priority: P1
 created: 2026-05-02
 superseded_by: 27_codex_appserver_adapter

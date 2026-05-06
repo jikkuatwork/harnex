@@ -31,6 +31,8 @@ module Harnex
         Guide.new.run
       when "skills"
         Skills.new(@argv.drop(1)).run
+      when "doctor"
+        Doctor.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -101,6 +103,7 @@ module Harnex
           recipes List and read workflow recipes
           guide   Show the getting started guide
           skills  Install bundled skills into a repo or globally
+          doctor  Run preflight checks for adapter dependencies
           help    Show command help
 
         New to harnex? Start with: harnex guide

@@ -6,6 +6,10 @@ resolved: 2026-04-29
 tags: monitoring,dispatch,orchestration
 ---
 
+> **2026-05-06 — Codex side closed by construction in harnex 0.6.0**
+> via Issue 27 (`codex app-server` adapter). `--watch --stall-after`
+> still applies to `claude` and `generic` adapters.
+
 > **2026-05-06 update — Codex side superseded by Issue 27.**
 > The log-mtime + bounded-resume work shipped in v0.4.0 still applies for
 > `claude` and `generic` adapters. For Codex, Issue 27 replatforms the

@@ -1,6 +1,6 @@
 # Issue 24 — Layer 5: codex stream-disconnect detection
 
-**Status**: superseded
+**Status**: closed (harnex 0.6.0)
 **Priority**: P1
 **Filed**: 2026-04-30
 **Superseded by**: `27_codex_appserver_adapter.md` (2026-05-06)

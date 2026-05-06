@@ -321,7 +321,25 @@ The adapter reads the screen and returns a state hash:
 | `confirmation`           | `false`       | Modal confirmation    |
 | `unknown`                | `nil`         | Can't determine       |
 
-### Codex Adapter
+### Codex Adapter (default — JSON-RPC `app-server`)
+
+- `transport :stdio_jsonrpc` — speaks JSON-RPC 2.0 over the
+  subprocess's stdin/stdout, one JSON object per line.
+- Launches `codex app-server` (Codex CLI ≥ 0.128.0; verify with
+  `harnex doctor`).
+- Notifications (`turn/started`, `turn/completed`, `item/completed`,
+  `error`, `thread/compacted`, …) fan into the events log.
+  `task_complete` is the harnex-side event for `turn/completed`.
+- Disconnect is detected from JSON-RPC error responses, subprocess
+  EOF, parse errors, or a server `error` notification — no screen
+  regex required.
+- Synthesized transcript: `item/completed` text payloads stream to
+  both the output log and STDOUT so tmux/pane workflows continue to
+  work without a real PTY.
+- See `docs/codex-appserver.md` for the full mapping table and
+  troubleshooting.
+
+#### Codex Adapter (legacy PTY — `--legacy-pty`, removal in 0.7.0)
 
 - Launches with `--no-alt-screen` for inline screen output
 - Detects prompt by looking for `›` prefix in recent lines
