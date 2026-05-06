@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.1] — 2026-05-06
+
+### Added
+
+- `harnex agents-guide [topic]` exposes dispatch, chain, buddy,
+  monitoring, and naming guidance from the installed CLI.
+- `harnex --help` now points agents to `harnex agents-guide`.
+- `harnex help <command>` entries now include common patterns and gotchas for
+  agent dispatch workflows.
+
+### Removed
+
+- `harnex skills install` and `harnex skills uninstall`.
+- Bundled `skills/` sources and repo-local skill symlinks. Agents now discover
+  guidance through `harnex --help` and `harnex agents-guide`.
+
+### Notes
+
+- `--legacy-pty` removal is still scheduled for 0.7.0.
+- `man harnex` was deferred; the CLI-native `agents-guide` path satisfies the
+  agent-discovery acceptance test without adding a man-page build dependency.
+
 ## 0.6.0 — 2026-05-06
 
 ### Architectural pivot: Codex on JSON-RPC

@@ -1,7 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-05-06
+resolved: 2026-05-06
+closed_in: harnex-0.6.1
 tags: cli,docs,agents,dispatch,release
 ---
 
@@ -34,5 +36,7 @@ installation hint:
 
 ## Status
 
-Open. Resolve when the CLI surface, packaged guide files, tests, local gem
-build/install verification, and `v0.6.1` tag are complete.
+Resolved for harnex 0.6.1. The CLI exposes `harnex agents-guide [topic]`,
+top-level and per-command help point agents to the guide surface, the old
+skills installer and bundled skill files are removed, and the release was
+verified with the full test suite plus local gem build/install smoke tests.

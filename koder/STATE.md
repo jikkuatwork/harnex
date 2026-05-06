@@ -1,17 +1,18 @@
 # Harnex State
 
-Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblocked)
+Updated: 2026-05-06 (v0.6.1 prepared — CLI-native agent guides; skills installer removed)
 
 ## Current snapshot
 
-- `lib/harnex.rb` is a 21-line loader.
+- `lib/harnex.rb` is a 29-line loader.
 - Code is split into separate files:
   - `lib/harnex/core.rb` — constants, env helpers, registry, port allocation
   - `lib/harnex/watcher.rb` + `watcher/{inotify,polling}.rb` — file watching (inotify on Linux, polling fallback on macOS/other)
   - `lib/harnex/adapters.rb` + `adapters/{base,generic,codex,claude}.rb`
   - `lib/harnex/runtime/{session_state,message,inbox,session,file_change_hook,api_server}.rb`
-  - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,skills}.rb`
+  - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
+  - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
 - Test suite: `test/` with 289 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
@@ -31,17 +32,11 @@ Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblock
   - `harnex guide` — prints GUIDE.md (getting started walkthrough)
   - `harnex recipes` — lists and shows workflow recipes (fire-and-watch,
     chain-implement)
-  - `harnex skills install [SKILL]` — installs any bundled repo skill into
-    `.claude/skills/` and symlinks `.codex/skills/` to it
-- Bundled skill install is now generalized beyond `harnex`: `open` and `close`
-  can be installed repo-locally with `harnex skills install <skill>` while
-  `harnex` remains the default for backwards compatibility.
-- Bundled session lifecycle skills now include `open` for session initialization
-  (read `koder/STATE.md`, inspect the worktree, align on the next step) and
-  `close` for session wrap-up (update `koder/STATE.md`, clean up artifacts,
-  leave a clear handoff).
-- Project-local skill symlinks added for `open` and `close`: `.claude/skills/`
-  for Claude Code, `.agents/skills/` for Codex.
+  - `harnex agents-guide [topic]` — lists and shows agent-facing guidance for
+    dispatch, chain, buddy, monitoring, and naming patterns
+- `harnex skills install` / `uninstall`, bundled `skills/`, and repo-local
+  skill symlinks were removed in 0.6.1. Agents discover harnex from
+  `harnex --help`, `harnex help <command>`, and `harnex agents-guide`.
 - README rewritten for non-users (quick "is this for me?" format). Usage
   details moved to GUIDE.md, command reference stays in TECHNICAL.md.
 - README, GUIDE, and recipe docs now present **fire-and-watch** as the primary
@@ -49,8 +44,8 @@ Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblock
   planning/implementation/fixes, Claude for reviews.
 - README documents buddy pattern with concrete examples (stall monitor, doc
   drift monitor) and the `$HARNEX_SPAWNER_PANE` non-harnex invoker pattern.
-- GUIDE.md updated: `harnex skills install` replaces manual symlinks, buddy
-  recipe listed, `$HARNEX_SPAWNER_PANE` return channel documented.
+- README, GUIDE, and TECHNICAL now point to `harnex agents-guide` instead of
+  skill installation. `$HARNEX_SPAWNER_PANE` return channel remains documented.
 - `recipes/` directory with tested workflow patterns:
   - `01_fire_and_watch` — atomic unit: spawn, send, pane poll, capture
   - `02_chain_implement` — batch implement→review→fix loop
@@ -94,20 +89,16 @@ Updated: 2026-05-06 (v0.6.0 shipped — Codex `app-server` adapter; holm unblock
   PID (the agent's ancestor).
 - `harnex status` now always shows a truncated REPO column (20 chars, tail-
   truncated with `..` prefix), giving context without requiring `--all`.
-- Installable skills namespaced as `harnex-dispatch`, `harnex-chain`,
-  `harnex-buddy`. Install via `harnex skills install`.
-- `harnex skills install` auto-removes deprecated skill names (`dispatch`,
-  `chain-implement`) during install. `harnex skills uninstall` removes all
-  installed skills.
+- `harnex agents-guide` replaces the old installable skill catalogue with
+  packaged Markdown topics: dispatch, chain, buddy, monitoring, and naming.
 - New buddy recipe (`recipes/03_buddy.md`): spawn an accountability partner
   for long-running sessions. The buddy polls `harnex pane`/`harnex status` and
   nudges stalled workers via `harnex send`.
 - `$HARNEX_SPAWNER_PANE` env var: every spawned session receives the invoker's
   stable tmux pane ID (`$TMUX_PANE`), enabling the return channel to non-harnex
   invokers via `tmux send-keys`.
-- `harnex skills install` defaults to global install (`~/.claude/skills/`,
-  `~/.codex/skills/`). Use `--local` for repo-local installs. Global install
-  copies files (not symlinks) so skills survive gem updates.
+- Per-command help now includes common patterns and gotchas, so `harnex help
+  run`, `harnex help send`, etc. are self-sufficient for agent dispatch.
 - Codex adapter now latches `@banner_seen` on first detection, so state
   detection survives stream disconnects that push the banner out of the
   40-line window. Previously this caused `unknown` state and 120s send
@@ -169,8 +160,8 @@ Harnex is a local PTY harness for interactive terminal agents.
   (`--until prompt`).
 - `harnex guide` prints the getting started guide.
 - `harnex recipes` lists and shows workflow recipes.
-- `harnex skills install [SKILL...]` installs bundled skills into a repo for
-  Claude/Codex (accepts multiple names; defaults to `harnex`).
+- `harnex agents-guide [topic]` lists and shows agent-facing guidance packaged
+  with the gem.
 - Adapter logic owns CLI-specific launch args, prompt detection, submit
   behavior, stop sequence, and send-readiness waiting.
 - Session output is mirrored to the terminal, stored in a 64KB ring buffer for
@@ -208,6 +199,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 25 | First-class task-complete signal for dispatched workers | **closed by #27 in 0.6.0** | P1 |
 | 26 | `harnex status` silently filters by repo, missing worktree sessions | open | P2 |
 | 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **shipped in 0.6.0** | P1 |
+| 28 | Make harnex agent-discoverable from the CLI alone | **resolved in 0.6.1** | P1 |
 
 See `koder/issues/` for details.
 
@@ -240,6 +232,36 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-06: v0.6.1 prepared — agent-discoverable CLI (issue #28 resolved)
+
+`harnex 0.6.1` removes the old skill installer and makes agent guidance
+discoverable from the installed CLI alone.
+
+**What landed:**
+
+- `harnex agents-guide [topic]` with packaged topics for dispatch, chain,
+  buddy, monitoring, and naming.
+- Top-level `harnex` / `harnex --help` now points agents to
+  `harnex agents-guide`.
+- `harnex help <command>` now includes common patterns and gotchas.
+- `harnex skills install` / `uninstall`, bundled `skills/`, and repo-local
+  skill symlinks were removed.
+- README, GUIDE, TECHNICAL, and CLAUDE/AGENTS/CODEX documentation now point to
+  CLI-native agent guides.
+- Optional `man harnex` support was deferred because `md2man` is not available
+  locally and the CLI-native guide path satisfies acceptance.
+
+**Verification so far:**
+
+- Full suite: 289 runs, 891 assertions, 0 failures, 1 integration skip.
+- Acceptance path checked from the repo with `ruby -Ilib bin/harnex`,
+  `ruby -Ilib bin/harnex --help`, and `ruby -Ilib bin/harnex agents-guide`.
+
+**Recommended next engineering step:**
+
+After tagging/install verification, the next open P2 remains **#26**
+(`harnex status` silently filters by repo, missing worktree sessions).
 
 ### 2026-05-06: v0.6.0 shipped — Codex `app-server` adapter (issue #27 closed)
 
