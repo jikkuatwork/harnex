@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-05-06
+
 ### Fixed
 
 - JSON-RPC adapter (`codex app-server`): harnex now mediates Codex's
@@ -29,6 +31,16 @@
   any operator who prefers terminal-native Codex chrome. JSON-RPC
   remains the default for autonomous worker dispatches and structured
   observability.
+
+### Added
+
+- JSON-RPC adapter: classify sub-5s pre-turn exits as `boot_failure`
+  (vs the existing `disconnected` terminal state), tracked by latching
+  on `turn/started`. `build_summary_actual` counts `boot_failure` exits
+  in `actual.disconnections` so early-boot deaths are not lost from
+  dispatch telemetry. First of three planned commits for issue #32;
+  remaining work (ensure-block telemetry write + optional `last_error`
+  capture) tracked separately.
 
 ## [0.6.3] — 2026-05-06
 
