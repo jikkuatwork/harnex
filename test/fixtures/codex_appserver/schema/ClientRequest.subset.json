@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ClientRequest (subset for harnex)",
+  "description": "Hand-pruned slice of the Codex app-server ClientRequest schema. Contains only the request methods harnex issues.",
+  "oneOf": [
+    {
+      "method": "initialize",
+      "params": {
+        "clientInfo": { "title": "string", "name": "string", "version": "string" },
+        "capabilities": {
+          "experimentalApi": "boolean",
+          "optOutNotificationMethods": ["string"]
+        }
+      }
+    },
+    {
+      "method": "thread/start",
+      "params": {}
+    },
+    {
+      "method": "turn/start",
+      "params": {
+        "threadId": "string",
+        "input": { "content": [{ "type": "text", "text": "string" }] },
+        "model": "string?",
+        "effort": "string?"
+      }
+    },
+    {
+      "method": "turn/interrupt",
+      "params": { "threadId": "string", "turnId": "string" }
+    },
+    {
+      "method": "thread/resume",
+      "params": { "threadId": "string" }
+    }
+  ]
+}

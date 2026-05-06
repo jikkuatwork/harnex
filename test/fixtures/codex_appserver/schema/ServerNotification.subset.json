@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ServerNotification (subset for harnex)",
+  "description": "Hand-pruned slice of the Codex app-server ServerNotification schema. Contains only the notification methods harnex consumes. Regenerate via `codex app-server generate-json-schema --out <dir>` and prune with bin/dev/regen-codex-schema (Phase 1).",
+  "oneOf": [
+    { "method": "error", "params": "ErrorNotificationParams" },
+    { "method": "thread/started", "params": "ThreadStartedNotification" },
+    { "method": "thread/status/changed", "params": "ThreadStatusChangedNotification" },
+    { "method": "thread/tokenUsage/updated", "params": "ThreadTokenUsageUpdatedNotification" },
+    { "method": "thread/compacted", "params": "ThreadCompactedNotification" },
+    { "method": "turn/started", "params": "TurnStartedNotification" },
+    { "method": "turn/completed", "params": "TurnCompletedNotification" },
+    { "method": "item/started", "params": "ItemStartedNotification" },
+    { "method": "item/completed", "params": "ItemCompletedNotification" },
+    { "method": "account/rateLimits/updated", "params": "AccountRateLimitsUpdatedNotification" }
+  ]
+}
