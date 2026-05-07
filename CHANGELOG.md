@@ -9,6 +9,24 @@
   `events_log_path` — surfacing data harnex already tracked but did
   not persist. `meta.parent_dispatch_id` now auto-derives from
   `$HARNEX_ID` when not supplied via `--meta`. (#35 Tier 2)
+- DISPATCH row `meta.agent_provider` and `meta.agent_version` now
+  populated. `provider` is a per-adapter constant
+  (claude → `anthropic`, codex → `openai`, generic → nil).
+  `agent_version` lazily probes `<base_command.first> --version`
+  with a 2s timeout, memoizes per adapter, and falls back to nil if
+  the binary is missing or stalls. (#35 Tier 3)
+
+### Removed
+
+- DISPATCH row dropped four always-null fields with no code path
+  populating them: `actual.cost_usd`, `actual.tests_run`,
+  `actual.tests_passed`, `actual.tests_failed`, and
+  `meta.agent_deployment`. Cost computation belongs to downstream
+  consumers (per-model rate tables change frequently); test-result
+  aggregation belongs to CI integrations, not the harness; and the
+  `agent_deployment` concept had no source of truth. JSON Lines
+  consumers should update column readers — schema is now stable but
+  smaller. (#35 Tier 3)
 
 ### Fixed
 

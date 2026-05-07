@@ -9,7 +9,6 @@ class DispatchRowSchemaTest < Minitest::Test
     commands_executed
     commits
     compactions
-    cost_usd
     disconnections
     duration_s
     effort
@@ -30,9 +29,6 @@ class DispatchRowSchemaTest < Minitest::Test
     signal
     stalls
     task_complete
-    tests_failed
-    tests_passed
-    tests_run
     tool_calls
     total_tokens
     turn_count
@@ -40,7 +36,6 @@ class DispatchRowSchemaTest < Minitest::Test
 
   META_KEYS = %w[
     agent
-    agent_deployment
     agent_provider
     agent_version
     branch
@@ -73,8 +68,9 @@ class DispatchRowSchemaTest < Minitest::Test
 
       id = "schema-worker"
       summary_path = File.join(repo, "koder", "DISPATCH.jsonl")
+      adapter = build_stubbed_codex_adapter("codex-test-1.0.0")
       session = Harnex::Session.new(
-        adapter: Harnex::Adapters::Codex.new,
+        adapter: adapter,
         command: [RbConfig.ruby, "-e", codex_summary_script],
         repo_root: repo,
         host: "127.0.0.1",
@@ -112,9 +108,8 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal "harnex", meta.fetch("harness")
       assert_kind_of String, meta.fetch("harness_version")
       assert_equal "codex", meta.fetch("agent")
-      assert_nil meta.fetch("agent_version")
-      assert_nil meta.fetch("agent_provider")
-      assert_nil meta.fetch("agent_deployment")
+      assert_equal "codex-test-1.0.0", meta.fetch("agent_version")
+      assert_equal "openai", meta.fetch("agent_provider")
       assert_kind_of String, meta.fetch("host")
       assert_kind_of String, meta.fetch("platform")
       assert_equal "holm", meta.fetch("orchestrator")
@@ -149,7 +144,6 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 0, actual.fetch("exit_code")
       assert_nil actual.fetch("signal")
       assert_nil actual.fetch("last_error")
-      assert_nil actual.fetch("cost_usd")
       assert_kind_of Integer, actual.fetch("loc_added")
       assert_kind_of Integer, actual.fetch("loc_removed")
       assert_kind_of Integer, actual.fetch("files_changed")
@@ -158,9 +152,6 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_kind_of Integer, actual.fetch("force_resumes")
       assert_kind_of Integer, actual.fetch("disconnections")
       assert_kind_of Integer, actual.fetch("compactions")
-      assert_nil actual.fetch("tests_run")
-      assert_nil actual.fetch("tests_passed")
-      assert_nil actual.fetch("tests_failed")
       assert_kind_of Integer, actual.fetch("turn_count")
       assert_kind_of Integer, actual.fetch("tool_calls")
       assert_kind_of Integer, actual.fetch("commands_executed")
@@ -175,7 +166,7 @@ class DispatchRowSchemaTest < Minitest::Test
       id = "schema-headless"
       summary_path = File.join(repo, "DISPATCH.jsonl")
       session = Harnex::Session.new(
-        adapter: Harnex::Adapters::Codex.new,
+        adapter: build_stubbed_codex_adapter("codex-test-1.0.0"),
         command: [RbConfig.ruby, "-e", codex_summary_script],
         repo_root: repo,
         host: "127.0.0.1",
@@ -191,7 +182,27 @@ class DispatchRowSchemaTest < Minitest::Test
     end
   end
 
+  def test_agent_version_probe_returns_string_for_real_binary
+    adapter = Harnex::Adapters::Generic.new(RbConfig.ruby)
+    version = adapter.agent_version
+
+    assert_kind_of String, version
+    refute_empty version
+  end
+
+  def test_agent_version_probe_returns_nil_for_missing_binary
+    adapter = Harnex::Adapters::Generic.new("harnex-nonexistent-binary-#{Process.pid}")
+
+    assert_nil adapter.agent_version
+  end
+
   private
+
+  def build_stubbed_codex_adapter(version)
+    adapter = Harnex::Adapters::Codex.new
+    adapter.define_singleton_method(:agent_version) { version }
+    adapter
+  end
 
   def codex_summary_script
     <<~RUBY

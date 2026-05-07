@@ -228,13 +228,11 @@ class SessionTest < Minitest::Test
       assert_equal "high", record.dig("actual", "effort")
       assert_kind_of Integer, record.dig("actual", "duration_s")
       assert_equal 104_158, record.dig("actual", "input_tokens")
-      assert_nil record.dig("actual", "cost_usd")
       assert_equal 1, record.dig("actual", "loc_added")
       assert_equal 1, record.dig("actual", "files_changed")
       assert_equal 1, record.dig("actual", "commits")
       assert_equal "success", record.dig("actual", "exit")
       assert_equal 0, record.dig("actual", "force_resumes")
-      assert_nil record.dig("actual", "tests_run")
     end
   end
 
@@ -261,10 +259,8 @@ class SessionTest < Minitest::Test
       assert_nil record.dig("actual", "output_tokens")
       assert_nil record.dig("actual", "reasoning_tokens")
       assert_nil record.dig("actual", "cached_tokens")
-      assert_nil record.dig("actual", "cost_usd")
       assert_equal "disconnected", record.dig("actual", "exit")
       assert_equal 1, record.dig("actual", "disconnections")
-      assert_nil record.dig("actual", "tests_passed")
     end
   end
 

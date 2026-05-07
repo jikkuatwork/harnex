@@ -8,6 +8,10 @@ module Harnex
         super("claude", extra_args)
       end
 
+      def provider
+        "anthropic"
+      end
+
       def base_command
         [
           "claude",

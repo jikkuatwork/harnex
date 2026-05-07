@@ -83,21 +83,39 @@ silently dropped, or the schema is internally inconsistent.
 
 ## Tier 3 — decide: populate or remove always-null fields
 
-- **`cost_usd`** — always `nil`. Either compute from `model` + a
-  token-rate table, or drop the column.
-- **`tests_run` / `tests_passed` / `tests_failed`** — always `nil`.
-  No code path populates them. Drop, or wire from a heuristic
-  (transcript scan).
-- **`agent_version` / `agent_provider` / `agent_deployment`** —
-  always `nil`. `agent_version` is a one-liner: shell out
-  `<cli> --version` at adapter init and cache.
-- **`approvals_handled`** — JSON-RPC approval mediator could expose
-  an auto-approval count. Useful for sandbox/policy auditing once
-  approvals matter.
-- **`predicted: {}`** — empty for nearly every row in the wild. If
-  `--meta predicted=…` is rare, this field bloats the schema. Either
-  document it as the canonical pre-task forecast surface or move
-  under a sparser key.
+Resolved 2026-05-07.
+
+- **`cost_usd`** — *dropped.* Per-model rate tables change frequently
+  and harnex has no opinion on Anthropic vs OpenAI vs other vendor
+  pricing. Downstream consumers compute cost from the token columns
+  using their own rate table; emitting always-null bloats the schema.
+- **`tests_run` / `tests_passed` / `tests_failed`** — *dropped.* No
+  code path populates them; transcript scanning would be brittle and
+  adapter-specific. Test-result aggregation belongs to CI integrations,
+  not the harness.
+- **`agent_version`** — *populated.* `Adapters::Base#agent_version`
+  lazily shells out `<base_command.first> --version` with a 2s
+  `Timeout.timeout` bound, memoizes per adapter instance, and returns
+  nil on missing binary, non-zero exit, or timeout. Trimmed first line
+  of stdout becomes the value.
+- **`agent_provider`** — *populated.* `Adapters::Base#provider` returns
+  nil; subclasses override (Claude → `"anthropic"`, Codex /
+  CodexAppServer → `"openai"`). `Generic` keeps the nil default.
+- **`agent_deployment`** — *dropped.* Concept had no source of truth.
+  Could mean cloud vs local vs API-key vs subscription, but adapters
+  don't expose any of that. Remove rather than leave as decorative
+  nullable.
+- **`approvals_handled`** — *deferred.* The JSON-RPC adapter currently
+  auto-approves every request via `APPROVAL_RESPONSES`, so a counter
+  would only confirm the count of `applyPatchApproval` /
+  `execCommandApproval` events. Useful only when policy moves beyond
+  "auto-approve everything" — revisit then. Not added to the schema
+  in this pass.
+- **`predicted: {}`** — *kept as-is.* The empty hash is a deliberate
+  JSON Lines stable-shape choice and matches the same pattern that
+  Tier 1 applied to `last_error`. `predicted` remains the canonical
+  pre-task forecast surface, populated via `--meta predicted=…`. No
+  change required.
 
 ## Tier 4 — richer captures (only if cheap)
 

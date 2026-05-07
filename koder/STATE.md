@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 | 07:30 PM | IST
+Updated: 2026-05-07 | 07:28 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,17 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-07 | 07:28 PM | IST: #35 Tier 3 landed. DISPATCH dropped
+  four always-null fields (`actual.cost_usd`,
+  `actual.tests_run|passed|failed`, `meta.agent_deployment`) and
+  populated two: `meta.agent_provider` (per-adapter constant —
+  claude→anthropic, codex→openai) and `meta.agent_version` (lazy
+  `<cli> --version` probe with 2s `Timeout.timeout`, memoized,
+  nil on failure). `approvals_handled` left out of schema (deferred
+  until policy moves beyond auto-approve-everything); `predicted: {}`
+  kept as deliberate JSON Lines stable shape. Schema test updated;
+  two new probe tests cover real-binary success and missing-binary
+  fallback. Suite green: 402 runs, 1295 assertions.
 - 2026-05-07 | 07:30 PM | IST: #35 Tier 2 landed. DISPATCH `actual`
   now carries `turn_count`, `tool_calls`, `commands_executed`,
   `rate_limits`, `output_log_path`, `events_log_path`; `meta`
@@ -35,10 +46,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree is clean on `main` after #36 Tier 2 ships. CHANGELOG
-  `[Unreleased]` carries the entry under `### Fixed`.
-- #35 Tier 2/3/4 still open under `koder/issues/35_*` as
-  follow-ups (turn counts, log paths, richer captures).
+- Tree is clean on `main` after #35 Tier 3 ships. CHANGELOG
+  `[Unreleased]` now carries #35 Tier 2, #35 Tier 3, and #36 Tier 2.
+- #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
+  remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,
   #18, #26.
 - Test command:
@@ -46,18 +57,17 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #35 Tier 3: decide whether to populate or remove always-null
-   fields (`cost_usd`, `tests_*`, `agent_version` family). See
-   `koder/issues/35_dispatch_telemetry_hygiene.md`.
-2. #35 deferred `auto_disconnects` — needs a dedicated counter
+1. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-3. Optional #36 follow-ups (deferred — not required for closure):
+2. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-4. File the concurrency / hardening audit and the doc-staleness
+3. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
+4. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+   capture if/when richer git context is wanted.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

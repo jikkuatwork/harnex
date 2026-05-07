@@ -1,7 +1,11 @@
+require "open3"
+require "timeout"
+
 module Harnex
   module Adapters
     class Base
       PROMPT_PREFIXES = [">", "\u203A", "\u276F"].freeze
+      AGENT_VERSION_TIMEOUT_SECONDS = 2.0
 
       # Adapter contract — subclasses MUST implement:
       #   base_command          -> Array[String]  CLI args to spawn
@@ -24,6 +28,21 @@ module Harnex
       # :stdio_jsonrpc; Session#run uses this to pick the I/O path.
       def transport
         :pty
+      end
+
+      # Vendor of the underlying agent — populates DISPATCH meta.agent_provider.
+      # Subclasses override (claude → "anthropic", codex → "openai").
+      def provider
+        nil
+      end
+
+      # Probes `<base_command.first> --version` with a short timeout and
+      # memoizes the result for the adapter's lifetime. Returns nil when
+      # the binary is missing, exits non-zero, or stalls past the timeout.
+      def agent_version
+        return @agent_version if defined?(@agent_version)
+
+        @agent_version = probe_agent_version
       end
 
       def describe
@@ -107,6 +126,20 @@ module Harnex
       end
 
       protected
+
+      def probe_agent_version
+        cli = base_command.first
+        return nil unless cli
+
+        Timeout.timeout(AGENT_VERSION_TIMEOUT_SECONDS) do
+          stdout, status = Open3.capture2(cli, "--version", err: File::NULL, in: File::NULL)
+          return nil unless status.success?
+
+          stdout.to_s.lines.first&.strip
+        end
+      rescue Errno::ENOENT, Timeout::Error, StandardError
+        nil
+      end
 
       def submit_bytes
         "\r"

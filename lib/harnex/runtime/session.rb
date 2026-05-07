@@ -857,9 +857,8 @@ module Harnex
         harness: "harnex",
         harness_version: Harnex.harness_version,
         agent: adapter.key,
-        agent_version: nil,
-        agent_provider: nil,
-        agent_deployment: nil,
+        agent_version: adapter.agent_version,
+        agent_provider: adapter.provider,
         host: info[:host],
         platform: info[:platform],
         orchestrator: passthrough["orchestrator"],
@@ -895,7 +894,6 @@ module Harnex
         total_tokens: @usage_summary[:total_tokens],
         agent_session_id: summary_agent_session_id,
         adapter_transport: adapter.transport.to_s,
-        cost_usd: nil,
         loc_added: @git_end[:loc_added],
         loc_removed: @git_end[:loc_removed],
         files_changed: @git_end[:files_changed],
@@ -914,10 +912,7 @@ module Harnex
         commands_executed: counters[:commands_executed],
         rate_limits: @rate_limits,
         output_log_path: output_log_path,
-        events_log_path: events_log_path,
-        tests_run: nil,
-        tests_passed: nil,
-        tests_failed: nil
+        events_log_path: events_log_path
       }
       actual
     end

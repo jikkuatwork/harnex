@@ -69,6 +69,10 @@ module Harnex
         :stdio_jsonrpc
       end
 
+      def provider
+        "openai"
+      end
+
       def base_command
         ["codex", "app-server"]
       end

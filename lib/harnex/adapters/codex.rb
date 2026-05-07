@@ -10,6 +10,10 @@ module Harnex
         @banner_seen = false
       end
 
+      def provider
+        "openai"
+      end
+
       def base_command
         [
           "codex",
