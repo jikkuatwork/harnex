@@ -76,6 +76,8 @@ module Harnex
       @usage_summary = {}
       @ended_at = nil
       @exit_reason = nil
+      @last_error = nil
+      @session_finalized = false
       @turn_started_seen = false
       @last_completed_at = nil
       @auto_stop = !!auto_stop
@@ -144,16 +146,12 @@ module Harnex
       @ended_at = Time.now
 
       output_thread.join(1)
-      emit_session_end_telemetry
-      @exit_reason = classify_exit
-      summary_record = build_summary_record
-      append_summary_record(summary_record)
-      emit_summary_event
-      emit_exit_event
+      finalize_session!
       input_thread&.kill
       watch_thread&.kill
       @exit_code
     ensure
+      finalize_session!
       @inbox.stop
       STDIN.cooked! if STDIN.tty? && stdin_state
       @server&.stop
@@ -361,15 +359,11 @@ module Harnex
       end
       @ended_at = Time.now
 
-      emit_session_end_telemetry
-      @exit_reason = classify_exit
-      summary_record = build_summary_record
-      append_summary_record(summary_record)
-      emit_summary_event
-      emit_exit_event
+      finalize_session!
       watch_thread&.kill
       @exit_code
     ensure
+      finalize_session!
       @inbox.stop
       @server&.stop
       begin
@@ -425,6 +419,7 @@ module Harnex
       when "account/rateLimits/updated"
         @rate_limits = params
       when "error"
+        @last_error = params["message"].to_s unless params["message"].to_s.empty?
         @state_machine.force_busy!
         emit_event("disconnected", source: "error_notification", message: params["message"])
         signal_rpc_done!
@@ -435,6 +430,7 @@ module Harnex
 
     def handle_rpc_disconnect(error)
       msg = error.is_a?(Hash) ? error["message"] : error&.message
+      @last_error = msg.to_s unless msg.to_s.empty?
       @state_machine.force_busy!
       emit_event("disconnected", source: "transport", message: msg) rescue nil
       signal_rpc_done!
@@ -732,6 +728,24 @@ module Harnex
       emit_event("exited", **payload)
     end
 
+    def finalize_session!
+      return if @session_finalized
+      return unless @events_log
+
+      @session_finalized = true
+      @ended_at ||= Time.now
+      begin
+        emit_session_end_telemetry
+      rescue StandardError => e
+        @usage_summary = normalized_usage_summary(nil)
+        warn("harnex: failed to collect session-end telemetry: #{e.message}")
+      end
+      @exit_reason ||= classify_exit
+      append_summary_record(build_summary_record)
+      emit_summary_event
+      emit_exit_event
+    end
+
     def stop_requested!
       @stop_mutex.synchronize do
         return true if @stop_requested
@@ -850,7 +864,7 @@ module Harnex
         counters[:disconnections] = [counters[:disconnections], 1].max
       end
 
-      {
+      actual = {
         model: meta_hash["model"],
         effort: meta_hash["effort"],
         duration_s: @ended_at ? (@ended_at - @started_at).to_i : nil,
@@ -872,6 +886,8 @@ module Harnex
         tests_passed: nil,
         tests_failed: nil
       }
+      actual[:last_error] = @last_error if @exit_reason == "boot_failure" && @last_error
+      actual
     end
 
     def summary_predicted_payload

@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (Codex agent symlinks added; plan 29 complete — Phase 6 schema drift gate landed; freeze lifts)
+Updated: 2026-05-07 (#32 fixed — early JSON-RPC boot failures now write DISPATCH rows with last_error)
 
 ## Current snapshot
 
@@ -138,10 +138,13 @@ Updated: 2026-05-07 (Codex agent symlinks added; plan 29 complete — Phase 6 sc
   Codex autonomous dispatch because Codex ships `app-server`; it is
   *one* transport, not *the* transport. Each adapter ideally supports
   both PTY and JSON-RPC; many harnesses ship only the former.
-- Issue #32 is partially in flight: Commit 1 (boot_failure
-  classification on JSON-RPC, commit `8196ae1`) lands the baseline
-  detector. Commits 2 (ensure-block telemetry write) and 3 (optional
-  last_error capture) still TODO.
+- Issue #32 is fixed: `Session#run_pty` and `Session#run_jsonrpc`
+  now converge through a guarded `finalize_session!` path from both
+  normal completion and `ensure`, so early JSON-RPC boot exceptions
+  still emit `usage`, `summary`, and `exited` events and append the
+  dispatch summary row. JSON-RPC error notifications and transport
+  disconnect/error responses now retain `actual.last_error` on
+  `boot_failure` summary rows.
 - Issue #31 is fixed: `harnex stop` for the JSON-RPC Codex adapter
   preserves the existing `turn/interrupt` request, then terminates the
   `codex app-server` subprocess with bounded TERM/KILL fallback. The
@@ -319,7 +322,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 29 | App-server `--context` and `harnex send` parity | **fixed** | P1 |
 | 30 | Test stubs mirror harnex assumptions, not Codex schema | **fixed** | P1 |
 | 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
-| 32 | DISPATCH telemetry row not written on early-boot disconnect | open (Commit 1/3 landed) | P1 |
+| 32 | DISPATCH telemetry row not written on early-boot disconnect | **fixed** | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
 | 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | open | P2 |
 
@@ -356,7 +359,41 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): plan 29 commit 6 of 6 landed — Phase 6 done; plan 29 complete
+### 2026-05-07 (latest): #32 fixed — early boot failures are visible in DISPATCH.jsonl
+
+This session completed the remaining #32 work after commit `8196ae1`
+had already landed the `boot_failure` classifier.
+
+- `Session#run_pty` and `Session#run_jsonrpc` now use a shared,
+  idempotent `finalize_session!` path from both normal lifecycle
+  completion and `ensure`.
+- If JSON-RPC initial `--context` dispatch raises before lifecycle
+  teardown, harnex still records `usage`, `summary`, and `exited`
+  events and appends the `DISPATCH.jsonl` row.
+- JSON-RPC `error` notifications and transport disconnect/error
+  responses preserve the last protocol message as
+  `actual.last_error` on `boot_failure` rows.
+- Regression test:
+  `test_jsonrpc_run_writes_boot_failure_summary_when_initial_turn_errors`
+  simulates the original `Invalid request: invalid type: null,
+  expected a string` boot failure and asserts `exit:
+  "boot_failure"`, `disconnections: 1`, duration, and
+  `actual.last_error`.
+
+**Test count:** 384 runs, 1179 assertions, 0 failures, 1 skip
+(only the long-standing `CODEX_INTEGRATION=1` integration gate).
+
+**Next session (no other agenda):**
+
+1. **#34** — early-reject `-m MODEL` on JSON-RPC. Today it is
+   silently forwarded to `codex app-server`, which boot-disconnects
+   opaquely. Spec in `koder/issues/34_early_reject_m_model.md`.
+2. **#33** — JSON-RPC token usage capture into the dispatch
+   telemetry row. Spec in
+   `koder/issues/33_jsonrpc_token_usage.md`.
+3. **0.6.5 release** once #33 / #34 ship.
+
+### 2026-05-07: plan 29 commit 6 of 6 landed — Phase 6 done; plan 29 complete
 
 **This session shipped Phase 6 of plan 29.** One commit, green at
 HEAD. Schema drift gate at
@@ -401,23 +438,7 @@ from the new gate; no production code changes).
 
 **Freeze lifts.**
 
-### Next session (no other agenda)
-
-Plan 29 is done. Backlog returns to:
-
-1. **#32 commits 2-3** — ensure-block telemetry write so we always
-   emit a DISPATCH row even on early-boot disconnect, plus the
-   optional `last_error` capture. Spec in
-   `koder/issues/32_dispatch_telemetry_on_early_boot_fail.md`.
-   Commit 1 (boot_failure classification, `8196ae1`) already landed
-   pre-freeze.
-2. **#34** — early-reject `-m MODEL` on JSON-RPC. Today it is
-   silently forwarded to `codex app-server`, which boot-disconnects
-   opaquely. Spec in `koder/issues/34_early_reject_m_model.md`.
-3. **#33** — JSON-RPC token usage capture into the dispatch
-   telemetry row. Spec in
-   `koder/issues/33_jsonrpc_token_usage.md`.
-4. **0.6.5 release** once #32 / #33 / #34 ship.
+### Followup after plan 29
 
 Followup worth keeping after #30 closes: in-repo
 `Harnex::Adapters::CodexAppServer::Protocol` module with typed

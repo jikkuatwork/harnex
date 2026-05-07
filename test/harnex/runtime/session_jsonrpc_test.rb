@@ -114,13 +114,14 @@ class SessionJsonrpcTest < Minitest::Test
     server&.kill if server&.alive?
   end
 
-  def build_jsonrpc_session(adapter, id:)
+  def build_jsonrpc_session(adapter, id:, summary_out: nil)
     Harnex::Session.new(
       adapter: adapter,
       command: adapter.build_command,
       repo_root: @tmp,
       host: "127.0.0.1",
-      id: id
+      id: id,
+      summary_out: summary_out
     )
   end
 
@@ -245,6 +246,74 @@ class SessionJsonrpcTest < Minitest::Test
       request.dig("params", "input", 0, "text")
   ensure
     close_stubbed_rpc(handles) if handles
+  end
+
+  def test_jsonrpc_run_writes_boot_failure_summary_when_initial_turn_errors
+    adapter = Harnex::Adapters::CodexAppServer.new(["[harnex session id=boot-fail] echo OK"])
+    summary_path = File.join(@tmp, "DISPATCH.jsonl")
+    session = build_jsonrpc_session(adapter, id: "boot-fail", summary_out: summary_path)
+    server_in, client_out = IO.pipe
+    client_in, server_out = IO.pipe
+    original_start = adapter.method(:start_rpc)
+
+    adapter.define_singleton_method(:start_rpc) do |env: nil, cwd: nil|
+      original_start.call(env: env, cwd: cwd, read_io: client_in, write_io: client_out, pid: nil)
+    end
+
+    server = Thread.new do
+      req = JSON.parse(server_in.gets)
+      server_out.write(JSON.generate({ jsonrpc: "2.0", id: req["id"], result: {} }) + "\n")
+      server_out.flush
+      server_in.gets # initialized notification
+
+      req = JSON.parse(server_in.gets)
+      server_out.write(JSON.generate({
+        jsonrpc: "2.0",
+        id: req["id"],
+        result: Fixtures::Codex.thread_start_response(id: "thr-boot-fail")
+      }) + "\n")
+      server_out.flush
+
+      req = JSON.parse(server_in.gets)
+      server_out.write(JSON.generate({
+        jsonrpc: "2.0",
+        id: req["id"],
+        error: {
+          code: -32_000,
+          message: "Invalid request: invalid type: null, expected a string"
+        }
+      }) + "\n")
+      server_out.flush
+    rescue IOError, Errno::EPIPE
+      nil
+    end
+
+    err = assert_raises(StandardError) { session.run(validate_binary: false) }
+    assert_match(/Invalid request: invalid type: null/, err.message)
+
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    assert_equal %w[started disconnected usage summary exited], rows.map { |row| row["type"] }
+    assert_equal "boot_failure", rows[-2]["exit"]
+    assert_equal "boot_failure", rows[-1]["reason"]
+
+    record = JSON.parse(File.read(summary_path).lines.last)
+    assert_equal "boot-fail", record.dig("meta", "id")
+    assert_kind_of String, record.dig("meta", "started_at")
+    assert_kind_of String, record.dig("meta", "ended_at")
+    assert_equal "boot_failure", record.dig("actual", "exit")
+    assert_equal 1, record.dig("actual", "disconnections")
+    assert_operator record.dig("actual", "duration_s"), :<=, 5
+    assert_equal(
+      "Invalid request: invalid type: null, expected a string",
+      record.dig("actual", "last_error")
+    )
+  ensure
+    server&.join(1)
+    [server_out, client_out, client_in, server_in].each do |io|
+      io.close unless io.closed?
+    rescue StandardError
+      nil
+    end
   end
 
   def test_jsonrpc_inbox_delivers_harnex_send_when_prompt

@@ -1,5 +1,5 @@
 ---
-status: open
+status: fixed
 priority: P1
 created: 2026-05-06
 tags: telemetry,dispatch,jsonrpc,observability,quality
@@ -100,3 +100,21 @@ Expected: a row in `/tmp/dispatch.jsonl` with `exit: "boot_failure"`,
 - holm #272 (SESSION.jsonl record drift) — downstream consumer; without
   this fix, the harness rollup proposed there will silently undercount
   failures.
+
+## Resolution
+
+Fixed on 2026-05-07.
+
+- `Session#run_pty` and `Session#run_jsonrpc` now converge through a guarded
+  `finalize_session!` path from both normal lifecycle completion and `ensure`.
+  Early JSON-RPC exceptions during initial `--context` dispatch now still emit
+  `usage`, `summary`, and `exited` events and append the `DISPATCH.jsonl` row.
+- JSON-RPC `error` notifications and transport disconnect/error responses store
+  the last protocol error message. Boot-failure summary rows include it as
+  `actual.last_error`.
+- Regression coverage:
+  `test_jsonrpc_run_writes_boot_failure_summary_when_initial_turn_errors`
+  drives a pipe-backed fake app-server whose initial `turn/start` fails with
+  `Invalid request: invalid type: null, expected a string`, then asserts a
+  `boot_failure` dispatch row with `disconnections: 1`, duration, and
+  `actual.last_error`.
