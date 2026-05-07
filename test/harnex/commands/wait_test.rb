@@ -166,6 +166,65 @@ class WaiterTest < Minitest::Test
     FileUtils.rm_f(registry_path) if registry_path
   end
 
+  # --- wait-until-exit blocks until DISPATCH row + exit-status file land ---
+
+  def test_wait_until_exit_blocks_until_exit_status_file_lands
+    prev_grace = ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"]
+    ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"] = "2"
+
+    repo_root = Dir.pwd
+    id = "racing-worker-#{$$}"
+    registry_path = Harnex.registry_path(repo_root, id)
+    exit_path = Harnex.exit_status_path(repo_root, id)
+    dispatch_dir = Dir.mktmpdir("harnex-dispatch-test")
+    dispatch_path = File.join(dispatch_dir, "DISPATCH.jsonl")
+
+    child_pid = spawn("sleep", "5")
+
+    Harnex.write_registry(registry_path, {
+      "id" => id,
+      "pid" => child_pid,
+      "host" => "127.0.0.1",
+      "port" => 19998,
+      "repo_root" => repo_root
+    })
+
+    # Mirror harnex teardown ordering: kill the agent subprocess, then
+    # write the DISPATCH row, then the exit-status file. wait must
+    # block until the row is on disk.
+    killer = Thread.new do
+      sleep 0.2
+      Process.kill("KILL", child_pid)
+      Process.wait(child_pid)
+      sleep 0.1
+      File.write(dispatch_path, JSON.generate(meta: { id: id }) + "\n")
+      sleep 0.05
+      File.write(exit_path, JSON.generate(ok: true, id: id, exit_code: 0, status: "exited"))
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    end
+
+    waiter = Harnex::Waiter.new(["--id", id])
+    out, = capture_io { assert_equal 0, waiter.run }
+    data = JSON.parse(out)
+    assert_equal id, data["id"]
+    assert File.exist?(dispatch_path), "DISPATCH row not on disk when wait returned"
+    row = JSON.parse(File.read(dispatch_path).each_line.first)
+    assert_equal id, row.dig("meta", "id")
+  ensure
+    ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"] = prev_grace
+    killer&.join(2)
+    begin
+      Process.kill("KILL", child_pid) if child_pid
+      Process.waitpid(child_pid, Process::WNOHANG)
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    end
+    FileUtils.rm_f(registry_path) if registry_path
+    FileUtils.rm_f(exit_path) if exit_path
+    FileUtils.rm_rf(dispatch_dir) if dispatch_dir
+  end
+
   # --- wait-until-state detects process exit ---
 
   def test_until_prompt_returns_1_when_process_exits

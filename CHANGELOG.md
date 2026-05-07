@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `harnex wait` (default exit-watch mode) now blocks until the
+  exit-status file is on disk after the agent subprocess dies, with
+  a 5s grace bound (override via `HARNEX_EXIT_STATUS_GRACE_SECONDS`).
+  The exit-status file is written *after* the DISPATCH row in the
+  parent's teardown ensure block, so its presence guarantees the row
+  is on disk. Closes the race where `wait` could return between
+  `Process.wait2` unblocking and `Session#finalize_session!`
+  appending the row, which made dispatch-poll orchestrators flake
+  on "missing telemetry". (#36)
+
 ### Changed
 
 - `koder/STATE.md` is now a thin past / present / future handoff

@@ -6,6 +6,8 @@ require "uri"
 module Harnex
   class Waiter
     POLL_INTERVAL = 0.5
+    EXIT_STATUS_GRACE_SECONDS_DEFAULT = 5.0
+    EXIT_STATUS_GRACE_POLL_INTERVAL = 0.05
 
     EVENT_PREDICATES = %w[task_complete].freeze
 
@@ -227,6 +229,7 @@ module Harnex
 
       loop do
         unless Harnex.alive_pid?(target_pid)
+          await_exit_status(exit_path)
           return read_exit_status(exit_path, @options[:id])
         end
 
@@ -237,6 +240,26 @@ module Harnex
 
         sleep POLL_INTERVAL
       end
+    end
+
+    # Subprocess death races the parent's DISPATCH-row write; the exit-status
+    # file is written *after* the row, so polling it bounds the race.
+    def await_exit_status(exit_path)
+      return if File.exist?(exit_path)
+
+      grace_deadline = Time.now + exit_status_grace_seconds
+      until File.exist?(exit_path) || Time.now >= grace_deadline
+        sleep EXIT_STATUS_GRACE_POLL_INTERVAL
+      end
+    end
+
+    def exit_status_grace_seconds
+      override = ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"]
+      return EXIT_STATUS_GRACE_SECONDS_DEFAULT if override.to_s.strip.empty?
+
+      Float(override)
+    rescue ArgumentError
+      EXIT_STATUS_GRACE_SECONDS_DEFAULT
     end
 
     def fetch_agent_state(host, port, token)

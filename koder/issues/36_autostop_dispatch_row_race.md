@@ -1,6 +1,6 @@
 # #36 — `--auto-stop` lingers `disconnected` before DISPATCH row emission
 
-**Status:** open
+**Status:** Tier 2 landed (race bounded); follow-ups optional
 **Priority:** P3
 **Filed:** 2026-05-07
 
@@ -189,6 +189,38 @@ is on disk."
 - Regression test exercises the teardown ordering by:
   asserting that, after `wait_until_exit` returns, the DISPATCH
   file contains a row whose `meta.id` matches the session.
+
+## Tier 2 — landed 2026-05-07
+
+- `Waiter#wait_until_exit` (`lib/harnex/commands/wait.rb`) now polls
+  `exit_status_path` for up to 5s after `alive_pid?(target_pid)`
+  flips false, before calling `read_exit_status`. The exit-status
+  file is written in the run-loop ensure block *after*
+  `finalize_session!` appends the DISPATCH row, so its presence is
+  a strict superset of "row on disk."
+- Grace bound is `EXIT_STATUS_GRACE_SECONDS_DEFAULT = 5.0` with
+  poll interval `0.05`; overridable via the
+  `HARNEX_EXIT_STATUS_GRACE_SECONDS` env var (used by tests and
+  available as an emergency knob in pathological teardowns).
+- If the file never appears (parent crashed between row-write and
+  exit-status write — pathological), the existing `read_exit_status`
+  fallback synthesizes an `exited` response so `wait` still
+  terminates.
+- Regression test
+  (`test/harnex/commands/wait_test.rb#test_wait_until_exit_blocks_until_exit_status_file_lands`)
+  spawns a real subprocess, kills it, then writes a DISPATCH row +
+  exit-status file in the production order with an inserted gap.
+  Asserts that when `wait` returns, the DISPATCH row's
+  `meta.id` matches the session id.
+- Suite green: 399 runs, 1292 assertions.
+
+## Optional follow-ups (not required for closure)
+
+- `wait --until row_emitted` predicate that polls
+  `koder/DISPATCH.jsonl` for `meta.id` + `meta.started_at` directly,
+  for callers with the dispatch path in hand.
+- Bump event timestamps to `iso8601(3)` (millisecond precision) so
+  future regressions can be quantified directly from the events log.
 
 ## Out of scope
 
