@@ -133,5 +133,40 @@ module Fixtures
     def item_completed_tool_call(tool:, **opts)
       { "item" => mcp_tool_call_item(tool: tool, **opts) }
     end
+
+    # ----- ThreadTokenUsage / ThreadTokenUsageUpdatedNotification -----
+
+    def token_usage_breakdown(
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_input_tokens: 0,
+      reasoning_output_tokens: 0,
+      total_tokens: nil
+    )
+      {
+        "cachedInputTokens" => cached_input_tokens,
+        "inputTokens" => input_tokens,
+        "outputTokens" => output_tokens,
+        "reasoningOutputTokens" => reasoning_output_tokens,
+        "totalTokens" => total_tokens || (input_tokens + output_tokens)
+      }
+    end
+
+    def thread_token_usage(last: nil, total: nil, model_context_window: nil)
+      payload = {
+        "last" => last || token_usage_breakdown,
+        "total" => total || token_usage_breakdown
+      }
+      payload["modelContextWindow"] = model_context_window if model_context_window
+      payload
+    end
+
+    def thread_token_usage_updated_notification(thread_id:, turn_id:, token_usage: nil)
+      {
+        "threadId" => thread_id,
+        "turnId" => turn_id,
+        "tokenUsage" => token_usage || thread_token_usage
+      }
+    end
   end
 end

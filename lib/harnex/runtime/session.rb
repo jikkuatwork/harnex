@@ -411,8 +411,11 @@ module Harnex
       when "thread/compacted"
         emit_event("compaction", **params)
       when "thread/tokenUsage/updated"
-        # Surfaced via status fields in Phase 4; no event spam.
-        @token_usage = params["usage"] || params
+        # Schema: ThreadTokenUsageUpdatedNotification carries
+        # `tokenUsage: { last, total, modelContextWindow? }` where each
+        # breakdown has camelCase {input,output,cachedInput,reasoningOutput,total}Tokens.
+        # Snapshot it; the cumulative `total` is read at session end.
+        @token_usage = params["tokenUsage"] if params["tokenUsage"].is_a?(Hash)
       when "thread/status/changed"
         # State machine reflects RPC state; no event needed.
         nil
@@ -700,7 +703,7 @@ module Harnex
     end
 
     def emit_session_end_telemetry
-      @usage_summary = normalized_usage_summary(adapter.parse_session_summary(transcript_tail))
+      @usage_summary = normalized_usage_summary(collect_session_summary)
       emit_event("usage", **@usage_summary)
 
       @git_end = Harnex.git_capture_end(repo_root, @git_start[:sha])
@@ -914,6 +917,33 @@ module Harnex
     def normalized_usage_summary(summary)
       summary ||= {}
       USAGE_FIELDS.to_h { |field| [field, summary[field] || summary[field.to_s]] }
+    end
+
+    # Adapters speaking JSON-RPC capture token usage from the structured
+    # `thread/tokenUsage/updated` notification stream and don't have a
+    # transcript to scrape; fall back to the schema-true cumulative
+    # `total` block. Other adapters parse the transcript tail.
+    def collect_session_summary
+      if adapter.transport == :stdio_jsonrpc
+        summary_from_token_usage
+      else
+        adapter.parse_session_summary(transcript_tail)
+      end
+    end
+
+    def summary_from_token_usage
+      return {} unless @token_usage.is_a?(Hash)
+
+      total = @token_usage["total"]
+      return {} unless total.is_a?(Hash)
+
+      {
+        input_tokens: total["inputTokens"],
+        output_tokens: total["outputTokens"],
+        reasoning_tokens: total["reasoningOutputTokens"],
+        cached_tokens: total["cachedInputTokens"],
+        total_tokens: total["totalTokens"]
+      }
     end
 
     def transcript_tail

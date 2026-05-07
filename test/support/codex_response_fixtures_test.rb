@@ -114,4 +114,36 @@ class CodexResponseFixturesTest < Minitest::Test
     assert_equal "mcpToolCall", payload.dig("item", "type")
     assert_equal "shell", payload.dig("item", "tool")
   end
+
+  # ----- ThreadTokenUsageUpdatedNotification -----
+
+  def test_thread_token_usage_updated_notification_validates_against_schema
+    notif = Fixtures::Codex.thread_token_usage_updated_notification(
+      thread_id: "thr-1", turn_id: "trn-1"
+    )
+    assert_valid(load_schema("v2/ThreadTokenUsageUpdatedNotification.json"), notif,
+                 "thread_token_usage_updated_notification")
+    assert_equal "thr-1", notif["threadId"]
+    assert_equal "trn-1", notif["turnId"]
+    assert_equal 0, notif.dig("tokenUsage", "total", "inputTokens")
+  end
+
+  def test_thread_token_usage_updated_notification_with_realistic_totals
+    usage = Fixtures::Codex.thread_token_usage(
+      total: Fixtures::Codex.token_usage_breakdown(
+        input_tokens: 197_819,
+        output_tokens: 25_018,
+        cached_input_tokens: 6_408_576,
+        reasoning_output_tokens: 12_501,
+        total_tokens: 222_837
+      )
+    )
+    notif = Fixtures::Codex.thread_token_usage_updated_notification(
+      thread_id: "thr-1", turn_id: "trn-1", token_usage: usage
+    )
+    assert_valid(load_schema("v2/ThreadTokenUsageUpdatedNotification.json"), notif,
+                 "thread_token_usage_updated_notification (realistic totals)")
+    assert_equal 197_819, notif.dig("tokenUsage", "total", "inputTokens")
+    assert_equal 6_408_576, notif.dig("tokenUsage", "total", "cachedInputTokens")
+  end
 end

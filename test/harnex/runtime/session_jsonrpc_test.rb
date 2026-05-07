@@ -170,6 +170,77 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal 1, counters[:compactions]
   end
 
+  def test_token_usage_notification_stores_cumulative_total
+    notif = Fixtures::Codex.thread_token_usage_updated_notification(
+      thread_id: "thr-tok",
+      turn_id: "trn-tok",
+      token_usage: Fixtures::Codex.thread_token_usage(
+        total: Fixtures::Codex.token_usage_breakdown(
+          input_tokens: 100, output_tokens: 25, cached_input_tokens: 80,
+          reasoning_output_tokens: 10, total_tokens: 125
+        )
+      )
+    )
+    fanout("thread/tokenUsage/updated", notif)
+
+    captured = @session.instance_variable_get(:@token_usage)
+    assert_kind_of Hash, captured
+    assert_equal 100, captured.dig("total", "inputTokens")
+    assert_equal 25, captured.dig("total", "outputTokens")
+    assert_equal 10, captured.dig("total", "reasoningOutputTokens")
+    assert_equal 80, captured.dig("total", "cachedInputTokens")
+  end
+
+  def test_jsonrpc_session_writes_token_usage_to_dispatch_row
+    summary_path = File.join(@tmp, "DISPATCH.jsonl")
+    adapter = Harnex::Adapters::CodexAppServer.new
+    session = build_jsonrpc_session(adapter, id: "tok-dispatch", summary_out: summary_path)
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    session.send(:emit_started_event)
+    session.send(:emit_git_start_event)
+
+    notif = Fixtures::Codex.thread_token_usage_updated_notification(
+      thread_id: "thr-tok",
+      turn_id: "trn-tok",
+      token_usage: Fixtures::Codex.thread_token_usage(
+        total: Fixtures::Codex.token_usage_breakdown(
+          input_tokens: 197_819, output_tokens: 25_018,
+          cached_input_tokens: 6_408_576, reasoning_output_tokens: 12_501,
+          total_tokens: 222_837
+        )
+      )
+    )
+    session.send(:handle_rpc_notification, { "method" => "thread/tokenUsage/updated", "params" => notif })
+    session.instance_variable_set(:@exit_code, 0)
+    session.send(:finalize_session!)
+
+    record = JSON.parse(File.read(summary_path).lines.last)
+    assert_equal 197_819, record.dig("actual", "input_tokens")
+    assert_equal 25_018, record.dig("actual", "output_tokens")
+    assert_equal 12_501, record.dig("actual", "reasoning_tokens")
+    assert_equal 6_408_576, record.dig("actual", "cached_tokens")
+  end
+
+  def test_jsonrpc_session_with_no_token_usage_keeps_token_fields_null
+    summary_path = File.join(@tmp, "DISPATCH.jsonl")
+    adapter = Harnex::Adapters::CodexAppServer.new
+    session = build_jsonrpc_session(adapter, id: "tok-empty", summary_out: summary_path)
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    session.send(:emit_started_event)
+    session.send(:emit_git_start_event)
+
+    session.instance_variable_set(:@exit_code, 0)
+    session.send(:finalize_session!)
+
+    record = JSON.parse(File.read(summary_path).lines.last)
+    assert_nil record.dig("actual", "input_tokens")
+    assert_nil record.dig("actual", "output_tokens")
+    assert_nil record.dig("actual", "reasoning_tokens")
+    assert_nil record.dig("actual", "cached_tokens")
+  end
+
   def test_classify_exit_marks_short_pre_turn_jsonrpc_exit_as_boot_failure
     @session.instance_variable_set(:@exit_code, nil)
     @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 1)

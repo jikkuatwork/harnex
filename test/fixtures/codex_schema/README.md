@@ -40,6 +40,9 @@ v2 protocol (the default JSON-RPC transport `harnex run codex` uses):
 - `v2/TurnStartedNotification.json`,
   `v2/TurnCompletedNotification.json` — the notifications that drive
   busy/prompt state and `harnex wait --until task_complete`.
+- `v2/ThreadTokenUsageUpdatedNotification.json` — the cumulative
+  `tokenUsage.total` snapshot that flows into the DISPATCH row's
+  `actual.{input,output,reasoning,cached}_tokens` fields.
 - `v2/ErrorNotification.json` — server-side error notifications fed
   into disconnect classification.
 
@@ -73,7 +76,7 @@ Excluded for three reasons:
 3. They are not byte-stable across runs. Two consecutive
    `generate-json-schema` invocations on the same Codex version
    produce different master-bundle bytes (verified at capture time on
-   0.128.0). The 15 individual schemas above are byte-stable.
+   0.128.0). The individual schemas above are byte-stable.
 
 **Schemas harnex doesn't touch**
 (`FuzzyFileSearch*`, `McpServerElicitation*`, `ChatgptAuthTokensRefresh*`,
@@ -86,4 +89,4 @@ without buying contract coverage for code that doesn't exist yet.
 
 ## Footprint
 
-15 schema files, ~247 KB total.
+16 schema files, ~276 KB total.
