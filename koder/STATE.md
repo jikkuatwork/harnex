@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-2 of 6 landed; Phase 3 next)
+Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase 4 next)
 
 ## Current snapshot
 
@@ -13,8 +13,8 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-2 of 6 landed; Phase
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 361 minitest tests (1 integration skip behind
-  `CODEX_INTEGRATION=1`), all passing.
+- Test suite: `test/` with 371 minitest tests (1 integration skip behind
+  `CODEX_INTEGRATION=1`, plus 1 plan 29 Phase 5 marker skip), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -145,7 +145,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-2 of 6 landed; Phase
   initial context launch and stop on the next prompt after busy. The path
   reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
   interrupt plus TERM/KILL teardown as manual `harnex stop`.
-- Plan 29 (issue #30) commits 1-2 of 6 landed:
+- Plan 29 (issue #30) commits 1-3 of 6 landed:
   - `77ce9a0` — codex 0.128.0 JSON Schema fixture at
     `test/fixtures/codex_schema/` (15 schemas, ~247 KB, README
     documents the pin and refresh command). Master bundles
@@ -159,6 +159,18 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-2 of 6 landed; Phase
     per JSON Schema convention. Self-tests already prove the
     validator catches the Phase 5 enum bug end-to-end against the
     real fixtures.
+  - `c3a4b6b` — outgoing JSON-RPC payload contract tests at
+    `test/harnex/adapters/codex_appserver_contract_test.rb` (395
+    LOC, 10 tests, 48 assertions). Boots the adapter against an
+    `IO.pipe`-based fake server, captures every JSON line
+    `JsonRpcClient#write_line` emits, validates against the
+    matching schema fixture. Cases: `initialize` (inline contract),
+    `thread/start`, `turn/start` (prompt only, with model+effort,
+    and from inbox-delivered `harnex send`), `turn/interrupt`
+    (inline), and four auto-approval responses. The
+    `item/commandExecution/requestApproval` case is skipped with a
+    Phase 5 marker — adapter sends `decision: "approved"` but the
+    schema's enum is `accept|acceptForSession|decline|cancel`.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -283,7 +295,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
-| 29 | Test schema truth + contract gate (#30) | **in progress** (1-2 of 6) |
+| 29 | Test schema truth + contract gate (#30) | **in progress** (1-3 of 6) |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -291,6 +303,54 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-07 (Phase 3 done): plan 29 commit 3 of 6 landed
+
+**This session shipped Phase 3 of plan 29.** One commit, green at HEAD,
+no production code changes — only new test infrastructure.
+
+- `c3a4b6b` — outgoing JSON-RPC payload contract tests
+  (`test/harnex/adapters/codex_appserver_contract_test.rb`, 395
+  LOC). Boots `Adapters::CodexAppServer` against an `IO.pipe`-based
+  fake server, captures every JSON line `JsonRpcClient#write_line`
+  emits into a mutex-guarded array, parses each one, and validates
+  against the matching schema fixture from
+  `test/fixtures/codex_schema/`.
+
+Cases (per plan 29 Phase 3):
+
+1. `initialize` — `clientInfo`/`capabilities` shape (inline).
+2. `thread/start` — validates against `v2/ThreadStartParams.json`.
+   Note: fires lazily on first `dispatch` (via `ensure_thread!`),
+   not during the initialize handshake — so the test triggers
+   `dispatch` to capture it.
+3-4. `turn/start` (prompt only / `model: "gpt-5.5"` + `effort:
+   "high"`) — both validate against `v2/TurnStartParams.json`.
+5. `turn/start` from inbox-delivered `harnex send` — exercises the
+   full `Inbox` → `Session` → `Adapter#dispatch` path so schema
+   regressions in the session layer cannot ship silently.
+6. `turn/interrupt` — `{threadId, turnId}` shape (inline).
+7. Auto-approval response bodies for the four request methods.
+   Three pass (`applyPatch`, `execCommand`, `fileChange`); the
+   `item/commandExecution/requestApproval` case is **skipped with a
+   Phase 5 marker** — adapter currently sends `{decision:
+   "approved"}` but the schema's `CommandExecutionApprovalDecision`
+   enum is `accept|acceptForSession|decline|cancel|...`. Phase 5
+   changes the value to `"accept"` and removes the skip.
+
+**Implementation note worth keeping:** initial test run took 16s
+for 10 cases because `JsonRpcClient#close` waits up to 2s on its
+reader-thread join. Reordering teardown to close pipes BEFORE
+`@adapter.close` lets the reader thread see EOF immediately.
+16s → 0.06s. Same pattern would speed up
+`codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
+if either gets touched in Phase 4 — neither is hot today, so leave
+unless other reasons to edit.
+
+**Test count:** 371 runs, 1129 assertions, 0 failures, 2 skips
+(was 361 / 1081 / 1). Second skip is the new Phase 5 marker.
+
+**LOC:** contract test 395; no production changes.
 
 ### 2026-05-07 (later still): plan 29 commits 1-2 of 6 landed
 
@@ -439,41 +499,44 @@ work; JSON-RPC stays the default for autonomous worker dispatch.
 
 ### Next session (no other agenda)
 
-Continue plan 29 at **Phase 3** — outgoing payload contract tests.
-New file: `test/harnex/adapters/codex_appserver_contract_test.rb`.
+Continue plan 29 at **Phase 4** — realistic incoming-response stubs.
 Plan is fully scoped (`koder/plans/29_test_schema_truth.md`); just
 walk it. Each remaining phase is one commit; full suite must stay
 green between commits.
 
-**Phase 3 mechanism:** feed `Adapters::CodexAppServer` an
-`IO.pipe`-based fake server, capture every JSON line
-`JsonRpcClient#write_line` emits, parse each one, and validate
-`params` (for outgoing requests) or the response body (for
-auto-approval `result`s) against the matching schema fixture using
-`JsonSchemaValidator` from Phase 2.
+**Phase 4 mechanism:** new helper at
+`test/support/codex_response_fixtures.rb` exposing builder functions
+that emit schema-shaped responses (e.g.
+`Fixtures::Codex.thread_start_response(id: "thr-1")` returning the
+full `{thread: {id, cliVersion, ...}, approvalPolicy, model, ...}`
+shape, not the made-up `{"threadId" => "thr-1"}` literal). Every
+builder output is itself validated against its schema in a self-test
+— if the builders drift, that's caught at the source rather than in
+twenty downstream tests.
 
-Cases (per plan):
+Then rewrite the two existing test files:
 
-1. `initialize` — `clientInfo` and `capabilities` shape (no schema
-   file; encode contract inline).
-2. `thread/start` — validate against `v2/ThreadStartParams`.
-3. `turn/start` with prompt only.
-4. `turn/start` with `model` + `effort`.
-5. `turn/start` from inbox-delivered `harnex send` (end-to-end
-   inject path, not just the adapter).
-6. `turn/interrupt` — encode contract inline.
-7. Auto-approval response bodies for all four request methods, each
-   validated against the corresponding `*ApprovalResponse` schema.
-   **Case 7's `item/commandExecution/requestApproval` variant is the
-   one expected to fail** (the `decision: "approved"` vs `"accept"`
-   enum bug; Phase 5 fixes it).
+- `codex_appserver_lifecycle_test.rb` — replace inline
+  `{"threadId" => "thr-1"}` stubs with
+  `Fixtures::Codex.thread_start_response(id: "thr-1")`.
+- `session_jsonrpc_test.rb` — same treatment, plus the
+  `thread/started` notifications that currently pass
+  `{"threadId" => "thr-a"}` — switch to schema-shaped notifications
+  with `params.thread.id`. Update `extract_thread_id`'s call sites
+  accordingly.
+- Add an extraction regression test: feed
+  `Fixtures::Codex.thread_start_response` into
+  `Adapters::CodexAppServer#extract_thread_id` (via `send(:...)`)
+  and assert it returns the right id without exercising the legacy
+  fallback path.
 
-After Phase 3:
+The new contract test from Phase 3 already uses the realistic
+`{"thread" => {"id" => "..."}}` shape (no fallback path exercised),
+so Phase 4 is mostly Phase 4 = "retrofit the existing tests so they
+match Phase 3's standard."
 
-- Phase 4 — replace literal stubs in
-  `codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
-  with schema-shaped `Fixtures::Codex` builders at
-  `test/support/codex_response_fixtures.rb`.
+After Phase 4:
+
 - Phase 5 — adapter fixes surfaced by Phases 3-4 (auto-approval
   enum bug; drop `extract_thread_id`/`dispatch` fallback chains).
 - Phase 6 — drift gate at
