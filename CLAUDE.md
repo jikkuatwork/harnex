@@ -48,6 +48,19 @@ verification in `koder/releases/`, and issue-specific detail in
 `koder/issues/` or `koder/plans/`. When closing a session, update
 `STATE.md` only with the minimal handoff needed for the next session.
 
+### Date format (STATE.md and CHANGELOG.md)
+
+Use `YYYY-MM-DD | hh:mm AM/PM | TZ` for human-facing dated entries
+in `koder/STATE.md` and `CHANGELOG.md` — e.g.
+`2026-05-07 | 05:59 PM | IST`. The pipe-separated form is precise
+enough to order same-day events and keeps the timezone explicit.
+
+Forward-only: do not backfill existing entries. Other places keep
+their current formats — `koder/DISPATCH.jsonl` stays ISO 8601 with
+offset (machine-readable), and `koder/issues/` / `koder/plans/` /
+`koder/releases/` keep date-only `YYYY-MM-DD` unless the entry
+genuinely needs a timestamp.
+
 ## What is harnex?
 
 A PTY harness that wraps terminal AI agents and adds a local control
