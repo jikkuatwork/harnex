@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `koder/STATE.md` is now a thin past / present / future handoff
+  instead of a long-running project history. Durable change history
+  belongs in `CHANGELOG.md`, release verification in `koder/releases/`,
+  and issue or implementation detail in `koder/issues/` or
+  `koder/plans/`.
+- Agent orientation and the repo-local `open` / `close` skills now
+  explicitly tell future sessions to keep `STATE.md` concise and route
+  detailed notes to the durable tracking document that owns them.
+
 ## [0.6.5] — 2026-05-07
 
 ### Added

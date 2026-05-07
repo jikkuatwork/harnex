@@ -1,12 +1,12 @@
 # Harnex — Agent Orientation
 
-**Read `koder/STATE.md` first.** It tracks the current project state,
-open issues, active plans, and the recommended next step. It is the
-handoff document between agent sessions.
+**Read `koder/STATE.md` first.** It is the thin handoff document
+between agent sessions: past, present, and future only.
 
 ## Project tracking
 
-- `koder/STATE.md` — current state, issues table, next step
+- `koder/STATE.md` — thin handoff: recent past, current focus, next step
+- `CHANGELOG.md` — durable change history
 - `koder/issues/` — individual issue files (features, bugs, ideas)
 - `koder/plans/` — implementation plans with phased instructions
 - `koder/releases/` — per-release verification records (functional
@@ -14,6 +14,25 @@ handoff document between agent sessions.
 
 Always check STATE.md at the start of a session to orient yourself.
 If you complete work, update STATE.md before ending.
+
+## State hygiene
+
+`koder/STATE.md` is not a changelog, release record, architecture
+inventory, or issue tracker. Keep it short enough to read at session
+open:
+
+- **Past:** the latest completed milestone and links to durable records.
+- **Present:** the current focus, active blocker, and any immediate
+  caveat the next agent must know.
+- **Future:** the next recommended step, with links to the relevant
+  issue or plan.
+
+Do not paste full release notes, test matrices, long issue tables,
+implementation transcripts, or historical project timelines into
+`STATE.md`. Put durable change history in `CHANGELOG.md`, release
+verification in `koder/releases/`, and issue-specific detail in
+`koder/issues/` or `koder/plans/`. When closing a session, update
+`STATE.md` only with the minimal handoff needed for the next session.
 
 ## What is harnex?
 
@@ -35,10 +54,11 @@ lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
-test/                            Minitest suite (174 tests)
+test/                            Minitest suite
 koder/STATE.md                   Project state (read this first)
 koder/issues/                    Issue tracker
 koder/plans/                     Implementation plans
+koder/releases/                  Release verification records
 ```
 
 ## Key classes

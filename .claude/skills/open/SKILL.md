@@ -10,7 +10,7 @@ When the user asks to initialize or open the session, run this sequence:
 ## 1. Read the handoff
 
 - Read `koder/STATE.md` first
-- Note the `Current snapshot`, open issues and plans, and `Next step`
+- Note the `Past`, `Present`, and `Future` handoff sections
 - Open only the issue or plan files relevant to the current task
 
 ## 2. Inspect the repo state
@@ -28,5 +28,6 @@ When the user asks to initialize or open the session, run this sequence:
 ## Notes
 
 - Treat `koder/STATE.md` as the handoff document between sessions
+- Keep `koder/STATE.md` thin; durable history belongs in `CHANGELOG.md`
 - Prefer updating existing issue or plan docs over creating new tracking files
 - Do NOT create issue docs unless the user explicitly asks

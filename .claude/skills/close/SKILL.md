@@ -16,10 +16,11 @@ When the user asks to wrap up or close the current session, run this sequence:
 ## 2. Update `koder/STATE.md`
 
 - Update the `Updated:` date
-- Add or adjust concise lines in `Current snapshot` for completed work
-- Update test count if it changed
+- Keep the document as a thin `Past` / `Present` / `Future` handoff
+- Add only the latest completed milestone and links to durable detail
 - Update issue or plan statuses only when work was actually completed or a new blocker was clearly discovered
-- Rewrite `Next step` so the next agent can resume without reconstructing context
+- Rewrite the `Future` section so the next agent can resume without reconstructing context
+- Put durable change history in `CHANGELOG.md`, release verification in `koder/releases/`, and issue-specific detail in `koder/issues/` or `koder/plans/`
 
 ## 3. Clean up repo artifacts
 
