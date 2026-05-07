@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase 4 next)
+Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-4 of 6 landed; Phase 5 next)
 
 ## Current snapshot
 
@@ -13,8 +13,8 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 371 minitest tests (1 integration skip behind
-  `CODEX_INTEGRATION=1`, plus 1 plan 29 Phase 5 marker skip), all passing.
+- Test suite: `test/` with 382 minitest tests (1 integration skip behind
+  `CODEX_INTEGRATION=1`, plus 6 plan 29 Phase 5 marker skips), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -150,7 +150,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase
   initial context launch and stop on the next prompt after busy. The path
   reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
   interrupt plus TERM/KILL teardown as manual `harnex stop`.
-- Plan 29 (issue #30) commits 1-3 of 6 landed:
+- Plan 29 (issue #30) commits 1-4 of 6 landed:
   - `77ce9a0` — codex 0.128.0 JSON Schema fixture at
     `test/fixtures/codex_schema/` (15 schemas, ~247 KB, README
     documents the pin and refresh command). Master bundles
@@ -176,6 +176,17 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase
     `item/commandExecution/requestApproval` case is skipped with a
     Phase 5 marker — adapter sends `decision: "approved"` but the
     schema's enum is `accept|acceptForSession|decline|cancel`.
+  - `d53c2c0` — realistic incoming-response stubs.
+    `test/support/codex_response_fixtures.rb` (~125 LOC, 8
+    builders) emits schema-shaped Codex responses/notifications;
+    `test/support/codex_response_fixtures_test.rb` (10 cases)
+    validates every builder output against the matching schema.
+    `codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
+    swap inline `{threadId:, turnId:}` literals for builder calls,
+    and a new `test_extract_thread_id_reads_thread_id_from_schema_
+    shaped_response` guards `extract_thread_id`'s primary path. Five
+    new Phase 5 marker skips for tests whose passing depends on
+    production code paths Phase 5 will fix.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -300,7 +311,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
-| 29 | Test schema truth + contract gate (#30) | **in progress** (1-3 of 6) |
+| 29 | Test schema truth + contract gate (#30) | **in progress** (1-4 of 6) |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -309,7 +320,106 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (later): PTY transport policy clarified to first-class
+### 2026-05-07 (latest): plan 29 commit 4 of 6 landed — Phase 4 done
+
+**This session shipped Phase 4 of plan 29.** One commit, green at HEAD,
+no production code changes — only test infrastructure and stub
+rewrites.
+
+- `d53c2c0` — realistic incoming-response stubs. New
+  `Fixtures::Codex` module
+  (`test/support/codex_response_fixtures.rb`, ~125 LOC, 8 builders)
+  emits schema-shaped Codex responses and notifications; self-tests
+  at `test/support/codex_response_fixtures_test.rb` (10 cases)
+  validate every builder output against the matching captured
+  schema. The two existing JSON-RPC test files
+  (`codex_appserver_lifecycle_test.rb`,
+  `session_jsonrpc_test.rb`) now drive their stubs through the
+  builders instead of inline `{threadId:, turnId:}` literals. New
+  `test_extract_thread_id_reads_thread_id_from_schema_shaped_
+  response` guards the adapter's primary
+  `payload.dig("thread", "id")` path against regression — Phase 5
+  drops the legacy fallback chain afterward.
+
+**Phase 5 punch list expanded by Phase 4 findings.** The plan's
+original Phase 5 listed (1) approval enum bug, (2) drop
+`extract_thread_id` legacy fallbacks, (3) reconsider `dispatch`
+turnId requirement. Phase 4 surfaced four more — every one a
+schema-mismatch the test suite previously hid:
+
+1. **`Adapter#dispatch`** reads
+   `result["turnId"] || result["turn_id"] || result["id"]`. Real
+   schema is `result.turn.id`. (Already in plan; Phase 4 confirmed.)
+2. **`Adapter#handle_notification`** for `turn/started` reads
+   `params["turnId"]`. Real schema is `params.turn.id`.
+3. **`Session#handle_rpc_notification`** for `thread/started` reads
+   `params["threadId"]`. Schema-true is `params.thread.id`.
+4. **`Session#handle_rpc_notification`** for `turn/started` /
+   `turn/completed` reads `params["turnId"]` and `params["status"]`.
+   Real schema is `params.turn.id` / `params.turn.status`.
+5. **`Session#render_item_text`** matches the never-existed
+   snake_case `agent_message` / `tool_call` types. Real Codex emits
+   camelCase schema types: `agentMessage` (saves the test by
+   accident — `else item["text"]` reads the right field), but
+   `mcpToolCall`, `commandExecution`, etc. must be added so non-
+   message items render correctly.
+
+Five new Phase 5 marker skips were added to track these (one per
+test that needs the production fix). Each marker's message names
+which production parsing path Phase 5 will fix to unblock it.
+
+**Test count:** 382 runs, 1138 assertions, 0 failures, 7 skips
+(was 371 / 1129 / 2). Six of the seven skips are plan 29 Phase 5
+markers; the seventh is the long-standing `CODEX_INTEGRATION=1`
+gate.
+
+**LOC:** fixtures helper 125 + self-tests ~115 = ~240; lifecycle
+test +67 / -10; session jsonrpc test +53 / -14. Zero production
+changes.
+
+### Next session (no other agenda)
+
+Continue plan 29 at **Phase 5** — adapter and session fixes
+surfaced by Phases 3-4. Single commit; full suite must stay green.
+Concretely:
+
+1. Update `Adapters::CodexAppServer#dispatch` to read
+   `result.dig("turn", "id")`. Drop the
+   `|| result["turn_id"] || result["id"]` fallback chain. Decide
+   whether to raise loudly when the path is missing (plan suggested
+   yes; revisit at impl time).
+2. Update `Adapters::CodexAppServer#handle_notification`'s
+   `turn/started` case to read `params.dig("turn", "id")`. (The
+   `turn/completed` case sets `@current_turn_id = nil`, which is
+   correct as is — the turn is over.)
+3. Drop `extract_thread_id` legacy fallbacks
+   (`payload["threadId"] || payload["thread_id"]`). Keep only the
+   `payload.dig("thread", "id")` primary path. The Phase 4
+   regression test already guards this.
+4. Update `Session#handle_rpc_notification`:
+   - `thread/started`: read `params.dig("thread", "id")`
+   - `turn/started`: read `params.dig("turn", "id")`
+   - `turn/completed`: read `params.dig("turn", "id")` and
+     `params.dig("turn", "status")`
+5. Update `Session#render_item_text` to handle the camelCase
+   schema types: `agentMessage`, `mcpToolCall`,
+   `commandExecution`, `dynamicToolCall`. Drop the never-existed
+   `agent_message` / `tool_call` cases. The test rewrite already
+   exercises the correct shapes.
+6. Fix `APPROVAL_RESPONSES["item/commandExecution/requestApproval"]`
+   from `{decision: "approved"}` to `{decision: "accept"}`
+   (`CommandExecutionApprovalDecision` enum is
+   `accept|acceptForSession|decline|cancel|...`).
+7. Remove the six Phase 5 skip markers — each one's body is the
+   test that should pass after the corresponding production fix.
+
+After Phase 5 lands: **Phase 6** is the drift gate at
+`test/harnex/contract/schema_freshness_test.rb`. Spec is in
+`koder/plans/29_test_schema_truth.md`. Then plan 29 is done, the
+freeze lifts, and backlog returns to #32 commits 2-3 → #34 → #33 →
+0.6.5 release.
+
+### 2026-05-07 (earlier): PTY transport policy clarified to first-class
 
 No engineering changes this session; only durable framing updated.
 
