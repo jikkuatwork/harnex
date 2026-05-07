@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-5 of 6 landed; Phase 6 next)
+Updated: 2026-05-07 (plan 29 complete — Phase 6 schema drift gate landed; freeze lifts)
 
 ## Current snapshot
 
@@ -150,7 +150,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-5 of 6 landed; Phase
   initial context launch and stop on the next prompt after busy. The path
   reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
   interrupt plus TERM/KILL teardown as manual `harnex stop`.
-- Plan 29 (issue #30) commits 1-5 of 6 landed:
+- Plan 29 (issue #30) all 6 commits landed; freeze lifts:
   - `77ce9a0` — codex 0.128.0 JSON Schema fixture at
     `test/fixtures/codex_schema/` (15 schemas, ~247 KB, README
     documents the pin and refresh command). Master bundles
@@ -208,6 +208,18 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-5 of 6 landed; Phase
     turn/completed params (×2), contract `test_turn_interrupt_
     params_shape` `turn/start` stub, approvals
     `_with_approved` → `_with_accept` rename + assertion.
+  - `1f88d2f` — schema drift gate at
+    `test/harnex/contract/schema_freshness_test.rb`. Re-runs
+    `codex app-server generate-json-schema --out <tmpdir>` and
+    parse-then-compares each shipped fixture in
+    `test/fixtures/codex_schema/` (15 files) against the freshly-
+    generated equivalent. Compares only files we ship — new Codex
+    schemas (MCP types, etc.) aren't drift. Two failure modes:
+    schema-shape change emits the actionable "refresh the fixture"
+    message; Codex-removed-schema emits "remove fixture or update
+    harnex". Skips cleanly when `codex` is not on PATH or
+    `HARNEX_SKIP_SCHEMA_DRIFT=1`. Both branches sanity-checked
+    manually before commit.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -302,7 +314,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 27 | Replatform Codex onto `codex app-server` (JSON-RPC transport) | **shipped in 0.6.0** | P1 |
 | 28 | Make harnex agent-discoverable from the CLI alone | **resolved in 0.6.1** | P1 |
 | 29 | App-server `--context` and `harnex send` parity | **fixed** | P1 |
-| 30 | Test stubs mirror harnex assumptions, not Codex schema | open | P1 |
+| 30 | Test stubs mirror harnex assumptions, not Codex schema | **fixed** | P1 |
 | 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | open (Commit 1/3 landed) | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
@@ -332,7 +344,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
-| 29 | Test schema truth + contract gate (#30) | **in progress** (5 of 6) |
+| 29 | Test schema truth + contract gate (#30) | **done** |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -341,7 +353,76 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): plan 29 commit 5 of 6 landed — Phase 5 done
+### 2026-05-07 (latest): plan 29 commit 6 of 6 landed — Phase 6 done; plan 29 complete
+
+**This session shipped Phase 6 of plan 29.** One commit, green at
+HEAD. Schema drift gate at
+`test/harnex/contract/schema_freshness_test.rb`:
+
+- Skips when `codex` CLI is not on PATH or
+  `HARNEX_SKIP_SCHEMA_DRIFT=1`.
+- Else shells out to
+  `codex app-server generate-json-schema --out <tmpdir>` and
+  parse-then-compares each shipped fixture in
+  `test/fixtures/codex_schema/` (15 files: 8 top-level + 7 in v2/)
+  against the freshly-generated equivalent. Parse-then-compare so
+  key-order changes alone never trip the gate.
+- Compares only the files harnex ships — Codex adding new schemas
+  (MCP types, FuzzyFileSearch, etc.) is not drift in our contract.
+- Two failure modes with distinct actionable messages:
+  - **Schema-shape change**: refresh the fixture
+    (`codex app-server generate-json-schema --out /tmp/codex-schema`,
+    `cp /tmp/codex-schema/<file> test/fixtures/codex_schema/<file>`).
+  - **Codex-removed-schema**: remove the fixture or update harnex to
+    use the replacement type.
+- Sanity-checked manually before commit: deliberately mutated
+  `v2/ThreadStartParams.json` and the gate fired with the refresh
+  message; added a bogus fixture and the gate fired with the removal
+  message. Both branches behave correctly.
+
+**Test count:** 383 runs, 1166 assertions, 0 failures, 1 skip
+(only the long-standing `CODEX_INTEGRATION=1` integration gate).
+Was 382 / 1164 / 0 / 1 before this session (+1 run, +2 assertions
+from the new gate; no production code changes).
+
+**LOC:** test +75 (one new file). Zero production changes.
+
+**Plan 29 is now complete.** All six commits landed:
+
+1. `77ce9a0` — schema fixtures (Phase 1)
+2. `4d68e4d` — stdlib JSON Schema validator (Phase 2)
+3. `c3a4b6b` — outgoing payload contract tests (Phase 3)
+4. `d53c2c0` — realistic incoming-response stubs (Phase 4)
+5. `f9cedca` — adapter + session schema-true reads (Phase 5)
+6. `1f88d2f` — schema drift gate (Phase 6)
+
+**Freeze lifts.**
+
+### Next session (no other agenda)
+
+Plan 29 is done. Backlog returns to:
+
+1. **#32 commits 2-3** — ensure-block telemetry write so we always
+   emit a DISPATCH row even on early-boot disconnect, plus the
+   optional `last_error` capture. Spec in
+   `koder/issues/32_dispatch_telemetry_on_early_boot_fail.md`.
+   Commit 1 (boot_failure classification, `8196ae1`) already landed
+   pre-freeze.
+2. **#34** — early-reject `-m MODEL` on JSON-RPC. Today it is
+   silently forwarded to `codex app-server`, which boot-disconnects
+   opaquely. Spec in `koder/issues/34_early_reject_m_model.md`.
+3. **#33** — JSON-RPC token usage capture into the dispatch
+   telemetry row. Spec in
+   `koder/issues/33_jsonrpc_token_usage.md`.
+4. **0.6.5 release** once #32 / #33 / #34 ship.
+
+Followup worth keeping after #30 closes: in-repo
+`Harnex::Adapters::CodexAppServer::Protocol` module with typed
+methods + boundary validation, building on Phase 4's
+`Fixtures::Codex` builders. Defer until a concrete need surfaces —
+the contract tests cover the wire-shape gap today.
+
+### 2026-05-07 (Phase 5 done): plan 29 commit 5 of 6 landed
 
 **This session shipped Phase 5 of plan 29.** One commit, green at
 HEAD. All seven items from Phase 4's expanded punch list landed:
