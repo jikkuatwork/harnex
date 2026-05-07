@@ -137,10 +137,6 @@ class CodexAppServerLifecycleTest < Minitest::Test
 
   # 1. Golden turn lifecycle
   def test_golden_turn_lifecycle
-    skip "Plan 29 Phase 5 fixes this — `dispatch` reads result['turnId'] " \
-         "but the real schema is result.turn.id; with schema-shaped stubs the " \
-         "adapter returns nil for turn_id until Phase 5 swaps the parsing path."
-
     boot
     turn_id = @adapter.dispatch(prompt: "hello", model: "gpt-5", effort: "medium")
     assert_equal "trn-1", turn_id
@@ -165,10 +161,6 @@ class CodexAppServerLifecycleTest < Minitest::Test
 
   # 2. Interrupt mid-turn
   def test_interrupt_mid_turn
-    skip "Plan 29 Phase 5 fixes this — `dispatch` returns nil with schema-shape, so " \
-         "@current_turn_id never gets the real id from the response and `interrupt` " \
-         "early-returns instead of issuing turn/interrupt."
-
     server = Thread.new do
       # initialize
       req = JSON.parse(@server_in.gets)

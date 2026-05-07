@@ -396,16 +396,17 @@ module Harnex
 
       case method
       when "thread/started"
-        @rpc_thread_id = params["threadId"] || params["thread_id"]
+        @rpc_thread_id = params.dig("thread", "id")
       when "turn/started"
         @turn_started_seen = true
         @state_machine.force_busy!
-        emit_event("turn_started", turnId: params["turnId"] || params["turn_id"])
+        emit_event("turn_started", turnId: params.dig("turn", "id"))
       when "turn/completed"
         @last_completed_at = Time.now
         @state_machine.force_prompt!
-        payload = { turnId: params["turnId"] || params["turn_id"] }
-        payload[:status] = params["status"] if params["status"]
+        turn = params["turn"] || {}
+        payload = { turnId: turn["id"] }
+        payload[:status] = turn["status"] if turn["status"]
         payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"]
         emit_event("task_complete", **payload)
         schedule_auto_stop("task_complete", turn_id: payload[:turnId])
@@ -451,14 +452,15 @@ module Harnex
     def render_item_text(item)
       return nil unless item.is_a?(Hash)
 
-      type = item["type"] || item["kind"]
-      case type
-      when "agent_message", "assistant_message"
-        item["text"] || item.dig("message", "text")
-      when "tool_call"
-        name = item["name"] || item.dig("tool", "name") || "tool"
-        params = item["params"] || item["arguments"]
-        "tool: #{name}#{params ? " #{summarize(params)}" : ""}"
+      case item["type"]
+      when "agentMessage"
+        item["text"]
+      when "mcpToolCall", "dynamicToolCall"
+        name = item["tool"] || "tool"
+        args = item["arguments"]
+        "tool: #{name}#{args ? " #{summarize(args)}" : ""}"
+      when "commandExecution"
+        "command: #{item["command"]}"
       else
         item["text"]
       end

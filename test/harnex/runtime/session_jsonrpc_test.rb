@@ -125,11 +125,6 @@ class SessionJsonrpcTest < Minitest::Test
   end
 
   def test_turn_completed_emits_task_complete_event
-    skip "Plan 29 Phase 5 fixes this — Session#handle_rpc_notification reads " \
-         "params['turnId'] and params['status'] but the real schema is " \
-         "params.turn.id and params.turn.status; with schema-shaped fanouts " \
-         "the task_complete event ends up with turnId: nil and no status."
-
     fanout("thread/started", Fixtures::Codex.thread_started_notification(thread_id: "thr-a"))
     fanout("turn/started", Fixtures::Codex.turn_started_notification(thread_id: "thr-a", turn_id: "trn-a"))
     fanout("turn/completed",
@@ -154,10 +149,6 @@ class SessionJsonrpcTest < Minitest::Test
   end
 
   def test_tool_call_renders_one_line_summary
-    skip "Plan 29 Phase 5 fixes this — Session#render_item_text matches the never-existed " \
-         "snake_case 'tool_call' / 'agent_message' types; real Codex emits camelCase " \
-         "schema types like 'mcpToolCall', 'commandExecution', 'agentMessage'."
-
     fanout("item/completed", Fixtures::Codex.item_completed_tool_call(tool: "shell"))
     assert_match(/tool: shell/, output)
   end
@@ -202,11 +193,6 @@ class SessionJsonrpcTest < Minitest::Test
   end
 
   def test_inject_via_jsonrpc_calls_dispatch
-    skip "Plan 29 Phase 5 fixes this — Adapter#dispatch reads result['turnId'] " \
-         "but the real schema is result.turn.id; with schema-shaped stubs " \
-         "Session#inject_via_adapter returns turn_id: nil until Phase 5 swaps " \
-         "the parsing path."
-
     server_in, client_out = IO.pipe
     client_in, server_out = IO.pipe
 

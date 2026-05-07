@@ -46,7 +46,7 @@ module Harnex
       APPROVAL_RESPONSES = {
         "applyPatchApproval"                    => { decision: "approved" },
         "execCommandApproval"                   => { decision: "approved" },
-        "item/commandExecution/requestApproval" => { decision: "approved" },
+        "item/commandExecution/requestApproval" => { decision: "accept" },
         "item/fileChange/requestApproval"       => { decision: "accept" }
       }.freeze
 
@@ -167,7 +167,7 @@ module Harnex
         params[:effort] = effort if effort
 
         result = @client.request("turn/start", params)
-        @current_turn_id = result["turnId"] || result["turn_id"] || result["id"]
+        @current_turn_id = result.dig("turn", "id")
         @state = :busy
         @current_turn_id
       end
@@ -224,7 +224,7 @@ module Harnex
       def extract_thread_id(payload)
         return nil unless payload.is_a?(Hash)
 
-        payload.dig("thread", "id") || payload["threadId"] || payload["thread_id"]
+        payload.dig("thread", "id")
       end
 
       def extract_initial_prompt(extra_args)
@@ -265,7 +265,7 @@ module Harnex
         when "thread/started"
           @thread_id ||= extract_thread_id(params)
         when "turn/started"
-          @current_turn_id = params["turnId"] || params["turn_id"]
+          @current_turn_id = params.dig("turn", "id")
           @state = :busy
         when "turn/completed"
           @last_completed_at = Time.now

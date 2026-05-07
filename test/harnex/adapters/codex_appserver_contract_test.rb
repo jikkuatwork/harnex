@@ -312,7 +312,7 @@ class CodexAppServerContractTest < Minitest::Test
     start_server([
       ["initialize", {}],
       ["thread/start", { "thread" => { "id" => "thr-6" } }],
-      ["turn/start", { "turnId" => "trn-6" }],
+      ["turn/start", { "turn" => { "id" => "trn-6" } }],
       ["turn/interrupt", {}]
     ])
     @adapter.start_rpc(read_io: @client_in, write_io: @client_out, pid: nil)
@@ -370,19 +370,7 @@ class CodexAppServerContractTest < Minitest::Test
     assert_valid(schema, response["result"], "fileChange approval response body")
   end
 
-  # The bug Plan 29 Phase 5 will fix:
-  # APPROVAL_RESPONSES["item/commandExecution/requestApproval"] currently
-  # sends `{decision: "approved"}`, but the schema's
-  # CommandExecutionApprovalDecision enum is
-  # `accept | acceptForSession | decline | cancel | ...`. "approved"
-  # belongs to ReviewDecision (used by applyPatchApproval / execCommandApproval),
-  # almost certainly a copy-paste from those entries when the JSON-RPC
-  # mediator landed in 0.6.4. Phase 5 changes the value to "accept" and
-  # removes this skip.
   def test_command_execution_request_approval_response_validates_against_schema
-    skip "Plan 29 Phase 5 fixes this — adapter currently sends decision: 'approved' " \
-         "but CommandExecutionApprovalDecision enum is accept|acceptForSession|decline|cancel."
-
     boot
     push_request(id: 103, method: "item/commandExecution/requestApproval", params: {})
 

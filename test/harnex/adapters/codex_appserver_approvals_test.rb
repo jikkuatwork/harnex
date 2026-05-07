@@ -58,7 +58,7 @@ class CodexAppServerApprovalsTest < Minitest::Test
     assert_equal "accept", response.dig("result", "decision")
   end
 
-  def test_command_execution_approval_responds_with_approved
+  def test_command_execution_approval_responds_with_accept
     server_thread = Thread.new do
       consume_handshake
       send_server_request(
@@ -73,7 +73,7 @@ class CodexAppServerApprovalsTest < Minitest::Test
     response = server_thread.value
 
     assert_equal 101, response["id"]
-    assert_equal "approved", response.dig("result", "decision")
+    assert_equal "accept", response.dig("result", "decision")
   end
 
   def test_legacy_apply_patch_and_exec_command_approvals_respond_with_approved

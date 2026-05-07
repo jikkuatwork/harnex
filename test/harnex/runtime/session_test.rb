@@ -400,14 +400,14 @@ class SessionTest < Minitest::Test
 
     session.send(:handle_rpc_notification, {
       "method" => "turn/completed",
-      "params" => { "turnId" => "trn-1", "status" => "completed" }
+      "params" => { "turn" => { "id" => "trn-1", "status" => "completed" } }
     })
 
     assert_equal [:stop, "trn-1"], Timeout.timeout(2) { calls.pop }
 
     session.send(:handle_rpc_notification, {
       "method" => "turn/completed",
-      "params" => { "turnId" => "trn-2", "status" => "completed" }
+      "params" => { "turn" => { "id" => "trn-2", "status" => "completed" } }
     })
 
     refute wait_for_queue(calls, timeout: 0.1)
