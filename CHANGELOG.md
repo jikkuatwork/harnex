@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-05-07
+
 ### Added
 
 - `harnex run --auto-stop` for one-shot `--context` dispatches.
@@ -16,6 +18,21 @@
   subprocess on `harnex stop`: harnex preserves the existing
   `turn/interrupt` request, then sends TERM with a bounded KILL
   fallback so the runner can release the API port and registry entry.
+- JSON-RPC adapter now captures token usage in `DISPATCH.jsonl`.
+  `Session#handle_rpc_notification` reads schema-true
+  `params["tokenUsage"]` on `thread/tokenUsage/updated`, and the
+  session-end telemetry path branches on `adapter.transport`: JSON-RPC
+  pulls the cumulative `tokenUsage.total` and maps the camelCase
+  `{input,output,cachedInput,reasoningOutput}Tokens` fields onto the
+  snake_case `actual.*_tokens` columns. PTY continues to scrape the
+  transcript tail. (#33)
+- JSON-RPC adapter rejects `-m`/`--model`/`--model=…` early with a
+  clear `ArgumentError` pointing at `-c model="<name>"`. Previously the
+  flag was silently forwarded to `codex app-server`, which exited at
+  startup and surfaced only as an opaque `disconnected` transport
+  message. Legacy PTY adapter (`--legacy-pty`) still accepts `-m`.
+  `harnex help run` and `guides/01_dispatch.md` document the JSON-RPC
+  vs PTY flag-form difference. (#34)
 
 ## [0.6.4] — 2026-05-06
 
