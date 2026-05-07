@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 refined; ready to execute Phase 1)
+Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-2 of 6 landed; Phase 3 next)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 refined; ready to execute Phas
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 319 minitest tests (1 integration skip behind
+- Test suite: `test/` with 361 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -145,6 +145,20 @@ Updated: 2026-05-07 (freeze in effect — plan 29 refined; ready to execute Phas
   initial context launch and stop on the next prompt after busy. The path
   reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
   interrupt plus TERM/KILL teardown as manual `harnex stop`.
+- Plan 29 (issue #30) commits 1-2 of 6 landed:
+  - `77ce9a0` — codex 0.128.0 JSON Schema fixture at
+    `test/fixtures/codex_schema/` (15 schemas, ~247 KB, README
+    documents the pin and refresh command). Master bundles
+    excluded; first-capture verification confirmed bundles aren't
+    byte-stable across two `generate-json-schema` runs on the same
+    codex version.
+  - `4d68e4d` — stdlib Draft-7 JSON Schema validator at
+    `test/support/json_schema_validator.rb` (178 LOC) plus 42
+    self-tests. Supports the keywords plan 29 listed; unknown
+    keywords (format/pattern/minimum/etc.) are silently ignored
+    per JSON Schema convention. Self-tests already prove the
+    validator catches the Phase 5 enum bug end-to-end against the
+    real fixtures.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -269,7 +283,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
-| 29 | Test schema truth + contract gate (#30) | **draft** |
+| 29 | Test schema truth + contract gate (#30) | **in progress** (1-2 of 6) |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -277,6 +291,45 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-07 (later still): plan 29 commits 1-2 of 6 landed
+
+**This session shipped Phases 1 and 2 of plan 29.** Two commits, both
+green at HEAD, no code-path behavior changes:
+
+- `77ce9a0` — Phase 1: `codex app-server generate-json-schema --out`
+  fixture under `test/fixtures/codex_schema/`. 15 schemas (~247 KB)
+  for the request, response, and notification shapes harnex sends,
+  parses, or auto-approves. Provenance README documents the codex
+  0.128.0 pin and the refresh command. Master bundles excluded —
+  first-capture verification empirically confirmed bundles aren't
+  byte-stable across two `generate-json-schema` runs on the same
+  codex version, validating the design-time decision.
+- `4d68e4d` — Phase 2: stdlib Draft-7 JSON Schema validator at
+  `test/support/json_schema_validator.rb` (178 LOC) plus 42
+  self-tests. Supports type (incl. unions), required, enum, const,
+  properties + additionalProperties, items, oneOf/anyOf/allOf, $ref
+  to `#/definitions/X`. Unknown keywords (format/pattern/minimum/
+  description/title/etc.) silently ignored per JSON Schema
+  convention. Self-tests already prove the validator catches the
+  Phase 5 enum bug end-to-end:
+  - `{"decision": "approved"}` validates against
+    `ApplyPatchApprovalResponse` (ReviewDecision enum) ✓
+  - `{"decision": "approved"}` does NOT validate against
+    `CommandExecutionRequestApprovalResponse`
+    (CommandExecutionApprovalDecision enum) ✗
+  - `{"decision": "accept"}` does validate against the latter ✓
+
+When Phase 3 wires the validator into the contract test for
+`APPROVAL_RESPONSES`, that bug surfaces as a failing test; Phase 5
+fixes it.
+
+**Test count:** 361 runs, 1081 assertions, 0 failures, 1 skip
+(was 319).
+
+**LOC:** validator 178; self-tests 320. Plan estimated ~250 LOC for
+the validator alone — came in lighter, mostly because the spec
+limited the keyword set tightly.
 
 ### 2026-05-07 (later): plan 29 drafted for #30; auto-approval enum bug surfaced
 
@@ -386,11 +439,56 @@ work; JSON-RPC stays the default for autonomous worker dispatch.
 
 ### Next session (no other agenda)
 
-Execute plan 29 (`koder/plans/29_test_schema_truth.md`) starting at
-Phase 1 — schema fixture capture. Plan is fully scoped; just walk it.
-Each phase is one commit; full suite must stay green between commits.
+Continue plan 29 at **Phase 3** — outgoing payload contract tests.
+New file: `test/harnex/adapters/codex_appserver_contract_test.rb`.
+Plan is fully scoped (`koder/plans/29_test_schema_truth.md`); just
+walk it. Each remaining phase is one commit; full suite must stay
+green between commits.
 
-**Phase 1 spec refined this session:** master bundles
+**Phase 3 mechanism:** feed `Adapters::CodexAppServer` an
+`IO.pipe`-based fake server, capture every JSON line
+`JsonRpcClient#write_line` emits, parse each one, and validate
+`params` (for outgoing requests) or the response body (for
+auto-approval `result`s) against the matching schema fixture using
+`JsonSchemaValidator` from Phase 2.
+
+Cases (per plan):
+
+1. `initialize` — `clientInfo` and `capabilities` shape (no schema
+   file; encode contract inline).
+2. `thread/start` — validate against `v2/ThreadStartParams`.
+3. `turn/start` with prompt only.
+4. `turn/start` with `model` + `effort`.
+5. `turn/start` from inbox-delivered `harnex send` (end-to-end
+   inject path, not just the adapter).
+6. `turn/interrupt` — encode contract inline.
+7. Auto-approval response bodies for all four request methods, each
+   validated against the corresponding `*ApprovalResponse` schema.
+   **Case 7's `item/commandExecution/requestApproval` variant is the
+   one expected to fail** (the `decision: "approved"` vs `"accept"`
+   enum bug; Phase 5 fixes it).
+
+After Phase 3:
+
+- Phase 4 — replace literal stubs in
+  `codex_appserver_lifecycle_test.rb` and `session_jsonrpc_test.rb`
+  with schema-shaped `Fixtures::Codex` builders at
+  `test/support/codex_response_fixtures.rb`.
+- Phase 5 — adapter fixes surfaced by Phases 3-4 (auto-approval
+  enum bug; drop `extract_thread_id`/`dispatch` fallback chains).
+- Phase 6 — drift gate at
+  `test/harnex/contract/schema_freshness_test.rb`.
+
+After plan 29 lands and the freeze lifts: backlog returns to #32
+commits 2-3 → #34 (early-reject `-m` on JSON-RPC) → #33 (token
+capture) → 0.6.5 release. Followup worth keeping: in-repo
+`Harnex::Adapters::CodexAppServer::Protocol` module with typed
+methods + boundary validation, building on Phase 4's
+`Fixtures::Codex` builders.
+
+### Older draft note (Phase 1 scope refinement, now superseded)
+
+Master bundles
 (`codex_app_server_protocol{,.v2}.schemas.json`) dropped from the
 fixture. Original draft included them; first-capture inspection
 showed they conflict with Phase 6's drift rule (any new Codex
