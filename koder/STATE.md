@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (#33 fixed — JSON-RPC tokenUsage flows into DISPATCH telemetry; 0.6.5 release-blocker pair complete)
+Updated: 2026-05-07 (0.6.5 shipped + verified end-to-end; #35 filed for DISPATCH telemetry hygiene)
 
 ## Current snapshot
 
@@ -345,6 +345,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | **fixed** | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | **fixed** | P2 |
 | 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | **fixed** | P2 |
+| 35 | DISPATCH.jsonl telemetry hygiene (drop captured signals, always-null fields, conditional shape) | open | P2 |
 
 See `koder/issues/` for details.
 
@@ -379,7 +380,91 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): #33 fixed — JSON-RPC tokenUsage in DISPATCH telemetry
+### 2026-05-07 (latest): 0.6.5 shipped + verified; next is #35 DISPATCH telemetry hygiene
+
+Released `harnex 0.6.5` (commit `e6de141`, tag `v0.6.5`) carrying the
+#34 + #33 release-blocker pair plus the previously-Unreleased
+auto-stop and JSON-RPC stop-subprocess fixes. Pushed to RubyGems,
+local `gem install harnex` refreshed, `harnex --version` reports
+`0.6.5 (2026-05-07)`.
+
+Post-release the session ran six functional tests against the
+installed `0.6.5` binary; results recorded in DISPATCH.jsonl and the
+test transcript:
+
+1. **Multi-turn JSON-RPC token accumulation** — pass. Two-turn
+   session, totals roughly doubled across turns
+   (in: 34075 / out: 68 / reason: 52 / cached: 19200), `exit: success`
+   on `harnex stop`.
+2. **`-m` / `--model` / `--model=` early reject (#34)** — pass. All
+   three forms rejected with the spec message; `-c model="…"`
+   accepted.
+3. **Visible tmux dispatch** — pass. `mode: tmux` returned at launch,
+   agent replied `GAMMA`, exit success, tokens captured.
+4. **Stop primitive** — pass. Port released, codex subprocess killed,
+   registry entry removed.
+5. **Boot-failure telemetry (#32)** — full pass after retry. Stopping
+   a JSON-RPC session within 5s of register before any
+   `turn/started` produces `exit: boot_failure`, `duration_s: 1`.
+6. **Exec + file-write under default sandbox (0.6.4 mediator)** —
+   pass. Codex executed `uname -s` and wrote
+   `/tmp/harnex-exec-test/hello.txt` with no
+   `--dangerously-bypass-approvals-and-sandbox` flag.
+
+Foreground (no `--detach`) confirmed working for one-shot
+`--auto-stop` jobs.
+
+Long-run stress test: ~9 minute deep code/doc audit dispatch
+(`quality-audit`) processed 13 files, hit **17 mid-flight JSON-RPC
+disconnections** all auto-recovered without operator intervention,
+exited via `task_complete`, wrote a complete DISPATCH row
+(`exit: success`, `duration_s: 533`, `input_tokens: 2,224,841`,
+`output_tokens: 25,584`, `reasoning_tokens: 14,158`,
+`cached_tokens: 1,474,560`). Validates #27 reconnect path under
+sustained load and #33 token-capture under high churn.
+
+The audit's report (`/tmp/harnex-quality-report.md`, 27 KB)
+surfaced two classes of finding worth triage:
+
+- **Concurrency / hardening** in `Session`,
+  `Adapters::CodexAppServer`, `ApiServer`, `Inbox` — unsynchronized
+  state, no request timeouts, untracked HTTP handler threads,
+  `Inbox#@messages` unbounded growth, `inbox.rb` ArgumentError race
+  between `deliver_now` and `delivery_loop`. Not filed yet.
+- **Doc staleness** in `CLAUDE.md`, `README.md`, `TECHNICAL.md`,
+  `docs/codex-appserver.md`, `docs/events.md`, and
+  `docs/dispatch-telemetry.md` — stale test count (174 vs 396),
+  legacy item types, missing `harnex doctor` / `--meta` /
+  `--summary-out` / `--inbox-ttl` / `--legacy-pty`, transport model
+  described as PTY-only despite JSON-RPC being default. Not filed
+  yet.
+
+DISPATCH telemetry hygiene **is** filed: see
+`koder/issues/35_dispatch_telemetry_hygiene.md`. Tier 1 fixes are
+captured-but-dropped fields (`total_tokens`, `agent_session_id`,
+`adapter_transport`, `task_complete` bool, `signal`+`exit_code`,
+always-present `last_error`, hardcoded `tmux_session`); Tier 2 adds
+counters and auto-derivations (`turn_count`, `auto_disconnects`, log
+paths, parent-dispatch auto-derive, tool/command counts,
+`rate_limits`); Tier 3 decides populate-or-remove for always-null
+fields (`cost_usd`, `tests_*`, `agent_version`, `predicted`); Tier 4
+is optional richer captures.
+
+**Next session — pick one:**
+
+1. **#35 Tier 1** (no design debate, all bugfixes, single commit).
+   Best starting point.
+2. File the concurrency findings as a new issue (Session,
+   CodexAppServer, ApiServer, Inbox), then start work on it.
+3. File the doc-staleness findings as a new issue and burn through
+   them (mostly mechanical edits + version-stamp refreshes).
+
+#35 Tier 1 is the cleanest, most contained option.
+
+**Test count:** 396 runs, 1220 assertions, 0 failures, 1 skip
+(`CODEX_INTEGRATION=1` integration gate). Unchanged this session.
+
+### 2026-05-07: #33 fixed — JSON-RPC tokenUsage in DISPATCH telemetry
 
 Commit `349cd10`. Both halves of the 0.6.5 release-blocker pair
 (#34 + #33) are now landed.
