@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (plan 29 complete — Phase 6 schema drift gate landed; freeze lifts)
+Updated: 2026-05-07 (Codex agent symlinks added; plan 29 complete — Phase 6 schema drift gate landed; freeze lifts)
 
 ## Current snapshot
 
@@ -37,6 +37,9 @@ Updated: 2026-05-07 (plan 29 complete — Phase 6 schema drift gate landed; free
 - `harnex skills install` / `uninstall`, bundled `skills/`, and repo-local
   skill symlinks were removed in 0.6.1. Agents discover harnex from
   `harnex --help`, `harnex help <command>`, and `harnex agents-guide`.
+- Repo agent setup is shared across Claude and Codex: `AGENTS.md` and
+  `CODEX.md` symlink to `CLAUDE.md`; `.codex/skills` symlinks to
+  `.claude/skills` for the repo-local `open` / `close` session skills.
 - README rewritten for non-users (quick "is this for me?" format). Usage
   details moved to GUIDE.md, command reference stays in TECHNICAL.md.
 - README, GUIDE, and recipe docs now present **fire-and-watch** as the primary
