@@ -126,10 +126,15 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-3 of 6 landed; Phase
   `harnex run codex -- -c key=value`) but the harnex-context entry
   that `--context` smuggles through is filtered out (codex app-server
   rejects positional input).
-- **`--legacy-pty` policy**: kept as a long-term supported fallback
-  for interactive/TUI use rather than a 0.7.0-removal target. JSON-RPC
-  remains the default; legacy-pty is the right choice when you want
-  the full Codex TUI live in tmux.
+- **PTY transport policy**: the PTY path is permanent and first-class,
+  not a fallback. The current flag `--legacy-pty` is a misnomer
+  (rename queued for post-freeze followup). PTY is the broad-
+  compatibility transport for any harness without a JSON-RPC interface
+  (claude, opencode, aider, cursor, etc.) and the right choice whenever
+  the TUI needs to be visible in tmux. JSON-RPC remains the default for
+  Codex autonomous dispatch because Codex ships `app-server`; it is
+  *one* transport, not *the* transport. Each adapter ideally supports
+  both PTY and JSON-RPC; many harnesses ship only the former.
 - Issue #32 is partially in flight: Commit 1 (boot_failure
   classification on JSON-RPC, commit `8196ae1`) lands the baseline
   detector. Commits 2 (ensure-block telemetry write) and 3 (optional
@@ -303,6 +308,29 @@ Plan 09 is **layer B** (atomic orchestration primitives).
 See `koder/plans/` for details.
 
 ## Next step
+
+### 2026-05-07 (later): PTY transport policy clarified to first-class
+
+No engineering changes this session; only durable framing updated.
+
+User reaffirmed PTY is a permanent first-class transport, not a
+"legacy fallback":
+
+- `CLAUDE.md` — new "Adapter transports" section. Each adapter
+  ideally supports PTY *and* JSON-RPC; PTY is the broad-compat
+  default for any harness without a JSON-RPC interface (claude,
+  opencode, aider, cursor, etc.); `--legacy-pty` flag name is a
+  misnomer pending rename.
+- The `--legacy-pty` bullet in `Current snapshot` (above) rewritten
+  as the **PTY transport policy** to match.
+
+**Post-freeze followup queued:** rename `--legacy-pty`. Likely
+`--transport pty|jsonrpc` so it generalizes to future harnesses,
+but the flag shape is the user's call when the freeze lifts.
+
+Engineering state unchanged — plan 29 commits 1-3 of 6 still at
+HEAD; **Phase 4 (realistic incoming-response stubs) is the next
+step**. See the next stanza for full mechanism.
 
 ### 2026-05-07 (Phase 3 done): plan 29 commit 3 of 6 landed
 

@@ -69,6 +69,28 @@ May override:
 - `wait_for_sendable_state?(state, submit:, enter_only:)` — whether a state is sendable
 - `wait_for_sendable(screen_snapshot_fn, submit:, enter_only:, force:)` — orchestrate send-readiness waiting
 
+## Adapter transports — PTY and JSON-RPC are both first-class
+
+Adapters interface with the wrapped CLI over **PTY**, **JSON-RPC**, or
+both. Neither is a legacy fallback; they serve different needs.
+
+- **PTY** is the broad-compatibility transport. Most CLIs only ship a
+  TUI, so PTY is the default path for any new harness adapter (claude,
+  opencode, aider, cursor, etc.). It is also the right choice whenever
+  the user wants to *see* the TUI live in tmux.
+- **JSON-RPC** is the structured transport, offered by harnesses that
+  ship one (e.g. `codex app-server`). When available it gives cleaner
+  state detection, structured task-complete signals, and approval
+  mediation without text scraping.
+
+Each harness adapter ideally supports both: PTY for visibility and
+broad compat, JSON-RPC for autonomous dispatch when the harness
+exposes it. Many harnesses have no JSON-RPC; that's fine — PTY covers
+them. The PTY path is **permanent** and is not slated for removal.
+
+The current flag `--legacy-pty` is a misnomer kept for backwards
+compatibility; rename is queued for post-freeze followup.
+
 ## If you are running inside harnex
 
 Check `$HARNEX_ID` and `$HARNEX_SESSION_CLI` to confirm. You can use
