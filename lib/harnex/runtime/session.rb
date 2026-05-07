@@ -833,7 +833,7 @@ module Harnex
 
       {
         id: id,
-        tmux_session: id,
+        tmux_session: summary_tmux_session,
         description: description,
         started_at: @started_at.iso8601,
         ended_at: @ended_at&.iso8601,
@@ -875,12 +875,19 @@ module Harnex
         output_tokens: @usage_summary[:output_tokens],
         reasoning_tokens: @usage_summary[:reasoning_tokens],
         cached_tokens: @usage_summary[:cached_tokens],
+        total_tokens: @usage_summary[:total_tokens],
+        agent_session_id: summary_agent_session_id,
+        adapter_transport: adapter.transport.to_s,
         cost_usd: nil,
         loc_added: @git_end[:loc_added],
         loc_removed: @git_end[:loc_removed],
         files_changed: @git_end[:files_changed],
         commits: @git_end[:commits],
         exit: @exit_reason,
+        task_complete: !!@last_completed_at,
+        signal: @term_signal,
+        exit_code: @exit_code,
+        last_error: @last_error,
         stalls: counters[:stalls],
         force_resumes: counters[:force_resumes],
         disconnections: counters[:disconnections],
@@ -889,8 +896,18 @@ module Harnex
         tests_passed: nil,
         tests_failed: nil
       }
-      actual[:last_error] = @last_error if @exit_reason == "boot_failure" && @last_error
       actual
+    end
+
+    def summary_tmux_session
+      value = load_existing_registry_metadata["tmux_session"]
+      value.to_s.empty? ? nil : value
+    end
+
+    def summary_agent_session_id
+      @usage_summary[:agent_session_id] ||
+        @rpc_thread_id ||
+        (adapter.thread_id if adapter.respond_to?(:thread_id))
     end
 
     def summary_predicted_payload

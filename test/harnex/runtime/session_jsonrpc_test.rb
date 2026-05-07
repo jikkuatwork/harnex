@@ -199,6 +199,14 @@ class SessionJsonrpcTest < Minitest::Test
     session.send(:prepare_events_log)
     session.send(:emit_started_event)
     session.send(:emit_git_start_event)
+    session.send(:handle_rpc_notification, {
+      "method" => "thread/started",
+      "params" => Fixtures::Codex.thread_started_notification(thread_id: "thr-tok")
+    })
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => Fixtures::Codex.turn_completed_notification(thread_id: "thr-tok", turn_id: "trn-tok")
+    })
 
     notif = Fixtures::Codex.thread_token_usage_updated_notification(
       thread_id: "thr-tok",
@@ -220,6 +228,13 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal 25_018, record.dig("actual", "output_tokens")
     assert_equal 12_501, record.dig("actual", "reasoning_tokens")
     assert_equal 6_408_576, record.dig("actual", "cached_tokens")
+    assert_equal 222_837, record.dig("actual", "total_tokens")
+    assert_equal "thr-tok", record.dig("actual", "agent_session_id")
+    assert_equal "stdio_jsonrpc", record.dig("actual", "adapter_transport")
+    assert_equal true, record.dig("actual", "task_complete")
+    assert_equal 0, record.dig("actual", "exit_code")
+    assert_nil record.dig("actual", "signal")
+    assert_nil record.dig("actual", "last_error")
   end
 
   def test_jsonrpc_session_with_no_token_usage_keeps_token_fields_null
