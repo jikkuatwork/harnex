@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (#32 fixed — early JSON-RPC boot failures now write DISPATCH rows with last_error)
+Updated: 2026-05-07 (#34 fixed — JSON-RPC adapter early-rejects `-m`/`--model` with actionable error)
 
 ## Current snapshot
 
@@ -145,6 +145,15 @@ Updated: 2026-05-07 (#32 fixed — early JSON-RPC boot failures now write DISPAT
   dispatch summary row. JSON-RPC error notifications and transport
   disconnect/error responses now retain `actual.last_error` on
   `boot_failure` summary rows.
+- Issue #34 is fixed: `Adapters::CodexAppServer#initialize` now scans
+  `extra_args` for `-m`, `--model`, or `--model=…` and raises an
+  `ArgumentError` with `Use \`-c model="<name>"\` instead.` before any
+  subprocess spawn. Eliminates the prior failure mode where the flag
+  was silently forwarded to `codex app-server`, which exited at
+  startup and surfaced only as `disconnected source=transport
+  message=null`. Legacy PTY adapter (`--legacy-pty`) still accepts
+  `-m`. `harnex help run` and `guides/01_dispatch.md` document the
+  JSON-RPC vs PTY flag-form difference.
 - Issue #31 is fixed: `harnex stop` for the JSON-RPC Codex adapter
   preserves the existing `turn/interrupt` request, then terminates the
   `codex app-server` subprocess with bounded TERM/KILL fallback. The
@@ -324,7 +333,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | **fixed** | P1 |
 | 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
-| 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | open | P2 |
+| 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | **fixed** | P2 |
 
 See `koder/issues/` for details.
 
@@ -359,10 +368,44 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): #32 fixed — early boot failures are visible in DISPATCH.jsonl
+### 2026-05-07 (latest): #34 fixed — JSON-RPC adapter rejects `-m`/`--model` early
 
-This session completed the remaining #32 work after commit `8196ae1`
-had already landed the `boot_failure` classifier.
+This session implemented option (1) + (3) from the issue spec:
+early reject + documentation. No translation layer (option 2 was
+explicitly de-recommended in the spec to avoid hiding the seam).
+
+- `Adapters::CodexAppServer#initialize` now calls
+  `reject_unsupported_codex_flags!`, which scans `@extra_args` for
+  `-m`, `--model`, or `--model=…` and raises `ArgumentError` with
+  the spec-mandated message before any subprocess spawn.
+- `bin/harnex` already prefixes `harnex:` and exits 1, so users
+  see: `harnex: -m/--model is not supported by \`codex app-server\`.
+  Use \`-c model="<name>"\` instead.`
+- Validator is per-adapter — legacy PTY `Adapters::Codex` is
+  untouched and still forwards `-m` (regression-tested).
+- Substring-guard test: `-c some_key=-m foo` does not false-positive.
+- `harnex help run` Gotchas line + `guides/01_dispatch.md` Spawn
+  section both document the JSON-RPC vs PTY flag-form difference.
+- 7 new tests in `CodexAppServerUnsupportedFlagsTest` cover all
+  three reject forms, the spec's grep pattern, the positive
+  `-c model=` case, the substring guard, and the legacy-PTY
+  regression guard.
+
+**Test count:** 391 runs, 1198 assertions, 0 failures, 1 skip
+(only the long-standing `CODEX_INTEGRATION=1` integration gate).
+
+**Next session (no other agenda):**
+
+1. **#33** — JSON-RPC token usage capture into the dispatch
+   telemetry row. Spec in
+   `koder/issues/33_jsonrpc_token_capture.md`.
+2. **0.6.5 release** once #33 ships. #34 is the first half of the
+   release blocker pair; #33 is the remaining half.
+
+### 2026-05-07: #32 fixed — early boot failures are visible in DISPATCH.jsonl
+
+Completed the remaining #32 work after commit `8196ae1` had landed
+the `boot_failure` classifier.
 
 - `Session#run_pty` and `Session#run_jsonrpc` now use a shared,
   idempotent `finalize_session!` path from both normal lifecycle
@@ -379,19 +422,6 @@ had already landed the `boot_failure` classifier.
   expected a string` boot failure and asserts `exit:
   "boot_failure"`, `disconnections: 1`, duration, and
   `actual.last_error`.
-
-**Test count:** 384 runs, 1179 assertions, 0 failures, 1 skip
-(only the long-standing `CODEX_INTEGRATION=1` integration gate).
-
-**Next session (no other agenda):**
-
-1. **#34** — early-reject `-m MODEL` on JSON-RPC. Today it is
-   silently forwarded to `codex app-server`, which boot-disconnects
-   opaquely. Spec in `koder/issues/34_early_reject_m_model.md`.
-2. **#33** — JSON-RPC token usage capture into the dispatch
-   telemetry row. Spec in
-   `koder/issues/33_jsonrpc_token_usage.md`.
-3. **0.6.5 release** once #33 / #34 ship.
 
 ### 2026-05-07: plan 29 commit 6 of 6 landed — Phase 6 done; plan 29 complete
 

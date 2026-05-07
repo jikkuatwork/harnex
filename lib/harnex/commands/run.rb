@@ -63,6 +63,8 @@ module Harnex
           Passing --tmux without --id creates a random harnex session ID.
           --watch is foreground-only; do not combine it with --tmux or --detach.
           Use -- before child CLI flags when a flag could be parsed by harnex.
+          Codex JSON-RPC: pass model as `-c model=NAME`, not `-m NAME`. The
+            legacy PTY adapter (--legacy-pty) accepts `-m`.
       TEXT
     end
 

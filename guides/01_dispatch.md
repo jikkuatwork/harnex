@@ -81,6 +81,12 @@ Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer
 matches `harnex status` or `harnex pane --id`.
 
+Codex flag forms differ between transports. The default JSON-RPC adapter
+(`codex app-server`) does not accept `-m`/`--model`; pass the model as
+`-c model="<name>"` instead. The legacy PTY adapter (`harnex run codex
+--legacy-pty`) still accepts `-m`. Harnex rejects `-m` early on JSON-RPC
+with an actionable error rather than letting the subprocess boot-disconnect.
+
 ## Send
 
 Use `--message` for short instructions and file references:

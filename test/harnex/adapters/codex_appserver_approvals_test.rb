@@ -183,3 +183,58 @@ class CodexAppServerExtraArgsTest < Minitest::Test
     assert_equal "[harnex session id=cx-1] do work", adapter.initial_prompt
   end
 end
+
+# `-m/--model` is a regular-codex flag that codex `app-server` does
+# not implement. Without an early reject, the subprocess exits at
+# startup and harnex surfaces only `disconnected source=transport
+# message=null`, which is indistinguishable from a real schema bug.
+# See koder/issues/34_appserver_flag_translation.md.
+class CodexAppServerUnsupportedFlagsTest < Minitest::Test
+  Adapter = Harnex::Adapters::CodexAppServer
+
+  def test_short_m_flag_is_rejected_with_actionable_hint
+    err = assert_raises(ArgumentError) { Adapter.new(["-m", "gpt-5.5"]) }
+    assert_match(/not supported by `codex app-server`/, err.message)
+    assert_match(/-c model=/, err.message)
+  end
+
+  def test_long_model_flag_is_rejected
+    err = assert_raises(ArgumentError) { Adapter.new(["--model", "gpt-5.5"]) }
+    assert_match(/not supported by `codex app-server`/, err.message)
+  end
+
+  def test_model_equals_form_is_rejected
+    err = assert_raises(ArgumentError) { Adapter.new(["--model=gpt-5.5"]) }
+    assert_match(/not supported by `codex app-server`/, err.message)
+  end
+
+  # Spec acceptance test: `harnex run codex ... -- -m gpt-5.5 2>&1
+  # | grep -q "model.*not supported\|Use \`-c model"` must succeed.
+  def test_error_message_satisfies_spec_grep
+    err = assert_raises(ArgumentError) { Adapter.new(["-m", "x"]) }
+    matches_first = err.message.match?(/model.*not supported/)
+    matches_second = err.message.include?("Use `-c model")
+    assert(matches_first || matches_second,
+      "error message should match grep pattern: #{err.message.inspect}")
+  end
+
+  def test_c_model_form_is_accepted
+    adapter = Adapter.new(["-c", "model=gpt-5.5"])
+    assert_equal ["codex", "app-server", "-c", "model=gpt-5.5"], adapter.build_command
+  end
+
+  # Validator must not false-positive when `-m`/`--model` appears as a
+  # substring of an unrelated argv element (e.g. inside a `-c` value).
+  def test_substring_of_other_args_is_not_rejected
+    adapter = Adapter.new(["-c", "some_key=-m something"])
+    assert_equal ["codex", "app-server", "-c", "some_key=-m something"], adapter.build_command
+  end
+
+  # The legacy PTY adapter must still accept `-m`; the rejection is
+  # specific to the JSON-RPC transport.
+  def test_legacy_pty_adapter_still_accepts_m_flag
+    adapter = Harnex::Adapters::Codex.new(["-m", "gpt-5.5"])
+    assert_includes adapter.build_command, "-m"
+    assert_includes adapter.build_command, "gpt-5.5"
+  end
+end

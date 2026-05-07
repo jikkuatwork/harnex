@@ -54,6 +54,7 @@ module Harnex
 
       def initialize(extra_args = [])
         super("codex", extra_args)
+        reject_unsupported_codex_flags!
         @initial_prompt = extract_initial_prompt(extra_args)
         @client = nil
         @thread_id = nil
@@ -234,6 +235,21 @@ module Harnex
         return prefixed if prefixed && !prefixed.empty?
 
         nil
+      end
+
+      # `codex app-server` does not implement `-m/--model`; passing it
+      # causes the subprocess to exit at startup, surfacing only as a
+      # null-message transport disconnect. Same flag still works on the
+      # legacy PTY adapter (`harnex run codex --legacy-pty`).
+      def reject_unsupported_codex_flags!
+        bad = @extra_args.find do |a|
+          s = a.to_s
+          s == "-m" || s == "--model" || s.start_with?("--model=")
+        end
+        return unless bad
+
+        raise ArgumentError,
+          "-m/--model is not supported by `codex app-server`. Use `-c model=\"<name>\"` instead."
       end
 
       # Codex CLI flags only — strips the harnex-context entry that
