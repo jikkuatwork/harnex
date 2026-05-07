@@ -9,33 +9,36 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
-- 2026-05-07: `koder/STATE.md` was slimmed into this handoff format.
-  `CLAUDE.md` and the repo-local `open` / `close` skills now instruct
-  future sessions to keep STATE thin. See `CHANGELOG.md` Unreleased.
-- `harnex 0.6.5` shipped and was verified end-to-end on 2026-05-07.
-  See `CHANGELOG.md` and `koder/releases/0.6.5.md` for release and
-  verification details.
-- Latest verified suite at release time: 396 runs, 1220 assertions, 0
-  failures, 1 skip (`CODEX_INTEGRATION=1` gate).
-- The latest release included the JSON-RPC release-blocker pair:
-  token usage capture in `DISPATCH.jsonl` (#33) and early rejection of
-  unsupported JSON-RPC model flags (#34). It also included JSON-RPC
-  stop subprocess teardown (#31) and one-shot `--auto-stop` (#15).
-- A post-release quality audit surfaced two unfiled follow-up areas:
-  concurrency / hardening, and doc staleness. The detailed notes are in
-  `koder/releases/0.6.5.md`.
+- 2026-05-07: #35 Tier 1 (DISPATCH telemetry hygiene) landed via
+  TDD-dispatched codex worker + independent reviewer. New schema
+  regression test asserts full row key set + types. Suite: 398 runs,
+  1288 assertions, 0 failures, 1 skip.
+- 2026-05-07: README refreshed to reflect Codex JSON-RPC default,
+  `--auto-stop`, `harnex doctor`, and current `--id`/`--tmux` rules.
+- 2026-05-07: New conventions captured in `CLAUDE.md`:
+  worker-id naming (`cx-<role>-<issue|tag>`), monotonic plan
+  numbering with "layer" grouping, and `koder/DISPATCH.jsonl` is
+  durable telemetry — never `git checkout` it.
+- 2026-05-07: `.claude/skills/open` updated with token discipline
+  (only read the issue STATE points to; meta-list the rest).
+- `harnex 0.6.5` shipped and was verified end-to-end earlier today.
+  See `CHANGELOG.md` and `koder/releases/0.6.5.md`.
 
 ## Present
 
-- Codex uses the JSON-RPC `app-server` transport by default. PTY remains
-  a first-class transport for visible TUI sessions and non-JSON-RPC
-  adapters.
-- Current tracked focus: `koder/issues/35_dispatch_telemetry_hygiene.md`
-  (P2, open).
-- Best contained starting point: #35 Tier 1. Add already-captured fields
-  to the DISPATCH row, stabilize conditional keys, and add a regression
-  test for row shape.
-- Other open issues to revisit after #35 or triage:
+- Codex uses JSON-RPC `app-server` by default; PTY remains
+  first-class for visible TUI and non-JSON-RPC adapters.
+- Current tracked focus:
+  `koder/issues/36_autostop_dispatch_row_race.md` (P3, open) —
+  observed during this session: `--auto-stop` workers leave the
+  session in `disconnected` for tens of seconds *after* the
+  task-complete signal, before the row lands in
+  `koder/DISPATCH.jsonl`. Race window can fool reviewers into
+  reading stale telemetry.
+- #35 Tier 2/3/4 remain open under the same issue file as
+  follow-ups (turn counts, log paths, populate-vs-remove decisions,
+  richer captures).
+- Other open issues to revisit after #36 or triage:
   - #04 Output streaming
   - #06 Full adapter abstraction
   - #16 Platform-agnostic data directory
@@ -47,11 +50,14 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. Land #35 Tier 1 as a focused bugfix commit.
-2. File the concurrency / hardening audit findings as a new issue, then
-   triage implementation priority.
-3. File the doc-staleness audit findings as a new issue, then refresh
-   the stale docs.
+1. Diagnose #36 — repro the race deterministically on PTY and
+   JSON-RPC; time the gap from done-signal → row-on-disk; decide
+   between earlier emission, a new `wait --until row_emitted`
+   barrier, or making `harnex wait` row-aware.
+2. After #36 lands, return to #35 Tier 2 (turn/message counts,
+   log paths, auto-derived `parent_dispatch_id`).
+3. File the concurrency / hardening audit and the doc-staleness
+   audit findings from `koder/releases/0.6.5.md` as new issues.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

@@ -13,6 +13,22 @@ When the user asks to initialize or open the session, run this sequence:
 - Note the `Past`, `Present`, and `Future` handoff sections
 - Open only the issue or plan files relevant to the current task
 
+## 1a. Token discipline — issues and plans
+
+Do **not** read every file under `koder/issues/` or `koder/plans/`.
+Acquire meta only:
+
+- `ls koder/issues/ | wc -l` for a count
+- `ls koder/issues/` for the list of names — names are
+  self-describing (e.g. `35_dispatch_telemetry_hygiene.md`)
+
+Then read **only** the one STATE.md names as the current focus or
+next step. Read others on demand: when the user references one, when
+work in progress requires it, or when triaging.
+
+Same rule for `koder/plans/`. Same rule for `koder/releases/` —
+durable records, only read the specific one referenced.
+
 ## 2. Inspect the repo state
 
 - Run `git status --short`

@@ -8,9 +8,23 @@ between agent sessions: past, present, and future only.
 - `koder/STATE.md` — thin handoff: recent past, current focus, next step
 - `CHANGELOG.md` — durable change history
 - `koder/issues/` — individual issue files (features, bugs, ideas)
-- `koder/plans/` — implementation plans with phased instructions
+- `koder/plans/` — implementation plans with phased instructions.
+  Plan IDs are monotonic integers (234, 235, 236, …); never use
+  `234a`/`234b` suffixes. To group related plans, use a *layer* —
+  e.g. "Layer A covers plans 234, 235, 236." Document the layer in
+  the plan files themselves, not in the filename.
 - `koder/releases/` — per-release verification records (functional
   matrix + long-run telemetry + what was *not* covered)
+- `koder/DISPATCH.jsonl` — durable, append-only log of every harnex
+  dispatch run from this repo. Treat it as telemetry data, not part
+  of any code change. **Never `git checkout`, `git restore`, or
+  otherwise revert this file** — every row was written by a real
+  session (often a peer worker running in parallel), and reverting
+  destroys legitimate history that cannot be recovered. If a reviewer
+  flags appended rows as "out-of-scope creep," that is incorrect:
+  rows are runtime artefacts and should be committed alongside (or
+  separately from) the code change, not discarded. Only edit the
+  file by hand if a row is genuinely malformed.
 
 Always check STATE.md at the start of a session to orient yourself.
 If you complete work, update STATE.md before ending.
@@ -136,6 +150,25 @@ Before delegating work over harnex, define the return channel first.
 Preferred pattern: tell the peer to send its final result back to your own
 `$HARNEX_ID` with `harnex send`. Do not rely on detached logs or tmux pane
 capture as the primary way to collect the answer.
+
+### Worker ID naming
+
+Use `cx-<role>-<issue-or-tag>` for `--id` / `--tmux` so peer sessions are
+self-describing in `harnex status`, tmux windows, and DISPATCH rows.
+Single-letter role codes:
+
+- `i` — implement (e.g. `cx-i-35` implements issue #35)
+- `r` — review (`cx-r-35` reviews the implementation)
+- `p` — plan (`cx-p-35`)
+- `f` — fix (`cx-f-35`)
+- `t` — test (`cx-t-35`)
+- `a` — audit (`cx-a-35`)
+- `d` — docs (`cx-d-35`)
+
+For non-issue work, substitute a short tag: `cx-a-jsonrpc`,
+`cx-d-readme`. If parallel workers share a role on the same issue,
+disambiguate with a tag suffix (`cx-i-35-tier1`, `cx-i-35-tier2`),
+not a bare letter.
 
 ## Long-running work: spawn a buddy
 
