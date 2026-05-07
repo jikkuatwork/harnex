@@ -26,8 +26,6 @@ Plan ships in six commits, each green at HEAD before moving on.
 Capture `codex app-server generate-json-schema --out` and check the
 relevant subset into `test/fixtures/codex_schema/`. Files:
 
-- `codex_app_server_protocol.v2.schemas.json` — master v2 bundle
-- `codex_app_server_protocol.schemas.json` — master v1 bundle
 - `v2/ThreadStartParams.json`, `v2/ThreadStartResponse.json`
 - `v2/TurnStartParams.json`, `v2/TurnStartResponse.json`
 - `v2/TurnStartedNotification.json`, `v2/TurnCompletedNotification.json`
@@ -44,7 +42,25 @@ MCP elicitation, ChatGPT auth-token refresh, etc.) stay out — adding
 them later is cheap, but they're not load-bearing today and would just
 inflate the fixture footprint.
 
-Estimated footprint: ~150 KB of small JSON files.
+**Master bundles excluded.** The original draft included
+`codex_app_server_protocol.v2.schemas.json` and
+`codex_app_server_protocol.schemas.json` (the v2 + v1 master bundles).
+Dropped after first capture surfaced two problems:
+
+1. They directly conflict with Phase 6's stated drift rule ("drift is
+   the schemas we've adopted changing shape"). Bundles concatenate
+   every Codex schema; any new MCP type or app-server method would
+   diff the bundle and trip the drift gate even when none of harnex's
+   adopted types changed.
+2. They add no validator value. Each individual schema file is
+   self-contained — every `$ref` resolves to a local
+   `#/definitions/X` within the same file. The validator never needs
+   cross-file resolution.
+3. Footprint: bundles are ~880 KB combined; individual files are
+   ~250 KB total.
+
+Estimated footprint: ~250 KB across 14 schema files plus the
+provenance README.
 
 ## Phase 2 — Stdlib JSON Schema validator (commit 2)
 

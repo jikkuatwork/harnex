@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 drafted for #30; ready to execute)
+Updated: 2026-05-07 (freeze in effect — plan 29 refined; ready to execute Phase 1)
 
 ## Current snapshot
 
@@ -389,6 +389,16 @@ work; JSON-RPC stays the default for autonomous worker dispatch.
 Execute plan 29 (`koder/plans/29_test_schema_truth.md`) starting at
 Phase 1 — schema fixture capture. Plan is fully scoped; just walk it.
 Each phase is one commit; full suite must stay green between commits.
+
+**Phase 1 spec refined this session:** master bundles
+(`codex_app_server_protocol{,.v2}.schemas.json`) dropped from the
+fixture. Original draft included them; first-capture inspection
+showed they conflict with Phase 6's drift rule (any new Codex
+schema, even unrelated MCP types, would trip the gate via the
+bundle), and they add no validator value because every individual
+schema's `$ref`s resolve to local `#/definitions/X`. Footprint drops
+from ~1.1 MB to ~250 KB across 14 files. See plan 29 Phase 1 for
+the full rationale.
 
 After #30 lands:
 
