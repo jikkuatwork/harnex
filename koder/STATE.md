@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-4 of 6 landed; Phase 5 next)
+Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-5 of 6 landed; Phase 6 next)
 
 ## Current snapshot
 
@@ -14,7 +14,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-4 of 6 landed; Phase
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
 - Test suite: `test/` with 382 minitest tests (1 integration skip behind
-  `CODEX_INTEGRATION=1`, plus 6 plan 29 Phase 5 marker skips), all passing.
+  `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
   validation, random session IDs, `--description`, `stop`, `status --json`,
@@ -150,7 +150,7 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-4 of 6 landed; Phase
   initial context launch and stop on the next prompt after busy. The path
   reuses `Session#inject_stop`, so JSON-RPC auto-stop gets the same
   interrupt plus TERM/KILL teardown as manual `harnex stop`.
-- Plan 29 (issue #30) commits 1-4 of 6 landed:
+- Plan 29 (issue #30) commits 1-5 of 6 landed:
   - `77ce9a0` — codex 0.128.0 JSON Schema fixture at
     `test/fixtures/codex_schema/` (15 schemas, ~247 KB, README
     documents the pin and refresh command). Master bundles
@@ -187,6 +187,27 @@ Updated: 2026-05-07 (freeze in effect — plan 29 commits 1-4 of 6 landed; Phase
     shaped_response` guards `extract_thread_id`'s primary path. Five
     new Phase 5 marker skips for tests whose passing depends on
     production code paths Phase 5 will fix.
+  - **Phase 5 (this session)** — adapter and session schema-true
+    reads. `Adapter#dispatch` and `Adapter#handle_notification`
+    `turn/started` switch to `result.dig("turn", "id")` /
+    `params.dig("turn", "id")`; `extract_thread_id` keeps only
+    `payload.dig("thread", "id")` (legacy fallbacks dropped).
+    `Session#handle_rpc_notification` reads schema-true
+    `thread.id` / `turn.id` / `turn.status` for `thread/started`,
+    `turn/started`, `turn/completed`. `Session#render_item_text`
+    rewritten for camelCase ThreadItem types — `agentMessage`,
+    `mcpToolCall` / `dynamicToolCall` (`tool: <name>` + summarized
+    args), `commandExecution` (`command: <cmd>`); never-existed
+    `agent_message` / `tool_call` cases dropped.
+    `APPROVAL_RESPONSES["item/commandExecution/requestApproval"]`
+    fixed from `{decision: "approved"}` to `{decision: "accept"}`
+    (schema enum is `accept|acceptForSession|decline|cancel`).
+    All six Phase 5 skip markers removed (lifecycle ×2,
+    session_jsonrpc ×3, contract ×1). Three collateral test stubs
+    updated to schema shape: `session_test.rb` auto_stop
+    turn/completed params (×2), contract `test_turn_interrupt_
+    params_shape` `turn/start` stub, approvals
+    `_with_approved` → `_with_accept` rename + assertion.
 - Issue #21 (skill catalogue cohesion) fully implemented in v0.3.4:
   - Unit A (`0ed37c5`): `harnex` skill collapsed into `harnex-dispatch`;
     installer aliases `harnex`/`dispatch`/`chain-implement` -> canonical names;
@@ -311,7 +332,7 @@ See `koder/issues/` for details.
 | 26 | `harnex events` JSONL stream (#22 Layer 4) | **done** |
 | 27 | Dispatch telemetry capture (#23) | **done** |
 | 28 | Codex `app-server` adapter (#27) | **done** (shipped in 0.6.0) |
-| 29 | Test schema truth + contract gate (#30) | **in progress** (1-4 of 6) |
+| 29 | Test schema truth + contract gate (#30) | **in progress** (5 of 6) |
 
 Plans 04-08 are **layer A** (multi-agent reliability).
 Plan 09 is **layer B** (atomic orchestration primitives).
@@ -320,7 +341,87 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): plan 29 commit 4 of 6 landed — Phase 4 done
+### 2026-05-07 (latest): plan 29 commit 5 of 6 landed — Phase 5 done
+
+**This session shipped Phase 5 of plan 29.** One commit, green at
+HEAD. All seven items from Phase 4's expanded punch list landed:
+
+1. `Adapter#dispatch` reads `result.dig("turn", "id")` — fallback
+   chain dropped. (No raise-on-missing — schema is required, the
+   contract test from Phase 3 surfaces drift.)
+2. `Adapter#handle_notification` `turn/started` reads
+   `params.dig("turn", "id")`. (`turn/completed` already nilled
+   `current_turn_id`, kept as is.)
+3. `extract_thread_id` keeps only `payload.dig("thread", "id")` —
+   legacy `payload["threadId"] || payload["thread_id"]` chain
+   dropped. Phase 4's regression test guards the primary path.
+4. `Session#handle_rpc_notification` reads schema-true
+   `thread.id` / `turn.id` / `turn.status` for `thread/started`,
+   `turn/started`, `turn/completed`.
+5. `Session#render_item_text` rewritten for camelCase ThreadItem
+   types — `agentMessage`, `mcpToolCall` / `dynamicToolCall`
+   (`tool: <name>` + summarized args), `commandExecution`
+   (`command: <cmd>`). Never-existed `agent_message` / `tool_call`
+   cases dropped.
+6. `APPROVAL_RESPONSES["item/commandExecution/requestApproval"]`
+   from `{decision: "approved"}` → `{decision: "accept"}`. Schema
+   enum is `accept|acceptForSession|decline|cancel`.
+7. All six Phase 5 skip markers removed (lifecycle ×2,
+   session_jsonrpc ×3, contract ×1).
+
+**Collateral test-stub fixes** from the new schema-true reads:
+
+- `session_test.rb` auto_stop turn/completed params (×2): legacy
+  `{turnId, status}` → schema `{turn: {id, status}}`.
+- Contract `test_turn_interrupt_params_shape` `turn/start` stub
+  shape (only that one — other contract incoming stubs at lines
+  164/182/200/261/265 stay legacy-shaped because their tests
+  validate outgoing shape and don't exercise parsing).
+- Approvals test `_with_approved` → `_with_accept` rename +
+  assertion update for `commandExecution`. The legacy
+  `applyPatchApproval` / `execCommandApproval` tests stay on
+  `"approved"` — schema enum there is `ReviewDecision`, unchanged.
+
+**Test count:** 382 runs, 1164 assertions, 0 failures, 1 skip
+(only the long-standing `CODEX_INTEGRATION=1` integration gate).
+Was 382 / 1138 / 0 / 7 before this session.
+
+**LOC:** lib +12 / -12; test +11 / -43. Net -32 LOC driven by
+removing the six skip stanzas and the fallback chains.
+
+### Next session (no other agenda)
+
+Continue plan 29 at **Phase 6** — the schema drift gate. Plan
+spec in `koder/plans/29_test_schema_truth.md`. New test:
+`test/harnex/contract/schema_freshness_test.rb`. Behavior:
+
+- Skip cleanly if `codex` CLI is not on PATH or
+  `HARNEX_SKIP_SCHEMA_DRIFT=1`.
+- Else: shell out to `codex app-server generate-json-schema
+  --out <tmpdir>` and diff each fixture in
+  `test/fixtures/codex_schema/` against the freshly-generated
+  equivalent (parse-then-compare to normalize key order).
+- On drift, fail with the actionable refresh message in plan 29
+  Phase 6 spec.
+
+Compare *only the files we ship* — Codex adding new schemas (new
+MCP types, etc.) is not drift in our contract.
+
+After Phase 6 lands: **plan 29 done, freeze lifts**, backlog
+returns to:
+
+1. #32 commits 2-3 (ensure-block telemetry write + optional
+   `last_error` capture).
+2. #34 (early-reject `-m MODEL` on JSON-RPC).
+3. #33 (JSON-RPC token usage capture).
+4. 0.6.5 release.
+
+Followup worth keeping after #30 closes: in-repo
+`Harnex::Adapters::CodexAppServer::Protocol` module with typed
+methods + boundary validation, building on Phase 4's
+`Fixtures::Codex` builders.
+
+### 2026-05-07 (Phase 4 done): plan 29 commit 4 of 6 landed
 
 **This session shipped Phase 4 of plan 29.** One commit, green at HEAD,
 no production code changes — only test infrastructure and stub
