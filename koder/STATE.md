@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07
+Updated: 2026-05-07 (later)
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,54 +9,49 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
-- 2026-05-07: #35 Tier 1 (DISPATCH telemetry hygiene) landed via
-  TDD-dispatched codex worker + independent reviewer. New schema
-  regression test asserts full row key set + types. Suite: 398 runs,
-  1288 assertions, 0 failures, 1 skip.
-- 2026-05-07: README refreshed to reflect Codex JSON-RPC default,
-  `--auto-stop`, `harnex doctor`, and current `--id`/`--tmux` rules.
-- 2026-05-07: New conventions captured in `CLAUDE.md`:
-  worker-id naming (`cx-<role>-<issue|tag>`), monotonic plan
-  numbering with "layer" grouping, and `koder/DISPATCH.jsonl` is
-  durable telemetry — never `git checkout` it.
-- 2026-05-07: `.claude/skills/open` updated with token discipline
-  (only read the issue STATE points to; meta-list the rest).
-- `harnex 0.6.5` shipped and was verified end-to-end earlier today.
-  See `CHANGELOG.md` and `koder/releases/0.6.5.md`.
+- 2026-05-07: #36 Tier 1 diagnosis logged on
+  `koder/issues/36_autostop_dispatch_row_race.md`. Race is
+  architectural — `harnex wait` (default) polls subprocess pid;
+  the DISPATCH row is written in the harnex parent's
+  `finalize_session!` *after* `Process.wait2` unblocks, so wait
+  can return between subprocess death and row append. The
+  observed cx-d-readme gap was sub-second per the events log.
+  Recommended fix: `Waiter#wait_until_exit` should poll
+  `exit_status_path` (written after `finalize_session`) with a
+  bounded grace before returning.
+- 2026-05-07: #35 Tier 1 (DISPATCH telemetry hygiene) landed.
+  Schema regression test in place. Suite green earlier today.
+- `harnex 0.6.5` shipped and verified — see `CHANGELOG.md` and
+  `koder/releases/0.6.5.md`.
 
 ## Present
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Current tracked focus:
-  `koder/issues/36_autostop_dispatch_row_race.md` (P3, open) —
-  observed during this session: `--auto-stop` workers leave the
-  session in `disconnected` for tens of seconds *after* the
-  task-complete signal, before the row lands in
-  `koder/DISPATCH.jsonl`. Race window can fool reviewers into
-  reading stale telemetry.
-- #35 Tier 2/3/4 remain open under the same issue file as
-  follow-ups (turn counts, log paths, populate-vs-remove decisions,
-  richer captures).
-- Other open issues to revisit after #36 or triage:
-  - #04 Output streaming
-  - #06 Full adapter abstraction
-  - #16 Platform-agnostic data directory
-  - #17 Multi-session coordination
-  - #18 Buddy pattern
-  - #26 `harnex status` repo filtering
+- #36 is at the Tier 2 boundary: diagnosis + fix recommendation
+  are written into the issue; nothing has been implemented yet.
+- #35 Tier 2/3/4 still open under `koder/issues/35_*` as
+  follow-ups (turn counts, log paths, richer captures).
+- Other open issues to triage when ready: #04, #06, #16, #17,
+  #18, #26.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. Diagnose #36 — repro the race deterministically on PTY and
-   JSON-RPC; time the gap from done-signal → row-on-disk; decide
-   between earlier emission, a new `wait --until row_emitted`
-   barrier, or making `harnex wait` row-aware.
-2. After #36 lands, return to #35 Tier 2 (turn/message counts,
-   log paths, auto-derived `parent_dispatch_id`).
-3. File the concurrency / hardening audit and the doc-staleness
+1. Implement #36 Tier 2: bound `harnex wait` to the DISPATCH row
+   write. Smallest correct shape per the issue's "Tier 2 —
+   recommended fix" section: in `Waiter#wait_until_exit`
+   (`lib/harnex/commands/wait.rb`), when `alive_pid?` flips false,
+   poll `exit_status_path` with a ~5s grace before falling back
+   to a synthesized `exited` response. Add a regression test that
+   asserts the DISPATCH row is on disk by the time `wait` returns.
+2. Optional follow-ups noted on #36: explicit
+   `wait --until row_emitted` predicate; bump events log
+   timestamps to `iso8601(3)` so future regressions can be
+   measured directly.
+3. After #36 Tier 2 lands, return to #35 Tier 2.
+4. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
 
 When ending a session, update only this handoff summary and next step.

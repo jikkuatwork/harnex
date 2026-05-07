@@ -71,29 +71,114 @@ Worth checking:
   watching only the worker's task signals — the buddy thinks
   the worker is done but the session is leaking.
 
-## Tier 1 — diagnose
+## Tier 1 — diagnosis (2026-05-07, code-reading + events-log review)
 
-- Repro deterministically with `--auto-stop` on both transports
-  (PTY and JSON-RPC) and time the gap from done-signal → row on
-  disk.
-- Add structured logging at session teardown: when does
-  `disconnected` enter, when does the row write?
-- Confirm whether `harnex wait --id <id>` blocks until row-on-disk
-  or only until lifecycle exit.
+The race is architectural, independent of how big the perceived gap
+is:
 
-## Tier 2 — fix candidates
+1. **`harnex wait` watches the subprocess, not the parent.** In
+   `wait_until_exit` (`lib/harnex/commands/wait.rb`), `target_pid`
+   is `registry["pid"]`, which is the **agent subprocess** pid
+   (codex app-server, or PTY child) — not the harnex parent. As
+   soon as the subprocess dies, `Harnex.alive_pid?` returns false
+   and `wait` calls `read_exit_status`, which falls through to a
+   synthesized `{ok: true, status: "exited"}` if the exit-status
+   file isn't on disk yet.
 
-- Move DISPATCH row emission earlier in the auto-stop path, before
-  the long subprocess-teardown tail.
-- Or: keep emission where it is but expose a separate
-  `wait --until row_emitted` so callers can pick the right barrier.
-- Or: have `harnex wait` (default behavior) guarantee the row is on
-  disk before returning.
+2. **The DISPATCH row is written in the parent, after subprocess
+   death.** `Session#finalize_session!`
+   (`lib/harnex/runtime/session.rb`) calls
+   `append_summary_record` — the row writer — **after**
+   `Process.wait2` unblocks. The ordering for both
+   `run_jsonrpc` and `run_pty` is:
 
-## Out of scope
+   ```
+   subprocess dies
+     → Process.wait2 returns in harnex parent
+     → finalize_session!
+         emit_session_end_telemetry  (git_capture_end)
+         append_summary_record       ← DISPATCH row written
+         emit_summary_event
+         emit_exit_event
+     → ensure: inbox.stop, server.stop, adapter.close
+              persist_exit_status    ← exit-status file written
+              cleanup_registry
+   ```
 
-- DISPATCH row schema changes (covered by #35).
-- New transports.
+   So `harnex wait` can return between "subprocess died" and "row
+   appended", and the registry is still present when it does.
+
+3. **`STATE=disconnected` in `harnex status` is the adapter's
+   transient state, not a lifecycle state.** The status table
+   reads `input_state.state`. For `CodexAppServer` that's the
+   adapter's own `@state`, which is set to `:disconnected` when
+   `JsonRpcClient.read_loop` hits EOF (i.e. the subprocess just
+   died). It is **not** a session-lifecycle field; the state
+   machine itself only has `prompt | busy | blocked | unknown`.
+   So "status shows disconnected" really means "the subprocess
+   has died and we are inside parent teardown."
+
+4. **Auto-stop teardown chain (JSON-RPC).** `turn/completed` →
+   `schedule_auto_stop` (Thread A) → `inject_stop` calls
+   `adapter.interrupt` synchronously, then spawns Thread B for
+   `terminate_subprocess` (SIGTERM 0.5s, SIGKILL 1.0s). Thread B
+   kills codex, `read_loop` hits EOF (sets adapter state
+   `:disconnected`, emits `disconnected` event), `Process.wait2`
+   in the main thread unblocks, then `finalize_session!` runs.
+
+5. **Magnitude check on the cx-d-readme run.** Events log
+   `0d37a43c1c84fe87--cx-d-readme.jsonl`:
+
+   ```
+   seq=109 11:24:00Z task_complete
+   seq=110 11:24:00Z disconnected (transport: "no active turn to interrupt")
+   seq=111 11:24:00Z usage
+   seq=112 11:24:00Z git phase=end
+   seq=113 11:24:00Z summary path=…/DISPATCH.jsonl
+   seq=114 11:24:00Z exited code=0 reason=success
+   ```
+
+   All teardown events land in the same UTC second. The
+   "tens of seconds" framing in the original repro likely
+   conflated the time *before* `turn/completed` (codex finishing
+   its last reasoning + writing the done-file mid-turn) with the
+   actual harnex teardown gap. **The architectural race remains
+   real**, but the practical window in the observed run was
+   sub-second. Event timestamps are second-precision
+   (`Time.now.utc.iso8601`); millisecond-precision instrumentation
+   would be needed to bound the gap any tighter.
+
+## Tier 2 — recommended fix
+
+**Make `harnex wait` (default) block until `exit_status_path`
+exists.** The exit-status file is written in the run-loop ensure
+block, *after* `finalize_session!` writes the row, so its
+existence is a strict superset of "DISPATCH row on disk."
+
+Concretely, in `Waiter#wait_until_exit`:
+
+- When `alive_pid?(target_pid)` flips to false, instead of
+  immediately calling `read_exit_status`, poll `File.exist?(exit_path)`
+  with a short bounded grace (e.g. 5s, configurable).
+- If the file appears, return its contents (existing path).
+- If it never appears (parent crashed between row-write and exit-status
+  write — pathological), fall back to the synthesized "exited" response
+  so wait still terminates.
+
+This is the smallest correct change and needs no schema or
+adapter modifications. It also preserves the meaning of
+`harnex wait` for orchestrators: "wait returned" ⟹ "DISPATCH row
+is on disk."
+
+**Optional follow-up** (not required for Tier 2 closure):
+
+- Surface `--until row_emitted` as an explicit predicate that polls
+  `koder/DISPATCH.jsonl` for a row matching `meta.id` +
+  `meta.started_at`. Useful when the caller has the dispatch path
+  in hand and wants to be transport-agnostic.
+- Bump event timestamps to `iso8601(3)` (millisecond precision)
+  so future regressions can be quantified directly from the
+  events log.
 
 ## Done when
 
@@ -101,4 +186,12 @@ Worth checking:
 - An orchestrator can rely on a single barrier ("done-file present"
   OR "harnex wait returned") to safely read `koder/DISPATCH.jsonl`
   for the just-finished session.
-- Regression test exercises the teardown ordering.
+- Regression test exercises the teardown ordering by:
+  asserting that, after `wait_until_exit` returns, the DISPATCH
+  file contains a row whose `meta.id` matches the session.
+
+## Out of scope
+
+- DISPATCH row schema changes (covered by #35).
+- New transports.
+
