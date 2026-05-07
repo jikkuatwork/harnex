@@ -9,6 +9,8 @@ handoff document between agent sessions.
 - `koder/STATE.md` — current state, issues table, next step
 - `koder/issues/` — individual issue files (features, bugs, ideas)
 - `koder/plans/` — implementation plans with phased instructions
+- `koder/releases/` — per-release verification records (functional
+  matrix + long-run telemetry + what was *not* covered)
 
 Always check STATE.md at the start of a session to orient yourself.
 If you complete work, update STATE.md before ending.
@@ -151,6 +153,11 @@ both, in order:
 6. Smoke-test a relevant new surface (e.g. `harnex doctor` on 0.6.0).
 7. Clean up the local `.gem` artifact: `rm harnex-<VERSION>.gem`.
 8. Update `koder/STATE.md` with what shipped and the unblock state.
+9. Write `koder/releases/<VERSION>.md` capturing the verification
+   matrix: functional tests run, long-run telemetry (DISPATCH row
+   metrics, disconnections, exit reason), and an explicit *did not
+   cover* section so future regressions land against a known
+   baseline. See `koder/releases/0.6.5.md` for the format.
 
 Agent guides are bundled in the gem (`s.files` glob includes
 `guides/*.md`) and are available through `harnex agents-guide`.
