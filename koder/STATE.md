@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 (#34 fixed — JSON-RPC adapter early-rejects `-m`/`--model` with actionable error)
+Updated: 2026-05-07 (#33 fixed — JSON-RPC tokenUsage flows into DISPATCH telemetry; 0.6.5 release-blocker pair complete)
 
 ## Current snapshot
 
@@ -13,7 +13,7 @@ Updated: 2026-05-07 (#34 fixed — JSON-RPC adapter early-rejects `-m`/`--model`
   - `lib/harnex/commands/{run,send,wait,stop,status,logs,pane,recipes,guide,agents_guide,doctor}.rb`
   - `lib/harnex/cli.rb`
   - `guides/*.md` — CLI-native agent guidance exposed by `harnex agents-guide`
-- Test suite: `test/` with 382 minitest tests (1 integration skip behind
+- Test suite: `test/` with 396 minitest tests (1 integration skip behind
   `CODEX_INTEGRATION=1`), all passing.
 - CLI entrypoint is `bin/harnex` (unchanged).
 - Command/API redesign is implemented: generic adapter fallback, binary
@@ -154,6 +154,17 @@ Updated: 2026-05-07 (#34 fixed — JSON-RPC adapter early-rejects `-m`/`--model`
   message=null`. Legacy PTY adapter (`--legacy-pty`) still accepts
   `-m`. `harnex help run` and `guides/01_dispatch.md` document the
   JSON-RPC vs PTY flag-form difference.
+- Issue #33 is fixed: JSON-RPC dispatches now populate
+  `actual.{input,output,reasoning,cached}_tokens` in `DISPATCH.jsonl`.
+  `Session#handle_rpc_notification` reads schema-true
+  `params["tokenUsage"]` (was incorrectly `params["usage"]`) on
+  `thread/tokenUsage/updated`, and `emit_session_end_telemetry`
+  branches on `adapter.transport`: PTY keeps scraping the transcript
+  tail; JSON-RPC pulls the cumulative `tokenUsage.total` block and
+  maps camelCase {input,output,cachedInput,reasoningOutput}Tokens onto
+  the snake_case DISPATCH fields. `ThreadTokenUsageUpdatedNotification.json`
+  added to the shipped schema fixtures (16 files, ~276 KB). The
+  0.6.5 release-blocker pair (#34 + #33) is complete.
 - Issue #31 is fixed: `harnex stop` for the JSON-RPC Codex adapter
   preserves the existing `turn/interrupt` request, then terminates the
   `codex app-server` subprocess with bounded TERM/KILL fallback. The
@@ -332,7 +343,7 @@ Harnex is a local PTY harness for interactive terminal agents.
 | 30 | Test stubs mirror harnex assumptions, not Codex schema | **fixed** | P1 |
 | 31 | JSON-RPC `harnex stop` doesn't terminate subprocess | **fixed** | P1 |
 | 32 | DISPATCH telemetry row not written on early-boot disconnect | **fixed** | P1 |
-| 33 | JSON-RPC adapter doesn't capture token usage | open | P2 |
+| 33 | JSON-RPC adapter doesn't capture token usage | **fixed** | P2 |
 | 34 | `-m MODEL` silently forwarded to app-server, boot-disconnects opaquely | **fixed** | P2 |
 
 See `koder/issues/` for details.
@@ -368,7 +379,51 @@ See `koder/plans/` for details.
 
 ## Next step
 
-### 2026-05-07 (latest): #34 fixed — JSON-RPC adapter rejects `-m`/`--model` early
+### 2026-05-07 (latest): #33 fixed — JSON-RPC tokenUsage in DISPATCH telemetry
+
+Commit `349cd10`. Both halves of the 0.6.5 release-blocker pair
+(#34 + #33) are now landed.
+
+- `Session#handle_rpc_notification` reads
+  `params["tokenUsage"]` (schema-true) on `thread/tokenUsage/updated`
+  and stores the `ThreadTokenUsage` hash. Old code read
+  `params["usage"] || params`, which never matched the wire shape.
+- `emit_session_end_telemetry` now calls `collect_session_summary`,
+  which branches on `adapter.transport`. JSON-RPC pulls the
+  cumulative `tokenUsage.total` and maps
+  `{input,output,cachedInput,reasoningOutput,total}Tokens` onto the
+  snake_case `USAGE_FIELDS`. PTY keeps `parse_session_summary(transcript_tail)`.
+- `test/fixtures/codex_schema/v2/ThreadTokenUsageUpdatedNotification.json`
+  added (was referenced by the ServerNotification subset but not
+  shipped). Verified against a fresh non-experimental
+  `codex app-server generate-json-schema` run — byte-identical, so
+  the Phase 6 drift gate passes.
+- `Fixtures::Codex.thread_token_usage_updated_notification` builder +
+  `token_usage_breakdown` / `thread_token_usage` helpers, all
+  schema-validated in `codex_response_fixtures_test.rb`.
+- 3 new `SessionJsonrpcTest` cases: notification storage,
+  populated DISPATCH row with realistic totals (197819/25018/12501/6408576),
+  and null-tokens DISPATCH row when no notification arrives.
+
+**Test count:** 396 runs, 1220 assertions, 0 failures, 1 skip
+(only the long-standing `CODEX_INTEGRATION=1` integration gate).
+Was 391 / 1198 / 0 / 1 before this session (+5 / +22).
+
+**Next session: cut the 0.6.5 release.** Both blockers are in.
+Follow the `## Releasing` checklist in `CLAUDE.md`:
+
+1. Run the test suite at HEAD (must be green).
+2. Bump `VERSION` to `0.6.5` and update changelog if applicable.
+3. `gem build harnex.gemspec` → `bin/gem-push harnex-0.6.5.gem`.
+4. `git tag -a v0.6.5 -m "harnex 0.6.5 — JSON-RPC release-blocker
+   pair (#34 + #33)"`, push main + tag.
+5. `gem install harnex` to refresh the local binary; verify
+   `harnex --version`.
+6. Smoke-test a JSON-RPC dispatch and confirm a real `DISPATCH.jsonl`
+   row carries non-null token fields end-to-end.
+7. Clean up the local `.gem` artifact.
+
+### 2026-05-07: #34 fixed — JSON-RPC adapter rejects `-m`/`--model` early
 
 This session implemented option (1) + (3) from the issue spec:
 early reject + documentation. No translation layer (option 2 was
