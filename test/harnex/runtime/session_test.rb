@@ -313,10 +313,25 @@ class SessionTest < Minitest::Test
         stalls: 1,
         force_resumes: 1,
         disconnections: 2,
-        compactions: 1
+        compactions: 1,
+        tool_calls: 0,
+        commands_executed: 0
       },
       counters.snapshot
     )
+  end
+
+  def test_event_counters_record_item_tallies_tool_and_command_items
+    counters = Harnex::Session::EventCounters.new
+    counters.record_item({ "type" => "mcpToolCall" })
+    counters.record_item({ "type" => "dynamicToolCall" })
+    counters.record_item({ "type" => "commandExecution" })
+    counters.record_item({ "type" => "agentMessage" })
+    counters.record_item(nil)
+
+    snapshot = counters.snapshot
+    assert_equal 2, snapshot[:tool_calls]
+    assert_equal 1, snapshot[:commands_executed]
   end
 
   def test_inject_via_adapter_emits_send_event_with_preview_fields

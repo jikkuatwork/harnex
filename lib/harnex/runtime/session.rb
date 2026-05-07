@@ -15,7 +15,9 @@ module Harnex
           stalls: 0,
           force_resumes: 0,
           disconnections: 0,
-          compactions: 0
+          compactions: 0,
+          tool_calls: 0,
+          commands_executed: 0
         }
       end
 
@@ -29,6 +31,17 @@ module Harnex
           @counts[:disconnections] += 1
         when "compaction"
           @counts[:compactions] += 1
+        end
+      end
+
+      def record_item(item)
+        return unless item.is_a?(Hash)
+
+        case item["type"]
+        when "mcpToolCall", "dynamicToolCall"
+          @counts[:tool_calls] += 1
+        when "commandExecution"
+          @counts[:commands_executed] += 1
         end
       end
 
@@ -91,6 +104,9 @@ module Harnex
       @output_buffer.force_encoding(Encoding::BINARY)
       @state_machine = SessionState.new(adapter)
       @inbox = Inbox.new(self, @state_machine, ttl: inbox_ttl)
+      @rate_limits = nil
+      @parent_harnex_id = ENV["HARNEX_ID"].to_s.strip
+      @parent_harnex_id = nil if @parent_harnex_id.empty?
     end
 
     def self.validate_binary!(command)
@@ -406,6 +422,7 @@ module Harnex
         schedule_auto_stop("task_complete", turn_id: payload[:turnId])
       when "item/completed"
         emit_event("item_completed", item: params["item"])
+        @event_counters.record_item(params["item"])
         text = render_item_text(params["item"])
         record_synthesized(text) if text
       when "thread/compacted"
@@ -848,7 +865,7 @@ module Harnex
         orchestrator: passthrough["orchestrator"],
         orchestrator_session: passthrough["orchestrator_session"],
         chain_id: passthrough["chain_id"],
-        parent_dispatch_id: passthrough["parent_dispatch_id"],
+        parent_dispatch_id: passthrough["parent_dispatch_id"] || @parent_harnex_id,
         tier: passthrough["tier"],
         phase: passthrough["phase"],
         issue: passthrough["issue"],
@@ -892,6 +909,12 @@ module Harnex
         force_resumes: counters[:force_resumes],
         disconnections: counters[:disconnections],
         compactions: counters[:compactions],
+        turn_count: @injected_count,
+        tool_calls: counters[:tool_calls],
+        commands_executed: counters[:commands_executed],
+        rate_limits: @rate_limits,
+        output_log_path: output_log_path,
+        events_log_path: events_log_path,
         tests_run: nil,
         tests_passed: nil,
         tests_failed: nil

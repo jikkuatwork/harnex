@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- DISPATCH row `actual` now includes `turn_count`, `tool_calls`,
+  `commands_executed`, `rate_limits`, `output_log_path`, and
+  `events_log_path` — surfacing data harnex already tracked but did
+  not persist. `meta.parent_dispatch_id` now auto-derives from
+  `$HARNEX_ID` when not supplied via `--meta`. (#35 Tier 2)
+
 ### Fixed
 
 - `harnex wait` (default exit-watch mode) now blocks until the

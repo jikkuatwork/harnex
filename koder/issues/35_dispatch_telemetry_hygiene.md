@@ -61,6 +61,12 @@ silently dropped, or the schema is internally inconsistent.
 - **`auto_disconnects`** — tracked separately from the lifetime
   `disconnections` count in the registry/status; DISPATCH currently
   only has the latter.
+  *(Deferred from Tier 2 landing 2026-05-07. The status payload
+  exposes `auto_disconnects` as an alias for the same counter as
+  `disconnections`; landing it on DISPATCH today would duplicate
+  data, not add signal. Real fix requires defining what makes a
+  disconnect "auto" — likely those that auto-resumed — and
+  introducing a dedicated counter. Punt to follow-up.)*
 - **`output_log_path`** / **`events_log_path`** — let post-hoc
   analysis find the artefacts without recomputing the repo-key hash.
 - **`parent_dispatch_id`** auto-derive — when the invoker has

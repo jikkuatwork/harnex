@@ -6,12 +6,14 @@ class DispatchRowSchemaTest < Minitest::Test
     adapter_transport
     agent_session_id
     cached_tokens
+    commands_executed
     commits
     compactions
     cost_usd
     disconnections
     duration_s
     effort
+    events_log_path
     exit
     exit_code
     files_changed
@@ -21,7 +23,9 @@ class DispatchRowSchemaTest < Minitest::Test
     loc_added
     loc_removed
     model
+    output_log_path
     output_tokens
+    rate_limits
     reasoning_tokens
     signal
     stalls
@@ -29,7 +33,9 @@ class DispatchRowSchemaTest < Minitest::Test
     tests_failed
     tests_passed
     tests_run
+    tool_calls
     total_tokens
+    turn_count
   ].freeze
 
   META_KEYS = %w[
@@ -155,6 +161,12 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_nil actual.fetch("tests_run")
       assert_nil actual.fetch("tests_passed")
       assert_nil actual.fetch("tests_failed")
+      assert_kind_of Integer, actual.fetch("turn_count")
+      assert_kind_of Integer, actual.fetch("tool_calls")
+      assert_kind_of Integer, actual.fetch("commands_executed")
+      assert_nil actual.fetch("rate_limits")
+      assert_equal Harnex.output_log_path(repo, id), actual.fetch("output_log_path")
+      assert_equal Harnex.events_log_path(repo, id), actual.fetch("events_log_path")
     end
   end
 

@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 | 05:59 PM | IST
+Updated: 2026-05-07 | 07:30 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,14 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-07 | 07:30 PM | IST: #35 Tier 2 landed. DISPATCH `actual`
+  now carries `turn_count`, `tool_calls`, `commands_executed`,
+  `rate_limits`, `output_log_path`, `events_log_path`; `meta`
+  auto-derives `parent_dispatch_id` from `$HARNEX_ID` when not in
+  passthrough. New `EventCounters#record_item` tallies tool/command
+  items from `item/completed`. Schema test extended; suite green
+  (400 runs, 1300 assertions). `auto_disconnects` deferred — see the
+  issue file for rationale.
 - 2026-05-07 | 05:59 PM | IST: #36 Tier 2 landed.
   `Waiter#wait_until_exit` (`lib/harnex/commands/wait.rb`) now polls
   `exit_status_path` for up to 5s after `alive_pid?` flips false,
@@ -38,14 +46,17 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #35 Tier 2: extend DISPATCH telemetry per the issue's tier
-   plan (turn counts, log paths). See
+1. #35 Tier 3: decide whether to populate or remove always-null
+   fields (`cost_usd`, `tests_*`, `agent_version` family). See
    `koder/issues/35_dispatch_telemetry_hygiene.md`.
-2. Optional #36 follow-ups (deferred — not required for closure):
+2. #35 deferred `auto_disconnects` — needs a dedicated counter
+   (likely "auto-resumed disconnects") rather than the current
+   alias-of-disconnections shape. Tracked in the issue file.
+3. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-3. File the concurrency / hardening audit and the doc-staleness
+4. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
 
 When ending a session, update only this handoff summary and next step.
