@@ -2,15 +2,18 @@
 
 Run multiple AI coding agents from your terminal and coordinate them.
 
-Harnex wraps Claude Code and OpenAI Codex (or any terminal CLI) in a
-local harness so you can launch agents, send them tasks, watch their
-screens, and stop them cleanly — all from the command line.
+Harnex wraps Claude Code, OpenAI Codex, or any terminal CLI in a local
+harness so you can launch agents, send them tasks, watch live panes or
+transcripts, and stop them cleanly — all from the command line.
 
 ```bash
 gem install harnex
 ```
 
-Requires **Ruby 3.x**. No other dependencies.
+Harnex itself requires **Ruby 3.x** and uses only the Ruby standard
+library. Install the CLIs you want to wrap separately; Codex JSON-RPC
+support requires Codex CLI **0.128.0 or newer**, and tmux-backed
+workflows require `tmux`.
 
 Then ask the CLI what to do next:
 
@@ -20,6 +23,9 @@ harnex --help
 harnex agents-guide
 ```
 
+If you use Codex, run `harnex doctor` after installing or upgrading the
+Codex CLI. It verifies the local `codex app-server` prerequisite.
+
 `harnex agents-guide` is the agent-facing reference for dispatch, chain,
 buddy, monitoring, and naming patterns. It is packaged in the gem; no skills
 or project-local docs are required.
@@ -28,7 +34,7 @@ or project-local docs are required.
 
 ```bash
 # Start an agent in tmux
-harnex run codex --id planner --tmux
+harnex run codex --id planner --tmux planner
 
 # Send it a task and wait for it to finish
 harnex send --id planner --message "Write a plan to /tmp/plan.md" --wait-for-idle
@@ -50,7 +56,8 @@ job, watch it work, stop it when done.
   findings. Each step is a fresh agent with clean context.
 
 - **You want to see what agents are doing.** `harnex pane` shows
-  the agent's live terminal. No black boxes.
+  a tmux-backed agent's live terminal, or Codex's synthesized
+  JSON-RPC transcript. No black boxes.
 
 - **You don't want to babysit.** Send a task with `--wait-for-idle`,
   walk away, check back when it's done.
@@ -68,9 +75,16 @@ job, watch it work, stop it when done.
 
 | Agent | Support |
 |-------|---------|
-| Claude Code | Full (prompt detection, stop sequence, vim mode) |
-| OpenAI Codex | Full (prompt detection, stop sequence) |
-| Any terminal CLI | Generic wrapping (everything works except smart prompt detection) |
+| Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
+| OpenAI Codex | JSON-RPC `codex app-server` adapter by default; `--legacy-pty` remains supported for TUI/interactive PTY use |
+| Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
+
+`harnex run codex` uses JSON-RPC by default. That path provides
+structured task-completion events, approval mediation, and token usage
+capture. Default JSON-RPC Codex does not accept `-m` / `--model`; pass
+model settings as child CLI config, for example `harnex run codex -- -c model=NAME`.
+Use `harnex run codex --legacy-pty` when you specifically want Codex's
+terminal UI or legacy PTY flag behavior.
 
 ## Multi-agent workflows
 
@@ -78,20 +92,23 @@ The real power is chaining agents together:
 
 ```bash
 # 1. Codex writes a plan
-harnex run codex --id cx-plan --tmux
+harnex run codex --id cx-plan --tmux cx-plan
 harnex send --id cx-plan --message "Plan the auth module, write to /tmp/plan.md" --wait-for-idle
 harnex stop --id cx-plan
 
 # 2. Fresh Codex implements the plan
-harnex run codex --id cx-impl --tmux
+harnex run codex --id cx-impl --tmux cx-impl
 harnex send --id cx-impl --message "Implement /tmp/plan.md, run tests" --wait-for-idle
 harnex stop --id cx-impl
 
 # 3. Claude reviews the implementation
-harnex run claude --id cl-review --tmux
+harnex run claude --id cl-review --tmux cl-review
 harnex send --id cl-review --message "Review changes against /tmp/plan.md, write /tmp/review.md" --wait-for-idle
 harnex stop --id cl-review
 ```
+
+For delegated work, pass the same value to `--id` and `--tmux` so
+`harnex status`, `harnex pane`, logs, and the tmux window name all line up.
 
 Harnex ships CLI-readable agent guides for this pattern:
 
@@ -133,10 +150,13 @@ Presets map to stall policy defaults:
 
 Explicit `--stall-after` and `--max-resumes` flags override preset defaults.
 
+For one-shot startup prompts, add `--auto-stop`. It requires `--context`
+and stops the session after the first task completion or PTY prompt return.
+
 For structured subscriptions, stream JSONL events:
 
 ```bash
-harnex events --id cx-impl-42 | jq -c '.'
+harnex events --id cx-impl-42
 ```
 
 Schema details and compatibility policy are documented in
@@ -145,7 +165,7 @@ Schema details and compatibility policy are documented in
 ## Long-running and overnight work
 
 For plain "force-resume on stall" recovery, use
-`harnex run --watch --preset impl`.
+`harnex run codex --watch --preset impl --context "Read /tmp/task.md"`.
 
 A **buddy** is for richer reasoning: doc drift checks, semantic sanity checks,
 and multi-session correlation. It's still just another harnex session.
@@ -155,8 +175,8 @@ and multi-session correlation. It's still just another harnex session.
 Spawn a buddy alongside a long-running implementation worker:
 
 ```bash
-harnex run codex --id worker-42 --tmux
-harnex run claude --id buddy-42 --tmux
+harnex run codex --id worker-42 --tmux worker-42
+harnex run claude --id buddy-42 --tmux buddy-42
 harnex send --id buddy-42 --message "$(cat <<'EOF'
 Watch harnex session worker-42.
 Every 5 minutes: run `harnex pane --id worker-42 --lines 30`.
@@ -165,7 +185,7 @@ nudge it: `harnex send --id worker-42 --message "Continue your task."`.
 When it exits, report back:
   tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-42 done" Enter
 EOF
-"
+)"
 ```
 
 ### Example: watch for doc drift during implementation
@@ -174,8 +194,8 @@ A buddy that checks whether a worker's code changes have left
 docs out of date:
 
 ```bash
-harnex run codex --id worker-99 --tmux
-harnex run claude --id buddy-99 --tmux
+harnex run codex --id worker-99 --tmux worker-99
+harnex run claude --id buddy-99 --tmux buddy-99
 harnex send --id buddy-99 --message "$(cat <<'EOF'
 Watch harnex session worker-99.
 Every 5 minutes: run `harnex pane --id worker-99 --lines 30`.
@@ -187,7 +207,7 @@ inline comments) that are now stale. If so, nudge the worker:
 When the worker exits, report a summary to the invoker:
   tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-99 done. Doc drift: <yes/no>" Enter
 EOF
-"
+)"
 ```
 
 ### The invoker doesn't need to be a harnex session
@@ -213,7 +233,8 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex pane --id <id>` | Capture the agent's tmux screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
-| `harnex wait --id <id>` | Block until exit or a target state |
+| `harnex wait --id <id>` | Block until exit, a target state, or `--until task_complete` |
+| `harnex doctor` | Run adapter dependency preflight checks, currently Codex CLI version |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
 | `harnex recipes` | Tested workflow patterns |
