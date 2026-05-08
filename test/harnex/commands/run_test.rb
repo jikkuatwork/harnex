@@ -1,4 +1,5 @@
 require_relative "../../test_helper"
+require "open3"
 
 class RunnerTest < Minitest::Test
   def resolve_watch_options(argv)
@@ -51,6 +52,59 @@ class RunnerTest < Minitest::Test
     assert_equal "codex", cli_name
     assert_equal [], forwarded
     assert opts[:auto_stop]
+  end
+
+  def test_extract_wrapper_options_allows_known_auto_stop_before_separator
+    runner = Harnex::Runner.new(["codex", "--auto-stop", "--", "echo", "hi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--auto-stop", "--", "echo", "hi"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal ["echo", "hi"], forwarded
+    assert opts[:auto_stop]
+  end
+
+  def test_extract_wrapper_options_rejects_unknown_long_flag_before_separator
+    runner = Harnex::Runner.new(["codex", "--until", "task_complete", "--", "echo", "hi"])
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:extract_wrapper_options, ["codex", "--until", "task_complete", "--", "echo", "hi"])
+    end
+
+    assert_match(/--until/, error.message)
+    assert_match(/harnex run --help/, error.message)
+  end
+
+  def test_extract_wrapper_options_forwards_agent_flags_after_separator
+    runner = Harnex::Runner.new(["codex", "--", "--until", "task_complete", "echo", "hi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--", "--until", "task_complete", "echo", "hi"])
+
+    assert_equal "codex", cli_name
+    assert_equal ["--until", "task_complete", "echo", "hi"], forwarded
+  end
+
+  def test_extract_wrapper_options_rejects_unknown_long_flag_without_separator
+    runner = Harnex::Runner.new(["codex", "--foo-bar"])
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:extract_wrapper_options, ["codex", "--foo-bar"])
+    end
+
+    assert_match(/--foo-bar/, error.message)
+    assert_match(/harnex run --help/, error.message)
+  end
+
+  def test_cli_rejects_unknown_run_flag_before_spawning_agent
+    _stdout, stderr, status = Open3.capture3(
+      Gem.ruby,
+      "-I#{File.expand_path('../../../lib', __dir__)}",
+      File.expand_path("../../../bin/harnex", __dir__),
+      "run", "codex", "--until", "task_complete", "--", "echo", "hi"
+    )
+
+    refute status.success?
+    assert_includes stderr, "--until"
+    assert_includes stderr, "harnex run --help"
   end
 
   def test_auto_stop_requires_context
@@ -360,15 +414,14 @@ class RunnerTest < Minitest::Test
     assert_nil opts[:tmux_name]
   end
 
-  def test_tmux_does_not_consume_unknown_double_dash_flag
+  def test_tmux_rejects_unknown_double_dash_flag
     runner = Harnex::Runner.new(["codex", "--tmux", "--name", "cx-p-322"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--tmux", "--name", "cx-p-322"])
 
-    opts = runner.instance_variable_get(:@options)
-    assert opts[:tmux]
-    assert_nil opts[:tmux_name], "--name should not be consumed as tmux window name"
-    assert_includes forwarded, "--name"
-    assert_includes forwarded, "cx-p-322"
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:extract_wrapper_options, ["codex", "--tmux", "--name", "cx-p-322"])
+    end
+
+    assert_match(/--name/, error.message)
   end
 
   def test_tmux_still_accepts_positional_window_name

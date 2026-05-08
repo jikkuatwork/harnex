@@ -9,6 +9,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-08 | 07:12 PM | IST: F24 / #38 landed. `harnex run`
+  now rejects unknown long flags before spawning an agent, points the
+  operator at `harnex run --help`, and still forwards everything past
+  the explicit `--` separator untouched. Regression tests cover
+  `--until`, arbitrary unknown flags, known `--auto-stop`, and agent
+  argv passthrough.
 - 2026-05-08 | 05:55 PM | IST: F23 / #37 landed. `harnex run
   --auto-stop` now bounds JSON-RPC teardown after `task_complete`
   (default 5s, `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS` override),
@@ -57,8 +63,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree is expected clean on `main` after the #37 commit. CHANGELOG
-  `[Unreleased]` carries #37; no release has been cut.
+- Tree is expected clean on `main` after the #38 commit. CHANGELOG
+  `[Unreleased]` carries #37 and #38; no release has been cut.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
   remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,

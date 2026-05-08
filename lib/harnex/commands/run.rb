@@ -448,6 +448,7 @@ module Harnex
         when "--legacy-pty"
           @options[:legacy_pty] = true
         else
+          reject_unknown_long_flag!(arg) if unknown_long_flag?(arg)
           if cli_name.nil?
             cli_name = arg
           else
@@ -458,6 +459,16 @@ module Harnex
       end
 
       [cli_name, forwarded]
+    end
+
+    def unknown_long_flag?(arg)
+      arg.start_with?("--")
+    end
+
+    def reject_unknown_long_flag!(arg)
+      flag = arg.split("=", 2).first
+      raise OptionParser::InvalidOption,
+            "harnex run: unknown flag #{flag}; see harnex run --help"
     end
 
     def required_option_value(option_name, value)

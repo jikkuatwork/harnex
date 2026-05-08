@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `harnex run` now rejects unknown long flags before spawning the
+  agent process, with a clear error pointing at `harnex run --help`.
+  Anything past the `--` separator continues to forward unchanged
+  to the agent CLI. Closes the trigger that correlated with the F23
+  auto-stop teardown leak. Closes harnex issue #38.
+
 ### Fixed
 
 - `harnex run` with `--auto-stop` now exits within a bounded grace
