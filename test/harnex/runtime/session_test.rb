@@ -177,6 +177,8 @@ class SessionTest < Minitest::Test
           "effort" => "high",
           "issue" => "23",
           "plan" => "27",
+          "read_budget_lines" => 2_000,
+          "output_ceiling_lines" => 800,
           "predicted" => { "input_tokens" => [100, 200] }
         },
         summary_out: File.join(repo, "koder", "DISPATCH.jsonl")
@@ -223,14 +225,20 @@ class SessionTest < Minitest::Test
       assert_equal repo, record.dig("meta", "repo")
       assert_equal "23", record.dig("meta", "issue")
       assert_equal "27", record.dig("meta", "plan")
+      assert_equal 2_000, record.dig("meta", "read_budget_lines")
+      assert_equal 800, record.dig("meta", "output_ceiling_lines")
       assert_equal({ "input_tokens" => [100, 200] }, record["predicted"])
       assert_equal "gpt-5.3-codex", record.dig("actual", "model")
       assert_equal "high", record.dig("actual", "effort")
       assert_kind_of Integer, record.dig("actual", "duration_s")
       assert_equal 104_158, record.dig("actual", "input_tokens")
       assert_equal 1, record.dig("actual", "loc_added")
+      assert_equal 1, record.dig("actual", "lines_changed")
       assert_equal 1, record.dig("actual", "files_changed")
       assert_equal 1, record.dig("actual", "commits")
+      assert_operator record.dig("actual", "output_lines"), :>=, 2
+      assert_operator record.dig("actual", "output_bytes"), :>, 0
+      assert_operator record.dig("actual", "event_records"), :>=, 4
       assert_equal "success", record.dig("actual", "exit")
       assert_equal 0, record.dig("actual", "force_resumes")
     end

@@ -12,6 +12,7 @@ class DispatchRowSchemaTest < Minitest::Test
     disconnections
     duration_s
     effort
+    event_records
     events_log_path
     exit
     exit_code
@@ -19,9 +20,12 @@ class DispatchRowSchemaTest < Minitest::Test
     force_resumes
     input_tokens
     last_error
+    lines_changed
     loc_added
     loc_removed
     model
+    output_bytes
+    output_lines
     output_log_path
     output_tokens
     rate_limits
@@ -146,6 +150,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_nil actual.fetch("last_error")
       assert_kind_of Integer, actual.fetch("loc_added")
       assert_kind_of Integer, actual.fetch("loc_removed")
+      assert_kind_of Integer, actual.fetch("lines_changed")
       assert_kind_of Integer, actual.fetch("files_changed")
       assert_kind_of Integer, actual.fetch("commits")
       assert_kind_of Integer, actual.fetch("stalls")
@@ -156,6 +161,9 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_kind_of Integer, actual.fetch("tool_calls")
       assert_kind_of Integer, actual.fetch("commands_executed")
       assert_nil actual.fetch("rate_limits")
+      assert_kind_of Integer, actual.fetch("output_lines")
+      assert_kind_of Integer, actual.fetch("output_bytes")
+      assert_kind_of Integer, actual.fetch("event_records")
       assert_equal Harnex.output_log_path(repo, id), actual.fetch("output_log_path")
       assert_equal Harnex.events_log_path(repo, id), actual.fetch("events_log_path")
     end

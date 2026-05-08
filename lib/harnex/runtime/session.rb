@@ -9,6 +9,7 @@ module Harnex
     USAGE_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens agent_session_id
     ].freeze
+    BUDGET_META_FIELDS = %w[read_budget_lines output_ceiling_lines].freeze
     class EventCounters
       def initialize
         @counts = {
@@ -889,11 +890,12 @@ module Harnex
         branch: @git_start[:branch],
         start_sha: @git_start[:sha],
         end_sha: @git_end[:sha]
-      }
+      }.merge(summary_budget_meta)
     end
 
     def build_summary_actual
       counters = @event_counters.snapshot
+      output_measurements = summary_output_measurements
       if %w[disconnected boot_failure].include?(@exit_reason)
         counters[:disconnections] = [counters[:disconnections], 1].max
       end
@@ -911,6 +913,7 @@ module Harnex
         adapter_transport: adapter.transport.to_s,
         loc_added: @git_end[:loc_added],
         loc_removed: @git_end[:loc_removed],
+        lines_changed: summary_lines_changed,
         files_changed: @git_end[:files_changed],
         commits: @git_end[:commits],
         exit: @exit_reason,
@@ -926,10 +929,38 @@ module Harnex
         tool_calls: counters[:tool_calls],
         commands_executed: counters[:commands_executed],
         rate_limits: @rate_limits,
+        output_lines: output_measurements[:lines],
+        output_bytes: output_measurements[:bytes],
+        event_records: @events_log_seq,
         output_log_path: output_log_path,
         events_log_path: events_log_path
       }
       actual
+    end
+
+    def summary_budget_meta
+      BUDGET_META_FIELDS.each_with_object({}) do |field, values|
+        values[field.to_sym] = meta_hash[field] if meta_hash.key?(field)
+      end
+    end
+
+    def summary_lines_changed
+      added = @git_end[:loc_added]
+      removed = @git_end[:loc_removed]
+      return nil if added.nil? && removed.nil?
+
+      added.to_i + removed.to_i
+    end
+
+    def summary_output_measurements
+      size = File.size?(output_log_path)
+      return { lines: nil, bytes: nil } unless size
+
+      lines = 0
+      File.foreach(output_log_path) { lines += 1 }
+      { lines: lines, bytes: size }
+    rescue StandardError
+      { lines: nil, bytes: size }
     end
 
     def summary_tmux_session

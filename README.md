@@ -176,6 +176,17 @@ harnex history
 harnex history --json | jq .
 ```
 
+Dispatch briefs can declare soft budget metadata through `--meta`:
+
+```bash
+harnex run codex --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
+```
+
+Those declared values are copied into summary `meta`. Terminal summary
+`actual` also records rough measurements for downstream enforcement:
+`lines_changed`, `output_lines`, `output_bytes`, and `event_records`.
+Harnex records the data only; consumers decide whether to fail closed.
+
 ## Long-running and overnight work
 
 For plain "force-resume on stall" recovery, use

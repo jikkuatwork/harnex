@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Dispatch summaries now preserve declared brief budget metadata
+  (`read_budget_lines`, `output_ceiling_lines`) from `--meta` and
+  record rough terminal measurements (`lines_changed`, `output_lines`,
+  `output_bytes`, `event_records`) for downstream budget enforcement.
+
 ## [0.7.0] - 2026-05-08
 
 ### Added
