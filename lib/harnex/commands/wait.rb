@@ -6,8 +6,10 @@ require "uri"
 module Harnex
   class Waiter
     POLL_INTERVAL = 0.5
+    EVENT_POLL_INTERVAL = 0.1
     EXIT_STATUS_GRACE_SECONDS_DEFAULT = 5.0
     EXIT_STATUS_GRACE_POLL_INTERVAL = 0.05
+    FINAL_EVENT_GRACE_SECONDS = 5.0
 
     EVENT_PREDICATES = %w[task_complete].freeze
 
@@ -86,30 +88,17 @@ module Harnex
 
       offset = 0
       task_complete_seen = false
+      final_event_deadline = nil
 
       # Replay existing events first — we may already be past the predicate.
-      if File.exist?(events_path)
-        File.open(events_path, "r") do |f|
-          f.each_line do |line|
-            offset = f.pos
-            event = parse_event(line)
-            next unless event
-            task_complete_seen = true if event["type"] == "task_complete"
-            if matches?(event, predicate, task_complete_seen)
-              return emit_event_match(event, start_time)
-            end
-          end
-        end
-      end
+      status, offset, task_complete_seen = scan_events(events_path, offset, predicate, task_complete_seen, start_time)
+      return status if status
 
       target_pid = registry && registry["pid"]
 
       loop do
-        if target_pid && !Harnex.alive_pid?(target_pid)
-          waited = (Time.now - start_time).round(1)
-          puts JSON.generate(ok: false, id: @options[:id], state: "exited", waited_seconds: waited)
-          return 1
-        end
+        status, offset, task_complete_seen = scan_events(events_path, offset, predicate, task_complete_seen, start_time)
+        return status if status
 
         if deadline && Time.now >= deadline
           waited = (Time.now - start_time).round(1)
@@ -117,24 +106,39 @@ module Harnex
           return 124
         end
 
-        if File.exist?(events_path) && File.size(events_path) > offset
-          File.open(events_path, "r") do |f|
-            f.seek(offset)
-            f.each_line do |line|
-              event = parse_event(line)
-              next unless event
-              task_complete_seen = true if event["type"] == "task_complete"
-              if matches?(event, predicate, task_complete_seen)
-                offset = f.pos
-                return emit_event_match(event, start_time)
-              end
-            end
-            offset = f.pos
+        if target_pid && !Harnex.alive_pid?(target_pid)
+          final_event_deadline ||= Time.now + FINAL_EVENT_GRACE_SECONDS
+          if Time.now >= final_event_deadline
+            waited = (Time.now - start_time).round(1)
+            puts JSON.generate(ok: false, id: @options[:id], state: "exited", waited_seconds: waited)
+            return 1
           end
+        else
+          final_event_deadline = nil
         end
 
-        sleep 0.1
+        sleep EVENT_POLL_INTERVAL
       end
+    end
+
+    def scan_events(path, offset, predicate, task_complete_seen, start_time)
+      return [nil, offset, task_complete_seen] unless File.exist?(path) && File.size(path) > offset
+
+      File.open(path, "r") do |f|
+        f.seek(offset)
+        f.each_line do |line|
+          event = parse_event(line)
+          next unless event
+
+          task_complete_seen = true if event["type"] == "task_complete"
+          if matches?(event, predicate, task_complete_seen)
+            return [emit_event_match(event, start_time), f.pos, task_complete_seen]
+          end
+        end
+        offset = f.pos
+      end
+
+      [nil, offset, task_complete_seen]
     end
 
     def parse_event(line)

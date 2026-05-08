@@ -23,6 +23,19 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     Harnex::Waiter.new(["--id", @id, "--repo", @repo_root, *args])
   end
 
+  def write_registry(pid:)
+    Harnex.write_registry(Harnex.registry_path(@repo_root, @id), {
+      "id" => @id,
+      "cli" => "codex",
+      "pid" => pid,
+      "host" => "127.0.0.1",
+      "port" => 45_000,
+      "repo_root" => @repo_root,
+      "events_log_path" => @events_path,
+      "started_at" => Time.now.iso8601
+    })
+  end
+
   def test_returns_immediately_when_task_complete_already_present
     write_events(
       { type: "started", seq: 1 },
@@ -54,6 +67,27 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     payload = JSON.parse(output)
     assert payload["ok"]
     assert_equal "task_complete", payload["event"]
+  end
+
+  def test_drains_final_task_complete_after_process_exits
+    write_registry(pid: 12_345)
+    write_events({ type: "started", seq: 1 })
+
+    appender = Thread.new do
+      sleep 0.2
+      write_events({ type: "task_complete", seq: 2, turnId: "trn-final" })
+    end
+
+    output, status = Harnex.stub(:alive_pid?, false) do
+      capture_output { waiter("--until", "task_complete", "--timeout", "2").run }
+    end
+    appender.join
+
+    assert_equal 0, status
+    payload = JSON.parse(output)
+    assert payload["ok"]
+    assert_equal "task_complete", payload["event"]
+    assert_equal 2, payload["seq"]
   end
 
   def test_timeout_returns_124
