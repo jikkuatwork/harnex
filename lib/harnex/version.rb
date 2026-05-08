@@ -1,4 +1,4 @@
 module Harnex
-  VERSION = "0.6.5"
-  RELEASE_DATE = "2026-05-07"
+  VERSION = "0.7.0"
+  RELEASE_DATE = "2026-05-08"
 end

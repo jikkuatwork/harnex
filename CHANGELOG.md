@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-08
+
 ### Added
 
 - `harnex run` now appends one terminal dispatch record to
