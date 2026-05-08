@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `harnex doctor --sweep` reports read-only harnex/tmux session drift,
+  including active registry rows, matching `cx-*` tmux windows, orphan
+  tmux windows, and stale session log files whose owning pid is gone.
+
 ## [0.7.1] - 2026-05-08
 
 ### Fixed

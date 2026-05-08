@@ -260,7 +260,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
 | `harnex wait --id <id>` | Block until exit, a target state, or `--until task_complete` |
-| `harnex doctor` | Run adapter dependency preflight checks, currently Codex CLI version |
+| `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
 | `harnex recipes` | Tested workflow patterns |

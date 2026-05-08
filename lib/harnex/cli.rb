@@ -114,7 +114,7 @@ module Harnex
           guide   Show the getting started guide
           agents-guide
                   Show agent dispatch, chain, buddy, monitoring, and naming guides
-          doctor  Run preflight checks for adapter dependencies
+          doctor  Run preflight checks and optional read-only session sweep
           help    Show command help
 
         New to harnex? Start with: harnex guide
