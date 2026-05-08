@@ -4,6 +4,11 @@
 
 ### Added
 
+- `harnex run` now appends one terminal dispatch record to
+  `<repo>/.harnex/dispatch.jsonl`, falling back to
+  `~/.local/state/harnex/dispatch.jsonl` outside git repos. New
+  `harnex history` reads that log with `--limit`, `--since`, `--id`,
+  `--global`, `--json`, and `--all` filters.
 - DISPATCH row `actual` now includes `turn_count`, `tool_calls`,
   `commands_executed`, `rate_limits`, `output_log_path`, and
   `events_log_path` — surfacing data harnex already tracked but did

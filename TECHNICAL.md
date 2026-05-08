@@ -88,6 +88,16 @@ harnex wait --id worker
 harnex wait --id worker --until prompt --timeout 300
 ```
 
+### `harnex history` — List completed dispatches
+
+```bash
+harnex history
+harnex history --json | jq .
+```
+
+Reads `<repo>/.harnex/dispatch.jsonl`, where `<repo>` is found by walking up
+until `.git/` is present. Use `--global` for the no-repo fallback file.
+
 ### `harnex logs` — Read session transcripts
 
 ```bash

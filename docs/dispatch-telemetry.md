@@ -4,6 +4,11 @@
 agent session. The raw measurements are emitted on the v1 events stream, and a
 consolidated JSONL summary can be appended for downstream analysis.
 
+Every completed run also appends one compact dispatch-history record to
+`<repo>/.harnex/dispatch.jsonl`. The repo is resolved by walking up from the
+run directory until `.git/` is found; runs outside a git repo fall back to
+`~/.local/state/harnex/dispatch.jsonl`.
+
 ## CLI flags
 
 ```text
@@ -19,6 +24,8 @@ harnex run codex --summary-out koder/DISPATCH.jsonl
   `<repo>/koder/DISPATCH.jsonl`.
 - If no summary path resolves, harnex still emits `usage` and `summary` events;
   the `summary.path` value is `null` and no summary file is written.
+
+Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
 ## Metadata and prediction contract
 

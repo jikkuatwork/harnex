@@ -162,6 +162,20 @@ harnex events --id cx-impl-42
 Schema details and compatibility policy are documented in
 [docs/events.md](docs/events.md).
 
+## Dispatch history
+
+Every finished `harnex run` appends one JSON line to
+`<repo>/.harnex/dispatch.jsonl`. Harnex finds the repo by walking up from the
+run directory until it sees `.git/`; sessions outside a git repo write to
+`~/.local/state/harnex/dispatch.jsonl`.
+
+Use `harnex history` to inspect it:
+
+```bash
+harnex history
+harnex history --json | jq .
+```
+
 ## Long-running and overnight work
 
 For plain "force-resume on stall" recovery, use
@@ -233,6 +247,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex pane --id <id>` | Capture the agent's tmux screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
+| `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
 | `harnex wait --id <id>` | Block until exit, a target state, or `--until task_complete` |
 | `harnex doctor` | Run adapter dependency preflight checks, currently Codex CLI version |
 | `harnex guide` | Getting started walkthrough |

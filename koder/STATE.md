@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-07 | 07:28 PM | IST
+Updated: 2026-05-08 | 12:48 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-08 | 12:48 PM | IST: F21 landed. `harnex run` now writes a
+  repo-local `.harnex/dispatch.jsonl` terminal record, `harnex history`
+  reads it, and docs/tests cover path resolution, status classification,
+  commit detection, JSONL output, and a real `harnex run` integration.
 - 2026-05-07 | 07:28 PM | IST: #35 Tier 3 landed. DISPATCH dropped
   four always-null fields (`actual.cost_usd`,
   `actual.tests_run|passed|failed`, `meta.agent_deployment`) and
@@ -46,8 +50,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree is clean on `main` after #35 Tier 3 ships. CHANGELOG
-  `[Unreleased]` now carries #35 Tier 2, #35 Tier 3, and #36 Tier 2.
+- Tree is clean on `main` after F21 ships. CHANGELOG `[Unreleased]` now
+  carries F21, #35 Tier 2, #35 Tier 3, and #36 Tier 2.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
   remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,
@@ -57,16 +61,17 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #35 deferred `auto_disconnects` — needs a dedicated counter
+1. Release/verify the F21 history command with the next gem cut.
+2. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-2. Optional #36 follow-ups (deferred — not required for closure):
+3. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-3. File the concurrency / hardening audit and the doc-staleness
+4. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-4. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+5. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
    capture if/when richer git context is wanted.
 
 When ending a session, update only this handoff summary and next step.

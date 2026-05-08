@@ -50,7 +50,9 @@ module Harnex
       end
     end
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch, :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path
+    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
+                :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path,
+                :started_at, :ended_at, :exit_code, :term_signal
 
     def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false)
       @adapter = adapter
@@ -214,6 +216,18 @@ module Harnex
       payload[:effort] = meta_hash["effort"]
       payload[:auto_disconnects] = @event_counters.snapshot[:disconnections]
       payload
+    end
+
+    def task_complete?
+      !!@last_completed_at
+    end
+
+    def git_start
+      @git_start || {}
+    end
+
+    def git_end
+      @git_end || {}
     end
 
     def auth_ok?(header)
@@ -762,6 +776,7 @@ module Harnex
       end
       @exit_reason ||= classify_exit
       append_summary_record(build_summary_record)
+      append_dispatch_history_record
       emit_summary_event
       emit_exit_event
     end
@@ -947,6 +962,13 @@ module Harnex
       end
     rescue StandardError => e
       warn("harnex: failed to write dispatch summary #{summary_out}: #{e.message}")
+    end
+
+    def append_dispatch_history_record
+      path = DispatchHistory.path_for(repo_root)
+      DispatchHistory.append(path, DispatchHistory.build_record(self))
+    rescue StandardError => e
+      warn("harnex: failed to write dispatch history: #{e.message}")
     end
 
     def normalized_usage_summary(summary)

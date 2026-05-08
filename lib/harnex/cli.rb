@@ -23,6 +23,8 @@ module Harnex
         Logs.new(@argv.drop(1)).run
       when "events"
         Events.new(@argv.drop(1)).run
+      when "history"
+        History.new(@argv.drop(1)).run
       when "pane"
         Pane.new(@argv.drop(1)).run
       when "recipes"
@@ -65,6 +67,8 @@ module Harnex
         Logs.usage
       when "events"
         Events.usage
+      when "history"
+        History.usage
       when "pane"
         Pane.usage
       when "recipes"
@@ -90,6 +94,7 @@ module Harnex
           harnex status [options]
           harnex logs --id ID [options]
           harnex events --id ID [options]
+          harnex history [options]
           harnex pane --id ID [options]
           harnex agents-guide [topic]
           harnex doctor
@@ -103,6 +108,7 @@ module Harnex
           status  List live sessions
           logs    Read session output transcripts
           events  Stream per-session JSONL runtime events
+          history List completed dispatches from .harnex/dispatch.jsonl
           pane    Capture the current tmux pane for a live session
           recipes List and read workflow recipes
           guide   Show the getting started guide
@@ -125,6 +131,7 @@ module Harnex
           harnex status
           harnex logs --id main --follow
           harnex events --id main --snapshot
+          harnex history --limit 20
           harnex pane --id main --lines 40
           harnex agents-guide dispatch
           harnex doctor
