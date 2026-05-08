@@ -6,6 +6,7 @@ module Harnex
   class Session
     OUTPUT_BUFFER_LIMIT = 64 * 1024
     TRANSCRIPT_TAIL_BYTES = 16 * 1024
+    AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT = 5.0
     USAGE_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens agent_session_id
     ].freeze
@@ -100,6 +101,7 @@ module Harnex
       @auto_stop = !!auto_stop
       @auto_stop_fired = false
       @auto_stop_seen_busy = false
+      @auto_stop_threads = []
       @stop_requested = false
       @writer = nil
       @pid = nil
@@ -165,6 +167,8 @@ module Harnex
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
       @ended_at = Time.now
 
+      normalize_auto_stop_exit_code!
+      drain_auto_stop_threads
       output_thread.join(1)
       finalize_session!
       input_thread&.kill
@@ -250,14 +254,6 @@ module Harnex
       return { ok: true, signal: "already_requested" } if stop_requested!
 
       if adapter.transport == :stdio_jsonrpc
-        @inject_mutex.synchronize do
-          begin
-            adapter.interrupt(turn_id: turn_id)
-          rescue StandardError
-            nil
-          end
-          @state_machine.force_busy!
-        end
         if adapter.respond_to?(:terminate_subprocess)
           Thread.new do
             begin
@@ -266,6 +262,14 @@ module Harnex
               nil
             end
           end
+        end
+        @inject_mutex.synchronize do
+          begin
+            adapter.interrupt(turn_id: turn_id)
+          rescue StandardError
+            nil
+          end
+          @state_machine.force_busy!
         end
         return { ok: true, signal: "interrupt_sent" }
       end
@@ -391,6 +395,8 @@ module Harnex
       end
       @ended_at = Time.now
 
+      normalize_auto_stop_exit_code!
+      drain_auto_stop_threads
       finalize_session!
       watch_thread&.kill
       @exit_code
@@ -823,13 +829,59 @@ module Harnex
       end
       return unless should_fire
 
-      Thread.new do
+      thread = Thread.new do
         begin
           inject_stop(turn_id: turn_id)
         rescue StandardError => e
           warn("harnex: auto-stop failed after #{reason}: #{e.message}")
         end
       end
+      track_auto_stop_thread(thread)
+    end
+
+    def track_auto_stop_thread(thread)
+      @auto_stop_mutex.synchronize { @auto_stop_threads << thread }
+    end
+
+    def drain_auto_stop_threads
+      return unless @auto_stop
+
+      threads = @auto_stop_mutex.synchronize { @auto_stop_threads.dup }
+      return if threads.empty?
+
+      grace_seconds = auto_stop_teardown_grace_seconds
+      deadline = Time.now + grace_seconds
+      timed_out = []
+
+      threads.each do |thread|
+        remaining = deadline - Time.now
+        thread.join(remaining) if remaining.positive?
+        timed_out << thread if thread.alive?
+      end
+      return if timed_out.empty?
+
+      timed_out.each(&:kill)
+      @exit_code = 1 if @exit_code.nil? || @exit_code.zero?
+      @term_signal = nil if @exit_code == 1
+      emit_event("auto_stop_teardown_timeout", grace_seconds: grace_seconds, threads: timed_out.size)
+    end
+
+    def auto_stop_teardown_grace_seconds
+      override = ENV["HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS"]
+      return AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT if override.to_s.strip.empty?
+
+      Float(override)
+    rescue ArgumentError
+      AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT
+    end
+
+    def normalize_auto_stop_exit_code!
+      return unless @auto_stop
+      return unless @last_completed_at
+      return unless @auto_stop_fired
+
+      @exit_code = 0
+      @term_signal = nil
     end
 
     def classify_exit

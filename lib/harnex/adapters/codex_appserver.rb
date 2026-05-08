@@ -519,7 +519,23 @@ module Harnex
           return if @disconnect_signaled
 
           @disconnect_signaled = true
+          fail_pending_requests(error)
           @disconnect_handler&.call(error)
+        end
+
+        def fail_pending_requests(error)
+          exception =
+            if error.is_a?(Exception)
+              error
+            else
+              message = error.is_a?(Hash) ? error["message"] : nil
+              StandardError.new(message.to_s.empty? ? "codex_appserver disconnected" : message.to_s)
+            end
+
+          @id_mutex.synchronize do
+            @pending.each_value { |queue| queue.push(exception) }
+            @pending.clear
+          end
         end
 
         def process_alive?(pid)

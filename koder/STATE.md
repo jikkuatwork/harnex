@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-08 | 12:48 PM | IST
+Updated: 2026-05-08 | 05:55 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-08 | 05:55 PM | IST: F23 / #37 landed. `harnex run
+  --auto-stop` now bounds JSON-RPC teardown after `task_complete`
+  (default 5s, `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS` override),
+  starts TERM/KILL even when `turn/interrupt` never replies, fails
+  pending RPC requests on disconnect, and exits cleanly with no
+  registry/orphan tmux residue. Regression test covers a real
+  `bin/harnex run codex --auto-stop` subprocess with a stub app-server.
 - 2026-05-08 | 12:48 PM | IST: F21 landed. `harnex run` now writes a
   repo-local `.harnex/dispatch.jsonl` terminal record, `harnex history`
   reads it, and docs/tests cover path resolution, status classification,
@@ -50,8 +57,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree is clean on `main` after F21 ships. CHANGELOG `[Unreleased]` now
-  carries F21, #35 Tier 2, #35 Tier 3, and #36 Tier 2.
+- Tree is expected clean on `main` after the #37 commit. CHANGELOG
+  `[Unreleased]` carries #37; no release has been cut.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
   remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,
@@ -61,7 +68,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. Release/verify the F21 history command with the next gem cut.
+1. Release/verify the F21 + #37 changes with the next gem cut when
+   release is explicitly requested.
 2. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.

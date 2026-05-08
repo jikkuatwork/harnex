@@ -70,6 +70,55 @@ class RunnerTest < Minitest::Test
     assert_includes Harnex::Runner.usage, "--auto-stop"
   end
 
+  def test_auto_stop_exits_when_jsonrpc_interrupt_never_answers
+    Dir.mktmpdir("harnex-autostop-run") do |repo|
+      bin_dir = File.join(repo, "bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_hanging_interrupt_codex_stub(File.join(bin_dir, "codex"))
+
+      id = "autostop-hang-#{$$}"
+      summary_path = File.join(repo, "DISPATCH.jsonl")
+      stdout_path = File.join(repo, "stdout.log")
+      stderr_path = File.join(repo, "stderr.log")
+      env = {
+        "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
+        "HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS" => "1"
+      }
+
+      pid = spawn(
+        env,
+        Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
+        "run", "codex",
+        "--id", id,
+        "--context", "finish quickly",
+        "--auto-stop",
+        "--summary-out", summary_path,
+        chdir: repo,
+        pgroup: true,
+        out: stdout_path,
+        err: stderr_path
+      )
+
+      status = wait_for_child(pid, timeout: 10.0)
+      assert status, "harnex run did not exit; stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
+      assert_equal 0, status.exitstatus, "stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
+      assert File.exist?(summary_path), "summary row was not written"
+
+      row = JSON.parse(File.readlines(summary_path).last)
+      assert_equal id, row.dig("meta", "id")
+      assert_equal true, row.dig("actual", "task_complete")
+
+      with_env("PATH" => env["PATH"]) do
+        out, = capture_io { assert_equal 0, Harnex::Doctor.new(["--sweep"]).run }
+        sweep = JSON.parse(out).fetch("sweep")
+        assert_empty sweep.fetch("harnex_sessions").select { |session| session["id"] == id }
+        assert_empty sweep.fetch("orphan_tmux").select { |window| [window["session"], window["window"]].include?(id) }
+      end
+    ensure
+      terminate_process_group(pid) if pid
+    end
+  end
+
   def test_usage_documents_summary_out
     assert_includes Harnex::Runner.usage, "--summary-out PATH"
   end
@@ -374,5 +423,69 @@ class RunnerTest < Minitest::Test
   ensure
     Harnex.define_singleton_method(:tmux_pane_for_pid, &original_tmux_lookup) if original_tmux_lookup
     FileUtils.rm_f(path) if path
+  end
+
+  def write_hanging_interrupt_codex_stub(path)
+    File.write(path, <<~'RUBY')
+      #!/usr/bin/env ruby
+      require "json"
+
+      if ARGV == ["--version"]
+        puts "codex 0.128.0"
+        exit 0
+      end
+
+      abort "expected app-server" unless ARGV.first == "app-server"
+
+      STDOUT.sync = true
+
+      STDIN.each_line do |line|
+        msg = JSON.parse(line)
+        case msg["method"]
+        when "initialize"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
+        when "initialized"
+          nil
+        when "thread/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-test" } })
+        when "turn/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-test" } })
+          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
+            thread: { id: "thr-test" },
+            turn: { id: "trn-test", status: "completed" }
+          })
+        when "turn/interrupt"
+          loop { sleep 1 }
+        end
+      end
+    RUBY
+    File.chmod(0o755, path)
+  end
+
+  def wait_for_child(pid, timeout:)
+    deadline = Time.now + timeout
+    loop do
+      waited = Process.waitpid2(pid, Process::WNOHANG)
+      return waited[1] if waited
+      return nil if Time.now >= deadline
+
+      sleep 0.05
+    end
+  rescue Errno::ECHILD
+    nil
+  end
+
+  def terminate_process_group(pid)
+    Process.kill("TERM", -pid)
+    sleep 0.2
+    Process.kill("KILL", -pid)
+  rescue Errno::ESRCH, Errno::ECHILD
+    nil
+  ensure
+    begin
+      Process.waitpid(pid, Process::WNOHANG)
+    rescue Errno::ECHILD
+      nil
+    end
   end
 end

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `harnex run` with `--auto-stop` now exits within a bounded grace
+  (default 5s, override via `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`)
+  after `task_complete`. Closes a leak where the wrapping Ruby parent
+  process could sleep on `futex_wait_queue` indefinitely during
+  teardown, surviving as `orphan_tmux` until manually swept (F09
+  detected; F23 remediates). Closes harnex issue #37.
+
 ## [0.7.2] - 2026-05-08
 
 ### Fixed
