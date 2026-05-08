@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-08
+
+### Fixed
+
+- `harnex run --auto-stop` now observes the terminal `task_complete`
+  event after the agent subprocess exits before tearing down, closing
+  a race where one-shot dispatches could report `timeout` even when
+  the agent finished the task cleanly. Adds a regression test that
+  exercises the post-exit event drain path.
+
+- `harnex wait` predicates now classify dispatch progress by
+  structured event-record fields instead of regex-matching the
+  human-readable transcript, with the prior exact-marker text as a
+  legacy fallback. Eliminates a class of spurious matches where
+  prose containing a marker word was misread as a state transition.
+
 ### Added
 
 - Dispatch summaries now preserve declared brief budget metadata
