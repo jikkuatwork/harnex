@@ -19,6 +19,10 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     end
   end
 
+  def write_raw_event(line)
+    File.open(@events_path, "ab") { |f| f.write("#{line}\n") }
+  end
+
   def waiter(*args)
     Harnex::Waiter.new(["--id", @id, "--repo", @repo_root, *args])
   end
@@ -47,6 +51,33 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     payload = JSON.parse(output)
     assert payload["ok"]
     assert_equal "task_complete", payload["event"]
+  end
+
+  def test_ignores_terminal_words_inside_structured_event_payload
+    write_events(
+      {
+        type: "item_completed",
+        seq: 1,
+        item: {
+          "type" => "agentMessage",
+          "text" => "The words task_complete, fail, and disconnect are just text."
+        }
+      }
+    )
+
+    output, status = capture_output { waiter("--until", "task_complete", "--timeout", "0.1").run }
+
+    assert_equal 124, status
+    assert_equal "timeout", JSON.parse(output)["status"]
+  end
+
+  def test_exact_legacy_task_complete_marker_still_matches
+    write_raw_event("task_complete")
+
+    output, status = capture_output { waiter("--until", "task_complete").run }
+
+    assert_equal 0, status
+    assert_equal "task_complete", JSON.parse(output)["event"]
   end
 
   def test_unblocks_when_task_complete_is_appended

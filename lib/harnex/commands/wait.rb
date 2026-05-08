@@ -12,6 +12,7 @@ module Harnex
     FINAL_EVENT_GRACE_SECONDS = 5.0
 
     EVENT_PREDICATES = %w[task_complete].freeze
+    LEGACY_EVENT_TYPES = %w[agent_state exited task_complete].freeze
 
     def self.usage(program_name = "harnex wait")
       <<~TEXT
@@ -130,7 +131,7 @@ module Harnex
           event = parse_event(line)
           next unless event
 
-          task_complete_seen = true if event["type"] == "task_complete"
+          task_complete_seen = true if event_type(event) == "task_complete"
           if matches?(event, predicate, task_complete_seen)
             return [emit_event_match(event, start_time), f.pos, task_complete_seen]
           end
@@ -142,13 +143,26 @@ module Harnex
     end
 
     def parse_event(line)
-      JSON.parse(line)
+      event = JSON.parse(line)
+      event.is_a?(Hash) ? event : nil
     rescue JSON::ParserError
-      nil
+      legacy_type = line.to_s.strip
+      return nil unless LEGACY_EVENT_TYPES.include?(legacy_type)
+
+      { "type" => legacy_type }
+    end
+
+    def event_type(event)
+      type = event["type"]
+      return type if type.is_a?(String) && !type.empty?
+
+      legacy_type = event["terminal_event"] || event["event"]
+      legacy_type = legacy_type.to_s
+      LEGACY_EVENT_TYPES.include?(legacy_type) ? legacy_type : nil
     end
 
     def matches?(event, predicate, task_complete_seen)
-      type = event["type"]
+      type = event_type(event)
       case predicate
       when "task_complete"
         type == "task_complete"
@@ -165,7 +179,7 @@ module Harnex
       puts JSON.generate(
         ok: true,
         id: @options[:id],
-        event: event["type"],
+        event: event_type(event),
         seq: event["seq"],
         waited_seconds: waited
       )
