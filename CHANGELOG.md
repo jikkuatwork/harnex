@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-08
+
 ### Fixed
 
 - `harnex run` now resolves the repo-local
