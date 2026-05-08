@@ -70,6 +70,7 @@ module Harnex
 
     def initialize(argv)
       @argv = argv.dup
+      @launch_cwd = Dir.pwd
       @options = {
         id: nil,
         description: nil,
@@ -178,9 +179,9 @@ module Harnex
 
       started =
         if ENV["TMUX"]
-          system("tmux", "new-window", "-n", window_name, "-d", shell_cmd)
+          system("tmux", "new-window", "-c", @launch_cwd, "-n", window_name, "-d", shell_cmd)
         else
-          system("tmux", "new-session", "-d", "-s", "harnex", "-n", window_name, shell_cmd)
+          system("tmux", "new-session", "-c", @launch_cwd, "-d", "-s", "harnex", "-n", window_name, shell_cmd)
         end
 
       raise "tmux failed to start #{cli_name.inspect}" unless started
@@ -275,7 +276,8 @@ module Harnex
         meta: @options[:meta],
         summary_out: @options[:summary_out],
         inbox_ttl: @options[:inbox_ttl],
-        auto_stop: @options[:auto_stop]
+        auto_stop: @options[:auto_stop],
+        launch_cwd: @launch_cwd
       )
     end
 

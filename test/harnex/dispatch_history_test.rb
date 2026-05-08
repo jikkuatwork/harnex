@@ -136,6 +136,40 @@ class DispatchHistoryTest < Minitest::Test
     end
   end
 
+  def test_run_history_uses_launch_cwd_when_child_changes_directory
+    Dir.mktmpdir("harnex-history-cross-repo") do |root|
+      source_repo = File.join(root, "source")
+      launch_repo = File.join(root, "launch")
+      worker_repo = File.join(root, "worker")
+      init_git_repo(source_repo)
+      assert system("git", "-C", source_repo, "worktree", "add", "-q", "-b", "launch", launch_repo, "HEAD")
+      init_git_repo(worker_repo)
+      script = "Dir.chdir(ARGV.fetch(0))"
+
+      Dir.chdir(launch_repo) do
+        _, err = capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", "cx-run-cross-history",
+            "--description", "cross repo history",
+            "--meta", '{"tier":"B"}',
+            "--", "-e", script, worker_repo
+          ]).run
+        end
+        assert_match(/harnex: session cx-run-cross-history/, err)
+      end
+
+      launch_path = File.join(launch_repo, ".harnex", "dispatch.jsonl")
+      worker_path = File.join(worker_repo, ".harnex", "dispatch.jsonl")
+      record = JSON.parse(File.readlines(launch_path, chomp: true).last)
+
+      assert_equal "cx-run-cross-history", record.fetch("id")
+      assert_equal "completed", record.fetch("status")
+      assert_equal Harnex.events_log_path(launch_repo, "cx-run-cross-history"), record.fetch("events_log_path")
+      refute_path_exists worker_path
+    end
+  end
+
   private
 
   def fake_session(overrides = {})

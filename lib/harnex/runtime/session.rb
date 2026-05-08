@@ -51,14 +51,15 @@ module Harnex
       end
     end
 
-    attr_reader :repo_root, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
+    attr_reader :repo_root, :launch_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
                 :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path,
                 :started_at, :ended_at, :exit_code, :term_signal
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
+      @launch_cwd = File.expand_path(launch_cwd.to_s.empty? ? repo_root : launch_cwd)
       @host = host
       @id = Harnex.normalize_id(id)
       @watch = watch
@@ -996,7 +997,7 @@ module Harnex
     end
 
     def append_dispatch_history_record
-      path = DispatchHistory.path_for(repo_root)
+      path = DispatchHistory.path_for(launch_cwd)
       DispatchHistory.append(path, DispatchHistory.build_record(self))
     rescue StandardError => e
       warn("harnex: failed to write dispatch history: #{e.message}")

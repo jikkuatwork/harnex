@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `harnex run` now resolves the repo-local
+  `<repo>/.harnex/dispatch.jsonl` write path from the supervisor's
+  launch cwd (captured at invocation time), not from the agent's
+  runtime cwd. Closes a regression where cross-repo dispatches
+  (supervisor in repo A, agent `cd`'s into repo B) wrote their
+  terminal row only to the global fallback, never to repo A.
+
 ### Added
 
 - `harnex doctor --sweep` reports read-only harnex/tmux session drift,

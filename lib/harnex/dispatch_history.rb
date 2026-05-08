@@ -1,5 +1,6 @@
 require "fileutils"
 require "json"
+require "open3"
 require "time"
 
 module Harnex
@@ -25,6 +26,9 @@ module Harnex
       path = File.expand_path(start_path.to_s.empty? ? Dir.pwd : start_path)
       path = File.dirname(path) unless File.directory?(path)
 
+      git_root = git_toplevel(path)
+      return git_root if git_root
+
       (MAX_REPO_WALK_LEVELS + 1).times do
         return path if File.directory?(File.join(path, ".git"))
 
@@ -34,6 +38,16 @@ module Harnex
         path = parent
       end
 
+      nil
+    end
+
+    def git_toplevel(path)
+      output, status = Open3.capture2("git", "-C", path, "rev-parse", "--show-toplevel", err: File::NULL)
+      root = output.to_s.strip
+      return root if status.success? && !root.empty?
+
+      nil
+    rescue StandardError
       nil
     end
 
