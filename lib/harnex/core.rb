@@ -85,10 +85,10 @@ module Harnex
   end
 
   def default_summary_out_path(repo_root)
-    koder_dir = File.join(repo_root.to_s, "koder")
-    return nil unless File.directory?(koder_dir)
+    root = repo_root.to_s
+    return nil if root.empty?
 
-    File.join(koder_dir, "DISPATCH.jsonl")
+    File.join(root, ".harnex", "dispatch.jsonl")
   end
 
   def git_capture_start(repo_root)

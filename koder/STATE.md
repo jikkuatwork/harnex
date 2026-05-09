@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-08 | 05:55 PM | IST
+Updated: 2026-05-09 | 09:25 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-09 | 09:25 PM | IST: #39 landed.
+  `Harnex.default_summary_out_path` now defaults every non-empty repo
+  root to `<repo>/.harnex/dispatch.jsonl`, independent of legacy
+  `koder/` presence. Regression tests cover no-`koder`, legacy
+  `koder`, nil/empty roots, and `harnex run` resolution; smoke
+  verified no `koder/DISPATCH.jsonl` is created.
 - 2026-05-08 | 07:12 PM | IST: F24 / #38 landed. `harnex run`
   now rejects unknown long flags before spawning an agent, points the
   operator at `harnex run --help`, and still forwards everything past
@@ -63,8 +69,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree is expected clean on `main` after the #38 commit. CHANGELOG
-  `[Unreleased]` carries #37 and #38; no release has been cut.
+- Tree is expected clean on `main` after the #39 commit. CHANGELOG
+  `[Unreleased]` carries #37, #38, and #39; no release has been cut.
+- Local unskipped `bundle exec rake test` currently fails only
+  `SchemaFreshnessTest` because the installed Codex app-server schemas
+  drifted from fixtures; `HARNEX_SKIP_SCHEMA_DRIFT=1 bundle exec rake
+  test` is green.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
   remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,
@@ -74,18 +84,20 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. Release/verify the F21 + #37 changes with the next gem cut when
-   release is explicitly requested.
-2. #35 deferred `auto_disconnects` — needs a dedicated counter
+1. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
+   cut when release is explicitly requested.
+2. Refresh or triage the Codex app-server schema fixture drift tracked
+   by `SchemaFreshnessTest` before requiring an unskipped local suite.
+3. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-3. Optional #36 follow-ups (deferred — not required for closure):
+4. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-4. File the concurrency / hardening audit and the doc-staleness
+5. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-5. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+6. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
    capture if/when richer git context is wanted.
 
 When ending a session, update only this handoff summary and next step.

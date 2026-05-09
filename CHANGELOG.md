@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- `harnex run` now defaults dispatch summaries to
+  `<repo>/.harnex/dispatch.jsonl` for every resolved repo, regardless
+  of whether a legacy `koder/` directory exists. Closes harnex issue
+  #39.
 - `harnex run` with `--auto-stop` now exits within a bounded grace
   (default 5s, override via `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`)
   after `task_complete`. Closes a leak where the wrapping Ruby parent

@@ -217,20 +217,20 @@ class RunnerTest < Minitest::Test
     assert_equal "tmp/dispatch.jsonl", opts[:summary_out]
   end
 
-  def test_resolve_summary_out_defaults_when_koder_dir_exists
+  def test_resolve_summary_out_defaults_to_dot_harnex_when_koder_dir_exists
     Dir.mktmpdir("harnex-summary-repo") do |repo|
       FileUtils.mkdir_p(File.join(repo, "koder"))
       runner = Harnex::Runner.new(["codex"])
 
-      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), runner.send(:resolve_summary_out, repo)
+      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
     end
   end
 
-  def test_resolve_summary_out_returns_nil_without_koder_dir
+  def test_resolve_summary_out_defaults_to_dot_harnex_without_koder_dir
     Dir.mktmpdir("harnex-summary-repo") do |repo|
       runner = Harnex::Runner.new(["codex"])
 
-      assert_nil runner.send(:resolve_summary_out, repo)
+      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
     end
   end
 
