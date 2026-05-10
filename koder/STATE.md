@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-10 | 09:26 PM | IST
+Updated: 2026-05-10 | 10:14 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,16 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-10 | 10:14 PM | IST: plan 30 Phase 1 verified.
+  Empirical Q1 confirmed against codex-cli 0.130.0 — fresh subprocess
+  can `thread/resume` a `threadId` produced by a torn-down subprocess
+  and complete a follow-up turn. New integration test
+  `test/integration/codex_resume_across_subprocess_test.rb`
+  (skipped unless `HARNEX_RUN_CODEX_INTEGRATION=1` + codex on PATH);
+  ~11s wallclock. Same-config / same-deployment only — cross-deployment
+  smoke deferred to a Phase 5 pre-merge check. Decision 2 (single-row
+  + per-arm split) stands; Phase 2 unblocked. Result paragraph added
+  to `koder/plans/30_deployment_fallback.md`.
 - 2026-05-10 | 09:26 PM | IST: #40 filed and plan 30 drafted.
   External project filed the issue under a colliding number (31) — renamed
   to #40, fixed heading, committed (`b52b731`). Telemetry section
@@ -93,11 +103,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #40 Phase 1 — empirical Q1 verification (cross-subprocess
-   `thread/resume` works) before any production code lands. See
-   `koder/plans/30_deployment_fallback.md`. If verification fails,
-   the locked telemetry shape (single-row + per-arm split) needs to
-   be revisited.
+1. #40 Phase 2 — subprocess-restart machinery in
+   `lib/harnex/adapters/codex_appserver.rb`:
+   `Client#stop_for_fallback`, `Client.spawn_with_fallback`,
+   `CodexAppserver#switch_deployment`. Tests in
+   `test/harnex/adapters/codex_appserver_fallback_test.rb`. See
+   `koder/plans/30_deployment_fallback.md`.
 2. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
    cut when release is explicitly requested.
 3. Refresh or triage the Codex app-server schema fixture drift tracked
@@ -113,6 +124,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
    audit findings from `koder/releases/0.6.5.md` as new issues.
 7. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
    capture if/when richer git context is wanted.
+8. Cross-deployment smoke for plan 30 — repeat the resume test with
+   subprocess B configured for an alternate Azure deployment before
+   Phase 5 merge.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

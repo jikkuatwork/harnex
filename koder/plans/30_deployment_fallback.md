@@ -82,6 +82,18 @@ recording the result.
 If verification fails: pause Phase 2 and revisit Decision 2
 (may need to fall back to the two-row shape).
 
+### Result — 2026-05-10 (verified against codex-cli 0.130.0)
+
+Q1 confirmed empirically. `test/integration/codex_resume_across_subprocess_test.rb`
+spawns codex `app-server` subprocess A, runs a complete turn, captures
+the `threadId`, fully tears down A (close + TERM/KILL), then spawns a
+fresh subprocess B and calls `thread/resume(threadId)` followed by a
+new `turn/start`. Subprocess B reaches `turn/completed` and preserves
+the original `threadId`. Run wallclock ~11s. Same-config /
+same-deployment only — the cross-deployment leg remains a Phase 5
+follow-up smoke test before merging the user-facing flags. Decision 2
+(single-row + per-arm split) stands; Phase 2 is unblocked.
+
 ## Phase 2 — Subprocess restart machinery
 
 Extend the codex_appserver adapter's inner `Client` so it can be
