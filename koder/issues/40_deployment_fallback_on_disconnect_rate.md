@@ -122,10 +122,31 @@ Default: off (explicit opt-in via flag). When the threshold trips:
 4. **Trigger granularity.** Per-dispatch (decide once on first burst, no
    re-evaluation) vs sliding-window (re-evaluate every minute, can
    fall back partway). Single-shot is simpler; sliding is more responsive.
-5. **Telemetry shape.** New fields proposed for `dispatch.jsonl`:
+5. **Telemetry shape.** Trigger-event fields (always needed):
    `fallback_triggered: bool`, `fallback_to: string`,
-   `fallback_at_disc_count: int`, `fallback_at_wallclock_s: number`. Plan
-   should confirm against existing schema.
+   `fallback_at_disc_count: int`, `fallback_at_wallclock_s: number`.
+
+   Beyond the trigger event, the row must capture enough to answer
+   *"was switching the right call?"* — i.e. compare the cost shape on
+   each side of the switch. Two viable shapes; choice depends on Q1:
+
+   - **Single-row + per-arm split** (if codex resume carries across
+     deployments — one logical session): add `pre_fallback_*` /
+     `post_fallback_*` splits for the counters that drive the
+     trade-off — `disconnections`, `duration_s`, `cached_tokens`,
+     `input_tokens`, `output_tokens`. Existing aggregate fields stay
+     as the row-level total.
+   - **Two linked rows** (if resume is same-deployment-only —
+     fallback is a fresh dispatch): original row exits with new enum
+     `exit: "fallback_triggered"`; child row carries
+     `parent_dispatch_id` pointing at the original and gets normal
+     counters against the new deployment. Reuses existing
+     `parent_dispatch_id` infra (#35 Tier 2). No per-arm split fields
+     needed — analysis joins by `parent_dispatch_id`.
+
+   Both shapes are additive: rows without fallback are unchanged.
+   Rate-over-time reconstruction (for tuning the threshold) comes from
+   `events_log_path`, not new schema.
 6. **Multi-fallback chains.** `gpt-5.5 → gpt-5.5-dz → gpt-5.4-mini`?
    Probably out of scope for v1; plan should explicitly note v1 = single
    alternate.
@@ -134,7 +155,10 @@ Default: off (explicit opt-in via flag). When the threshold trips:
 
 - New CLI flags: `--fallback-model <name>` and
   `--fallback-disc-threshold <N>/<window>s` (or equivalent in `--meta`).
-- New `dispatch.jsonl` fields populated on fallback events.
+- `dispatch.jsonl` populated per chosen shape in Q5: trigger-event
+  fields always, plus either per-arm splits (single-row shape) or a
+  child row with `parent_dispatch_id` (two-row shape). Cost shape on
+  each side of the switch must be reconstructable from the row(s).
 - Existing dispatches without the new flags behave unchanged.
 - New tests cover: threshold trip → fallback fired, threshold not tripped
   → no fallback, fallback session telemetry recorded correctly.
@@ -169,3 +193,12 @@ Default: off (explicit opt-in via flag). When the threshold trips:
   feature may sit unused in production. Worth shipping anyway: the
   failure mode it addresses is a structural property of GlobalStandard
   SKU, not specific to one workload.
+- **Ship-to-measure.** Q2 (cache-locality vs reconnect cost) and Q3
+  (single-shot vs sliding-window trigger) cannot be answered from
+  desk-bound reasoning — both depend on the actual cost shape under
+  real pool stress. Default-off + opt-in design means production
+  becomes the testbed: opt-in dispatches generate the per-arm
+  comparison data needed to tune the threshold and (later) the
+  trigger granularity. Q1 (resume across deployments) is the one
+  fact-finding question the plan should answer *before* picking the
+  telemetry shape.
