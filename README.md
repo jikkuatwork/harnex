@@ -77,6 +77,7 @@ job, watch it work, stop it when done.
 |-------|---------|
 | Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
 | OpenAI Codex | JSON-RPC `codex app-server` adapter by default; `--legacy-pty` remains supported for TUI/interactive PTY use |
+| OpenCode | PTY adapter with native Ctrl+C stop handling and OpenCode-specific prompt/readiness heuristics |
 | Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
 
 `harnex run codex` uses JSON-RPC by default. That path provides

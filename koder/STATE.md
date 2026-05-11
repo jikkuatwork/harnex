@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-11 | 03:42 PM | IST
+Updated: 2026-05-11 | 11:49 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,18 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-11 | 11:39 PM | IST: OpenCode landed as a first-class PTY
+  adapter (`Harnex::Adapters::Opencode`). `harnex run opencode` now
+  resolves to a dedicated adapter (not generic), with OpenCode-specific
+  `infer_repo_path` handling (`--dir`/`--dir=...` + positional project
+  path), double-`Ctrl+C` stop injection, and transcript-tail session id
+  extraction from `Continue opencode -s ...`. Added tests in
+  `test/harnex/adapters/opencode_test.rb`, updated generic-adapter tests
+  to keep unknown-CLI coverage on `aider`, and wired adapter registry in
+  `lib/harnex/adapters.rb`. Docs/changelog updated (README/TECHNICAL/
+  CHANGELOG). Validation: full suite green under
+  `HARNEX_SKIP_SCHEMA_DRIFT=1` (449 runs, 1463 assertions, 0 failures,
+  3 skips).
 - 2026-05-11 | 03:42 PM | IST: #41 Slice B landed.
   Subprocess-restart machinery for deployment fallback (plan 30
   Phase 2) added inside the new `Harnex::Codex::AppServer` module.
@@ -123,11 +135,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree clean on `main` after the #41 Slice B commit. CHANGELOG
-  `[Unreleased]` carries #37, #38, and #39; #40 and #41 (Slices
-  A+B) are plan/refactor-only (no consumer-visible change yet —
-  switch_deployment is a primitive, not surfaced behind any CLI
-  flag) so not in CHANGELOG. No release has been cut.
+- Tree clean on `main` after the OpenCode adapter close-session commit;
+  `.harnex/dispatch.jsonl` includes runtime validation rows from the
+  OpenCode smoke runs.
+- CHANGELOG `[Unreleased]` now also carries first-class OpenCode
+  adapter support. #40 and #41 (Slices A+B) remain plan/refactor-only
+  (no consumer-visible flag yet). No release has been cut.
 - Local unskipped `bundle exec rake test` currently fails only
   `SchemaFreshnessTest` because the installed Codex app-server schemas
   drifted from fixtures; `HARNEX_SKIP_SCHEMA_DRIFT=1 bundle exec rake
@@ -162,7 +175,7 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
    `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
    exit codes. Everything else marked internal. Buys refactor
    headroom without a 1.0 commitment. Independent of Slice B.
-5. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
+5. Release/verify the F21 + #37 + #38 + #39 + OpenCode adapter changes with the next gem
    cut when release is explicitly requested.
 6. Refresh or triage the Codex app-server schema fixture drift tracked
    by `SchemaFreshnessTest` before requiring an unskipped local suite.

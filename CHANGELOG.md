@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- First-class `opencode` PTY adapter. `harnex run opencode` now uses
+  `Harnex::Adapters::Opencode` instead of the generic fallback, with
+  an OpenCode-specific stop sequence (double Ctrl+C), repo path
+  inference (`--dir` or positional project path), and session-id
+  extraction from transcript tails (`Continue opencode -s ...`).
+
 ### Changed
 
 - `harnex run` now rejects unknown long flags before spawning the

@@ -257,6 +257,7 @@ Schema details and compatibility guarantees are in [docs/events.md](docs/events.
    ├── base.rb     adapter interface
    ├── generic.rb  fallback adapter for any CLI
    ├── codex.rb    codex-specific behavior
+   ├── opencode.rb opencode-specific behavior
    └── claude.rb   claude-specific behavior
 ```
 
@@ -374,6 +375,17 @@ The adapter reads the screen and returns a state hash:
 - Detects prompt via `--INSERT--` marker or `›` prefix
 - Multi-step submit: types text, then sends Enter after a
   short delay so pasted prompts are actually submitted
+
+### OpenCode Adapter
+
+- Uses optimistic PTY prompt detection to avoid inbox deadlock
+  when OpenCode's alternate-screen TUI omits stable plain-text
+  prompt markers in snapshots.
+- Stop sequence sends a double Ctrl+C to match OpenCode's native
+  terminal shutdown path (interrupt first, force-quit second if
+  needed).
+- Multi-step submit mirrors Claude/Codex PTY behavior: text first,
+  then Enter with a short delay.
 
 ## State Machine
 
