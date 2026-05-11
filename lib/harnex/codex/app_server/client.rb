@@ -116,6 +116,104 @@ module Harnex
           wait_for_process_exit(@pid, kill_grace_seconds)
         end
 
+        # Plan 30 Phase 2 — deployment-fallback subprocess restart.
+        #
+        # Spawns a `codex app-server` subprocess against a deployment_config
+        # and wraps it in a fresh Client. Caller is responsible for wiring
+        # handlers and running the JSON-RPC handshake — or use
+        # `spawn_with_fallback` for the full restart-with-resume flow.
+        def self.spawn(deployment_config:)
+          command = deployment_config[:command] || deployment_config["command"]
+          raise ArgumentError, "deployment_config requires :command" if command.nil? || Array(command).empty?
+
+          env = deployment_config[:env] || deployment_config["env"] || {}
+          cwd = deployment_config[:cwd] || deployment_config["cwd"]
+
+          opts = {}
+          opts[:chdir] = cwd if cwd
+
+          stdin_io, stdout_io, _stderr_io, wait_thr = Open3.popen3(env, *Array(command), **opts)
+          new(read_io: stdout_io, write_io: stdin_io, pid: wait_thr.pid)
+        end
+
+        # Plan 30 Phase 2 — full subprocess restart for deployment fallback.
+        #
+        # Spawns a new subprocess against the alternate deployment, wires
+        # the supplied handlers, runs the initialize handshake, and resumes
+        # the prior threadId. Returns the started Client.
+        #
+        # Handlers are installed *before* the reader thread starts so no
+        # post-handshake notification is dropped.
+        def self.spawn_with_fallback(prior_thread_id:, deployment_config:, handshake_params:,
+                                      notification_handler: nil, request_handler: nil,
+                                      disconnect_handler: nil)
+          raise ArgumentError, "prior_thread_id required" if prior_thread_id.nil? || prior_thread_id.to_s.empty?
+
+          client = spawn(deployment_config: deployment_config)
+          client.on_notification(&notification_handler) if notification_handler
+          client.on_request(&request_handler) if request_handler
+          client.on_disconnect(&disconnect_handler) if disconnect_handler
+          client.start
+
+          begin
+            client.request("initialize", handshake_params)
+            client.notify("initialized", {})
+            client.request("thread/resume", { threadId: prior_thread_id })
+          rescue StandardError
+            client.close
+            raise
+          end
+
+          client
+        end
+
+        # Plan 30 Phase 2 — graceful stop ahead of a deployment switch.
+        #
+        # Best-effort: issues `turn/interrupt` for any in-flight turn
+        # (bounded by interrupt_grace_seconds), drains pending RPC, and
+        # tears the subprocess down with the same TERM/KILL escalation
+        # used by `terminate_process`.
+        def stop_for_fallback(in_flight_turn: nil,
+                              term_grace_seconds: 0.5,
+                              kill_grace_seconds: 1.0,
+                              interrupt_grace_seconds: 0.5)
+          if in_flight_turn && !@closed
+            interrupt_thread = Thread.new do
+              begin
+                request("turn/interrupt", in_flight_turn)
+              rescue StandardError
+                nil
+              end
+            end
+            interrupt_thread.kill unless interrupt_thread.join(interrupt_grace_seconds)
+          end
+
+          return true if @closed
+
+          @closed = true
+
+          fail_pending_requests(StandardError.new("codex_appserver client closed for fallback"))
+
+          begin
+            @write_io.close unless @write_io.closed?
+          rescue IOError
+            nil
+          end
+
+          terminated =
+            if @pid
+              terminate_process(
+                term_grace_seconds: term_grace_seconds,
+                kill_grace_seconds: kill_grace_seconds
+              )
+            else
+              true
+            end
+
+          @reader_thread&.join(2)
+          terminated
+        end
+
         private
 
         def write_line(message)

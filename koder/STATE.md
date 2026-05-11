@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-11 | 01:48 PM | IST
+Updated: 2026-05-11 | 03:42 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,29 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-11 | 03:42 PM | IST: #41 Slice B landed.
+  Subprocess-restart machinery for deployment fallback (plan 30
+  Phase 2) added inside the new `Harnex::Codex::AppServer` module.
+  New on `Client`: class methods `spawn(deployment_config:)` and
+  `spawn_with_fallback(prior_thread_id:, deployment_config:,
+  handshake_params:, …handlers)`; instance method
+  `stop_for_fallback(in_flight_turn:, …grace seconds)` that issues
+  a bounded `turn/interrupt`, drains pending RPC, and reuses
+  `terminate_process` for TERM/KILL escalation. Adapter gains a
+  thin `CodexAppServer#switch_deployment(deployment_config:)` and
+  extracts `handshake_initialize_params` so the initial and
+  post-fallback handshakes share the same payload. Tests under
+  `test/harnex/codex/app_server/` (10 new runs; client_test +
+  switch_deployment_test) cover pending-RPC drain, turn/interrupt
+  wire-up, real-subprocess TERM/KILL teardown, idempotency,
+  threadId stability across the switch, no-orphan PIDs, and
+  failure-mode guards (no client / no thread). Suite green: 432
+  runs, 1430 assertions, 0 failures, 3 skips under
+  `HARNEX_SKIP_SCHEMA_DRIFT=1`. Out of scope for Slice B (deferred
+  to plan 30 Phases 3–5): trigger detection, Session-level counter
+  snapshots / per-arm telemetry split, `fallback_triggered`
+  events-log emission, CLI flags. Issue #41 — Slice C
+  (public-API surface doc) remains.
 - 2026-05-11 | 01:48 PM | IST: #41 Slice A landed.
   `JsonRpcClient` extracted from
   `lib/harnex/adapters/codex_appserver.rb` to a new file
@@ -100,10 +123,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree clean on `main` after the #41 Slice A commits. CHANGELOG
-  `[Unreleased]` carries #37, #38, and #39; #40 and #41 are
-  plan/refactor-only (no consumer-visible change) so not in
-  CHANGELOG yet. No release has been cut.
+- Tree clean on `main` after the #41 Slice B commit. CHANGELOG
+  `[Unreleased]` carries #37, #38, and #39; #40 and #41 (Slices
+  A+B) are plan/refactor-only (no consumer-visible change yet —
+  switch_deployment is a primitive, not surfaced behind any CLI
+  flag) so not in CHANGELOG. No release has been cut.
 - Local unskipped `bundle exec rake test` currently fails only
   `SchemaFreshnessTest` because the installed Codex app-server schemas
   drifted from fixtures; `HARNEX_SKIP_SCHEMA_DRIFT=1 bundle exec rake
@@ -117,38 +141,45 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #41 Slice B (= plan 30 Phase 2) — subprocess-restart machinery
-   inside the new `Harnex::Codex::AppServer` module:
-   `Client#stop_for_fallback`, `Client.spawn_with_fallback`,
-   `Adapters::CodexAppServer#switch_deployment`. Tests under
-   `test/harnex/codex/app_server/`. See
-   `koder/issues/41_codex_app_server_extraction.md` and
-   `koder/plans/30_deployment_fallback.md`.
-2. #41 Slice C — public API surface doc at `docs/public_api.md`:
+1. Plan 30 Phase 3 — disconnect-rate threshold detection. New
+   `Harnex::Runtime::FallbackTrigger` module (flag parser +
+   `should_trigger?`); extend `EventCounters` with
+   `record_disconnection_at` + `disconnect_rate_in_window`. Tests
+   under `test/harnex/runtime/fallback_trigger_test.rb`. The
+   subprocess-restart primitive (`switch_deployment`) is already
+   in place from Slice B; Phase 3 wires up the *when* signal.
+2. Plan 30 Phase 4 — per-arm telemetry split + Session signaling
+   to reset per-turn counters at fallback time, and the
+   `fallback_triggered` events-log emission that plan 30 Phase 2
+   originally listed but Slice B deferred. Schema additions to
+   `actual.*` (pre/post splits) and `test/dispatch_row_schema_test.rb`.
+3. Plan 30 Phase 5 — `harnex run --fallback-model` and
+   `--fallback-disc-threshold` CLI flags, docs, integration test.
+4. #41 Slice C — public API surface doc at `docs/public_api.md`:
    stable CLI commands, env vars (`HARNEX_ID`,
    `HARNEX_SESSION_CLI`, `HARNEX_SPAWNER_PANE`,
    `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`,
    `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
    exit codes. Everything else marked internal. Buys refactor
    headroom without a 1.0 commitment. Independent of Slice B.
-3. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
+5. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
    cut when release is explicitly requested.
-4. Refresh or triage the Codex app-server schema fixture drift tracked
+6. Refresh or triage the Codex app-server schema fixture drift tracked
    by `SchemaFreshnessTest` before requiring an unskipped local suite.
-5. #35 deferred `auto_disconnects` — needs a dedicated counter
+7. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-6. Optional #36 follow-ups (deferred — not required for closure):
+8. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-7. File the concurrency / hardening audit and the doc-staleness
+9. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-8. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
-   capture if/when richer git context is wanted.
-9. Cross-deployment smoke for plan 30 — repeat the resume test with
-   subprocess B configured for an alternate Azure deployment before
-   Phase 5 merge.
+10. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+    capture if/when richer git context is wanted.
+11. Cross-deployment smoke for plan 30 — repeat the resume test with
+    subprocess B configured for an alternate Azure deployment before
+    Phase 5 merge.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

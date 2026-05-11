@@ -194,6 +194,48 @@ module Harnex
         result
       end
 
+      # Plan 30 Phase 2 — subprocess-restart primitive for deployment
+      # fallback. Stops the current JSON-RPC subprocess, spawns a new one
+      # against the supplied deployment_config, and resumes the same
+      # threadId so conversation state carries across. Thin orchestrator:
+      # counter snapshots, the `fallback_triggered` event, and any
+      # Session-level signaling land in plan 30 Phases 3–4 alongside the
+      # per-arm telemetry split. CLI flags land in Phase 5.
+      #
+      # deployment_config: { command: [...argv], env: {...}, cwd: nil }
+      def switch_deployment(deployment_config:,
+                            term_grace_seconds: STOP_TERM_GRACE_SECONDS,
+                            kill_grace_seconds: STOP_KILL_GRACE_SECONDS)
+        raise "codex_appserver: client not started" unless @client
+        raise "codex_appserver: no thread to resume" if @thread_id.nil? || @thread_id.to_s.empty?
+
+        prior_thread_id = @thread_id
+        in_flight =
+          if @current_turn_id
+            { threadId: prior_thread_id, turnId: @current_turn_id }
+          end
+
+        @client.stop_for_fallback(
+          in_flight_turn: in_flight,
+          term_grace_seconds: term_grace_seconds,
+          kill_grace_seconds: kill_grace_seconds
+        )
+
+        @client = Harnex::Codex::AppServer::Client.spawn_with_fallback(
+          prior_thread_id: prior_thread_id,
+          deployment_config: deployment_config,
+          handshake_params: handshake_initialize_params,
+          notification_handler: ->(msg) { handle_notification(msg) },
+          request_handler: ->(method, params) { handle_server_request(method, params) },
+          disconnect_handler: ->(err) { handle_disconnect(err) }
+        )
+
+        @thread_id = prior_thread_id
+        @current_turn_id = nil
+        @state = :prompt
+        self
+      end
+
       def close
         return unless @client
 
@@ -264,7 +306,12 @@ module Harnex
       end
 
       def perform_handshake
-        @client.request("initialize", {
+        @client.request("initialize", handshake_initialize_params)
+        @client.notify("initialized", {})
+      end
+
+      def handshake_initialize_params
+        {
           clientInfo: {
             title: CLIENT_TITLE,
             name: CLIENT_NAME,
@@ -274,8 +321,7 @@ module Harnex
             experimentalApi: false,
             optOutNotificationMethods: OPT_OUT_NOTIFICATIONS
           }
-        })
-        @client.notify("initialized", {})
+        }
       end
 
       def handle_notification(message)
