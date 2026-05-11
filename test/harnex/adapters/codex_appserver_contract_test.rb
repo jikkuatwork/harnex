@@ -6,7 +6,7 @@ require "json"
 # `app-server` adapter.
 #
 # Boots the adapter against an IO.pipe-based fake server, captures
-# every JSON line `JsonRpcClient#write_line` emits, parses each one,
+# every JSON line the app-server client emits, parses each one,
 # and validates `params` (for outgoing client requests) or the result
 # body (for auto-approval responses) against the matching schema
 # fixture in test/fixtures/codex_schema/. Codex CLI fixture pin: 0.128.0.
@@ -29,7 +29,7 @@ class CodexAppServerContractTest < Minitest::Test
   end
 
   def teardown
-    # Close pipes first so the JsonRpcClient reader thread sees EOF
+    # Close pipes first so the app-server client reader thread sees EOF
     # and the adapter's #close doesn't block on its 2s join timeout.
     [@server_in, @client_out, @client_in, @server_out].each do |io|
       io.close unless io.closed?
@@ -332,7 +332,7 @@ class CodexAppServerContractTest < Minitest::Test
 
   # ----- Case 7: auto-approval response bodies -----
   # Server pushes an approval request; harnex's
-  # `JsonRpcClient#handle_server_request` dispatches to
+  # `Harnex::Codex::AppServer::Client#handle_server_request` dispatches to
   # `Adapters::CodexAppServer#handle_server_request`, which returns the
   # response body from APPROVAL_RESPONSES. The client writes it as a
   # JSON-RPC result. We capture and validate.

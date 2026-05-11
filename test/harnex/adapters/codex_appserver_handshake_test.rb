@@ -3,6 +3,7 @@ require "json"
 
 class CodexAppServerHandshakeTest < Minitest::Test
   Adapter = Harnex::Adapters::CodexAppServer
+  Client = Harnex::Codex::AppServer::Client
 
   # Wires two pipes that mimic a child subprocess:
   #   - server_in / client_out: client writes here, "server" reads
@@ -75,7 +76,7 @@ class CodexAppServerHandshakeTest < Minitest::Test
   end
 
   def test_terminate_process_uses_kill_fallback_when_term_does_not_exit
-    client = Adapter::JsonRpcClient.new(read_io: @client_in, write_io: @client_out, pid: 4242)
+    client = Client.new(read_io: @client_in, write_io: @client_out, pid: 4242)
     waits = []
     calls = []
 
@@ -93,7 +94,7 @@ class CodexAppServerHandshakeTest < Minitest::Test
   end
 
   def test_terminate_process_treats_missing_pid_as_already_stopped
-    client = Adapter::JsonRpcClient.new(read_io: @client_in, write_io: @client_out, pid: 4242)
+    client = Client.new(read_io: @client_in, write_io: @client_out, pid: 4242)
     calls = []
 
     Process.stub(:kill, ->(signal, pid) { calls << [signal, pid]; raise Errno::ESRCH }) do
