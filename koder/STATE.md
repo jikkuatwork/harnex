@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-10 | 10:14 PM | IST
+Updated: 2026-05-11 | 01:48 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,19 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-11 | 01:48 PM | IST: #41 Slice A landed.
+  `JsonRpcClient` extracted from
+  `lib/harnex/adapters/codex_appserver.rb` to a new file
+  `lib/harnex/codex/app_server/client.rb` as
+  `Harnex::Codex::AppServer::Client`. Pure refactor, zero behavior
+  change; suite green (422 runs, 0 failures) under
+  `HARNEX_SKIP_SCHEMA_DRIFT=1`. Sets up the namespace home for
+  plan 30 Phase 2 and future codex-specific resilience without
+  bloating the adapter. Done via harnex peer dispatch (`cx-i-41`).
+  Commits: `a8a71f9` (issue #41), `3a9f0bf` (refactor),
+  `989a08c` (dispatch telemetry). Issue #41 frames the broader
+  extraction; remaining slices are Slice B (plan 30 Phase 2 in the
+  new module) and Slice C (public API surface doc).
 - 2026-05-10 | 10:14 PM | IST: plan 30 Phase 1 verified.
   Empirical Q1 confirmed against codex-cli 0.130.0 — fresh subprocess
   can `thread/resume` a `threadId` produced by a torn-down subprocess
@@ -87,9 +100,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree clean on `main` after the #40 + plan 30 commits. CHANGELOG
-  `[Unreleased]` carries #37, #38, and #39; #40 is plan-only (no
-  code change) so not in CHANGELOG yet. No release has been cut.
+- Tree clean on `main` after the #41 Slice A commits. CHANGELOG
+  `[Unreleased]` carries #37, #38, and #39; #40 and #41 are
+  plan/refactor-only (no consumer-visible change) so not in
+  CHANGELOG yet. No release has been cut.
 - Local unskipped `bundle exec rake test` currently fails only
   `SchemaFreshnessTest` because the installed Codex app-server schemas
   drifted from fixtures; `HARNEX_SKIP_SCHEMA_DRIFT=1 bundle exec rake
@@ -103,28 +117,36 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #40 Phase 2 — subprocess-restart machinery in
-   `lib/harnex/adapters/codex_appserver.rb`:
+1. #41 Slice B (= plan 30 Phase 2) — subprocess-restart machinery
+   inside the new `Harnex::Codex::AppServer` module:
    `Client#stop_for_fallback`, `Client.spawn_with_fallback`,
-   `CodexAppserver#switch_deployment`. Tests in
-   `test/harnex/adapters/codex_appserver_fallback_test.rb`. See
+   `Adapters::CodexAppServer#switch_deployment`. Tests under
+   `test/harnex/codex/app_server/`. See
+   `koder/issues/41_codex_app_server_extraction.md` and
    `koder/plans/30_deployment_fallback.md`.
-2. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
+2. #41 Slice C — public API surface doc at `docs/public_api.md`:
+   stable CLI commands, env vars (`HARNEX_ID`,
+   `HARNEX_SESSION_CLI`, `HARNEX_SPAWNER_PANE`,
+   `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`,
+   `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
+   exit codes. Everything else marked internal. Buys refactor
+   headroom without a 1.0 commitment. Independent of Slice B.
+3. Release/verify the F21 + #37 + #38 + #39 changes with the next gem
    cut when release is explicitly requested.
-3. Refresh or triage the Codex app-server schema fixture drift tracked
+4. Refresh or triage the Codex app-server schema fixture drift tracked
    by `SchemaFreshnessTest` before requiring an unskipped local suite.
-4. #35 deferred `auto_disconnects` — needs a dedicated counter
+5. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-5. Optional #36 follow-ups (deferred — not required for closure):
+6. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-6. File the concurrency / hardening audit and the doc-staleness
+7. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-7. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+8. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
    capture if/when richer git context is wanted.
-8. Cross-deployment smoke for plan 30 — repeat the resume test with
+9. Cross-deployment smoke for plan 30 — repeat the resume test with
    subprocess B configured for an alternate Azure deployment before
    Phase 5 merge.
 
