@@ -86,6 +86,8 @@ Codex flag forms differ between transports. The default JSON-RPC adapter
 `-c model="<name>"` instead. The legacy PTY adapter (`harnex run codex
 --legacy-pty`) still accepts `-m`. Harnex rejects `-m` early on JSON-RPC
 with an actionable error rather than letting the subprocess boot-disconnect.
+Codex app-server runs also default to `service_tier="flex"`; add
+`--fast` to use `service_tier="fast"`.
 
 ## Send
 

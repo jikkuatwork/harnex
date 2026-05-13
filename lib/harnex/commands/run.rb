@@ -8,7 +8,7 @@ module Harnex
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --timeout --inbox-ttl --auto-stop --legacy-pty --help
+      --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
@@ -33,6 +33,8 @@ module Harnex
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
           --auto-stop        Stop after the first task completion from --context
+          --fast             (codex only) Use Codex service_tier="fast".
+                             Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
           --summary-out PATH Append dispatch telemetry summary JSONL to PATH
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
@@ -92,6 +94,7 @@ module Harnex
         tmux_name: nil,
         timeout: DEFAULT_TIMEOUT,
         inbox_ttl: default_inbox_ttl,
+        fast: false,
         legacy_pty: false,
         help: false
       }
@@ -111,7 +114,7 @@ module Harnex
       @options[:summary_out] = resolve_summary_out(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
-      effective_child_args = apply_context(child_args)
+      effective_child_args = apply_context(apply_codex_service_tier(cli_name, child_args))
       adapter = Harnex.build_adapter(cli_name, effective_child_args, legacy_pty: @options[:legacy_pty])
       @options[:detach] = true if @options[:tmux]
       validate_watch_mode!
@@ -171,6 +174,7 @@ module Harnex
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
+      tmux_cmd << "--fast" if @options[:fast]
       tmux_cmd += ["--legacy-pty"] if @options[:legacy_pty]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
@@ -425,6 +429,8 @@ module Harnex
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
         when "--auto-stop"
           @options[:auto_stop] = true
+        when "--fast"
+          @options[:fast] = true
         when "--meta"
           index += 1
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
@@ -497,7 +503,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--legacy-pty"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--fast", "--legacy-pty"
           nil
         when /\A--tmux=/
           nil
@@ -549,6 +555,25 @@ module Harnex
       return if @options[:context]
 
       raise OptionParser::InvalidOption, "harnex run: --auto-stop requires --context"
+    end
+
+    def apply_codex_service_tier(cli_name, child_args)
+      return child_args unless cli_name.to_s == "codex"
+      return child_args if child_service_tier_config?(child_args)
+
+      child_args + ["-c", "service_tier=\"#{@options[:fast] ? 'fast' : 'flex'}\""]
+    end
+
+    def child_service_tier_config?(child_args)
+      child_args.each_with_index.any? do |arg, index|
+        text = arg.to_s
+        text.start_with?("service_tier=") ||
+          text.start_with?("service_tier.") ||
+          text == "-c" && child_args[index + 1].to_s.start_with?("service_tier") ||
+          text == "--config" && child_args[index + 1].to_s.start_with?("service_tier") ||
+          text.start_with?("-cservice_tier") ||
+          text.start_with?("--config=service_tier")
+      end
     end
 
     def parse_non_negative_integer(value, option_name:)

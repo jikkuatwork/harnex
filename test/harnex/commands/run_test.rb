@@ -54,6 +54,63 @@ class RunnerTest < Minitest::Test
     assert opts[:auto_stop]
   end
 
+  def test_extract_wrapper_options_parses_fast
+    runner = Harnex::Runner.new(["codex", "--fast"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--fast"])
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert opts[:fast]
+  end
+
+  def test_codex_service_tier_defaults_to_flex
+    runner = Harnex::Runner.new(["codex"])
+    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex"])
+
+    assert_equal ["-c", "service_tier=\"flex\""],
+      runner.send(:apply_codex_service_tier, cli_name, child_args)
+  end
+
+  def test_codex_fast_sets_fast_service_tier
+    runner = Harnex::Runner.new(["codex", "--fast"])
+    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--fast"])
+
+    assert_equal ["-c", "service_tier=\"fast\""],
+      runner.send(:apply_codex_service_tier, cli_name, child_args)
+  end
+
+  def test_codex_service_tier_respects_explicit_child_config
+    runner = Harnex::Runner.new(["codex", "--", "-c", "service_tier=\"fast\""])
+    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--", "-c", "service_tier=\"fast\""])
+
+    assert_equal ["-c", "service_tier=\"fast\""],
+      runner.send(:apply_codex_service_tier, cli_name, child_args)
+  end
+
+  def test_codex_service_tier_respects_explicit_equals_child_config
+    runner = Harnex::Runner.new(["codex", "--", "--config=service_tier=\"fast\""])
+    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--", "--config=service_tier=\"fast\""])
+
+    assert_equal ["--config=service_tier=\"fast\""],
+      runner.send(:apply_codex_service_tier, cli_name, child_args)
+  end
+
+  def test_cli_defaults_codex_app_server_to_flex_service_tier
+    assert_codex_service_tier_argv([], "flex")
+  end
+
+  def test_cli_fast_uses_fast_service_tier
+    assert_codex_service_tier_argv(["--fast"], "fast")
+  end
+
+  def test_non_codex_does_not_get_service_tier
+    runner = Harnex::Runner.new(["claude"])
+    cli_name, child_args = runner.send(:extract_wrapper_options, ["claude"])
+
+    assert_equal [], runner.send(:apply_codex_service_tier, cli_name, child_args)
+  end
+
   def test_extract_wrapper_options_allows_known_auto_stop_before_separator
     runner = Harnex::Runner.new(["codex", "--auto-stop", "--", "echo", "hi"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--auto-stop", "--", "echo", "hi"])
@@ -122,6 +179,10 @@ class RunnerTest < Minitest::Test
 
   def test_usage_documents_auto_stop
     assert_includes Harnex::Runner.usage, "--auto-stop"
+  end
+
+  def test_usage_documents_fast
+    assert_includes Harnex::Runner.usage, "--fast"
   end
 
   def test_auto_stop_exits_when_jsonrpc_interrupt_never_answers
@@ -509,6 +570,88 @@ class RunnerTest < Minitest::Test
           })
         when "turn/interrupt"
           loop { sleep 1 }
+        end
+      end
+    RUBY
+    File.chmod(0o755, path)
+  end
+
+  def assert_codex_service_tier_argv(wrapper_args, expected_tier)
+    Dir.mktmpdir("harnex-service-tier-run") do |repo|
+      bin_dir = File.join(repo, "bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_service_tier_codex_stub(File.join(bin_dir, "codex"))
+
+      argv_path = File.join(repo, "argv.json")
+      summary_path = File.join(repo, "DISPATCH.jsonl")
+      env = {
+        "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
+        "HARNEX_STUB_ARGV_PATH" => argv_path,
+        "HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS" => "1"
+      }
+
+      _stdout, stderr, status = Open3.capture3(
+        env,
+        Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
+        "run", "codex", *wrapper_args,
+        "--id", "service-tier-#{expected_tier}-#{$$}",
+        "--context", "finish quickly",
+        "--auto-stop",
+        "--summary-out", summary_path,
+        chdir: repo
+      )
+
+      assert status.success?, stderr
+      assert_equal ["app-server", "-c", "service_tier=\"#{expected_tier}\""], JSON.parse(File.read(argv_path))
+    end
+  end
+
+  def write_service_tier_codex_stub(path)
+    File.write(path, <<~'RUBY')
+      #!/usr/bin/env ruby
+      require "json"
+
+      if ARGV == ["--version"]
+        puts "codex 0.128.0"
+        exit 0
+      end
+
+      File.write(ENV.fetch("HARNEX_STUB_ARGV_PATH"), JSON.generate(ARGV))
+      abort "expected app-server" unless ARGV.first == "app-server"
+
+      STDOUT.sync = true
+
+      STDIN.each_line do |line|
+        msg = JSON.parse(line)
+        case msg["method"]
+        when "initialize"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
+        when "initialized"
+          nil
+        when "thread/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-tier" } })
+        when "turn/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-tier" } })
+          puts JSON.generate(jsonrpc: "2.0", method: "turn/started", params: {
+            thread: { id: "thr-tier" },
+            turn: { id: "trn-tier", status: "in_progress" }
+          })
+          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
+            thread: { id: "thr-tier" },
+            turn: { id: "trn-tier", status: "completed" },
+            tokenUsage: {
+              total: {
+                inputTokens: 1,
+                outputTokens: 1,
+                reasoningOutputTokens: 0,
+                cachedInputTokens: 0,
+                totalTokens: 2
+              }
+            }
+          })
+        when "turn/interrupt"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
+          exit 0
         end
       end
     RUBY

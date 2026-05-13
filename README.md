@@ -84,6 +84,8 @@ job, watch it work, stop it when done.
 structured task-completion events, approval mediation, and token usage
 capture. Default JSON-RPC Codex does not accept `-m` / `--model`; pass
 model settings as child CLI config, for example `harnex run codex -- -c model=NAME`.
+Harnex forces Codex app-server `service_tier="flex"` unless you opt into
+`service_tier="fast"` with `harnex run codex --fast`.
 Use `harnex run codex --legacy-pty` when you specifically want Codex's
 terminal UI or legacy PTY flag behavior.
 
