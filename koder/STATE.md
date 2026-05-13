@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-11 | 11:49 PM | IST
+Updated: 2026-05-13 | 01:47 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,14 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-13 | 01:47 PM | IST: `harnex 0.7.3` shipped and was
+  installed locally. Release commit/tag: `9c8e094` / `v0.7.3`.
+  Headline changes: Codex app-server default `service_tier="flex"`
+  with `harnex run codex --fast` for `service_tier="fast"`,
+  first-class OpenCode adapter, #37/#38/#39 run-command fixes, and
+  Codex schema fixtures refreshed against `codex-cli 0.130.0`.
+  Verification record: `koder/releases/0.7.3.md`. Full suite green:
+  458 runs, 1479 assertions, 0 failures, 2 skips.
 - 2026-05-11 | 11:39 PM | IST: OpenCode landed as a first-class PTY
   adapter (`Harnex::Adapters::Opencode`). `harnex run opencode` now
   resolves to a dedicated adapter (not generic), with OpenCode-specific
@@ -135,16 +143,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- Tree clean on `main` after the OpenCode adapter close-session commit;
-  `.harnex/dispatch.jsonl` includes runtime validation rows from the
-  OpenCode smoke runs.
-- CHANGELOG `[Unreleased]` now also carries first-class OpenCode
-  adapter support. #40 and #41 (Slices A+B) remain plan/refactor-only
-  (no consumer-visible flag yet). No release has been cut.
-- Local unskipped `bundle exec rake test` currently fails only
-  `SchemaFreshnessTest` because the installed Codex app-server schemas
-  drifted from fixtures; `HARNEX_SKIP_SCHEMA_DRIFT=1 bundle exec rake
-  test` is green.
+- Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
+- Codex app-server schema freshness is current for local
+  `codex-cli 0.130.0`; the unskipped release suite is green.
+- #40 and #41 (Slices A+B) remain plan/refactor-only for deployment
+  fallback; no consumer-visible fallback flag yet.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
   remains optional.
 - Other open issues to triage when ready: #04, #06, #16, #17,
@@ -175,22 +178,18 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
    `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
    exit codes. Everything else marked internal. Buys refactor
    headroom without a 1.0 commitment. Independent of Slice B.
-5. Release/verify the F21 + #37 + #38 + #39 + OpenCode adapter changes with the next gem
-   cut when release is explicitly requested.
-6. Refresh or triage the Codex app-server schema fixture drift tracked
-   by `SchemaFreshnessTest` before requiring an unskipped local suite.
-7. #35 deferred `auto_disconnects` — needs a dedicated counter
+5. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-8. Optional #36 follow-ups (deferred — not required for closure):
+6. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-9. File the concurrency / hardening audit and the doc-staleness
+7. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-10. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+8. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
     capture if/when richer git context is wanted.
-11. Cross-deployment smoke for plan 30 — repeat the resume test with
+9. Cross-deployment smoke for plan 30 — repeat the resume test with
     subprocess B configured for an alternate Azure deployment before
     Phase 5 merge.
 
