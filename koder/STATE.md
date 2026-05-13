@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-13 | 01:47 PM | IST
+Updated: 2026-05-13 | 02:54 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -145,7 +145,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   first-class for visible TUI and non-JSON-RPC adapters.
 - Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
 - Codex app-server schema freshness is current for local
-  `codex-cli 0.130.0`; the unskipped release suite is green.
+  `codex-cli 0.130.0`; the unskipped release suite was green for
+  the 0.7.3 release.
 - #40 and #41 (Slices A+B) remain plan/refactor-only for deployment
   fallback; no consumer-visible fallback flag yet.
 - #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
@@ -188,10 +189,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 7. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
 8. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
-    capture if/when richer git context is wanted.
+   capture if/when richer git context is wanted.
 9. Cross-deployment smoke for plan 30 — repeat the resume test with
-    subprocess B configured for an alternate Azure deployment before
-    Phase 5 merge.
+   subprocess B configured for an alternate Azure deployment before
+   Phase 5 merge.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in
