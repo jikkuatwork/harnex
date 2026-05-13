@@ -2,8 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-13 | 01:43 PM | IST
+
 ### Added
 
+- `harnex run codex --fast` now opts Codex app-server runs into
+  `service_tier="fast"`. Default Codex runs now inject
+  `service_tier="flex"` unless the child CLI args already supply an
+  explicit `service_tier` config.
 - First-class `opencode` PTY adapter. `harnex run opencode` now uses
   `Harnex::Adapters::Opencode` instead of the generic fallback, with
   an OpenCode-specific stop sequence (double Ctrl+C), repo path
@@ -17,6 +23,13 @@
   Anything past the `--` separator continues to forward unchanged
   to the agent CLI. Closes the trigger that correlated with the F23
   auto-stop teardown leak. Closes harnex issue #38.
+- Codex app-server contract fixtures are refreshed against
+  `codex-cli 0.130.0`; response builders now include the required
+  `thread.sessionId` field.
+- Internal Codex app-server code now has the extracted
+  `Harnex::Codex::AppServer::Client` namespace and the subprocess
+  restart primitive needed by the deployment-fallback plan. No
+  public fallback CLI flag is exposed yet.
 
 ### Fixed
 
