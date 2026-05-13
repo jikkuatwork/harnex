@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-13 | 02:54 PM | IST
+Updated: 2026-05-13 | 11:37 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-13 | 11:37 PM | IST: #42 filed to track durable
+  app-server orchestrator recovery. Decision: skip PTY regex sentry
+  for now and make a harnex-managed Codex app-server orchestrator
+  recover stream errors through structured error classification,
+  subprocess restart, `thread/resume`, bounded recovery prompting, and
+  telemetry. No code changes yet.
 - 2026-05-13 | 01:47 PM | IST: `harnex 0.7.3` shipped and was
   installed locally. Release commit/tag: `9c8e094` / `v0.7.3`.
   Headline changes: Codex app-server default `service_tier="flex"`
@@ -143,6 +149,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
+- #42 is the recommended next-session focus: make app-server Codex
+  durable enough to serve as the real orchestrator, with the visible
+  TUI reduced to initiator/controller duties.
 - Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
 - Codex app-server schema freshness is current for local
   `codex-cli 0.130.0`; the unskipped release suite was green for
@@ -158,39 +167,45 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. Plan 30 Phase 3 — disconnect-rate threshold detection. New
+1. #42 — plan and implement the app-server orchestrator auto-recovery
+   MVP. Start with JSON-RPC error parsing/classification
+   (`params["error"]["message"]`, `codexErrorInfo`, `willRetry`),
+   same-deployment subprocess restart + `thread/resume`, bounded
+   recovery prompting, and `stream_error` / recovery telemetry. Keep
+   PTY regex sentry out of scope.
+2. Plan 30 Phase 3 — disconnect-rate threshold detection. New
    `Harnex::Runtime::FallbackTrigger` module (flag parser +
    `should_trigger?`); extend `EventCounters` with
    `record_disconnection_at` + `disconnect_rate_in_window`. Tests
    under `test/harnex/runtime/fallback_trigger_test.rb`. The
    subprocess-restart primitive (`switch_deployment`) is already
    in place from Slice B; Phase 3 wires up the *when* signal.
-2. Plan 30 Phase 4 — per-arm telemetry split + Session signaling
+3. Plan 30 Phase 4 — per-arm telemetry split + Session signaling
    to reset per-turn counters at fallback time, and the
    `fallback_triggered` events-log emission that plan 30 Phase 2
    originally listed but Slice B deferred. Schema additions to
    `actual.*` (pre/post splits) and `test/dispatch_row_schema_test.rb`.
-3. Plan 30 Phase 5 — `harnex run --fallback-model` and
+4. Plan 30 Phase 5 — `harnex run --fallback-model` and
    `--fallback-disc-threshold` CLI flags, docs, integration test.
-4. #41 Slice C — public API surface doc at `docs/public_api.md`:
+5. #41 Slice C — public API surface doc at `docs/public_api.md`:
    stable CLI commands, env vars (`HARNEX_ID`,
    `HARNEX_SESSION_CLI`, `HARNEX_SPAWNER_PANE`,
    `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`,
    `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
    exit codes. Everything else marked internal. Buys refactor
    headroom without a 1.0 commitment. Independent of Slice B.
-5. #35 deferred `auto_disconnects` — needs a dedicated counter
+6. #35 deferred `auto_disconnects` — needs a dedicated counter
    (likely "auto-resumed disconnects") rather than the current
    alias-of-disconnections shape. Tracked in the issue file.
-6. Optional #36 follow-ups (deferred — not required for closure):
+7. Optional #36 follow-ups (deferred — not required for closure):
    add `wait --until row_emitted` predicate; bump event timestamps
    to `iso8601(3)` so future regressions can be quantified directly
    from the events log.
-7. File the concurrency / hardening audit and the doc-staleness
+8. File the concurrency / hardening audit and the doc-staleness
    audit findings from `koder/releases/0.6.5.md` as new issues.
-8. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
+9. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
    capture if/when richer git context is wanted.
-9. Cross-deployment smoke for plan 30 — repeat the resume test with
+10. Cross-deployment smoke for plan 30 — repeat the resume test with
    subprocess B configured for an alternate Azure deployment before
    Phase 5 merge.
 
