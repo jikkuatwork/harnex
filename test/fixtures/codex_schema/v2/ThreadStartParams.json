@@ -49,10 +49,11 @@
         "null"
       ]
     },
-    "sessionStartSource": {
+    "threadSource": {
+      "description": "Optional client-supplied analytics source classification for this thread.",
       "anyOf": [
         {
-          "$ref": "#/definitions/ThreadStartSource"
+          "$ref": "#/definitions/ThreadSource"
         },
         {
           "type": "null"
@@ -75,12 +76,6 @@
         "null"
       ]
     },
-    "serviceName": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "personality": {
       "anyOf": [
         {
@@ -89,6 +84,12 @@
         {
           "type": "null"
         }
+      ]
+    },
+    "serviceTier": {
+      "type": [
+        "string",
+        "null"
       ]
     },
     "model": {
@@ -103,17 +104,16 @@
         "null"
       ]
     },
-    "serviceTier": {
+    "serviceName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sessionStartSource": {
       "anyOf": [
         {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ServiceTier"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/ThreadStartSource"
         },
         {
           "type": "null"
@@ -286,11 +286,12 @@
         "danger-full-access"
       ]
     },
-    "ServiceTier": {
+    "ThreadSource": {
       "type": "string",
       "enum": [
-        "fast",
-        "flex"
+        "user",
+        "subagent",
+        "memory_consolidation"
       ]
     },
     "ThreadStartSource": {

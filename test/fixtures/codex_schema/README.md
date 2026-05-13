@@ -11,7 +11,7 @@ against the matching schema here.
 
 ## Pinned version
 
-    codex-cli 0.128.0
+    codex-cli 0.130.0
 
 The `Phase 6` drift gate (`test/harnex/contract/schema_freshness_test.rb`,
 landing in commit 6 of plan 29) re-runs the generator at test time and
@@ -76,7 +76,8 @@ Excluded for three reasons:
 3. They are not byte-stable across runs. Two consecutive
    `generate-json-schema` invocations on the same Codex version
    produce different master-bundle bytes (verified at capture time on
-   0.128.0). The individual schemas above are byte-stable.
+   0.128.0 and refreshed on 0.130.0). The individual schemas above are
+   byte-stable.
 
 **Schemas harnex doesn't touch**
 (`FuzzyFileSearch*`, `McpServerElicitation*`, `ChatgptAuthTokensRefresh*`,

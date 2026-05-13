@@ -11,7 +11,7 @@ require "json"
 # `test/support/codex_response_fixtures_test.rb`, so drift gets caught
 # at the source rather than in twenty downstream tests.
 #
-# Fixtures pinned to codex 0.128.0 (see fixture README for refresh).
+# Fixtures pinned to codex-cli 0.130.0 (see fixture README for refresh).
 module Fixtures
   module Codex
     module_function
@@ -24,6 +24,7 @@ module Fixtures
       cwd: "/tmp",
       model_provider: "openai",
       preview: "",
+      session_id: "sess-1",
       created_at: 1_700_000_000,
       updated_at: 1_700_000_000
     )
@@ -35,6 +36,7 @@ module Fixtures
         "ephemeral" => false,
         "modelProvider" => model_provider,
         "preview" => preview,
+        "sessionId" => session_id,
         "source" => "appServer",
         "status" => { "type" => "idle" },
         "turns" => [],
