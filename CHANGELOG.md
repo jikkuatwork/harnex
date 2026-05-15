@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed README and dispatch telemetry docs to match the current
+  0.7.x CLI surfaces: Codex app-server default behavior, supported PTY
+  fallback, `--watch`/`--watch-file`, repo-local history, and current
+  telemetry fields.
+
 ## [0.7.3] - 2026-05-13 | 01:43 PM | IST
 
 ### Added

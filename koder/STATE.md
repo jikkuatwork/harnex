@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-13 | 11:37 PM | IST
+Updated: 2026-05-15 | 11:00 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-15 | 10:16 AM | IST: README refreshed for current 0.7.x
+  surfaces (OpenCode, Codex app-server default / PTY fallback,
+  `--watch` vs `--watch-file`, history, and telemetry fields).
+  `docs/dispatch-telemetry.md` and `CHANGELOG.md` were updated with
+  the same docs-only correction. No code changes.
 - 2026-05-13 | 11:37 PM | IST: #42 filed to track durable
   app-server orchestrator recovery. Decision: skip PTY regex sentry
   for now and make a harnex-managed Codex app-server orchestrator

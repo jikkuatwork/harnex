@@ -2,9 +2,9 @@
 
 Run multiple AI coding agents from your terminal and coordinate them.
 
-Harnex wraps Claude Code, OpenAI Codex, or any terminal CLI in a local
-harness so you can launch agents, send them tasks, watch live panes or
-transcripts, and stop them cleanly — all from the command line.
+Harnex wraps Claude Code, OpenAI Codex, OpenCode, or any terminal CLI in a
+local harness so you can launch agents, send them tasks, inspect panes,
+transcripts, and events, and stop them cleanly -- all from the command line.
 
 ```bash
 gem install harnex
@@ -55,9 +55,9 @@ job, watch it work, stop it when done.
   Codex writes code. Claude reviews it. Another Codex fixes the review
   findings. Each step is a fresh agent with clean context.
 
-- **You want to see what agents are doing.** `harnex pane` shows
-  a tmux-backed agent's live terminal, or Codex's synthesized
-  JSON-RPC transcript. No black boxes.
+- **You want to see what agents are doing.** `harnex pane` captures a
+  tmux-backed terminal, `harnex logs` tails the persisted transcript, and
+  `harnex events` streams structured JSONL lifecycle events.
 
 - **You don't want to babysit.** Send a task with `--wait-for-idle`,
   walk away, check back when it's done.
@@ -76,7 +76,7 @@ job, watch it work, stop it when done.
 | Agent | Support |
 |-------|---------|
 | Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
-| OpenAI Codex | JSON-RPC `codex app-server` adapter by default; `--legacy-pty` remains supported for TUI/interactive PTY use |
+| OpenAI Codex | JSON-RPC `codex app-server` adapter by default; PTY mode remains supported for TUI/interactive use via `--legacy-pty` |
 | OpenCode | PTY adapter with native Ctrl+C stop handling and OpenCode-specific prompt/readiness heuristics |
 | Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
 
@@ -87,7 +87,8 @@ model settings as child CLI config, for example `harnex run codex -- -c model=NA
 Harnex forces Codex app-server `service_tier="flex"` unless you opt into
 `service_tier="fast"` with `harnex run codex --fast`.
 Use `harnex run codex --legacy-pty` when you specifically want Codex's
-terminal UI or legacy PTY flag behavior.
+terminal UI or PTY-only Codex flags. The flag name is historical; the PTY path
+is still supported.
 
 ## Multi-agent workflows
 
@@ -143,7 +144,9 @@ harnex run codex --id cx-impl-42 --watch --preset impl \
 
 `--watch` runs a foreground babysitter that checks session activity every 60s,
 force-resumes on stall up to a cap, and exits when the target session exits or
-the resume cap is reached.
+the resume cap is reached. It is foreground-only; use `--tmux` or `--detach`
+for visible/background sessions, and `--watch` when the current command should
+block as the monitor.
 
 Presets map to stall policy defaults:
 
@@ -152,6 +155,10 @@ Presets map to stall policy defaults:
 - `gate` -> `--stall-after 15m --max-resumes 0`
 
 Explicit `--stall-after` and `--max-resumes` flags override preset defaults.
+
+For file-change hooks, use `--watch-file PATH`. The older
+`--watch PATH`/`--watch=PATH` form is still accepted for compatibility, while
+bare `--watch` means babysitter mode.
 
 For one-shot startup prompts, add `--auto-stop`. It requires `--context`
 and stops the session after the first task completion or PTY prompt return.
@@ -167,10 +174,10 @@ Schema details and compatibility policy are documented in
 
 ## Dispatch history
 
-Every finished `harnex run` appends one JSON line to
-`<repo>/.harnex/dispatch.jsonl`. Harnex finds the repo by walking up from the
-run directory until it sees `.git/`; sessions outside a git repo write to
-`~/.local/state/harnex/dispatch.jsonl`.
+Every finished `harnex run` writes dispatch records. In a git repo, the
+default path is `<repo>/.harnex/dispatch.jsonl`; outside a git repo, the
+compact history record falls back to `~/.local/state/harnex/dispatch.jsonl`.
+`harnex history` reads the compact records from that location.
 
 Use `harnex history` to inspect it:
 
@@ -186,9 +193,14 @@ harnex run codex --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' 
 ```
 
 Those declared values are copied into summary `meta`. Terminal summary
-`actual` also records rough measurements for downstream enforcement:
-`lines_changed`, `output_lines`, `output_bytes`, and `event_records`.
-Harnex records the data only; consumers decide whether to fail closed.
+`actual` records timing, exit classification, token usage when the adapter can
+capture it, git deltas, task-completion state, operational counters
+(`stalls`, `force_resumes`, `disconnections`, `tool_calls`,
+`commands_executed`), output/event log paths, and rough volume measurements
+such as `lines_changed`, `output_lines`, `output_bytes`, and `event_records`.
+Harnex records the data only; consumers decide whether to fail closed. See
+[docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) for the field
+contract.
 
 ## Long-running and overnight work
 
@@ -258,7 +270,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until done) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
 | `harnex status` | List running sessions (`--json` for full payloads) |
-| `harnex pane --id <id>` | Capture the agent's tmux screen (`--follow` for live) |
+| `harnex pane --id <id>` | Capture a tmux-backed session's screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
@@ -266,7 +278,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
-| `harnex recipes` | Tested workflow patterns |
+| `harnex recipes` | List and read tested workflow patterns (`show 01`, `show buddy`) |
 
 ## Uninstalling
 

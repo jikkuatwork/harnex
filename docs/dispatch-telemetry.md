@@ -1,29 +1,30 @@
 # Dispatch Telemetry
 
-`harnex run` can capture predicted-vs-actual dispatch telemetry for a wrapped
-agent session. The raw measurements are emitted on the v1 events stream, and a
-consolidated JSONL summary can be appended for downstream analysis.
+`harnex run` captures predicted-vs-actual dispatch telemetry for a wrapped
+agent session. Raw measurements are emitted on the v1 events stream, and a
+consolidated JSONL summary is appended for downstream analysis.
 
-Every completed run also appends one compact dispatch-history record to
-`<repo>/.harnex/dispatch.jsonl`. The repo is resolved by walking up from the
-run directory until `.git/` is found; runs outside a git repo fall back to
-`~/.local/state/harnex/dispatch.jsonl`.
+Every completed run also appends one compact dispatch-history record. In a git
+repo, `harnex history` reads `<repo>/.harnex/dispatch.jsonl`; outside a git repo
+it reads `~/.local/state/harnex/dispatch.jsonl`.
 
 ## CLI flags
 
 ```text
 harnex run codex --meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
-harnex run codex --summary-out koder/DISPATCH.jsonl
+harnex run codex --summary-out tmp/dispatch-summary.jsonl
 ```
 
 - `--meta JSON` must be a JSON object. The parsed object is echoed verbatim on
   the `started.meta` event.
-- `--summary-out PATH` writes one consolidated JSON line per dispatch to
-  `PATH`.
-- If `--summary-out` is omitted and `<repo>/koder/` exists, harnex writes to
-  `<repo>/koder/DISPATCH.jsonl`.
-- If no summary path resolves, harnex still emits `usage` and `summary` events;
-  the `summary.path` value is `null` and no summary file is written.
+- `--summary-out PATH` writes the consolidated summary JSON line to `PATH`.
+- If `--summary-out` is omitted and harnex has a non-empty resolved repo root,
+  the summary path defaults to `<repo>/.harnex/dispatch.jsonl`, regardless of
+  whether the repo has a legacy `koder/` directory.
+- The compact history record is appended after the consolidated summary record.
+  In the common git-repo default, both records are written to
+  `<repo>/.harnex/dispatch.jsonl`; the compact record is the record intended for
+  `harnex history`.
 
 Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
@@ -32,9 +33,9 @@ Use `harnex history --json | jq .` for pipelines over the repo-local log.
 The consolidated record has `meta`, `predicted`, and `actual` blocks.
 
 Harnex-owned `meta` fields are always populated when derivable: `id`,
-`tmux_session`, `started_at`, `ended_at`, `harness`, `harness_version`,
-`agent`, `host`, `platform`, `repo`, `branch`, `start_sha`, and `end_sha`.
-`description` comes from `--description` when set.
+`tmux_session`, `description`, `started_at`, `ended_at`, `harness`,
+`harness_version`, `agent`, `agent_version`, `agent_provider`, `host`,
+`platform`, `repo`, `branch`, `start_sha`, and `end_sha`.
 
 These top-level `--meta` keys pass through into `meta` when provided:
 `orchestrator`, `orchestrator_session`, `chain_id`, `parent_dispatch_id`,
@@ -47,26 +48,33 @@ resolution.
 
 ## Actuals
 
-At process exit, harnex reads the last 16 KB of the transcript and asks the
-adapter to parse a session summary. The Codex adapter currently extracts token
-counts and `agent_session_id`; adapters without a parser emit nullable usage
-fields.
+At process exit, harnex collects usage through the active adapter. JSON-RPC
+Codex sessions read cumulative `thread/tokenUsage/updated` data; PTY adapters
+parse the last 16 KB of transcript when they support a parser. Adapters without
+a parser emit nullable usage fields.
 
 Git actuals are captured with `git rev-parse`, `git diff --shortstat`, and
 `git rev-list --count` between the start and end SHAs. Git failures leave the
 corresponding consolidated fields `null` and omit `git` events.
 
-`actual.cost_usd` is always `null` in harnex. Consumers compute cost downstream
-with their own pricing tables.
+The `actual` block includes model/effort hints from `--meta`, duration, token
+counts, `agent_session_id`, adapter transport, git deltas, exit reason, task
+completion state, signal/exit code, last error, operational counters
+(`stalls`, `force_resumes`, `disconnections`, `compactions`, `turn_count`,
+`tool_calls`, `commands_executed`), rate-limit payloads, output/event volume
+measurements, and output/events log paths.
 
-`actual.tests_run`, `actual.tests_passed`, and `actual.tests_failed` are always
-`null` in this version; harnex does not detect test runs.
+Cost and test-result fields are intentionally absent. Consumers compute cost
+from their own pricing tables and test outcomes from their own CI or task
+protocol.
 
 ## Exit taxonomy
 
 - `success`: wrapped process exited `0` and a session summary was parsed.
 - `failure`: wrapped process exited non-zero.
 - `timeout`: wrapped process exited with code `124`.
+- `boot_failure`: JSON-RPC app-server exited within the startup window before a
+  turn was observed.
 - `disconnected`: wrapped process exited `0` but no session summary was parsed.
 
 Summary file writes are best-effort. Write failures are printed as warnings and
