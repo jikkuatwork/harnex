@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-15 | 11:00 AM | IST
+Updated: 2026-05-22 | 11:39 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-19 | 09:02 AM | IST: #43 filed to track throughput-first
+  telemetry v2 (attempt-level lifecycle, retry/fallback economics,
+  attribution enforcement, and throughput KPIs in dispatch rows).
+  No code changes yet.
 - 2026-05-15 | 10:16 AM | IST: README refreshed for current 0.7.x
   surfaces (OpenCode, Codex app-server default / PTY fallback,
   `--watch` vs `--watch-file`, history, and telemetry fields).
@@ -157,6 +161,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 - #42 is the recommended next-session focus: make app-server Codex
   durable enough to serve as the real orchestrator, with the visible
   TUI reduced to initiator/controller duties.
+- #43 is now open to make throughput-first telemetry explicit and
+  queryable (attempt-level retries/disconnects/fallback + attribution).
 - Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
 - Codex app-server schema freshness is current for local
   `codex-cli 0.130.0`; the unskipped release suite was green for
@@ -213,6 +219,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 10. Cross-deployment smoke for plan 30 — repeat the resume test with
    subprocess B configured for an alternate Azure deployment before
    Phase 5 merge.
+11. #43 — draft and execute a single implementation plan for
+   throughput-first telemetry v2 (attempt-level lifecycle + retry tax
+   + attribution + summary KPIs), then update dispatch telemetry docs.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in
