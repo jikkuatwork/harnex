@@ -55,9 +55,9 @@ module Harnex
           Wrapper options may appear before or after <cli>.
 
         Common patterns:
-          #{program_name} codex --id cx-i-42 --tmux cx-i-42 --context "Read /tmp/task-impl-42.md"
-          #{program_name} codex --id cx-i-42 --tmux cx-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
-          #{program_name} codex --id cx-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
+          #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md"
+          #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
+          #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
         Gotchas:

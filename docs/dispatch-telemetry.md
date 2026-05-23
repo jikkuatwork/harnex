@@ -49,24 +49,25 @@ resolution.
 ## Actuals
 
 At process exit, harnex collects usage through the active adapter. JSON-RPC
-Codex sessions read cumulative `thread/tokenUsage/updated` data; PTY adapters
-parse the last 16 KB of transcript when they support a parser. Adapters without
-a parser emit nullable usage fields.
+Codex sessions read cumulative `thread/tokenUsage/updated` data, Pi RPC sessions
+read `get_session_stats`, and PTY adapters parse the last 16 KB of transcript
+when they support a parser. Adapters without a parser emit nullable usage
+fields.
 
 Git actuals are captured with `git rev-parse`, `git diff --shortstat`, and
 `git rev-list --count` between the start and end SHAs. Git failures leave the
 corresponding consolidated fields `null` and omit `git` events.
 
 The `actual` block includes model/effort hints from `--meta`, duration, token
-counts, `agent_session_id`, adapter transport, git deltas, exit reason, task
-completion state, signal/exit code, last error, operational counters
-(`stalls`, `force_resumes`, `disconnections`, `compactions`, `turn_count`,
-`tool_calls`, `commands_executed`), rate-limit payloads, output/event volume
-measurements, and output/events log paths.
+counts, `agent_session_id`, `cost_usd`, adapter transport, git deltas, exit
+reason, task completion state, signal/exit code, last error, operational
+counters (`stalls`, `force_resumes`, `disconnections`, `compactions`,
+`turn_count`, `tool_calls`, `commands_executed`), rate-limit payloads,
+output/event volume measurements, and output/events log paths.
 
-Cost and test-result fields are intentionally absent. Consumers compute cost
-from their own pricing tables and test outcomes from their own CI or task
-protocol.
+`cost_usd` is adapter/provider-reported approximate USD cost when the adapter
+has a reliable structured source (for example Pi RPC `get_session_stats.cost`);
+it remains `null` for adapters without reliable cost telemetry.
 
 ## Exit taxonomy
 

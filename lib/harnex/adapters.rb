@@ -4,6 +4,7 @@ require_relative "adapters/codex"
 require_relative "adapters/codex_appserver"
 require_relative "adapters/claude"
 require_relative "adapters/opencode"
+require_relative "adapters/pi"
 
 module Harnex
   module Adapters
@@ -41,7 +42,8 @@ module Harnex
       @registry ||= {
         "claude" => Claude,
         "codex" => Codex,
-        "opencode" => Opencode
+        "opencode" => Opencode,
+        "pi" => Pi
       }
     end
   end

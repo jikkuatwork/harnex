@@ -2,7 +2,7 @@
 
 Run multiple AI coding agents from your terminal and coordinate them.
 
-Harnex wraps Claude Code, OpenAI Codex, OpenCode, or any terminal CLI in a
+Harnex wraps Claude Code, OpenAI Codex, Pi, OpenCode, or any terminal CLI in a
 local harness so you can launch agents, send them tasks, inspect panes,
 transcripts, and events, and stop them cleanly -- all from the command line.
 
@@ -34,7 +34,7 @@ or project-local docs are required.
 
 ```bash
 # Start an agent in tmux
-harnex run codex --id planner --tmux planner
+harnex run pi --id planner --tmux planner
 
 # Send it a task and wait for it to finish
 harnex send --id planner --message "Write a plan to /tmp/plan.md" --wait-for-idle
@@ -52,7 +52,7 @@ job, watch it work, stop it when done.
 ## Why use this
 
 - **You want agents to plan, implement, review, and fix — in sequence.**
-  Codex writes code. Claude reviews it. Another Codex fixes the review
+  Pi writes code. Claude reviews it. Pi (or another adapter) fixes the review
   findings. Each step is a fresh agent with clean context.
 
 - **You want to see what agents are doing.** `harnex pane` captures a
@@ -77,6 +77,7 @@ job, watch it work, stop it when done.
 |-------|---------|
 | Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
 | OpenAI Codex | JSON-RPC `codex app-server` adapter by default; PTY mode remains supported for TUI/interactive use via `--legacy-pty` |
+| Pi | JSONL RPC adapter (`pi --mode rpc`) with structured completion, tool events, extension-UI auto-cancel, and session stats telemetry |
 | OpenCode | PTY adapter with native Ctrl+C stop handling and OpenCode-specific prompt/readiness heuristics |
 | Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
 
@@ -90,20 +91,25 @@ Use `harnex run codex --legacy-pty` when you specifically want Codex's
 terminal UI or PTY-only Codex flags. The flag name is historical; the PTY path
 is still supported.
 
+`harnex run pi` launches `pi --mode rpc` and sends `--context` as a structured
+`prompt` command (not a CLI positional argument). Pass Pi child flags after the
+separator, for example:
+`harnex run pi --context "Implement X" -- --model anthropic/claude-sonnet-4-5 --thinking high`.
+
 ## Multi-agent workflows
 
 The real power is chaining agents together:
 
 ```bash
-# 1. Codex writes a plan
-harnex run codex --id cx-plan --tmux cx-plan
-harnex send --id cx-plan --message "Plan the auth module, write to /tmp/plan.md" --wait-for-idle
-harnex stop --id cx-plan
+# 1. Pi writes a plan
+harnex run pi --id pi-plan --tmux pi-plan
+harnex send --id pi-plan --message "Plan the auth module, write to /tmp/plan.md" --wait-for-idle
+harnex stop --id pi-plan
 
-# 2. Fresh Codex implements the plan
-harnex run codex --id cx-impl --tmux cx-impl
-harnex send --id cx-impl --message "Implement /tmp/plan.md, run tests" --wait-for-idle
-harnex stop --id cx-impl
+# 2. Fresh Pi implements the plan
+harnex run pi --id pi-impl --tmux pi-impl
+harnex send --id pi-impl --message "Implement /tmp/plan.md, run tests" --wait-for-idle
+harnex stop --id pi-impl
 
 # 3. Claude reviews the implementation
 harnex run claude --id cl-review --tmux cl-review
@@ -138,7 +144,7 @@ harnex agents-guide monitoring
 For unattended dispatches, use `--watch` instead of writing a bash poll loop:
 
 ```bash
-harnex run codex --id cx-impl-42 --watch --preset impl \
+harnex run pi --id pi-impl-42 --watch --preset impl \
   --context "Implement koder/plans/42_plan.md. Run tests and commit when done."
 ```
 
@@ -166,7 +172,7 @@ and stops the session after the first task completion or PTY prompt return.
 For structured subscriptions, stream JSONL events:
 
 ```bash
-harnex events --id cx-impl-42
+harnex events --id pi-impl-42
 ```
 
 Schema details and compatibility policy are documented in
@@ -189,15 +195,16 @@ harnex history --json | jq .
 Dispatch briefs can declare soft budget metadata through `--meta`:
 
 ```bash
-harnex run codex --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
+harnex run pi --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
 ```
 
 Those declared values are copied into summary `meta`. Terminal summary
 `actual` records timing, exit classification, token usage when the adapter can
-capture it, git deltas, task-completion state, operational counters
-(`stalls`, `force_resumes`, `disconnections`, `tool_calls`,
-`commands_executed`), output/event log paths, and rough volume measurements
-such as `lines_changed`, `output_lines`, `output_bytes`, and `event_records`.
+capture it, adapter-reported `cost_usd` when reliably available, git deltas,
+task-completion state, operational counters (`stalls`, `force_resumes`,
+`disconnections`, `tool_calls`, `commands_executed`), output/event log paths,
+and rough volume measurements such as `lines_changed`, `output_lines`,
+`output_bytes`, and `event_records`.
 Harnex records the data only; consumers decide whether to fail closed. See
 [docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) for the field
 contract.
@@ -205,7 +212,7 @@ contract.
 ## Long-running and overnight work
 
 For plain "force-resume on stall" recovery, use
-`harnex run codex --watch --preset impl --context "Read /tmp/task.md"`.
+`harnex run pi --watch --preset impl --context "Read /tmp/task.md"`.
 
 A **buddy** is for richer reasoning: doc drift checks, semantic sanity checks,
 and multi-session correlation. It's still just another harnex session.
@@ -215,8 +222,8 @@ and multi-session correlation. It's still just another harnex session.
 Spawn a buddy alongside a long-running implementation worker:
 
 ```bash
-harnex run codex --id worker-42 --tmux worker-42
-harnex run claude --id buddy-42 --tmux buddy-42
+harnex run pi --id worker-42 --tmux worker-42
+harnex run pi --id buddy-42 --tmux buddy-42
 harnex send --id buddy-42 --message "$(cat <<'EOF'
 Watch harnex session worker-42.
 Every 5 minutes: run `harnex pane --id worker-42 --lines 30`.
@@ -234,8 +241,8 @@ A buddy that checks whether a worker's code changes have left
 docs out of date:
 
 ```bash
-harnex run codex --id worker-99 --tmux worker-99
-harnex run claude --id buddy-99 --tmux buddy-99
+harnex run pi --id worker-99 --tmux worker-99
+harnex run pi --id buddy-99 --tmux buddy-99
 harnex send --id buddy-99 --message "$(cat <<'EOF'
 Watch harnex session worker-99.
 Every 5 minutes: run `harnex pane --id worker-99 --lines 30`.

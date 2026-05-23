@@ -7,7 +7,7 @@ needs interpretation that simple stall policy cannot provide.
 For simple inactivity recovery, prefer built-in watch mode:
 
 ```bash
-harnex run codex --id cx-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"
+harnex run pi --id pi-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"
 ```
 
 Use a buddy when you need reasoning over pane contents, semantic checks, or
@@ -28,14 +28,15 @@ Use a buddy for:
 Spawn the worker first, then spawn the buddy:
 
 ```bash
-harnex run codex --id cx-i-42 --tmux cx-i-42 \
+harnex run pi --id pi-i-42 --tmux pi-i-42 \
   --context "Read and execute /tmp/task-impl-42.md"
 
-harnex run claude --id buddy-42 --tmux buddy-42
+harnex run pi --id buddy-42 --tmux buddy-42
 ```
 
 The buddy is just another harnex session. Inspect it, stop it, and read its
-logs with the same commands as any worker.
+logs with the same commands as any worker. Use Pi by default; swap to another
+adapter if your environment or policy requires it.
 
 ## Buddy Prompt
 
@@ -43,18 +44,18 @@ Give the buddy an explicit polling loop, stall threshold, nudge rule, return
 channel, and cleanup rule:
 
 ```text
-You are an accountability partner for harnex session `cx-i-42`.
+You are an accountability partner for harnex session `pi-i-42`.
 
 Every 5 minutes:
-- Run `harnex pane --id cx-i-42 --lines 30`.
-- Run `harnex status --id cx-i-42 --json`.
+- Run `harnex pane --id pi-i-42 --lines 30`.
+- Run `harnex status --id pi-i-42 --json`.
 
 If the worker appears stuck at a prompt or permission dialog for more than
 10 minutes with no progress, nudge it:
-- `harnex send --id cx-i-42 --message "You appear to have stalled. Continue with your current task."`
+- `harnex send --id pi-i-42 --message "You appear to have stalled. Continue with your current task."`
 
-If the worker exits or writes `/tmp/cx-i-42-done.txt`, report back:
-- `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "cx-i-42 finished. Check /tmp/cx-i-42-done.txt." Enter`
+If the worker exits or writes `/tmp/pi-i-42-done.txt`, report back:
+- `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "pi-i-42 finished. Check /tmp/pi-i-42-done.txt." Enter`
 
 Do not interfere with active work. Stop yourself after reporting completion.
 ```
@@ -73,7 +74,7 @@ harnex session:
 
 ```bash
 tmux capture-pane -t "$HARNEX_SPAWNER_PANE" -p
-tmux send-keys -t "$HARNEX_SPAWNER_PANE" "cx-i-42 finished" Enter
+tmux send-keys -t "$HARNEX_SPAWNER_PANE" "pi-i-42 finished" Enter
 ```
 
 If no tmux return pane is available, require the buddy to write a file and tell

@@ -39,6 +39,9 @@ Issue or request
 Each arrow is a fresh harnex worker when delegated. Pass state through files:
 the issue, plan, review file, fix summary, test log, or done marker.
 
+Default adapter choice for autonomous chain steps is Pi (`harnex run pi ...`).
+Use another adapter only when the task explicitly requires it.
+
 ## Per-Plan Loop
 
 For each independently testable plan:
@@ -72,8 +75,8 @@ Recommended limits:
 | Code review/fix | Serial per implementation |
 
 When parallelizing, cap the number of active workers to what the machine and
-CLI provider can handle. A practical upper bound is five Codex sessions across
-all active lanes unless the user requested more.
+CLI provider can handle. A practical upper bound is five active sessions across
+all lanes unless the user requested more.
 
 ## Worktrees
 
@@ -84,7 +87,7 @@ untracked files do not carry over.
 ```bash
 git worktree add ../project-plan-NN -b plan/NN main
 cd ../project-plan-NN
-harnex run codex --id cx-i-NN --tmux cx-i-NN \
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read the project plan and implement this isolated lane."
 ```
 

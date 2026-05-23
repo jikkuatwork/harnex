@@ -125,7 +125,7 @@ module Harnex
           Any other CLI name is launched with generic wrapping.
 
         Examples:
-          harnex run codex
+          harnex run pi
           harnex run aider --id blue-cat
           harnex run codex -- --cd /path/to/repo
           harnex status

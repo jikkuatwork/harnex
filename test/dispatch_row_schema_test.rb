@@ -9,6 +9,7 @@ class DispatchRowSchemaTest < Minitest::Test
     commands_executed
     commits
     compactions
+    cost_usd
     disconnections
     duration_s
     effort
@@ -141,6 +142,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 870, actual.fetch("reasoning_tokens")
       assert_equal 250_880, actual.fetch("cached_tokens")
       assert_equal 106_867, actual.fetch("total_tokens")
+      assert_nil actual.fetch("cost_usd")
       assert_equal "019ddf05-0f03-7d70-904f-23db7f00640f", actual.fetch("agent_session_id")
       assert_equal "pty", actual.fetch("adapter_transport")
       assert_equal false, actual.fetch("task_complete")

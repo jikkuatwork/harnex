@@ -17,16 +17,17 @@ Prefer signals in this order:
 | `harnex pane` | Live UI interpretation and prompt/error diagnosis |
 | `harnex status` | Session liveness and coarse state |
 
-For Codex app-server sessions, `harnex wait --until task_complete` is a strong
-turn-level fence. It still does not know your acceptance criteria; verify the
-expected artifact or tests afterward.
+For structured sessions (Pi RPC and Codex app-server),
+`harnex wait --until task_complete` is a strong turn-level fence. It still
+does not know your acceptance criteria; verify the expected artifact or tests
+afterward.
 
 ## Completion Test
 
 For unattended work, declare done with a conjunction of work-level facts:
 
 ```bash
-test -f /tmp/cx-i-NN-done.txt &&
+test -f /tmp/pi-i-NN-done.txt &&
   test -z "$(git status --short)" &&
   test "$(git log -1 --format=%ct)" -lt "$(($(date +%s) - 600))"
 ```
@@ -51,23 +52,23 @@ where to look.
 For active supervision:
 
 ```bash
-harnex pane --id cx-i-NN --lines 40
-harnex events --id cx-i-NN --snapshot
-harnex logs --id cx-i-NN --lines 80
+harnex pane --id pi-i-NN --lines 40
+harnex events --id pi-i-NN --snapshot
+harnex logs --id pi-i-NN --lines 80
 ```
 
 For continuous viewing:
 
 ```bash
-harnex pane --id cx-i-NN --follow --interval 2
-harnex logs --id cx-i-NN --follow
-harnex events --id cx-i-NN
+harnex pane --id pi-i-NN --follow --interval 2
+harnex logs --id pi-i-NN --follow
+harnex events --id pi-i-NN
 ```
 
 For task completion:
 
 ```bash
-harnex wait --id cx-i-NN --until task_complete --timeout 900
+harnex wait --id pi-i-NN --until task_complete --timeout 900
 ```
 
 ## Background Sweeper
@@ -80,14 +81,14 @@ pipeline cannot wait forever:
 start=$(date +%s)
 max_wait=5400
 
-until test -f /tmp/cx-i-NN-done.txt; do
+until test -f /tmp/pi-i-NN-done.txt; do
   if test "$(($(date +%s) - start))" -gt "$max_wait"; then
-    echo "wall-clock cap hit for cx-i-NN" >&2
+    echo "wall-clock cap hit for pi-i-NN" >&2
     exit 2
   fi
 
-  harnex status --id cx-i-NN --json
-  harnex pane --id cx-i-NN --lines 20
+  harnex status --id pi-i-NN --json
+  harnex pane --id pi-i-NN --lines 20
   sleep 60
 done
 ```
@@ -106,7 +107,7 @@ Use `harnex run --watch` when one foreground process should launch the worker
 and apply bounded stall recovery:
 
 ```bash
-harnex run codex --id cx-i-NN --watch --preset impl \
+harnex run pi --id pi-i-NN --watch --preset impl \
   --context "Read /tmp/task-impl-NN.md"
 ```
 

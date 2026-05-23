@@ -8,7 +8,12 @@ module Harnex
     TRANSCRIPT_TAIL_BYTES = 16 * 1024
     AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT = 5.0
     USAGE_FIELDS = %i[
-      input_tokens output_tokens reasoning_tokens cached_tokens total_tokens agent_session_id
+      input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
+      agent_session_id cost_usd tool_calls model agent_provider
+    ].freeze
+    SESSION_SUMMARY_SIGNAL_FIELDS = %i[
+      input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
+      agent_session_id cost_usd
     ].freeze
     BUDGET_META_FIELDS = %w[read_budget_lines output_ceiling_lines].freeze
     class EventCounters
@@ -98,6 +103,7 @@ module Harnex
       @session_finalized = false
       @turn_started_seen = false
       @last_completed_at = nil
+      @pi_streamed_text_by_message = {}
       @auto_stop = !!auto_stop
       @auto_stop_fired = false
       @auto_stop_seen_busy = false
@@ -138,7 +144,7 @@ module Harnex
       prepare_output_log
       prepare_events_log
 
-      return run_jsonrpc if adapter.transport == :stdio_jsonrpc
+      return run_structured if structured_transport?
 
       run_pty
     end
@@ -218,7 +224,7 @@ module Harnex
       payload[:agent_state] = @state_machine.to_s
       payload[:inbox] = @inbox.stats
       payload[:last_completed_at] = @last_completed_at&.iso8601
-      payload[:model] = meta_hash["model"]
+      payload[:model] = summary_model
       payload[:effort] = meta_hash["effort"]
       payload[:auto_disconnects] = @event_counters.snapshot[:disconnections]
       payload
@@ -247,13 +253,13 @@ module Harnex
     end
 
     def inject_stop(turn_id: nil)
-      unless adapter.transport == :stdio_jsonrpc
+      unless structured_transport?
         raise "session is not running" unless pid && Harnex.alive_pid?(pid)
       end
 
       return { ok: true, signal: "already_requested" } if stop_requested!
 
-      if adapter.transport == :stdio_jsonrpc
+      if structured_transport?
         if adapter.respond_to?(:terminate_subprocess)
           Thread.new do
             begin
@@ -283,8 +289,8 @@ module Harnex
     end
 
     def inject_via_adapter(text:, submit:, enter_only:, force: false)
-      if adapter.transport == :stdio_jsonrpc
-        return inject_via_jsonrpc(text: text, submit: submit, enter_only: enter_only, force: force)
+      if structured_transport?
+        return inject_via_structured(text: text, submit: submit, enter_only: enter_only, force: force)
       end
 
       snapshot = adapter.wait_for_sendable(method(:screen_snapshot), submit: submit, enter_only: enter_only, force: force)
@@ -311,7 +317,7 @@ module Harnex
         .tap { emit_send_event(text, force: payload[:force]) }
     end
 
-    def inject_via_jsonrpc(text:, submit:, enter_only:, force: false)
+    def inject_via_structured(text:, submit:, enter_only:, force: false)
       payload = adapter.build_send_payload(
         text: text,
         submit: submit,
@@ -360,9 +366,13 @@ module Harnex
 
     private
 
-    def run_jsonrpc
-      adapter.on_notification { |msg| handle_rpc_notification(msg) }
-      adapter.on_disconnect { |err| handle_rpc_disconnect(err) }
+    def structured_transport?
+      %i[stdio_jsonrpc stdio_jsonl_rpc].include?(adapter.transport)
+    end
+
+    def run_structured
+      adapter.on_notification { |msg| handle_structured_notification(msg) }
+      adapter.on_disconnect { |err| handle_structured_disconnect(err) }
 
       adapter.start_rpc(env: child_env, cwd: repo_root)
       @pid = adapter.pid
@@ -415,10 +425,21 @@ module Harnex
       @events_log&.close unless @events_log&.closed?
     end
 
+    alias run_jsonrpc run_structured
+
     def signal_rpc_done!
       @rpc_done = true
       if defined?(@rpc_done_lock) && @rpc_done_lock
         @rpc_done_lock.synchronize { @rpc_done_cond&.signal }
+      end
+    end
+
+    def handle_structured_notification(message)
+      case adapter.transport
+      when :stdio_jsonrpc
+        handle_rpc_notification(message)
+      when :stdio_jsonl_rpc
+        handle_jsonl_notification(message)
       end
     end
 
@@ -470,6 +491,86 @@ module Harnex
       warn("harnex: rpc notification handler error: #{e.message}")
     end
 
+    def handle_jsonl_notification(message)
+      event_type = message["type"].to_s
+
+      case event_type
+      when "agent_start", "turn_start"
+        @turn_started_seen = true if event_type == "turn_start"
+        @state_machine.force_busy!
+        emit_event("turn_started") if event_type == "turn_start"
+      when "agent_end"
+        @last_completed_at = Time.now
+        @state_machine.force_prompt!
+        emit_event("task_complete")
+        adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
+        schedule_auto_stop("task_complete")
+      when "message_start"
+        @pi_streamed_text_by_message[pi_message_key(message["message"])] = false
+      when "message_update"
+        event = message["assistantMessageEvent"] || {}
+        delta = event["delta"]
+        key = pi_message_key(message["message"])
+        if event["type"] == "text_delta" && delta && !delta.empty?
+          @pi_streamed_text_by_message[key] = true
+          record_synthesized(delta, newline: false)
+        end
+      when "message_end"
+        key = pi_message_key(message["message"])
+        streamed = @pi_streamed_text_by_message.delete(key)
+        unless streamed
+          text = pi_extract_message_text(message["message"])
+          record_synthesized(text) if text
+        end
+      when "tool_execution_start"
+        @event_counters.record_item({ "type" => "dynamicToolCall" })
+        record_synthesized(
+          "tool: #{message["toolName"] || "tool"}#{message["args"] ? " #{summarize(message["args"])}" : ""}"
+        )
+      when "tool_execution_end"
+        tool_name = message["toolName"] || "tool"
+        status = message["isError"] ? "error" : "ok"
+        record_synthesized("tool-result: #{tool_name} (#{status})")
+      when "compaction_start", "compaction_end"
+        emit_event("compaction", reason: message["reason"], phase: event_type)
+      when "queue_update"
+        nil
+      when "auto_retry_start", "auto_retry_end"
+        emit_event(event_type, **message.reject { |k, _| k == "type" })
+      when "extension_ui_request"
+        handle_extension_ui_request(message)
+      when "extension_error"
+        @last_error = message["error"].to_s unless message["error"].to_s.empty?
+        emit_event("extension_error", **message.reject { |k, _| k == "type" })
+      when "response"
+        # Adapter-level command responses are handled in the adapter.
+        nil
+      end
+    rescue StandardError => e
+      warn("harnex: rpc notification handler error: #{e.message}")
+    end
+
+    def handle_extension_ui_request(message)
+      method = message["method"].to_s
+      request_id = message["id"]
+      cancelled = false
+      if adapter.respond_to?(:respond_extension_ui_cancel)
+        cancelled = adapter.respond_extension_ui_cancel(request_id: request_id, method: method)
+      end
+
+      payload = {
+        method: method,
+        request_id: request_id,
+        auto_cancelled: !!cancelled
+      }
+      emit_event("extension_ui_request", **payload)
+      record_synthesized("extension-ui: #{method}#{cancelled ? " (auto-cancelled)" : ""}")
+    end
+
+    def handle_structured_disconnect(error)
+      handle_rpc_disconnect(error)
+    end
+
     def handle_rpc_disconnect(error)
       msg = error.is_a?(Hash) ? error["message"] : error&.message
       @last_error = msg.to_s unless msg.to_s.empty?
@@ -484,7 +585,7 @@ module Harnex
       prompt = adapter.initial_prompt
       return if prompt.to_s.empty?
 
-      inject_via_jsonrpc(text: prompt, submit: true, enter_only: false, force: false)
+      inject_via_structured(text: prompt, submit: true, enter_only: false, force: false)
     end
 
     def render_item_text(item)
@@ -511,11 +612,37 @@ module Harnex
       ""
     end
 
-    def record_synthesized(text)
+    def pi_extract_message_text(message)
+      return nil unless message.is_a?(Hash)
+
+      content = message["content"]
+      case content
+      when String
+        content
+      when Array
+        parts = content.filter_map do |item|
+          next unless item.is_a?(Hash)
+          next unless item["type"] == "text"
+
+          item["text"].to_s
+        end
+        parts.empty? ? nil : parts.join
+      else
+        nil
+      end
+    end
+
+    def pi_message_key(message)
+      return "unknown" unless message.is_a?(Hash)
+
+      message["entryId"] || message["id"] || message["timestamp"] || message.object_id
+    end
+
+    def record_synthesized(text, newline: true)
       return if text.nil? || text.to_s.empty?
 
       payload = text.to_s.dup
-      payload << "\n" unless payload.end_with?("\n")
+      payload << "\n" if newline && !payload.end_with?("\n")
       bytes = payload.b
       @mutex.synchronize do
         append_output_log(bytes)
@@ -894,7 +1021,7 @@ module Harnex
     end
 
     def boot_failure_exit?
-      return false unless adapter.transport == :stdio_jsonrpc
+      return false unless structured_transport?
       return false if @turn_started_seen
 
       lifetime = (@ended_at || Time.now) - @started_at
@@ -902,7 +1029,7 @@ module Harnex
     end
 
     def session_summary_present?
-      @usage_summary.values.any? { |value| !value.nil? }
+      SESSION_SUMMARY_SIGNAL_FIELDS.any? { |field| !@usage_summary[field].nil? }
     end
 
     def build_summary_record
@@ -927,7 +1054,7 @@ module Harnex
         harness_version: Harnex.harness_version,
         agent: adapter.key,
         agent_version: adapter.agent_version,
-        agent_provider: adapter.provider,
+        agent_provider: summary_agent_provider,
         host: info[:host],
         platform: info[:platform],
         orchestrator: passthrough["orchestrator"],
@@ -954,7 +1081,7 @@ module Harnex
       end
 
       actual = {
-        model: meta_hash["model"],
+        model: summary_model,
         effort: meta_hash["effort"],
         duration_s: @ended_at ? (@ended_at - @started_at).to_i : nil,
         input_tokens: @usage_summary[:input_tokens],
@@ -962,6 +1089,7 @@ module Harnex
         reasoning_tokens: @usage_summary[:reasoning_tokens],
         cached_tokens: @usage_summary[:cached_tokens],
         total_tokens: @usage_summary[:total_tokens],
+        cost_usd: @usage_summary[:cost_usd],
         agent_session_id: summary_agent_session_id,
         adapter_transport: adapter.transport.to_s,
         loc_added: @git_end[:loc_added],
@@ -979,7 +1107,7 @@ module Harnex
         disconnections: counters[:disconnections],
         compactions: counters[:compactions],
         turn_count: @injected_count,
-        tool_calls: counters[:tool_calls],
+        tool_calls: summary_tool_calls(counters),
         commands_executed: counters[:commands_executed],
         rate_limits: @rate_limits,
         output_lines: output_measurements[:lines],
@@ -1027,6 +1155,19 @@ module Harnex
         (adapter.thread_id if adapter.respond_to?(:thread_id))
     end
 
+    def summary_agent_provider
+      @usage_summary[:agent_provider] || adapter.provider
+    end
+
+    def summary_model
+      meta_hash["model"] || @usage_summary[:model] ||
+        (adapter.current_model if adapter.respond_to?(:current_model))
+    end
+
+    def summary_tool_calls(counters)
+      @usage_summary[:tool_calls] || counters[:tool_calls]
+    end
+
     def summary_predicted_payload
       predicted = meta_hash["predicted"]
       predicted.is_a?(Hash) ? predicted : {}
@@ -1060,13 +1201,13 @@ module Harnex
       USAGE_FIELDS.to_h { |field| [field, summary[field] || summary[field.to_s]] }
     end
 
-    # Adapters speaking JSON-RPC capture token usage from the structured
-    # `thread/tokenUsage/updated` notification stream and don't have a
-    # transcript to scrape; fall back to the schema-true cumulative
-    # `total` block. Other adapters parse the transcript tail.
+    # Structured adapters emit usage directly (JSON-RPC token snapshots,
+    # Pi RPC stats). PTY adapters parse transcript tails when supported.
     def collect_session_summary
       if adapter.transport == :stdio_jsonrpc
         summary_from_token_usage
+      elsif adapter.respond_to?(:collect_session_summary)
+        adapter.collect_session_summary
       else
         adapter.parse_session_summary(transcript_tail)
       end

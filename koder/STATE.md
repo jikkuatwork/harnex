@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-23 | 04:23 PM | IST
+Updated: 2026-05-23 | 07:02 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,24 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-23 | 07:02 PM | IST: Pi-first docs refresh landed on
+  branch `pi-harness` so `harnex` guidance now defaults to `harnex run pi`
+  across dispatch/chain/buddy/monitoring/naming + CLI help examples
+  (README, `guides/01..05`, `lib/harnex/commands/run.rb`, `lib/harnex/cli.rb`).
+  Live smoke validation run: three `harnex run pi --context ... --auto-stop`
+  dispatches plus detached `run`+`send` flow succeeded and emitted Pi
+  structured telemetry (`adapter_transport=stdio_jsonl_rpc`, cost populated).
+- 2026-05-23 | 06:42 PM | IST: #44 + #46 landed together.
+  Added first-class `pi --mode rpc` adapter (`Harnex::Adapters::Pi`)
+  with structured completion/stop handling, extension-UI dialog
+  auto-cancel, synthesized output/tool events, and Pi
+  `get_session_stats` telemetry ingestion. Restored DISPATCH
+  `actual.cost_usd` (Pi-populated; nullable elsewhere). Added adapter/
+  session coverage (`test/harnex/adapters/pi_test.rb`,
+  `test/harnex/runtime/session_pi_rpc_test.rb`) and updated docs
+  (README, `docs/dispatch-telemetry.md`, `guides/01_dispatch.md`,
+  CHANGELOG). Full suite green: 469 runs, 1521 assertions, 0 failures,
+  2 skips.
 - 2026-05-23 | 04:07 PM | IST: Pi support research captured as
   #44 (first-class `pi --mode rpc` adapter), #45 (deferred Pi PTY
   adapter with extension markers), and #46 (restore `actual.cost_usd`
@@ -160,51 +178,29 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
-- #44 is the recommended next-session focus: implement a first-class
-  Pi RPC adapter (`pi --mode rpc`) for autonomous harnex dispatch.
-  Use Pi's JSONL command/event protocol, not Codex JSON-RPC.
-- #46 should land with or immediately after #44: restore
-  `actual.cost_usd` by default, populated from Pi `get_session_stats.cost`
-  when available and `nil` for adapters without reliable cost.
-- #45 tracks deferred visible Pi PTY/TUI support via stable markers from
-  a Pi extension; do not start with brittle TUI regex scraping.
-- Codex uses JSON-RPC `app-server` by default; PTY remains
-  first-class for visible TUI and non-JSON-RPC adapters.
-- #42 remains open for app-server Codex orchestrator recovery.
-- #43 remains open for throughput-first telemetry v2.
+- #44 and #46 are complete at HEAD; Pi RPC is first-class and validated
+  with both tests and live dispatch smokes.
+- Pi-first docs/default guidance work is on branch `pi-harness` and ready
+  for review/merge.
+- #45 is the next Pi track: visible Pi PTY/TUI support only via stable
+  extension markers (no brittle screen regex parsing).
+- #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
+  v2) remain open.
 - Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
-- Codex app-server schema freshness is current for local
-  `codex-cli 0.130.0`; the unskipped release suite was green for
-  the 0.7.3 release.
-- #40 and #41 (Slices A+B) remain plan/refactor-only for deployment
-  fallback; no consumer-visible fallback flag yet.
-- #35 Tier 1/2/3 all resolved. Tier 4 (`commit_shas`, `branch_end`)
-  remains optional.
-- Other open issues to triage when ready: #04, #06, #16, #17,
-  #18, #26.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. #44 — implement the Pi RPC adapter. Start with a small strict-LF
-   JSONL client, stub Pi RPC subprocess tests, context-as-`prompt`,
-   `agent_end` -> `task_complete`, extension-UI auto-cancel, and
-   `get_session_stats` telemetry.
-2. #46 — restore `actual.cost_usd` as an additive DISPATCH field;
-   Pi RPC should populate it from structured stats by default.
-3. #45 — later visible Pi PTY/TUI support, but only with stable markers
-   from a Pi extension; keep this out of the #44 RPC slice.
-4. #42 — plan/implement Codex app-server orchestrator auto-recovery
-   when returning to Codex durability work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+1. Merge/review branch `pi-harness` (Pi RPC + Pi-first docs defaults).
+2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+   prompt/readiness markers.
+3. #42 — resume Codex app-server orchestrator auto-recovery work.
+4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+5. #41 Slice C — public API surface doc at `docs/public_api.md`.
+6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
-8. Deferred housekeeping: #35 `auto_disconnects`/Tier 4, optional #36
-   row-emitted wait + millisecond event timestamps, and release-audit
-   hardening/doc-staleness findings.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

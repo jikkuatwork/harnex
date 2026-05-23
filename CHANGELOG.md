@@ -2,12 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- First-class `pi` structured adapter (`Harnex::Adapters::Pi`) for
+  `pi --mode rpc` JSONL transport. `harnex run pi` now supports
+  structured completion (`agent_end` -> `task_complete`), stop/abort,
+  extension-UI dialog auto-cancel in RPC mode, streamed output/tool
+  synthesis, and Pi session-stats telemetry capture.
+
 ### Changed
 
-- Refreshed README and dispatch telemetry docs to match the current
-  0.7.x CLI surfaces: Codex app-server default behavior, supported PTY
-  fallback, `--watch`/`--watch-file`, repo-local history, and current
-  telemetry fields.
+- Structured transport handling in `Session` now supports both Codex
+  JSON-RPC (`:stdio_jsonrpc`) and Pi JSONL RPC (`:stdio_jsonl_rpc`).
+- DISPATCH telemetry restores `actual.cost_usd` (adapter-reported
+  approximate USD when available). Pi sessions populate it from
+  `get_session_stats.cost`; adapters without reliable cost stay `null`.
+- README, dispatch telemetry docs, and dispatch guide now document Pi RPC
+  usage and the `--` child-flag pattern.
 
 ## [0.7.3] - 2026-05-13 | 01:43 PM | IST
 

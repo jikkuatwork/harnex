@@ -24,8 +24,9 @@ module Harnex
         @extra_args = extra_args.dup
       end
 
-      # Default transport. Adapters speaking JSON-RPC override to
-      # :stdio_jsonrpc; Session#run uses this to pick the I/O path.
+      # Default transport. Structured adapters override to :stdio_jsonrpc
+      # (Codex app-server) or :stdio_jsonl_rpc (Pi RPC); Session#run uses
+      # this to pick the I/O path.
       def transport
         :pty
       end

@@ -15,6 +15,7 @@ Common prefixes:
 
 | Prefix | Meaning |
 | --- | --- |
+| `pi` | Pi worker (default) |
 | `cx` | Codex worker |
 | `cl` | Claude worker |
 | `buddy` | Buddy monitor |
@@ -34,13 +35,13 @@ Common phases:
 Examples:
 
 ```text
-cx-m-42      Codex maps task 42
-cx-p-42      Codex writes plan 42
-cx-r-42      Codex reviews plan 42
-cx-f-42      Codex fixes plan 42
-cx-i-42      Codex implements plan 42
-cx-cr-42     Codex reviews implementation 42
-cx-cf-42     Codex fixes implementation 42
+pi-m-42      Pi maps task 42
+pi-p-42      Pi writes plan 42
+pi-r-42      Pi reviews plan 42
+pi-f-42      Pi fixes plan 42
+pi-i-42      Pi implements plan 42
+pi-cr-42     Pi reviews implementation 42
+pi-cf-42     Pi fixes implementation 42
 buddy-42     Buddy monitors task 42
 ```
 
@@ -52,13 +53,13 @@ short, and present in every artifact.
 Always pass both and keep them identical:
 
 ```bash
-harnex run codex --id cx-i-42 --tmux cx-i-42
+harnex run pi --id pi-i-42 --tmux pi-i-42
 ```
 
 Avoid this:
 
 ```bash
-harnex run codex --tmux cx-i-42
+harnex run pi --tmux pi-i-42
 ```
 
 If `--id` is missing, harnex generates a random session ID. The tmux window may
@@ -70,9 +71,9 @@ ID.
 If a session fails and you dispatch a fresh attempt, append a suffix:
 
 ```text
-cx-i-42      first attempt
-cx-i-42b     second attempt
-cx-i-42c     third attempt
+pi-i-42      first attempt
+pi-i-42b     second attempt
+pi-i-42c     third attempt
 ```
 
 Keep the old session's logs. They are useful for diagnosis.
@@ -97,9 +98,9 @@ session ID.
 Derive done markers from the session ID:
 
 ```text
-/tmp/cx-p-42-done.txt
-/tmp/cx-i-42-done.txt
-/tmp/cx-cr-42-done.txt
+/tmp/pi-p-42-done.txt
+/tmp/pi-i-42-done.txt
+/tmp/pi-cr-42-done.txt
 ```
 
 When a brief asks for a completion marker, make it one line and include the

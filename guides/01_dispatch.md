@@ -17,7 +17,7 @@ Inside a harnex-managed session, these environment variables are available:
 
 | Variable | Meaning |
 | --- | --- |
-| `HARNEX_SESSION_CLI` | Wrapped CLI name, such as `codex` or `claude` |
+| `HARNEX_SESSION_CLI` | Wrapped CLI name, such as `pi`, `codex`, or `claude` |
 | `HARNEX_ID` | Current harnex session ID |
 | `HARNEX_SESSION_REPO_ROOT` | Repo root for the session |
 | `HARNEX_SESSION_ID` | Internal harnex instance ID |
@@ -34,13 +34,13 @@ Decide how results come back before you delegate work.
 Inside harnex, instruct the peer to reply to your own session:
 
 ```bash
-harnex send --id cx-i-NN --message "Read /tmp/task-impl-NN.md. When done, send one summary line back to harnex id $HARNEX_ID."
+harnex send --id pi-i-NN --message "Read /tmp/task-impl-NN.md. When done, send one summary line back to harnex id $HARNEX_ID."
 ```
 
 Outside harnex, require a file or another explicit return path:
 
 ```bash
-harnex send --id cx-i-NN --message "Read /tmp/task-impl-NN.md. Write final status to /tmp/cx-i-NN-done.txt."
+harnex send --id pi-i-NN --message "Read /tmp/task-impl-NN.md. Write final status to /tmp/pi-i-NN-done.txt."
 ```
 
 Do not delegate work without an explicit completion contract.
@@ -48,18 +48,18 @@ Do not delegate work without an explicit completion contract.
 ## Spawn
 
 Launch worker sessions in tmux when a user or orchestrator may need to inspect
-them live:
+them live. Default to Pi unless a task explicitly requires another adapter:
 
 ```bash
-harnex run codex --id cx-i-NN --tmux cx-i-NN \
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Implement the project plan in /tmp/task-impl-NN.md. Run tests when done."
 ```
 
-For long prompts, write the details into a file and reference it. PTYs are more
-reliable with short injected messages.
+For long prompts, write the details into a file and reference it. Structured
+sends are more reliable with short injected messages.
 
 ```bash
-harnex run codex --id cx-i-NN --tmux cx-i-NN \
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read and execute /tmp/task-impl-NN.md"
 ```
 
@@ -70,7 +70,7 @@ parallel orchestration compact:
 
 ```bash
 for i in 1 2 3; do
-  harnex run codex --id w-$i --tmux w-$i --detach \
+  harnex run pi --id w-$i --tmux w-$i --detach \
     --context "Read and execute /tmp/task-$i.md" --auto-stop &
 done
 for i in 1 2 3; do harnex wait --id w-$i & done
@@ -81,27 +81,28 @@ Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer
 matches `harnex status` or `harnex pane --id`.
 
+Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
+(e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).
+
 Codex flag forms differ between transports. The default JSON-RPC adapter
 (`codex app-server`) does not accept `-m`/`--model`; pass the model as
 `-c model="<name>"` instead. The legacy PTY adapter (`harnex run codex
---legacy-pty`) still accepts `-m`. Harnex rejects `-m` early on JSON-RPC
-with an actionable error rather than letting the subprocess boot-disconnect.
-Codex app-server runs also default to `service_tier="flex"`; add
-`--fast` to use `service_tier="fast"`.
+--legacy-pty`) still accepts `-m`. Codex app-server runs also default to
+`service_tier="flex"`; add `--fast` to use `service_tier="fast"`.
 
 ## Send
 
 Use `--message` for short instructions and file references:
 
 ```bash
-harnex send --id cx-i-NN --message "Continue with /tmp/task-impl-NN.md. Report final status to $HARNEX_ID."
+harnex send --id pi-i-NN --message "Continue with /tmp/task-impl-NN.md. Report final status to $HARNEX_ID."
 ```
 
 Use `--wait-for-idle` only as a turn fence. It proves that one send returned to
 an idle state; it is not a full work-completion signal.
 
 ```bash
-harnex send --id cx-i-NN --message "Run the acceptance test." --wait-for-idle --timeout 900
+harnex send --id pi-i-NN --message "Run the acceptance test." --wait-for-idle --timeout 900
 ```
 
 Messages sent from one harnex session to another include a relay header:
@@ -120,16 +121,16 @@ Use the lightest primitive that gives the signal you need:
 
 | Need | Command |
 | --- | --- |
-| Current live screen | `harnex pane --id cx-i-NN --lines 40` |
-| Continuous pane view | `harnex pane --id cx-i-NN --follow` |
-| Transcript tail | `harnex logs --id cx-i-NN --lines 80` |
-| Structured events | `harnex events --id cx-i-NN --snapshot` |
-| Native turn completion | `harnex wait --id cx-i-NN --until task_complete` |
+| Current live screen | `harnex pane --id pi-i-NN --lines 40` |
+| Continuous pane view | `harnex pane --id pi-i-NN --follow` |
+| Transcript tail | `harnex logs --id pi-i-NN --lines 80` |
+| Structured events | `harnex events --id pi-i-NN --snapshot` |
+| Native turn completion | `harnex wait --id pi-i-NN --until task_complete` |
 
 For unattended policy-only stall recovery, use built-in watch mode:
 
 ```bash
-harnex run codex --id cx-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"
+harnex run pi --id pi-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"
 ```
 
 `--watch` is foreground-blocking. Use it when a single process should launch
@@ -142,10 +143,10 @@ Before stopping a worker, verify the expected artifact, test result, commit,
 or review output exists:
 
 ```bash
-harnex pane --id cx-i-NN --lines 60
+harnex pane --id pi-i-NN --lines 60
 git status --short
 git log --oneline -5
-harnex stop --id cx-i-NN
+harnex stop --id pi-i-NN
 ```
 
 Stop completed sessions promptly. Fresh workers are easier to reason about
