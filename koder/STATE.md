@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-22 | 11:39 PM | IST
+Updated: 2026-05-23 | 04:23 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-23 | 04:07 PM | IST: Pi support research captured as
+  #44 (first-class `pi --mode rpc` adapter), #45 (deferred Pi PTY
+  adapter with extension markers), and #46 (restore `actual.cost_usd`
+  by default, starting with Pi structured stats). No code changes yet.
 - 2026-05-19 | 09:02 AM | IST: #43 filed to track throughput-first
   telemetry v2 (attempt-level lifecycle, retry/fallback economics,
   attribution enforcement, and throughput KPIs in dispatch rows).
@@ -156,13 +160,18 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
+- #44 is the recommended next-session focus: implement a first-class
+  Pi RPC adapter (`pi --mode rpc`) for autonomous harnex dispatch.
+  Use Pi's JSONL command/event protocol, not Codex JSON-RPC.
+- #46 should land with or immediately after #44: restore
+  `actual.cost_usd` by default, populated from Pi `get_session_stats.cost`
+  when available and `nil` for adapters without reliable cost.
+- #45 tracks deferred visible Pi PTY/TUI support via stable markers from
+  a Pi extension; do not start with brittle TUI regex scraping.
 - Codex uses JSON-RPC `app-server` by default; PTY remains
   first-class for visible TUI and non-JSON-RPC adapters.
-- #42 is the recommended next-session focus: make app-server Codex
-  durable enough to serve as the real orchestrator, with the visible
-  TUI reduced to initiator/controller duties.
-- #43 is now open to make throughput-first telemetry explicit and
-  queryable (attempt-level retries/disconnects/fallback + attribution).
+- #42 remains open for app-server Codex orchestrator recovery.
+- #43 remains open for throughput-first telemetry v2.
 - Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
 - Codex app-server schema freshness is current for local
   `codex-cli 0.130.0`; the unskipped release suite was green for
@@ -178,50 +187,24 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #42 — plan and implement the app-server orchestrator auto-recovery
-   MVP. Start with JSON-RPC error parsing/classification
-   (`params["error"]["message"]`, `codexErrorInfo`, `willRetry`),
-   same-deployment subprocess restart + `thread/resume`, bounded
-   recovery prompting, and `stream_error` / recovery telemetry. Keep
-   PTY regex sentry out of scope.
-2. Plan 30 Phase 3 — disconnect-rate threshold detection. New
-   `Harnex::Runtime::FallbackTrigger` module (flag parser +
-   `should_trigger?`); extend `EventCounters` with
-   `record_disconnection_at` + `disconnect_rate_in_window`. Tests
-   under `test/harnex/runtime/fallback_trigger_test.rb`. The
-   subprocess-restart primitive (`switch_deployment`) is already
-   in place from Slice B; Phase 3 wires up the *when* signal.
-3. Plan 30 Phase 4 — per-arm telemetry split + Session signaling
-   to reset per-turn counters at fallback time, and the
-   `fallback_triggered` events-log emission that plan 30 Phase 2
-   originally listed but Slice B deferred. Schema additions to
-   `actual.*` (pre/post splits) and `test/dispatch_row_schema_test.rb`.
-4. Plan 30 Phase 5 — `harnex run --fallback-model` and
-   `--fallback-disc-threshold` CLI flags, docs, integration test.
-5. #41 Slice C — public API surface doc at `docs/public_api.md`:
-   stable CLI commands, env vars (`HARNEX_ID`,
-   `HARNEX_SESSION_CLI`, `HARNEX_SPAWNER_PANE`,
-   `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS`,
-   `HARNEX_EXIT_STATUS_GRACE_SECONDS`), DISPATCH schema fields,
-   exit codes. Everything else marked internal. Buys refactor
-   headroom without a 1.0 commitment. Independent of Slice B.
-6. #35 deferred `auto_disconnects` — needs a dedicated counter
-   (likely "auto-resumed disconnects") rather than the current
-   alias-of-disconnections shape. Tracked in the issue file.
-7. Optional #36 follow-ups (deferred — not required for closure):
-   add `wait --until row_emitted` predicate; bump event timestamps
-   to `iso8601(3)` so future regressions can be quantified directly
-   from the events log.
-8. File the concurrency / hardening audit and the doc-staleness
-   audit findings from `koder/releases/0.6.5.md` as new issues.
-9. #35 Tier 4 (optional): `commit_shas: [...]` list and `branch_end`
-   capture if/when richer git context is wanted.
-10. Cross-deployment smoke for plan 30 — repeat the resume test with
-   subprocess B configured for an alternate Azure deployment before
-   Phase 5 merge.
-11. #43 — draft and execute a single implementation plan for
-   throughput-first telemetry v2 (attempt-level lifecycle + retry tax
-   + attribution + summary KPIs), then update dispatch telemetry docs.
+1. #44 — implement the Pi RPC adapter. Start with a small strict-LF
+   JSONL client, stub Pi RPC subprocess tests, context-as-`prompt`,
+   `agent_end` -> `task_complete`, extension-UI auto-cancel, and
+   `get_session_stats` telemetry.
+2. #46 — restore `actual.cost_usd` as an additive DISPATCH field;
+   Pi RPC should populate it from structured stats by default.
+3. #45 — later visible Pi PTY/TUI support, but only with stable markers
+   from a Pi extension; keep this out of the #44 RPC slice.
+4. #42 — plan/implement Codex app-server orchestrator auto-recovery
+   when returning to Codex durability work.
+5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+   telemetry split, and fallback CLI flags.
+6. #41 Slice C — public API surface doc at `docs/public_api.md`.
+7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+   attribution, summary KPIs).
+8. Deferred housekeeping: #35 `auto_disconnects`/Tier 4, optional #36
+   row-emitted wait + millisecond event timestamps, and release-audit
+   hardening/doc-staleness findings.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in
