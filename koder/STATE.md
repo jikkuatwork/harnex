@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-23 | 07:02 PM | IST
+Updated: 2026-05-24 | 11:08 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-24 | 11:08 PM | IST: #47 queue-aware dispatch telemetry
+  contract was filed and a review turn was added in
+  `koder/issues/47_queue_aware_dispatch_telemetry.md`; no code changes.
 - 2026-05-23 | 07:02 PM | IST: Pi-first docs refresh landed on
   branch `pi-harness` so `harnex` guidance now defaults to `harnex run pi`
   across dispatch/chain/buddy/monitoring/naming + CLI help examples
@@ -178,6 +181,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
+- #47 is newly filed and reviewed; next step is for the filing agent to
+  respond/settle schema decisions before planning implementation.
 - #44 and #46 are complete at HEAD; Pi RPC is first-class and validated
   with both tests and live dispatch smokes.
 - Pi-first docs/default guidance work is on branch `pi-harness` and ready
@@ -192,14 +197,16 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. Merge/review branch `pi-harness` (Pi RPC + Pi-first docs defaults).
-2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+1. #47 — have the filing agent respond to the review turn, then draft the
+   implementation plan for the queue-aware telemetry contract.
+2. Merge/review branch `pi-harness` (Pi RPC + Pi-first docs defaults).
+3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-3. #42 — resume Codex app-server orchestrator auto-recovery work.
-4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+4. #42 — resume Codex app-server orchestrator auto-recovery work.
+5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-5. #41 Slice C — public API surface doc at `docs/public_api.md`.
-6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+6. #41 Slice C — public API surface doc at `docs/public_api.md`.
+7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
