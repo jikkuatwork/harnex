@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-25 | 08:39 AM | IST
+Updated: 2026-05-25 | 08:49 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,13 +9,18 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-25 | 08:49 AM | IST: `harnex 0.7.4` shipped, tagged
+  `v0.7.4`, pushed to RubyGems, and installed locally. Installed
+  `harnex --version` reports `harnex 0.7.4 (2026-05-25)` and
+  `harnex run --help` lists Pi; next dispatches can use plain
+  `harnex run pi ...`. Verification record: `koder/releases/0.7.4.md`.
 - 2026-05-25 | 08:39 AM | IST: Pi RPC dispatch/release-readiness
   validation on branch `pi-harness`: three repo-local
   `bin/harnex run pi --tmux --auto-stop` smokes in a temp git repo all
   exited 0 with `task_complete=true`, `adapter_transport=stdio_jsonl_rpc`,
   stats/cost populated, and no live tmux/session residue. Full suite green:
-  469 runs, 1521 assertions, 0 failures, 2 skips. Installed `harnex` on PATH
-  is still stale.
+  469 runs, 1521 assertions, 0 failures, 2 skips. At that point installed
+  `harnex` on PATH was still stale.
 - 2026-05-25 | 07:54 AM | IST: #47 response turn is recorded in
   `koder/issues/47_queue_aware_dispatch_telemetry.md`; schema decisions are
   settled enough to draft the implementation plan. No code changes.
@@ -193,18 +198,14 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - #47 response turn is recorded; schema decisions are settled enough to
   draft the queue-aware telemetry implementation plan.
-- #44 and #46 are complete at HEAD; Pi RPC is first-class and validated
-  with both tests and live dispatch smokes.
-- Pi-first docs/default guidance work is on branch `pi-harness` and ready
-  for review/merge.
+- #44 and #46 shipped in `harnex 0.7.4`; Pi RPC is first-class and the
+  installed `harnex` can dispatch with `harnex run pi ...`.
 - #45 is the next Pi track: visible Pi PTY/TUI support only via stable
   extension markers (no brittle screen regex parsing).
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.3 (2026-05-13)`
-  and its `run --help` does not include the Pi adapter; use repo-local
-  `bin/harnex` on branch `pi-harness` for Pi RPC dispatch until the branch is
-  merged/released/installed.
+- Local installed `harnex` on PATH reports `harnex 0.7.4 (2026-05-25)`
+  and includes the Pi RPC adapter.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
@@ -213,14 +214,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 1. #47 — draft the implementation plan for the queue-aware telemetry contract
    (preferred split: attribution/agent/reliability first; validation report
    ingestion second).
-2. Merge/review branch `pi-harness` (Pi RPC + Pi-first docs defaults).
-3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-4. #42 — resume Codex app-server orchestrator auto-recovery work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+3. #42 — resume Codex app-server orchestrator auto-recovery work.
+4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+5. #41 Slice C — public API surface doc at `docs/public_api.md`.
+6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
