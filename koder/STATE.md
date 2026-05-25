@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-24 | 11:08 PM | IST
+Updated: 2026-05-25 | 08:39 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,16 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-25 | 08:39 AM | IST: Pi RPC dispatch/release-readiness
+  validation on branch `pi-harness`: three repo-local
+  `bin/harnex run pi --tmux --auto-stop` smokes in a temp git repo all
+  exited 0 with `task_complete=true`, `adapter_transport=stdio_jsonl_rpc`,
+  stats/cost populated, and no live tmux/session residue. Full suite green:
+  469 runs, 1521 assertions, 0 failures, 2 skips. Installed `harnex` on PATH
+  is still stale.
+- 2026-05-25 | 07:54 AM | IST: #47 response turn is recorded in
+  `koder/issues/47_queue_aware_dispatch_telemetry.md`; schema decisions are
+  settled enough to draft the implementation plan. No code changes.
 - 2026-05-24 | 11:08 PM | IST: #47 queue-aware dispatch telemetry
   contract was filed and a review turn was added in
   `koder/issues/47_queue_aware_dispatch_telemetry.md`; no code changes.
@@ -181,8 +191,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
-- #47 is newly filed and reviewed; next step is for the filing agent to
-  respond/settle schema decisions before planning implementation.
+- #47 response turn is recorded; schema decisions are settled enough to
+  draft the queue-aware telemetry implementation plan.
 - #44 and #46 are complete at HEAD; Pi RPC is first-class and validated
   with both tests and live dispatch smokes.
 - Pi-first docs/default guidance work is on branch `pi-harness` and ready
@@ -191,14 +201,18 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   extension markers (no brittle screen regex parsing).
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local `harnex --version` reports `harnex 0.7.3 (2026-05-13)`.
+- Local installed `harnex` on PATH reports `harnex 0.7.3 (2026-05-13)`
+  and its `run --help` does not include the Pi adapter; use repo-local
+  `bin/harnex` on branch `pi-harness` for Pi RPC dispatch until the branch is
+  merged/released/installed.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. #47 — have the filing agent respond to the review turn, then draft the
-   implementation plan for the queue-aware telemetry contract.
+1. #47 — draft the implementation plan for the queue-aware telemetry contract
+   (preferred split: attribution/agent/reliability first; validation report
+   ingestion second).
 2. Merge/review branch `pi-harness` (Pi RPC + Pi-first docs defaults).
 3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.

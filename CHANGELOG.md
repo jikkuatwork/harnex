@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-05-25 | 08:45 AM | IST
+
 ### Added
 
 - First-class `pi` structured adapter (`Harnex::Adapters::Pi`) for

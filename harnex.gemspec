@@ -4,7 +4,7 @@ Gem::Specification.new do |s|
   s.name        = "harnex"
   s.version     = Harnex::VERSION
   s.summary     = "PTY harness for terminal AI agents"
-  s.description = "A local PTY harness that wraps terminal AI agents (Claude, Codex) " \
+  s.description = "A local PTY harness that wraps terminal AI agents (Claude, Codex, Pi) " \
                   "and adds a control plane for discovery, messaging, and coordination."
   s.authors     = ["Jikku Jose"]
   s.email       = ["jikkujose@gmail.com"]
