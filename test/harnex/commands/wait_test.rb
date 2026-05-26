@@ -22,9 +22,15 @@ class WaiterTest < Minitest::Test
 
   # --- no session found (wait-until-exit) ---
 
-  def test_returns_1_when_no_session
+  def test_returns_unknown_when_no_session_or_terminal_summary_exists
     waiter = Harnex::Waiter.new(["--id", "nonexistent"])
-    assert_output(nil, /no session found/) { assert_equal 1, waiter.run }
+    out, err = capture_io { assert_equal 1, waiter.run }
+    assert_match(/no session found/, err)
+
+    payload = JSON.parse(out)
+    refute payload["ok"]
+    assert_equal "unknown", payload["state"]
+    assert_equal false, payload["terminal"]
   end
 
   # --- no session found (wait-until-state) ---
@@ -32,6 +38,38 @@ class WaiterTest < Minitest::Test
   def test_until_prompt_returns_1_when_no_session
     waiter = Harnex::Waiter.new(["--id", "nonexistent", "--until", "prompt"])
     assert_output(nil, /no session found/) { assert_equal 1, waiter.run }
+  end
+
+  def test_wait_until_exit_reads_terminal_summary_when_exit_file_is_missing
+    Dir.mktmpdir("harnex-wait-summary") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
+      FileUtils.mkdir_p(File.dirname(dispatch_path))
+      File.write(dispatch_path, JSON.generate({
+        "meta" => {
+          "id" => "summary-only",
+          "repo" => repo,
+          "started_at" => Time.now.iso8601,
+          "ended_at" => Time.now.iso8601
+        },
+        "actual" => {
+          "task_complete" => true,
+          "exit" => "success",
+          "exit_code" => 0
+        },
+        "predicted" => {}
+      }) + "\n")
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", "summary-only"])
+      out, = capture_io { assert_equal 0, waiter.run }
+      payload = JSON.parse(out)
+      assert payload["ok"]
+      assert_equal "completed", payload["state"]
+      assert_equal true, payload["terminal"]
+      assert_equal "success", payload["exit"]
+      assert_equal 0, payload["exit_code"]
+      assert_equal dispatch_path, payload["summary_out"]
+    end
   end
 
   # --- wait-until-exit reads exit status file ---

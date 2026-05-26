@@ -28,6 +28,8 @@ module Harnex
         Gotchas:
           By default, status filters to the current repo root.
           Use --all when supervising workers launched from sibling worktrees.
+          With --id, terminal summaries can report completed/failed/unknown
+          even after the live session registry is gone.
           A prompt-like state is not a completion signal by itself.
       TEXT
     end
@@ -83,12 +85,31 @@ module Harnex
     end
 
     def load_sessions
-      repo_root = @options[:all] ? nil : Harnex.resolve_repo_root(@options[:repo_path])
-      sessions = Harnex.active_sessions(repo_root, id: @options[:id])
+      active_repo_root = @options[:all] ? nil : Harnex.resolve_repo_root(@options[:repo_path])
+      fallback_repo_root = Harnex.resolve_repo_root(@options[:repo_path])
+      sessions = Harnex.active_sessions(active_repo_root, id: @options[:id])
 
-      sessions.map { |session| load_live_status(session) }
-        .sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["id"].to_s] }
-        .reverse
+      live = sessions.map { |session| normalize_live_status(load_live_status(session)) }
+                     .sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["id"].to_s] }
+                     .reverse
+      return live unless @options[:id]
+      return [live.first] unless live.empty?
+
+      terminal = Harnex::TerminalStatus.resolve(id: @options[:id], repo_root: fallback_repo_root)
+      [terminal || Harnex::TerminalStatus.unknown(id: @options[:id], repo_root: fallback_repo_root)]
+    end
+
+    def normalize_live_status(session)
+      session.merge(
+        "state" => "running",
+        "terminal" => false,
+        "task_complete" => !session["last_completed_at"].to_s.empty?,
+        "exit" => nil,
+        "exit_code" => nil,
+        "summary_out" => nil,
+        "ended_at" => nil,
+        "source" => "live"
+      )
     end
 
     def load_live_status(session)
@@ -128,7 +149,7 @@ module Harnex
         "PORT" => session["port"].to_s,
         "AGE" => timeago(session["started_at"]),
         "IDLE" => format_idle(session["log_idle_s"]),
-        "STATE" => session.dig("input_state", "state").to_s.empty? ? "-" : session.dig("input_state", "state").to_s,
+        "STATE" => table_state(session),
         "DESC" => truncate(session["description"])
       }
       row["REPO"] = truncate_repo(session["repo_root"])
@@ -137,6 +158,14 @@ module Harnex
 
     def format_row(row, columns, widths)
       columns.map { |column| row.fetch(column).ljust(widths.fetch(column)) }.join("  ")
+    end
+
+    def table_state(session)
+      input_state = session.dig("input_state", "state").to_s
+      return input_state unless input_state.empty?
+
+      state = session["state"].to_s
+      state.empty? ? "-" : state
     end
 
     def timeago(timestamp)

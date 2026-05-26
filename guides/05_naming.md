@@ -93,15 +93,19 @@ The task file name does not need to duplicate the exact short phase code. It
 should be easy to scan in `/tmp` and should include the same task number as the
 session ID.
 
-## Done Markers
+## Done Markers (Legacy Compatibility)
 
-Derive done markers from the session ID:
+If a legacy workflow still expects a done marker, derive it from the session ID:
 
 ```text
 /tmp/pi-p-42-done.txt
 /tmp/pi-i-42-done.txt
 /tmp/pi-cr-42-done.txt
 ```
+
+Treat done markers as compatibility hints only. Canonical completion should come
+from harnex terminal telemetry (`harnex wait` / `harnex status --json` / summary
+rows in `.harnex/dispatch.jsonl`).
 
 When a brief asks for a completion marker, make it one line and include the
 highest-signal result: tests passed, review clean, or the blocking issue.

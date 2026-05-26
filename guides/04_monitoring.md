@@ -24,16 +24,20 @@ afterward.
 
 ## Completion Test
 
-For unattended work, declare done with a conjunction of work-level facts:
+For unattended work, first gate on harnex terminal state, then verify the task
+artifact and repo health:
 
 ```bash
-test -f /tmp/pi-i-NN-done.txt &&
-  test -z "$(git status --short)" &&
-  test "$(git log -1 --format=%ct)" -lt "$(($(date +%s) - 600))"
+harnex wait --id pi-i-NN --timeout 5400 &&
+  test -f path/to/expected-artifact &&
+  test -z "$(git status --short)"
 ```
 
-Adjust the artifact path and commit-age window to the task. The point is to
-avoid declaring done while a worker is between edits or between commits.
+`harnex wait` succeeds from durable terminal telemetry (`--summary-out` /
+`.harnex/dispatch.jsonl` / exit status), not from tmp done markers.
+
+Adjust the artifact path to the task. The point is to avoid declaring done while
+a worker is between edits or between commits.
 
 ## Why Pane State Alone Is Not Enough
 
@@ -73,22 +77,30 @@ harnex wait --id pi-i-NN --until task_complete --timeout 900
 
 ## Background Sweeper
 
-Consumers often run a small shell loop that checks the expected done marker,
-tree state, and harnex liveness. Keep a hard wall-clock cap so an unattended
-pipeline cannot wait forever:
+Consumers often run a small shell loop that checks terminal state, then drops
+to pane diagnostics only while work is still running. Keep a hard wall-clock cap
+so an unattended pipeline cannot wait forever:
 
 ```bash
 start=$(date +%s)
 max_wait=5400
 
-until test -f /tmp/pi-i-NN-done.txt; do
+while :; do
   if test "$(($(date +%s) - start))" -gt "$max_wait"; then
     echo "wall-clock cap hit for pi-i-NN" >&2
     exit 2
   fi
 
-  harnex status --id pi-i-NN --json
-  harnex pane --id pi-i-NN --lines 20
+  row=$(harnex status --id pi-i-NN --json | ruby -rjson -e 'rows=JSON.parse(STDIN.read); print JSON.generate(rows.first || {})')
+  state=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["state"].to_s)')
+
+  case "$state" in
+    completed) echo "pi-i-NN completed"; break ;;
+    failed|unknown) echo "pi-i-NN terminal state: $state" >&2; exit 1 ;;
+    running) harnex pane --id pi-i-NN --lines 20 ;;
+    *) harnex pane --id pi-i-NN --lines 20 ;;
+  esac
+
   sleep 60
 done
 ```
@@ -125,6 +137,7 @@ interpretation.
 ## Anti-Patterns
 
 - Polling `state=prompt` alone and calling it done.
+- Blocking orchestrators on `/tmp/*-done.txt` as the only completion signal.
 - Letting an unattended loop run with no wall-clock cap.
 - Reading raw tmux panes instead of `harnex pane`.
 - Using `--wait-for-idle` as acceptance proof.

@@ -1,11 +1,11 @@
 ---
-status: open
+status: landed
 priority: P1
 ---
 
 # Issue 48 — Terminal summary should be canonical over tmp done markers
 
-**Status**: open
+**Status**: landed
 **Priority**: P1
 **Filed**: 2026-05-25
 **Source incident**: Holm Queue `007`, dispatch `cx-i-007-02`
@@ -133,18 +133,49 @@ not block on tmp markers alone. Include an explicit anti-pattern:
 
 ## Acceptance criteria
 
-- [ ] A dispatch with terminal `--summary-out` success is reported as completed
+- [x] A dispatch with terminal `--summary-out` success is reported as completed
       even when the tmp done marker is absent.
-- [ ] `harnex status --json` or equivalent exposes `completed | failed |
+- [x] `harnex status --json` or equivalent exposes `completed | failed |
       running | unknown` using durable terminal state, not pane text alone.
-- [ ] `harnex wait --json --id <id>` exits successfully for terminal summary
+- [x] `harnex wait --json --id <id>` exits successfully for terminal summary
       success even if no done marker exists.
-- [ ] If a session is no longer active and no terminal summary exists, harnex
+- [x] If a session is no longer active and no terminal summary exists, harnex
       reports `unknown` or `failed`, never indefinite `working`.
-- [ ] Docs/agents-guide monitoring examples stop relying on tmp done markers as
+- [x] Docs/agents-guide monitoring examples stop relying on tmp done markers as
       the only completion signal.
-- [ ] Tests cover: summary success without done marker, active running without
+- [x] Tests cover: summary success without done marker, active running without
       summary, missing session with no summary, and pane-read failure behavior.
+
+## Resolution — 2026-05-26
+
+Landed on `main`:
+
+- Added `Harnex::TerminalStatus` (`lib/harnex/terminal_status.rb`) to resolve
+  durable terminal state from dispatch summaries/history.
+- `harnex status --json --id <id>` now returns one machine-readable row even
+  after session teardown, using states `running | completed | failed | unknown`.
+  For active sessions it emits `running`; for inactive sessions it falls back to
+  summary/history (`terminal=true`) or `unknown` (`terminal=false`).
+- `harnex wait --id <id>` now falls back to terminal summary/history when the
+  live registry and exit-status file are absent, and succeeds for terminal
+  summary success without any tmp done marker.
+- Missing-session/no-summary waits now return machine-readable
+  `{"state":"unknown","terminal":false}` instead of blocking on pane loops.
+- Monitoring docs now treat tmp done markers as legacy hints, with terminal
+  summaries/`status --json`/`wait` as canonical completion signals.
+
+Coverage added/updated:
+
+- `test/harnex/commands/status_test.rb`
+  - terminal summary completion when session is inactive
+  - `unknown` state when no live or terminal data exists
+- `test/harnex/commands/wait_test.rb`
+  - wait exit success from summary-only terminal row (no exit-status file)
+  - unknown terminal response when no session/summary exists
+
+Verification:
+
+- Full suite green: 472 runs, 1543 assertions, 0 failures, 2 skips.
 
 ## Out of scope
 

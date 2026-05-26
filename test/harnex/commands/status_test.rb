@@ -4,10 +4,12 @@ class StatusCommandTest < Minitest::Test
   def setup
     @repo_root = Dir.pwd
     @created_paths = []
+    @created_dirs = []
   end
 
   def teardown
     @created_paths.each { |path| FileUtils.rm_f(path) }
+    @created_dirs.each { |dir| FileUtils.rm_rf(dir) }
   end
 
   def test_status_json_outputs_array
@@ -63,6 +65,50 @@ class StatusCommandTest < Minitest::Test
     assert_includes out, "REPO"
   end
 
+  def test_status_json_id_returns_terminal_summary_when_session_is_not_active
+    repo = create_git_repo
+    dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
+    FileUtils.mkdir_p(File.dirname(dispatch_path))
+    File.write(dispatch_path, JSON.generate({
+      "meta" => {
+        "id" => "done-48",
+        "repo" => repo,
+        "started_at" => Time.now.iso8601,
+        "ended_at" => Time.now.iso8601
+      },
+      "actual" => {
+        "task_complete" => true,
+        "exit" => "success",
+        "exit_code" => 0
+      },
+      "predicted" => {}
+    }) + "\n")
+
+    status = Harnex::Status.new(["--json", "--repo", repo, "--id", "done-48"])
+    out, = capture_io { assert_equal 0, status.run }
+    data = JSON.parse(out)
+
+    assert_equal 1, data.length
+    assert_equal "done-48", data.first["id"]
+    assert_equal "completed", data.first["state"]
+    assert_equal true, data.first["terminal"]
+    assert_equal "success", data.first["exit"]
+    assert_equal 0, data.first["exit_code"]
+  end
+
+  def test_status_json_id_returns_unknown_when_no_live_or_terminal_data_exists
+    repo = create_git_repo
+
+    status = Harnex::Status.new(["--json", "--repo", repo, "--id", "ghost-48"])
+    out, = capture_io { assert_equal 0, status.run }
+    data = JSON.parse(out)
+
+    assert_equal 1, data.length
+    assert_equal "ghost-48", data.first["id"]
+    assert_equal "unknown", data.first["state"]
+    assert_equal false, data.first["terminal"]
+  end
+
   def test_status_table_includes_idle_column_and_nil_fallback
     write_registry("gamma", include_log_keys: true, log_mtime: nil, log_idle_s: nil)
 
@@ -86,6 +132,13 @@ class StatusCommandTest < Minitest::Test
   end
 
   private
+
+  def create_git_repo
+    dir = Dir.mktmpdir("harnex-status-repo")
+    @created_dirs << dir
+    system("git", "init", "-q", dir, out: File::NULL, err: File::NULL)
+    dir
+  end
 
   def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil)
     path = Harnex.registry_path(@repo_root, id)

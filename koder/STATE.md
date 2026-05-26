@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-25 | 10:02 AM | IST
+Updated: 2026-05-26 | 05:07 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,15 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-26 | 05:07 PM | IST: #48 landed (terminal summaries are canonical
+  over tmp done markers). Added `Harnex::TerminalStatus`, taught
+  `harnex status --json --id` to emit `running|completed|failed|unknown`
+  for inactive sessions via durable telemetry, and taught `harnex wait`
+  to succeed from summary rows when registry/exit files are missing.
+  Monitoring guides now demote `/tmp/*-done.txt` to legacy hints.
+  Tests added in `test/harnex/commands/status_test.rb` and
+  `test/harnex/commands/wait_test.rb`; full suite green
+  (472 runs, 1543 assertions, 0 failures, 2 skips).
 - 2026-05-25 | 08:49 AM | IST: `harnex 0.7.4` shipped, tagged
   `v0.7.4`, pushed to RubyGems, and installed locally. Installed
   `harnex --version` reports `harnex 0.7.4 (2026-05-25)` and
@@ -198,6 +207,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - #47 response turn is recorded; schema decisions are settled enough to
   draft the queue-aware telemetry implementation plan.
+- #48 is now landed in-tree: terminal summary state is canonical for
+  `status --json --id` and `wait`, with tmp done markers treated as
+  legacy compatibility hints.
 - #44 and #46 shipped in `harnex 0.7.4`; Pi RPC is first-class and the
   installed `harnex` can dispatch with `harnex run pi ...`.
 - #45 is the next Pi track: visible Pi PTY/TUI support only via stable

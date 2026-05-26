@@ -38,6 +38,8 @@ module Harnex
         Gotchas:
           task_complete is an event predicate; prompt/busy are live state polls.
           Prompt state alone does not prove work acceptance. Verify artifacts/tests.
+          Exit waits can resolve from terminal summary rows when live registry/
+          exit-status files are already gone.
           Without --timeout, wait can block indefinitely.
       TEXT
     end
@@ -238,7 +240,11 @@ module Harnex
       unless registry
         return read_exit_status(exit_path, @options[:id]) if File.exist?(exit_path)
 
+        terminal = terminal_status(repo_root)
+        return emit_terminal_status(terminal) if terminal
+
         warn("harnex wait: no session found with id #{@options[:id].inspect}")
+        puts JSON.generate(ok: false, id: @options[:id], state: "unknown", terminal: false, status: "unknown")
         return 1
       end
 
@@ -248,7 +254,13 @@ module Harnex
       loop do
         unless Harnex.alive_pid?(target_pid)
           await_exit_status(exit_path)
-          return read_exit_status(exit_path, @options[:id])
+          return read_exit_status(exit_path, @options[:id]) if File.exist?(exit_path)
+
+          terminal = terminal_status(repo_root)
+          return emit_terminal_status(terminal) if terminal
+
+          puts JSON.generate(ok: false, id: @options[:id], state: "unknown", terminal: false, status: "unknown")
+          return 1
         end
 
         if deadline && Time.now >= deadline
@@ -305,6 +317,38 @@ module Harnex
       else
         puts JSON.generate(ok: true, id: id, status: "exited")
         0
+      end
+    end
+
+    def terminal_status(repo_root)
+      status = Harnex::TerminalStatus.resolve(id: @options[:id], repo_root: repo_root)
+      return nil unless status
+      return nil unless status["terminal"]
+
+      status
+    end
+
+    def emit_terminal_status(status)
+      payload = {
+        ok: status["state"] == "completed",
+        id: status["id"],
+        state: status["state"],
+        terminal: true,
+        task_complete: status["task_complete"],
+        exit: status["exit"],
+        exit_code: status["exit_code"],
+        summary_out: status["summary_out"],
+        ended_at: status["ended_at"],
+        source: status["source"]
+      }
+      puts JSON.generate(payload)
+
+      if payload[:ok]
+        0
+      elsif status["exit_code"].is_a?(Integer) && status["exit_code"] > 0
+        status["exit_code"]
+      else
+        1
       end
     end
 

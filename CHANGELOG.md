@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-05-26 | 05:18 PM | IST
+
+### Added
+
+- `Harnex::TerminalStatus` now resolves durable terminal dispatch state from
+  summary/history rows so commands can classify inactive sessions without
+  relying on tmp done markers.
+
+### Changed
+
+- `harnex status --json --id <id>` now returns a machine-readable row even when
+  the live session is gone, with `state` in `running|completed|failed|unknown`
+  and terminal metadata (`terminal`, `exit`, `exit_code`, `summary_out`).
+- `harnex wait --id <id>` now falls back to terminal summary/history telemetry
+  when registry and exit-status files are missing, returning `completed` on
+  summary success and `unknown` when no durable terminal signal exists.
+- Monitoring guides now treat `/tmp/*-done.txt` as legacy compatibility hints;
+  canonical completion is `harnex wait` / `harnex status --json` / dispatch
+  summary rows.
+
 ## [0.7.4] - 2026-05-25 | 08:45 AM | IST
 
 ### Added
