@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-26 | 05:07 PM | IST
+Updated: 2026-05-26 | 05:21 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-05-26 | 05:21 PM | IST: `harnex 0.7.5` shipped, tagged `v0.7.5`,
+  pushed to RubyGems, and installed locally. Installed `harnex --version`
+  reports `harnex 0.7.5 (2026-05-26)`. #48 is now released: terminal
+  summary telemetry is canonical for `status --json --id` and `wait` over
+  tmp done markers. Verification record: `koder/releases/0.7.5.md`.
 - 2026-05-26 | 05:07 PM | IST: #48 landed (terminal summaries are canonical
   over tmp done markers). Added `Harnex::TerminalStatus`, taught
   `harnex status --json --id` to emit `running|completed|failed|unknown`
@@ -207,7 +212,7 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 - #47 response turn is recorded; schema decisions are settled enough to
   draft the queue-aware telemetry implementation plan.
-- #48 is now landed in-tree: terminal summary state is canonical for
+- #48 is shipped in `harnex 0.7.5`: terminal summary state is canonical for
   `status --json --id` and `wait`, with tmp done markers treated as
   legacy compatibility hints.
 - #44 and #46 shipped in `harnex 0.7.4`; Pi RPC is first-class and the
@@ -216,8 +221,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   extension markers (no brittle screen regex parsing).
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.4 (2026-05-25)`
-  and includes the Pi RPC adapter.
+- Local installed `harnex` on PATH reports `harnex 0.7.5 (2026-05-26)`
+  and includes the Pi RPC adapter plus #48 terminal-status/wait fallback.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
