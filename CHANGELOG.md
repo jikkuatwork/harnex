@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed README quick-start and monitoring guidance to emphasize
+  `--context --auto-stop`, `--until task_complete` for interactive structured
+  sessions, durable terminal summaries, and timeout/artifact verification.
+
 ## [0.7.5] - 2026-05-26 | 05:18 PM | IST
 
 ### Added

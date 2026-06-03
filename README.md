@@ -33,16 +33,24 @@ or project-local docs are required.
 ## What it does
 
 ```bash
-# Start an agent in tmux
+# Start a visible one-shot worker, give it a task, and stop on completion
+harnex run pi --id planner --tmux planner \
+  --context "Write a plan to /tmp/plan.md" --auto-stop
+
+# Wait for the wrapper to exit and write terminal telemetry
+harnex wait --id planner --timeout 900
+
+# Inspect the final state or the recent dispatch history
+harnex status --id planner --json
+harnex history --limit 5
+```
+
+For a long-lived interactive session, keep the worker open and send work to it:
+
+```bash
 harnex run pi --id planner --tmux planner
-
-# Send it a task and wait for it to finish
 harnex send --id planner --message "Write a plan to /tmp/plan.md" --wait-for-idle
-
-# Peek at what it's doing
 harnex pane --id planner --lines 30
-
-# Stop it
 harnex stop --id planner
 ```
 
@@ -59,8 +67,9 @@ job, watch it work, stop it when done.
   tmux-backed terminal, `harnex logs` tails the persisted transcript, and
   `harnex events` streams structured JSONL lifecycle events.
 
-- **You don't want to babysit.** Send a task with `--wait-for-idle`,
-  walk away, check back when it's done.
+- **You don't want to babysit.** Use `--context --auto-stop` for
+  one-shot work, `--watch` for bounded stall recovery, or
+  `--wait-for-idle` as a send fence.
 
 - **You want local-only orchestration.** Everything runs on your
   machine. No cloud services, no API keys beyond what the agents need.
@@ -169,6 +178,26 @@ bare `--watch` means babysitter mode.
 For one-shot startup prompts, add `--auto-stop`. It requires `--context`
 and stops the session after the first task completion or PTY prompt return.
 
+## Completion and waiting
+
+Choose the wait predicate that matches how you launched the worker:
+
+- `harnex wait --id ID` waits for the wrapped process to exit. This is right
+  for `--auto-stop`, already-exited sessions, and terminal-summary recovery.
+- Interactive agents usually stay open after one turn. For structured Pi RPC
+  and Codex app-server sessions, use
+  `harnex wait --id ID --until task_complete --timeout SECS` as the turn-level
+  fence instead of a bare wait.
+- `harnex send --wait-for-idle` is an atomic send fence for PTY-style
+  interactions. It proves the turn returned to an idle/prompt state, not that
+  your acceptance criteria passed.
+- `harnex status --id ID --json` can report `running`, `completed`, `failed`,
+  or `unknown` from durable terminal summary rows even after the live registry
+  is gone.
+
+Always set a timeout for unattended waits and verify the expected artifact,
+tests, or git state after harnex reports completion.
+
 For structured subscriptions, stream JSONL events:
 
 ```bash
@@ -183,7 +212,9 @@ Schema details and compatibility policy are documented in
 Every finished `harnex run` writes dispatch records. In a git repo, the
 default path is `<repo>/.harnex/dispatch.jsonl`; outside a git repo, the
 compact history record falls back to `~/.local/state/harnex/dispatch.jsonl`.
-`harnex history` reads the compact records from that location.
+`harnex history` reads the compact records from that location, and
+`harnex status --id ID --json` / `harnex wait` can use the same durable
+terminal summaries when the live session registry is already gone.
 
 Use `harnex history` to inspect it:
 
@@ -276,12 +307,12 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex run <cli>` | Start an agent (`--tmux` visible, `--detach` background, `--watch` built-in monitoring) |
 | `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until done) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
-| `harnex status` | List running sessions (`--json` for full payloads) |
+| `harnex status` | List running sessions; with `--id ID --json`, terminal summaries can classify completed/failed sessions after exit |
 | `harnex pane --id <id>` | Capture a tmux-backed session's screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
-| `harnex wait --id <id>` | Block until exit, a target state, or `--until task_complete` |
+| `harnex wait --id <id>` | Block until process exit by default; use `--until task_complete` for turn completion in structured interactive sessions |
 | `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |

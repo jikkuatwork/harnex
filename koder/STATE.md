@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-05-26 | 05:21 PM | IST
+Updated: 2026-06-03 | 07:39 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-03 | 07:39 PM | IST: README refreshed to emphasize
+  `--context --auto-stop`, `--until task_complete` for interactive structured
+  sessions, durable terminal summaries, and timeout/artifact verification.
+  CHANGELOG Unreleased updated; docs-only, no test run.
 - 2026-05-26 | 05:21 PM | IST: `harnex 0.7.5` shipped, tagged `v0.7.5`,
   pushed to RubyGems, and installed locally. Installed `harnex --version`
   reports `harnex 0.7.5 (2026-05-26)`. #48 is now released: terminal
