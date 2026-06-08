@@ -73,7 +73,7 @@ for i in 1 2 3; do
   harnex run pi --id w-$i --tmux w-$i --detach \
     --context "Read and execute /tmp/task-$i.md" --auto-stop &
 done
-for i in 1 2 3; do harnex wait --id w-$i & done
+for i in 1 2 3; do harnex wait --id w-$i --until done & done
 wait
 ```
 
@@ -125,6 +125,7 @@ Use the lightest primitive that gives the signal you need:
 | Continuous pane view | `harnex pane --id pi-i-NN --follow` |
 | Transcript tail | `harnex logs --id pi-i-NN --lines 80` |
 | Structured events | `harnex events --id pi-i-NN --snapshot` |
+| Work completion fence | `harnex wait --id pi-i-NN --until done` |
 | Native turn completion | `harnex wait --id pi-i-NN --until task_complete` |
 
 For unattended policy-only stall recovery, use built-in watch mode:

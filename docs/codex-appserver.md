@@ -84,15 +84,21 @@ For interactive debugging where the original Codex TUI is wanted,
 `codex resume <thread-id>` opens the same thread in a real Codex
 CLI.
 
-## `harnex wait --until task_complete`
+## `harnex wait --until done` / `task_complete`
 
-Block until a Codex turn completes:
+For unattended monitors, block until Codex work completes or the session exits:
+
+```
+harnex wait --id cx-i-242 --until done --timeout 300
+```
+
+When you need the exact structured turn event, wait for `task_complete`:
 
 ```
 harnex wait --id cx-i-242 --until task_complete --timeout 300
 ```
 
-The waiter tails the events JSONL — not the API socket — so it
+The task-complete waiter tails the events JSONL — not the API socket — so it
 keeps working across restarts and is adapter-agnostic.
 
 ## `harnex doctor`

@@ -42,8 +42,11 @@ module Harnex
         "id" => Harnex.normalize_id(id),
         "repo_root" => File.expand_path(repo_root.to_s.empty? ? Dir.pwd : repo_root),
         "state" => "unknown",
+        "process_state" => "unknown",
         "terminal" => false,
         "task_complete" => false,
+        "done" => false,
+        "work_state" => "unknown",
         "exit" => nil,
         "exit_code" => nil,
         "summary_out" => nil,
@@ -127,12 +130,17 @@ module Harnex
       meta = record["meta"] || {}
       actual = record["actual"] || {}
       state = classify_summary_state(actual)
+      task_complete = !!actual["task_complete"]
+      terminal = state != "unknown"
       {
         "id" => meta["id"].to_s,
         "repo_root" => meta["repo"] || fallback_repo_root,
         "state" => state,
-        "terminal" => state != "unknown",
-        "task_complete" => !!actual["task_complete"],
+        "process_state" => Harnex.process_state_for(state, terminal: terminal),
+        "terminal" => terminal,
+        "task_complete" => task_complete,
+        "done" => Harnex.work_done_for(state, task_complete: task_complete),
+        "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
         "exit" => blank_to_nil(actual["exit"]),
         "exit_code" => actual["exit_code"],
         "summary_out" => summary_path,
@@ -164,12 +172,17 @@ module Harnex
         else
           "unknown"
         end
+      task_complete = record["terminal_event"].to_s == "task_complete"
+      terminal = state != "unknown"
       {
         "id" => record["id"].to_s,
         "repo_root" => fallback_repo_root,
         "state" => state,
-        "terminal" => state != "unknown",
-        "task_complete" => record["terminal_event"].to_s == "task_complete",
+        "process_state" => Harnex.process_state_for(state, terminal: terminal),
+        "terminal" => terminal,
+        "task_complete" => task_complete,
+        "done" => Harnex.work_done_for(state, task_complete: task_complete),
+        "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
         "exit" => history_exit(status),
         "exit_code" => nil,
         "summary_out" => blank_to_nil(record["summary_out_path"]),

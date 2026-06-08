@@ -37,8 +37,8 @@ or project-local docs are required.
 harnex run pi --id planner --tmux planner \
   --context "Write a plan to /tmp/plan.md" --auto-stop
 
-# Wait for the wrapper to exit and write terminal telemetry
-harnex wait --id planner --timeout 900
+# Wait for the work-level completion signal and terminal telemetry
+harnex wait --id planner --until done --timeout 900
 
 # Inspect the final state or the recent dispatch history
 harnex status --id planner --json
@@ -182,18 +182,22 @@ and stops the session after the first task completion or PTY prompt return.
 
 Choose the wait predicate that matches how you launched the worker:
 
+- `harnex wait --id ID --until done --timeout SECS` is the safest unattended
+  work fence. It returns when Harnex sees `task_complete` or a terminal exit,
+  whichever comes first.
 - `harnex wait --id ID` waits for the wrapped process to exit. This is right
-  for `--auto-stop`, already-exited sessions, and terminal-summary recovery.
-- Interactive agents usually stay open after one turn. For structured Pi RPC
-  and Codex app-server sessions, use
-  `harnex wait --id ID --until task_complete --timeout SECS` as the turn-level
-  fence instead of a bare wait.
+  for already-exited sessions and terminal-summary recovery, but interactive
+  agents can stay open after finishing a turn.
+- For structured Pi RPC and Codex app-server sessions, use
+  `harnex wait --id ID --until task_complete --timeout SECS` when you need the
+  exact turn-completion event instead of terminal-exit fallback.
 - `harnex send --wait-for-idle` is an atomic send fence for PTY-style
   interactions. It proves the turn returned to an idle/prompt state, not that
   your acceptance criteria passed.
 - `harnex status --id ID --json` can report `running`, `completed`, `failed`,
   or `unknown` from durable terminal summary rows even after the live registry
-  is gone.
+  is gone. Treat `state` as process/session state; use `done` and `work_state`
+  as the work-level monitor contract.
 
 Always set a timeout for unattended waits and verify the expected artifact,
 tests, or git state after harnex reports completion.
@@ -305,14 +309,14 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | Command | What it does |
 |---------|-------------|
 | `harnex run <cli>` | Start an agent (`--tmux` visible, `--detach` background, `--watch` built-in monitoring) |
-| `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until done) |
+| `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until the turn returns idle) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
 | `harnex status` | List running sessions; with `--id ID --json`, terminal summaries can classify completed/failed sessions after exit |
 | `harnex pane --id <id>` | Capture a tmux-backed session's screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
-| `harnex wait --id <id>` | Block until process exit by default; use `--until task_complete` for turn completion in structured interactive sessions |
+| `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
 | `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |

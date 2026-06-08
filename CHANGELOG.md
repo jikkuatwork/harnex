@@ -2,11 +2,23 @@
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-06-09 | 12:59 AM | IST
+
+### Added
+
+- `harnex status --json` now exposes work-level completion fields (`done`,
+  `work_state`, and `process_state`) so monitors can distinguish completed
+  work from a still-live interactive process.
+- `harnex wait --until done` waits for `task_complete` or terminal exit,
+  whichever arrives first, giving queue monitors a safe default fence.
+
 ### Changed
 
 - Refreshed README quick-start and monitoring guidance to emphasize
   `--context --auto-stop`, `--until task_complete` for interactive structured
   sessions, durable terminal summaries, and timeout/artifact verification.
+- Monitoring, buddy, and recipe examples now gate unattended work on
+  `--until done` / `done` / `work_state` instead of `state=completed` alone.
 
 ## [0.7.5] - 2026-05-26 | 05:18 PM | IST
 

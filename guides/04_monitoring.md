@@ -17,24 +17,26 @@ Prefer signals in this order:
 | `harnex pane` | Live UI interpretation and prompt/error diagnosis |
 | `harnex status` | Session liveness and coarse state |
 
-For structured sessions (Pi RPC and Codex app-server),
-`harnex wait --until task_complete` is a strong turn-level fence. It still
-does not know your acceptance criteria; verify the expected artifact or tests
-afterward.
+For unattended monitors, prefer `harnex wait --until done`: it returns on the
+work-level `task_complete` signal or terminal exit, whichever comes first. For
+structured sessions (Pi RPC and Codex app-server), `harnex wait --until
+task_complete` remains the exact turn-level fence. Neither knows your acceptance
+criteria; verify the expected artifact or tests afterward.
 
 ## Completion Test
 
-For unattended work, first gate on harnex terminal state, then verify the task
+For unattended work, first gate on harnex work completion, then verify the task
 artifact and repo health:
 
 ```bash
-harnex wait --id pi-i-NN --timeout 5400 &&
+harnex wait --id pi-i-NN --until done --timeout 5400 &&
   test -f path/to/expected-artifact &&
   test -z "$(git status --short)"
 ```
 
-`harnex wait` succeeds from durable terminal telemetry (`--summary-out` /
-`.harnex/dispatch.jsonl` / exit status), not from tmp done markers.
+`harnex wait --until done` succeeds from `task_complete` or durable terminal
+telemetry (`--summary-out` / `.harnex/dispatch.jsonl` / exit status), not from
+tmp done markers.
 
 Adjust the artifact path to the task. The point is to avoid declaring done while
 a worker is between edits or between commits.
@@ -72,6 +74,8 @@ harnex events --id pi-i-NN
 For task completion:
 
 ```bash
+harnex wait --id pi-i-NN --until done --timeout 900
+# Or, when you specifically need the structured turn event:
 harnex wait --id pi-i-NN --until task_complete --timeout 900
 ```
 
@@ -92,12 +96,13 @@ while :; do
   fi
 
   row=$(harnex status --id pi-i-NN --json | ruby -rjson -e 'rows=JSON.parse(STDIN.read); print JSON.generate(rows.first || {})')
+  done=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["done"] ? "true" : "false")')
+  work_state=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["work_state"].to_s)')
   state=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["state"].to_s)')
 
-  case "$state" in
-    completed) echo "pi-i-NN completed"; break ;;
-    failed|unknown) echo "pi-i-NN terminal state: $state" >&2; exit 1 ;;
-    running) harnex pane --id pi-i-NN --lines 20 ;;
+  case "$done:$work_state" in
+    true:*) echo "pi-i-NN work completed"; break ;;
+    false:failed) echo "pi-i-NN work failed; process state: $state" >&2; exit 1 ;;
     *) harnex pane --id pi-i-NN --lines 20 ;;
   esac
 
@@ -136,6 +141,7 @@ interpretation.
 
 ## Anti-Patterns
 
+- Polling `state=completed` alone and missing live sessions with `task_complete=true`.
 - Polling `state=prompt` alone and calling it done.
 - Blocking orchestrators on `/tmp/*-done.txt` as the only completion signal.
 - Letting an unattended loop run with no wall-clock cap.

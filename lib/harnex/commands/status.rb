@@ -30,6 +30,8 @@ module Harnex
           Use --all when supervising workers launched from sibling worktrees.
           With --id, terminal summaries can report completed/failed/unknown
           even after the live session registry is gone.
+          `state` is process/session state; use JSON `done`/`work_state`
+          or `harnex wait --until done` for work-level completion.
           A prompt-like state is not a completion signal by itself.
       TEXT
     end
@@ -100,16 +102,25 @@ module Harnex
     end
 
     def normalize_live_status(session)
+      task_complete = task_complete?(session)
       session.merge(
         "state" => "running",
+        "process_state" => "running",
         "terminal" => false,
-        "task_complete" => !session["last_completed_at"].to_s.empty?,
+        "task_complete" => task_complete,
+        "done" => Harnex.work_done_for("running", task_complete: task_complete),
+        "work_state" => Harnex.work_state_for("running", task_complete: task_complete),
         "exit" => nil,
         "exit_code" => nil,
         "summary_out" => nil,
         "ended_at" => nil,
         "source" => "live"
       )
+    end
+
+    def task_complete?(session)
+      session["task_complete"] == true || session["task_complete"].to_s == "true" ||
+        !session["last_completed_at"].to_s.empty?
     end
 
     def load_live_status(session)

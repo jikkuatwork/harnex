@@ -21,6 +21,8 @@ module Harnex
         Options:
           --id ID         Session ID to wait for (required)
           --until STATE   Wait until session reaches STATE. Supported:
+                            done            (work fence — task_complete or
+                                             terminal exit, whichever comes first)
                             task_complete   (events JSONL — fires on
                                              turn/completed; adapter-agnostic)
                             <other>         (agent_state HTTP poll, e.g.
@@ -31,11 +33,13 @@ module Harnex
           -h, --help      Show this help
 
         Common patterns:
+          #{program_name} --id cx-i-42 --until done --timeout 900
           #{program_name} --id cx-i-42 --until task_complete --timeout 900
           #{program_name} --id cx-i-42 --until prompt --timeout 120
           #{program_name} --id cx-i-42
 
         Gotchas:
+          done is the safest work-level fence for monitors.
           task_complete is an event predicate; prompt/busy are live state polls.
           Prompt state alone does not prove work acceptance. Verify artifacts/tests.
           Exit waits can resolve from terminal summary rows when live registry/
@@ -65,7 +69,10 @@ module Harnex
       raise "--id is required for harnex wait" unless @options[:id]
 
       if @options[:until_state]
-        if EVENT_PREDICATES.include?(@options[:until_state])
+        case @options[:until_state]
+        when "done"
+          wait_until_done
+        when *EVENT_PREDICATES
           wait_until_event(@options[:until_state])
         else
           wait_until_state
@@ -135,7 +142,7 @@ module Harnex
 
           task_complete_seen = true if event_type(event) == "task_complete"
           if matches?(event, predicate, task_complete_seen)
-            return [emit_event_match(event, start_time), f.pos, task_complete_seen]
+            return [emit_event_match(event, start_time, predicate), f.pos, task_complete_seen]
           end
         end
         offset = f.pos
@@ -166,7 +173,7 @@ module Harnex
     def matches?(event, predicate, task_complete_seen)
       type = event_type(event)
       case predicate
-      when "task_complete"
+      when "task_complete", "done"
         type == "task_complete"
       when "prompt"
         type == "task_complete" ||
@@ -176,16 +183,98 @@ module Harnex
       end
     end
 
-    def emit_event_match(event, start_time)
+    def emit_event_match(event, start_time, predicate)
       waited = (Time.now - start_time).round(1)
-      puts JSON.generate(
+      payload = {
         ok: true,
         id: @options[:id],
         event: event_type(event),
         seq: event["seq"],
         waited_seconds: waited
-      )
+      }
+      if predicate == "done"
+        payload.merge!(
+          status: "done",
+          state: "running",
+          process_state: "running",
+          terminal: false,
+          task_complete: true,
+          done: true,
+          work_state: "completed"
+        )
+      end
+      puts JSON.generate(payload)
       0
+    end
+
+    def wait_until_done
+      repo_root = Harnex.resolve_repo_root(@options[:repo_path])
+      events_path = Harnex.events_log_path(repo_root, @options[:id])
+      exit_path = Harnex.exit_status_path(repo_root, @options[:id])
+      registry = Harnex.read_registry(repo_root, @options[:id])
+      start_time = Time.now
+      deadline = @options[:timeout] ? start_time + @options[:timeout] : nil
+
+      offset = 0
+      task_complete_seen = false
+      final_event_deadline = nil
+
+      status, offset, task_complete_seen = scan_events(events_path, offset, "done", task_complete_seen, start_time)
+      return status if status
+
+      unless registry
+        terminal = done_status(repo_root)
+        return emit_done_terminal_status(terminal) if terminal
+        return emit_done_exit_status(exit_path, @options[:id]) if File.exist?(exit_path)
+
+        unless File.exist?(events_path)
+          warn("harnex wait: no session found with id #{@options[:id].inspect}")
+          puts JSON.generate(ok: false, id: @options[:id], state: "unknown", process_state: "unknown", terminal: false,
+                             task_complete: false, done: false, work_state: "unknown", status: "unknown")
+          return 1
+        end
+      end
+
+      target_pid = registry && registry["pid"]
+
+      loop do
+        status, offset, task_complete_seen = scan_events(events_path, offset, "done", task_complete_seen, start_time)
+        return status if status
+
+        unless registry
+          terminal = done_status(repo_root)
+          return emit_done_terminal_status(terminal) if terminal
+          return emit_done_exit_status(exit_path, @options[:id]) if File.exist?(exit_path)
+        end
+
+        if deadline && Time.now >= deadline
+          waited = (Time.now - start_time).round(1)
+          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", waited_seconds: waited,
+                             done: false, work_state: "running")
+          return 124
+        end
+
+        if target_pid && !Harnex.alive_pid?(target_pid)
+          final_event_deadline ||= Time.now + FINAL_EVENT_GRACE_SECONDS
+          if Time.now >= final_event_deadline
+            await_exit_status(exit_path)
+            return emit_done_exit_status(exit_path, @options[:id]) if File.exist?(exit_path)
+
+            terminal = done_status(repo_root)
+            return emit_done_terminal_status(terminal) if terminal
+
+            waited = (Time.now - start_time).round(1)
+            puts JSON.generate(ok: false, id: @options[:id], state: "exited", process_state: "exited",
+                               terminal: true, task_complete: false, done: false, work_state: "unknown",
+                               waited_seconds: waited)
+            return 1
+          end
+        else
+          final_event_deadline = nil
+        end
+
+        sleep EVENT_POLL_INTERVAL
+      end
     end
 
     def wait_until_state
@@ -244,7 +333,8 @@ module Harnex
         return emit_terminal_status(terminal) if terminal
 
         warn("harnex wait: no session found with id #{@options[:id].inspect}")
-        puts JSON.generate(ok: false, id: @options[:id], state: "unknown", terminal: false, status: "unknown")
+        puts JSON.generate(ok: false, id: @options[:id], state: "unknown", process_state: "unknown",
+                           terminal: false, task_complete: false, done: false, work_state: "unknown", status: "unknown")
         return 1
       end
 
@@ -259,7 +349,8 @@ module Harnex
           terminal = terminal_status(repo_root)
           return emit_terminal_status(terminal) if terminal
 
-          puts JSON.generate(ok: false, id: @options[:id], state: "unknown", terminal: false, status: "unknown")
+          puts JSON.generate(ok: false, id: @options[:id], state: "unknown", process_state: "unknown",
+                             terminal: false, task_complete: false, done: false, work_state: "unknown", status: "unknown")
           return 1
         end
 
@@ -328,19 +419,46 @@ module Harnex
       status
     end
 
-    def emit_terminal_status(status)
-      payload = {
-        ok: status["state"] == "completed",
-        id: status["id"],
-        state: status["state"],
-        terminal: true,
-        task_complete: status["task_complete"],
-        exit: status["exit"],
-        exit_code: status["exit_code"],
-        summary_out: status["summary_out"],
-        ended_at: status["ended_at"],
-        source: status["source"]
-      }
+    def done_status(repo_root)
+      status = Harnex::TerminalStatus.resolve(id: @options[:id], repo_root: repo_root)
+      return nil unless status
+      return nil unless status["done"] || status["terminal"]
+
+      status
+    end
+
+    def emit_done_exit_status(exit_path, id)
+      data = JSON.parse(File.read(exit_path))
+      exit_code = data["exit_code"]
+      task_complete = data["task_complete"] == true || data["task_complete"].to_s == "true"
+      exit_success = exit_code.nil? || exit_code.to_i == 0
+      state = exit_success ? "completed" : "failed"
+      done = task_complete || exit_success
+      payload = data.merge(
+        "ok" => done,
+        "id" => id,
+        "state" => state,
+        "process_state" => "exited",
+        "terminal" => true,
+        "task_complete" => task_complete,
+        "done" => done,
+        "work_state" => Harnex.work_state_for(state, task_complete: task_complete)
+      )
+      success = done
+      puts JSON.generate(payload)
+      return 0 if success
+
+      exit_code.is_a?(Integer) && exit_code.positive? ? exit_code : 1
+    rescue JSON::ParserError
+      puts JSON.generate(ok: false, id: id, state: "failed", process_state: "exited", terminal: true,
+                         task_complete: false, done: false, work_state: "failed", status: "invalid_exit_status")
+      1
+    end
+
+    def emit_done_terminal_status(status)
+      payload = terminal_payload(status)
+      payload[:ok] = !!payload[:done]
+      payload[:status] = payload[:done] ? "done" : status["state"]
       puts JSON.generate(payload)
 
       if payload[:ok]
@@ -350,6 +468,41 @@ module Harnex
       else
         1
       end
+    end
+
+    def emit_terminal_status(status)
+      payload = terminal_payload(status)
+      payload[:ok] = status["state"] == "completed"
+      puts JSON.generate(payload)
+
+      if payload[:ok]
+        0
+      elsif status["exit_code"].is_a?(Integer) && status["exit_code"] > 0
+        status["exit_code"]
+      else
+        1
+      end
+    end
+
+    def terminal_payload(status)
+      task_complete = !!status["task_complete"]
+      work_state = status["work_state"] || Harnex.work_state_for(status["state"], task_complete: task_complete)
+      done = status.key?("done") ? !!status["done"] : work_state == "completed"
+      {
+        ok: false,
+        id: status["id"],
+        state: status["state"],
+        process_state: status["process_state"] || Harnex.process_state_for(status["state"], terminal: true),
+        terminal: status.key?("terminal") ? !!status["terminal"] : true,
+        task_complete: task_complete,
+        done: done,
+        work_state: work_state,
+        exit: status["exit"],
+        exit_code: status["exit_code"],
+        summary_out: status["summary_out"],
+        ended_at: status["ended_at"],
+        source: status["source"]
+      }
     end
 
     def parser

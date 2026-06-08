@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P0
 created: 2026-06-09
 updated: 2026-06-09
@@ -77,15 +77,17 @@ Make the work-completion path impossible to miss:
 
 ## Proposed acceptance criteria
 
-- [ ] `harnex agents-guide monitoring` and README monitoring examples put
-      `harnex wait --id <id> --until task_complete` before state/pane polling.
-- [ ] JSON status includes a clear task/work completion field that downstream
+- [x] `harnex agents-guide monitoring` and README monitoring examples put
+      `harnex wait --id <id> --until done` / `task_complete` before state/pane
+      polling.
+- [x] JSON status includes a clear task/work completion field that downstream
       scripts can check without interpreting process state.
-- [ ] Tests cover an active interactive session with `task_complete=true` and
+- [x] Tests cover an active interactive session with `task_complete=true` and
       `state=running`; the documented work-level predicate reports done.
-- [ ] `harnex wait --until done` or a similarly named alias resolves when the
-      task completes even if the session remains alive at a prompt.
-- [ ] Examples explicitly state that pane output and process `state` are
+- [x] `harnex wait --until done` resolves when the task completes even if the
+      session remains alive at a prompt, and resolves from terminal summaries
+      when no task-complete event appears.
+- [x] Examples explicitly state that pane output and process `state` are
       diagnostics after the work-level signal, not the primary done signal.
 
 ## Non-goals
@@ -154,3 +156,18 @@ queue monitors toward a known indefinite-wait failure mode.
 Add an explicit acceptance criterion: sample shell loops must pass when a live
 interactive session reports `state=running`, `agent_state=prompt`, and
 `task_complete=true`; they must not wait for `state=completed`.
+
+## Resolution — 2026-06-09
+
+Implemented for `harnex 0.7.6`:
+
+- live and terminal status rows now expose `process_state`, `task_complete`,
+  `done`, and `work_state` while preserving legacy `state`
+- `harnex wait --until done` resolves on `task_complete` or terminal exit and
+  returns non-zero for failed terminal exits without task completion
+- monitoring/buddy/recipe docs now gate on `--until done`, `done`, or
+  `work_state`, not `state=completed` alone
+- regression coverage added in status, wait, and runtime status tests
+
+Validation: full suite green on 2026-06-09 (476 runs, 1590 assertions, 0
+failures, 2 skips).

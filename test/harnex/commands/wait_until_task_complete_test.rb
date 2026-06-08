@@ -53,6 +53,23 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     assert_equal "task_complete", payload["event"]
   end
 
+  def test_until_done_returns_immediately_when_task_complete_already_present
+    write_registry(pid: Process.pid)
+    write_events(
+      { type: "started", seq: 1 },
+      { type: "task_complete", seq: 2, turnId: "trn-1" }
+    )
+
+    output, status = capture_output { waiter("--until", "done").run }
+    assert_equal 0, status
+    payload = JSON.parse(output)
+    assert payload["ok"]
+    assert_equal true, payload["done"]
+    assert_equal "completed", payload["work_state"]
+    assert_equal "running", payload["state"]
+    assert_equal "task_complete", payload["event"]
+  end
+
   def test_ignores_terminal_words_inside_structured_event_payload
     write_events(
       {

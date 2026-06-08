@@ -68,6 +68,36 @@ module Harnex
     VERSION
   end
 
+  def work_state_for(session_state, task_complete: false)
+    return "completed" if task_complete
+
+    case session_state.to_s
+    when "completed"
+      "completed"
+    when "failed"
+      "failed"
+    when "running"
+      "running"
+    else
+      "unknown"
+    end
+  end
+
+  def work_done_for(session_state, task_complete: false)
+    work_state_for(session_state, task_complete: task_complete) == "completed"
+  end
+
+  def process_state_for(session_state, terminal: false)
+    return "running" unless terminal
+
+    case session_state.to_s
+    when "completed", "failed"
+      "exited"
+    else
+      "unknown"
+    end
+  end
+
   def host_info
     {
       host: Socket.gethostname,

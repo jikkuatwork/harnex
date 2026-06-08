@@ -54,8 +54,8 @@ If the worker appears stuck at a prompt or permission dialog for more than
 10 minutes with no progress, nudge it:
 - `harnex send --id pi-i-42 --message "You appear to have stalled. Continue with your current task."`
 
-If `harnex status --id pi-i-42 --json` reports `state=completed` or `state=failed`, report back:
-- `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "pi-i-42 terminal state reached. Check harnex status --id pi-i-42 --json." Enter`
+If `harnex status --id pi-i-42 --json` reports `done=true` or `work_state=failed`, report back:
+- `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "pi-i-42 work-level state reached. Check harnex status --id pi-i-42 --json." Enter`
 
 Do not interfere with active work. Stop yourself after reporting completion.
 ```

@@ -45,8 +45,9 @@ Your job:
 2. If the worker appears stuck at a prompt for more than 10 minutes
    with no progress, nudge it:
    - `harnex send --id worker-42 --message "You appear to have stalled. Continue with your current task."`
-3. If the worker has exited (status shows no session), report back:
-   - `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-42 has exited. Check results." Enter`
+3. If `harnex status --id worker-42 --json` reports `done=true` or
+   `work_state=failed`, report back:
+   - `tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-42 reached a work-level terminal state. Check results." Enter`
 4. Keep watching until the worker finishes or is stopped.
 
 Do not interfere with work in progress. Only nudge when clearly stalled.

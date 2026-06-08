@@ -221,9 +221,14 @@ module Harnex
       end
 
       payload[:input_state] = adapter.input_state(screen_snapshot) if include_input_state
+      task_complete = !!@last_completed_at
       payload[:agent_state] = @state_machine.to_s
+      payload[:process_state] = "running"
       payload[:inbox] = @inbox.stats
       payload[:last_completed_at] = @last_completed_at&.iso8601
+      payload[:task_complete] = task_complete
+      payload[:done] = Harnex.work_done_for("running", task_complete: task_complete)
+      payload[:work_state] = Harnex.work_state_for("running", task_complete: task_complete)
       payload[:model] = summary_model
       payload[:effort] = meta_hash["effort"]
       payload[:auto_disconnects] = @event_counters.snapshot[:disconnections]
@@ -733,6 +738,8 @@ module Harnex
       return unless defined?(@exit_code) && !@exit_code.nil?
 
       exit_path = Harnex.exit_status_path(repo_root, id)
+      task_complete = !!@last_completed_at
+      state = @exit_code.to_i == 0 ? "completed" : "failed"
       payload = {
         ok: true,
         id: id,
@@ -740,6 +747,11 @@ module Harnex
         session_id: session_id,
         repo_root: repo_root,
         exit_code: @exit_code,
+        state: state,
+        process_state: "exited",
+        task_complete: task_complete,
+        done: Harnex.work_done_for(state, task_complete: task_complete),
+        work_state: Harnex.work_state_for(state, task_complete: task_complete),
         started_at: @started_at.iso8601,
         exited_at: Time.now.iso8601,
         injected_count: @injected_count

@@ -65,6 +65,22 @@ class StatusCommandTest < Minitest::Test
     assert_includes out, "REPO"
   end
 
+  def test_status_json_includes_work_done_for_live_task_complete_session
+    write_registry("holm-worker", last_completed_at: Time.now.iso8601)
+
+    status = Harnex::Status.new(["--json", "--id", "holm-worker"])
+    out, = capture_io { assert_equal 0, status.run }
+    data = JSON.parse(out)
+
+    assert_equal 1, data.length
+    assert_equal "running", data.first["state"]
+    assert_equal "running", data.first["process_state"]
+    assert_equal false, data.first["terminal"]
+    assert_equal true, data.first["task_complete"]
+    assert_equal true, data.first["done"]
+    assert_equal "completed", data.first["work_state"]
+  end
+
   def test_status_json_id_returns_terminal_summary_when_session_is_not_active
     repo = create_git_repo
     dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
@@ -91,7 +107,10 @@ class StatusCommandTest < Minitest::Test
     assert_equal 1, data.length
     assert_equal "done-48", data.first["id"]
     assert_equal "completed", data.first["state"]
+    assert_equal "exited", data.first["process_state"]
     assert_equal true, data.first["terminal"]
+    assert_equal true, data.first["done"]
+    assert_equal "completed", data.first["work_state"]
     assert_equal "success", data.first["exit"]
     assert_equal 0, data.first["exit_code"]
   end
@@ -106,7 +125,10 @@ class StatusCommandTest < Minitest::Test
     assert_equal 1, data.length
     assert_equal "ghost-48", data.first["id"]
     assert_equal "unknown", data.first["state"]
+    assert_equal "unknown", data.first["process_state"]
     assert_equal false, data.first["terminal"]
+    assert_equal false, data.first["done"]
+    assert_equal "unknown", data.first["work_state"]
   end
 
   def test_status_table_includes_idle_column_and_nil_fallback
@@ -140,7 +162,7 @@ class StatusCommandTest < Minitest::Test
     dir
   end
 
-  def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil)
+  def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil, last_completed_at: nil)
     path = Harnex.registry_path(@repo_root, id)
     payload = {
       "id" => id,
@@ -152,6 +174,7 @@ class StatusCommandTest < Minitest::Test
       "started_at" => Time.now.iso8601
     }
     payload["description"] = description if description
+    payload["last_completed_at"] = last_completed_at if last_completed_at
     if include_log_keys
       payload["log_mtime"] = log_mtime
       payload["log_idle_s"] = log_idle_s

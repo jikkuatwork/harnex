@@ -19,7 +19,8 @@ harnex run codex --id cx-23 --tmux
 If the plan file is self-contained, reference it directly:
 
 ```bash
-harnex send --id cx-23 --message "Implement koder/plans/plan_23.md. Run tests when done." --wait-for-idle --timeout 1200
+harnex send --id cx-23 --message "Implement koder/plans/plan_23.md. Run tests when done."
+harnex wait --id cx-23 --until done --timeout 1200
 ```
 
 For tasks that need structured output, tell the worker to write a
@@ -32,12 +33,13 @@ Run the full test suite when done.
 Write a short summary to /tmp/impl-23.md.
 EOF
 
-harnex send --id cx-23 --message "Read and execute /tmp/task-cx-23.md" --wait-for-idle --timeout 1200
+harnex send --id cx-23 --message "Read and execute /tmp/task-cx-23.md"
+harnex wait --id cx-23 --until done --timeout 1200
 ```
 
 ### 3. Watch until done
 
-Use `--wait-for-idle` as the fence, then read the worker's screen:
+Use `harnex wait --until done` as the work-level fence, then read the worker's screen:
 
 ```bash
 harnex pane --id cx-23 --lines 25
