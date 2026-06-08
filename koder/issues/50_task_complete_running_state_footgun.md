@@ -1,7 +1,8 @@
 ---
 status: open
-priority: P1
+priority: P0
 created: 2026-06-09
+updated: 2026-06-09
 tags: monitoring,dispatch,orchestration,completion,docs
 ---
 
@@ -94,3 +95,62 @@ Make the work-completion path impossible to miss:
   correctly labeled.
 - Do not require downstream projects to create tmp done markers for structured
   app-server dispatches.
+
+## Review turn — 2026-06-09
+
+**Verdict:** Valid Holm-blocking issue. Treat as P0 until the bundled
+monitoring guidance and one safe machine predicate are shipped; the underlying
+runtime state is internally correct, but the public ergonomics still steer
+queue monitors toward a known indefinite-wait failure mode.
+
+### Findings
+
+- **P0-1 — Existing bundled examples still contain the exact footgun.**
+  `lib/harnex/commands/status.rb:102-105` intentionally normalizes every live
+  session to `state=running` / `terminal=false`, even after
+  `last_completed_at`. That is fine as process state, but
+  `guides/04_monitoring.md:94-98` still shows a background sweeper that reads
+  only `state` and breaks only on `completed`; `guides/03_buddy.md:57` gives a
+  buddy prompt with the same `state=completed|failed` gate. Holm copied this
+  pattern class of monitor, so docs-only consumers remain exposed.
+- **P0-2 — The issue should be framed as ergonomics, not missing raw data.**
+  Live JSON already carries `task_complete` and `last_completed_at`, and README
+  now mentions `wait --until task_complete`. The blocker is that the easiest
+  status field and several examples still look like the completion contract.
+  The fix should add an unmistakable work-level predicate and remove stale
+  state-only loops.
+- **P1-1 — Prefer explicit split fields over overloading `state`.** Keep
+  `state=running` for compatibility, but add e.g. `process_state: "running"`,
+  `work_state: "completed|running|failed|unknown"`, and/or `done: true|false`.
+  A bare `done` boolean is useful for shell loops; `work_state` explains why it
+  is true when process state remains running.
+- **P1-2 — `--until done` should not be a shallow alias.** It should resolve on
+  a `task_complete` event for live structured sessions, or on terminal
+  exit/terminal-summary recovery when no task-complete event appears. Failed
+  terminal exits should still return non-zero. Current `wait --until
+  task_complete` is event-log centric and does not consult terminal summaries
+  when the registry/events path is gone, so `done` likely needs a dedicated
+  path rather than only adding another entry to `EVENT_PREDICATES`.
+
+### Recommended slice for Holm unblock
+
+1. Add a status work predicate (`done` plus `work_state`, or equivalent) for
+   live, terminal, and unknown rows. For the source incident shape, JSON should
+   show `state: "running"`, `task_complete: true`, `done: true`, and
+   `work_state: "completed"`.
+2. Add `harnex wait --until done` with tests for both: (a) live session emits
+   `task_complete` and stays alive; (b) process exits/terminal summary resolves
+   before task completion.
+3. Patch `guides/04_monitoring.md` background sweeper and `guides/03_buddy.md`
+   prompt to gate on `wait --until done` or the new status predicate, never on
+   `state=completed` alone. Add `state=completed`-only polling to
+   Anti-Patterns.
+4. Keep README's existing `task_complete` guidance, but add one sentence that
+   `state` is process/session state while `done`/`work_state` is the work-level
+   monitor contract.
+
+### Acceptance tweak
+
+Add an explicit acceptance criterion: sample shell loops must pass when a live
+interactive session reports `state=running`, `agent_state=prompt`, and
+`task_complete=true`; they must not wait for `state=completed`.
