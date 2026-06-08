@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-06-09 | 12:41 AM | IST
+Updated: 2026-06-09 | 01:03 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-09 | 01:03 AM | IST: `harnex 0.7.6` shipped, tagged `v0.7.6`,
+  pushed to RubyGems, and installed locally. Installed `harnex --version`
+  reports `harnex 0.7.6 (2026-06-09)`. #50 is released: status JSON now
+  exposes `done`/`work_state`/`process_state`, `wait --until done` is the
+  safe queue monitor fence, and docs no longer gate on `state=completed`
+  alone. Verification record: `koder/releases/0.7.6.md`.
 - 2026-06-09 | 12:41 AM | IST: #50 filed from Holm Queue `020-01` after
   `task_complete=true` coexisted with `state=running`, causing a state-only
   watcher to stall despite the artifact being present. No code changes.
@@ -217,8 +223,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
-- #50 is open: make task/work completion impossible to miss when app-server
-  sessions finish a task but remain live at a prompt.
+- #50 is shipped in `harnex 0.7.6`: work-level completion is explicit via
+  `done`/`work_state`, and `harnex wait --until done` is the safe monitor
+  fence for queue workers that may remain live at a prompt.
 - #47 response turn is recorded; schema decisions are settled enough to
   draft the queue-aware telemetry implementation plan.
 - #48 is shipped in `harnex 0.7.5`: terminal summary state is canonical for
@@ -230,26 +237,24 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   extension markers (no brittle screen regex parsing).
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.5 (2026-05-26)`
-  and includes the Pi RPC adapter plus #48 terminal-status/wait fallback.
+- Local installed `harnex` on PATH reports `harnex 0.7.6 (2026-06-09)`
+  and includes the Pi RPC adapter, #48 terminal-status/wait fallback, and #50
+  work-level `done`/`work_state` completion semantics.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. #50 — promote `task_complete`/work-level done semantics in harnex status,
-   wait aliases, docs, and examples so queue monitors do not key on process
-   `state=completed` alone.
-2. #47 — draft the implementation plan for the queue-aware telemetry contract
+1. #47 — draft the implementation plan for the queue-aware telemetry contract
    (preferred split: attribution/agent/reliability first; validation report
    ingestion second).
-3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-4. #42 — resume Codex app-server orchestrator auto-recovery work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+3. #42 — resume Codex app-server orchestrator auto-recovery work.
+4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+5. #41 Slice C — public API surface doc at `docs/public_api.md`.
+6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
