@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-06-03 | 07:39 PM | IST
+Updated: 2026-06-09 | 12:41 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-09 | 12:41 AM | IST: #50 filed from Holm Queue `020-01` after
+  `task_complete=true` coexisted with `state=running`, causing a state-only
+  watcher to stall despite the artifact being present. No code changes.
 - 2026-06-03 | 07:39 PM | IST: README refreshed to emphasize
   `--context --auto-stop`, `--until task_complete` for interactive structured
   sessions, durable terminal summaries, and timeout/artifact verification.
@@ -214,6 +217,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
+- #50 is open: make task/work completion impossible to miss when app-server
+  sessions finish a task but remain live at a prompt.
 - #47 response turn is recorded; schema decisions are settled enough to
   draft the queue-aware telemetry implementation plan.
 - #48 is shipped in `harnex 0.7.5`: terminal summary state is canonical for
@@ -232,16 +237,19 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #47 — draft the implementation plan for the queue-aware telemetry contract
+1. #50 — promote `task_complete`/work-level done semantics in harnex status,
+   wait aliases, docs, and examples so queue monitors do not key on process
+   `state=completed` alone.
+2. #47 — draft the implementation plan for the queue-aware telemetry contract
    (preferred split: attribution/agent/reliability first; validation report
    ingestion second).
-2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-3. #42 — resume Codex app-server orchestrator auto-recovery work.
-4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+4. #42 — resume Codex app-server orchestrator auto-recovery work.
+5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-5. #41 Slice C — public API surface doc at `docs/public_api.md`.
-6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+6. #41 Slice C — public API surface doc at `docs/public_api.md`.
+7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
