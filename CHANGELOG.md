@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-06-12 | 10:48 AM | IST
+
+### Fixed
+
+- Codex app-server failed turns now emit `task_failed` instead of being
+  misreported as successful `task_complete` work. `harnex wait --until done`
+  returns non-zero for failed-turn events, dispatch history records
+  `terminal_event=task_failed`, and auto-stop terminates structured sessions
+  without sending a stale `turn/interrupt` after the turn is already complete.
+- Codex app-server nested error notifications now preserve the real Codex error
+  message (for example missing provider credentials) without counting them as
+  transport disconnects.
+
+### Changed
+
+- Refreshed the pinned Codex app-server JSON Schema fixtures to
+  `codex-cli 0.139.0` and taught the test schema validator `minLength`.
+
 ## [0.7.6] - 2026-06-09 | 12:59 AM | IST
 
 ### Added

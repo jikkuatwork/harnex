@@ -45,6 +45,7 @@ module Harnex
         "process_state" => "unknown",
         "terminal" => false,
         "task_complete" => false,
+        "task_failed" => false,
         "done" => false,
         "work_state" => "unknown",
         "exit" => nil,
@@ -131,6 +132,7 @@ module Harnex
       actual = record["actual"] || {}
       state = classify_summary_state(actual)
       task_complete = !!actual["task_complete"]
+      task_failed = state == "failed" && !task_complete
       terminal = state != "unknown"
       {
         "id" => meta["id"].to_s,
@@ -139,6 +141,7 @@ module Harnex
         "process_state" => Harnex.process_state_for(state, terminal: terminal),
         "terminal" => terminal,
         "task_complete" => task_complete,
+        "task_failed" => task_failed,
         "done" => Harnex.work_done_for(state, task_complete: task_complete),
         "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
         "exit" => blank_to_nil(actual["exit"]),
@@ -173,6 +176,7 @@ module Harnex
           "unknown"
         end
       task_complete = record["terminal_event"].to_s == "task_complete"
+      task_failed = record["terminal_event"].to_s == "task_failed" || (state == "failed" && !task_complete)
       terminal = state != "unknown"
       {
         "id" => record["id"].to_s,
@@ -181,6 +185,7 @@ module Harnex
         "process_state" => Harnex.process_state_for(state, terminal: terminal),
         "terminal" => terminal,
         "task_complete" => task_complete,
+        "task_failed" => task_failed,
         "done" => Harnex.work_done_for(state, task_complete: task_complete),
         "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
         "exit" => history_exit(status),

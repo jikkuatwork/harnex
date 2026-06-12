@@ -11,7 +11,7 @@ require "json"
 # `test/support/codex_response_fixtures_test.rb`, so drift gets caught
 # at the source rather than in twenty downstream tests.
 #
-# Fixtures pinned to codex-cli 0.130.0 (see fixture README for refresh).
+# Fixtures pinned to codex-cli 0.139.0 (see fixture README for refresh).
 module Fixtures
   module Codex
     module_function

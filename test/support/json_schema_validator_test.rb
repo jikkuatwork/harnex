@@ -117,6 +117,11 @@ class JsonSchemaValidatorTest < Minitest::Test
     refute_empty V.validate({ "const" => "v2" }, "v1")
   end
 
+  def test_min_length_rejects_short_strings
+    assert_empty V.validate({ "type" => "string", "minLength" => 1 }, "x")
+    refute_empty V.validate({ "type" => "string", "minLength" => 1 }, "")
+  end
+
   # --- properties / additionalProperties ----------------------------
 
   def test_properties_validates_each_named_property
@@ -271,10 +276,9 @@ class JsonSchemaValidatorTest < Minitest::Test
       "type" => "string",
       "format" => "uri",
       "pattern" => "^https://",
-      "minLength" => 10,
       "examples" => ["http://example.com"]
     }
-    # `format`, `pattern`, `minLength`, `examples` are not enforced here.
+    # `format`, `pattern`, and `examples` are not enforced here.
     assert_empty V.validate(schema, "x")
   end
 

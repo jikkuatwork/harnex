@@ -11,6 +11,7 @@
 #   required       — array of property names
 #   enum           — value must equal one of the listed literals
 #   const          — value must equal the listed literal
+#   minLength      — minimum string length
 #   properties     — per-property sub-schemas
 #   additionalProperties
 #                  — false | true | <schema>
@@ -48,6 +49,7 @@ module JsonSchemaValidator
     errors.concat(check_type(schema["type"], instance, path)) if schema.key?("type")
     errors.concat(check_enum(schema["enum"], instance, path)) if schema.key?("enum")
     errors.concat(check_const(schema["const"], instance, path)) if schema.key?("const")
+    errors.concat(check_min_length(schema["minLength"], instance, path)) if schema.key?("minLength")
     if instance.is_a?(Hash)
       errors.concat(check_required(schema["required"], instance, path)) if schema.key?("required")
       if schema.key?("properties") || schema.key?("additionalProperties")
@@ -85,6 +87,13 @@ module JsonSchemaValidator
   def check_const(value, instance, path)
     return [] if instance == value
     [error(path, "value #{describe(instance)} does not equal const #{value.inspect}")]
+  end
+
+  def check_min_length(min_length, instance, path)
+    return [] unless instance.is_a?(String)
+    return [] if instance.length >= min_length.to_i
+
+    [error(path, "string length #{instance.length} is less than minLength #{min_length}")]
   end
 
   def check_required(keys, instance, path)

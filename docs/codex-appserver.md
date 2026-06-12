@@ -42,10 +42,10 @@ After the handshake the client is ready to issue `thread/start` and
 |-----------------------------|--------------------|-------|
 | `thread/started`            | (metadata)         | Stashes `threadId` |
 | `turn/started`              | `turn_started`     | Carries `turnId` |
-| `turn/completed`            | `task_complete`    | Carries `turnId`, `status`, `tokenUsage` |
+| `turn/completed`            | `task_complete` or `task_failed` | `status=completed` emits `task_complete`; failed/interrupted statuses emit `task_failed` with the Codex error message when present. |
 | `item/started`              | (silent)           | Streaming deltas opted out |
 | `item/completed`            | `item_completed` + synthesized transcript | See "tmux/STDOUT" below |
-| `error`                     | `disconnected`     | Increments `auto_disconnects` |
+| `error`                     | `error`            | Turn-level Codex error notification; preserves nested `error.message` and does not count as a transport disconnect. |
 | `thread/status/changed`     | (state only)       | Drives state machine |
 | `thread/tokenUsage/updated` | (status field)     | Surfaced via `harnex status --json` |
 | `thread/compacted`          | `compaction`       | Increments `compactions` counter |
@@ -53,15 +53,17 @@ After the handshake the client is ready to issue `thread/start` and
 
 ### How disconnects are detected
 
-Disconnects are detected from (a) JSON-RPC error responses keyed by
-request `id` (e.g. `turn/start` rejected by the server), (b)
-subprocess exit / EOF on stdout, and (c) parse errors when the
-server emits a malformed line. The schema-defined `error`
-notification is also wired to the same disconnect path.
+Disconnects are detected from subprocess exit / EOF on stdout and parse errors
+when the server emits a malformed line. Request-level JSON-RPC error responses
+reject only the in-flight request; they do not by themselves imply that the
+transport disconnected. Schema-defined `error` notifications are turn-level
+Codex errors and feed `last_error` / `task_failed` rather than the disconnect
+counter.
 
-In all cases `auto_disconnects` ticks and the session emits a
-`disconnected` event. There is no need for the screen-text regex
-that the legacy adapter relied on.
+Unexpected transport loss emits `disconnected` and increments
+`auto_disconnects`. Normal auto-stop teardown after `task_complete` /
+`task_failed` is treated as a clean structured close. There is no need for the
+screen-text regex that the legacy adapter relied on.
 
 ## tmux / STDOUT — synthesized transcript
 
@@ -84,22 +86,23 @@ For interactive debugging where the original Codex TUI is wanted,
 `codex resume <thread-id>` opens the same thread in a real Codex
 CLI.
 
-## `harnex wait --until done` / `task_complete`
+## `harnex wait --until done` / `task_complete` / `task_failed`
 
-For unattended monitors, block until Codex work completes or the session exits:
+For unattended monitors, block until Codex work completes, fails, or the session exits:
 
 ```
 harnex wait --id cx-i-242 --until done --timeout 300
 ```
 
-When you need the exact structured turn event, wait for `task_complete`:
+When you need the exact successful structured turn event, wait for `task_complete`:
 
 ```
 harnex wait --id cx-i-242 --until task_complete --timeout 300
 ```
 
-The task-complete waiter tails the events JSONL — not the API socket — so it
-keeps working across restarts and is adapter-agnostic.
+`--until done` returns non-zero when it sees `task_failed` or failed terminal
+telemetry. The task-complete/task-failed waiters tail the events JSONL — not the
+API socket — so they keep working across restarts and are adapter-agnostic.
 
 ## `harnex doctor`
 
@@ -127,15 +130,17 @@ for autonomous worker dispatches; legacy-pty is for interactive/TUI use.
 
 ## Troubleshooting
 
-- **`task_complete` never fires.** Almost always a Codex version
-  issue. Run `harnex doctor`. If Codex < 0.128.0, upgrade.
+- **`task_complete` never fires.** Check `harnex events --id <session>` first:
+  failed Codex turns emit `task_failed` with the provider/model error. If there
+  is neither `task_complete` nor `task_failed`, run `harnex doctor`; Codex <
+  0.128.0 is unsupported.
 - **Empty tmux pane.** Codex hasn't emitted any `item/completed`
   yet — the agent is reasoning. The pane fills as soon as the
   first item completes.
-- **`disconnected` immediately after dispatch.** Check
-  `harnex events --id <session>` for the JSON-RPC error message;
-  the most common cause is auth (`OPENAI_API_KEY`) or model
-  unavailability.
+- **`task_failed` immediately after dispatch.** Check
+  `harnex events --id <session>` for the Codex error message; the most common
+  causes are auth/provider environment variables (for example
+  `OPENAI_API_KEY` / `AZURE_OPENAI_API_KEY`) or model unavailability.
 
 ## Schema fixtures
 

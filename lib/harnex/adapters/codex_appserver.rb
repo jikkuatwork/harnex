@@ -339,7 +339,7 @@ module Harnex
           @current_turn_id = nil
           @state = :prompt
         when "error"
-          @state = :disconnected
+          @state = :busy
         end
 
         @notification_handler&.call(message)

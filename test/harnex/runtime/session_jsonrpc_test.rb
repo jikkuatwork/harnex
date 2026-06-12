@@ -154,14 +154,23 @@ class SessionJsonrpcTest < Minitest::Test
     assert_match(/tool: shell/, output)
   end
 
-  def test_error_notification_emits_disconnected_event_and_counter
-    fanout("error", { "message" => "stream broken" })
+  def test_error_notification_emits_error_event_without_disconnect_counter
+    fanout("error", {
+      "error" => { "message" => "stream broken", "codexErrorInfo" => "other" },
+      "willRetry" => false,
+      "threadId" => "thr-e",
+      "turnId" => "trn-e"
+    })
 
-    types = events.map { |e| e["type"] }
-    assert_includes types, "disconnected"
+    rows = events
+    error = rows.find { |e| e["type"] == "error" }
+    refute_nil error
+    assert_equal "stream broken", error["message"]
+    assert_equal "other", error["codex_error_info"]
+    assert_equal false, error["will_retry"]
 
     counters = @session.instance_variable_get(:@event_counters).snapshot
-    assert_equal 1, counters[:disconnections]
+    assert_equal 0, counters[:disconnections]
   end
 
   def test_thread_compacted_records_compaction_counter
@@ -272,6 +281,36 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal "disconnected", @session.send(:classify_exit)
   end
 
+  def test_failed_turn_emits_task_failed_and_classifies_failure
+    fanout("turn/started",
+      Fixtures::Codex.turn_started_notification(thread_id: "thr-fail", turn_id: "trn-fail"))
+    fanout("turn/completed", {
+      "threadId" => "thr-fail",
+      "turn" => {
+        "id" => "trn-fail",
+        "status" => "failed",
+        "error" => { "message" => "Missing environment variable: `AZURE_OPENAI_API_KEY`.", "codexErrorInfo" => "other" }
+      }
+    })
+
+    failed = events.find { |e| e["type"] == "task_failed" }
+    refute_nil failed
+    assert_equal "trn-fail", failed["turnId"]
+    assert_equal "failed", failed["status"]
+    assert_match(/AZURE_OPENAI_API_KEY/, failed["message"])
+
+    payload = @session.status_payload(include_input_state: false)
+    assert_equal false, payload[:task_complete]
+    assert_equal true, payload[:task_failed]
+    assert_equal false, payload[:done]
+    assert_equal "failed", payload[:work_state]
+    assert_match(/AZURE_OPENAI_API_KEY/, payload[:last_error])
+
+    @session.instance_variable_set(:@exit_code, 0)
+    @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 2)
+    assert_equal "failure", @session.send(:classify_exit)
+  end
+
   def test_classify_exit_keeps_late_pre_turn_exit_as_disconnected
     @session.instance_variable_set(:@exit_code, 0)
     @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 6)
@@ -378,7 +417,7 @@ class SessionJsonrpcTest < Minitest::Test
     assert_match(/Invalid request: invalid type: null/, err.message)
 
     rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-    assert_equal %w[started disconnected usage summary exited], rows.map { |row| row["type"] }
+    assert_equal %w[started task_failed usage summary exited], rows.map { |row| row["type"] }
     assert_equal "boot_failure", rows[-2]["exit"]
     assert_equal "boot_failure", rows[-1]["reason"]
 

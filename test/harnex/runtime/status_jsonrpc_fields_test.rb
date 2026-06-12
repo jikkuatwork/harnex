@@ -25,6 +25,7 @@ class StatusJsonrpcFieldsTest < Minitest::Test
     payload = @session.status_payload(include_input_state: false)
     assert payload.key?(:last_completed_at), "missing last_completed_at"
     assert payload.key?(:task_complete), "missing task_complete"
+    assert payload.key?(:task_failed), "missing task_failed"
     assert payload.key?(:done), "missing done"
     assert payload.key?(:work_state), "missing work_state"
     assert payload.key?(:process_state), "missing process_state"
@@ -35,6 +36,7 @@ class StatusJsonrpcFieldsTest < Minitest::Test
     assert_equal "high", payload[:effort]
     assert_nil payload[:last_completed_at]
     assert_equal false, payload[:task_complete]
+    assert_equal false, payload[:task_failed]
     assert_equal false, payload[:done]
     assert_equal "running", payload[:work_state]
     assert_equal "running", payload[:process_state]
@@ -51,9 +53,26 @@ class StatusJsonrpcFieldsTest < Minitest::Test
     assert_equal "running", payload[:process_state]
   end
 
-  def test_auto_disconnects_increments_on_error_notification
-    @session.send(:handle_rpc_notification, { "method" => "error", "params" => { "message" => "boom" } })
+  def test_error_notification_populates_last_error_without_auto_disconnect
+    @session.send(:handle_rpc_notification, {
+      "method" => "error",
+      "params" => { "error" => { "message" => "boom" }, "turnId" => "trn-err" }
+    })
     payload = @session.status_payload(include_input_state: false)
-    assert_equal 1, payload[:auto_disconnects]
+    assert_equal "boom", payload[:last_error]
+    assert_equal 0, payload[:auto_disconnects]
+  end
+
+  def test_failed_turn_sets_failed_work_state
+    @session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => { "turn" => { "id" => "trn-fail", "status" => "failed", "error" => { "message" => "nope" } } }
+    })
+    payload = @session.status_payload(include_input_state: false)
+    assert_equal false, payload[:task_complete]
+    assert_equal true, payload[:task_failed]
+    assert_equal false, payload[:done]
+    assert_equal "failed", payload[:work_state]
+    assert_equal "nope", payload[:last_error]
   end
 end

@@ -206,10 +206,10 @@ class CodexAppServerLifecycleTest < Minitest::Test
     server&.join(1)
   end
 
-  # 3. Disconnect via JSON-RPC error response (per P2-A — preferred path).
-  # This is the brief's required adaptation: a JSON-RPC error keyed by
-  # request id, NOT an `error` notification.
-  def test_disconnect_via_jsonrpc_error_response
+  # 3. JSON-RPC error responses reject the in-flight request but do not
+  # imply that the app-server transport disconnected. Codex may keep the
+  # session alive after request-level failures.
+  def test_jsonrpc_error_response_raises_without_disconnecting
     server = Thread.new do
       req = JSON.parse(@server_in.gets)
       @server_out.write(JSON.generate({ jsonrpc: "2.0", id: req["id"], result: {} }) + "\n")
@@ -234,19 +234,23 @@ class CodexAppServerLifecycleTest < Minitest::Test
     err = assert_raises(StandardError) { @adapter.dispatch(prompt: "boom") }
     assert_match(/model unavailable/, err.message)
 
-    assert wait_for { @adapter.state == :disconnected }
-    assert_raises(RuntimeError) { @adapter.dispatch(prompt: "again") }
+    assert_equal :prompt, @adapter.state
   ensure
     server&.join(1)
   end
 
-  # Disconnect via `error` server notification (schema-defined path).
-  def test_disconnect_via_error_notification
+  # Codex `error` notifications are turn-level failures, not transport
+  # disconnects. A following turn/completed notification returns the adapter
+  # to prompt.
+  def test_error_notification_does_not_disconnect_transport
     boot
-    push_notification("error", { "message" => "stream broken" })
+    push_notification("error", { "error" => { "message" => "stream broken" }, "turnId" => "trn-1" })
 
-    assert wait_for { @adapter.state == :disconnected }
-    assert_raises(RuntimeError) { @adapter.dispatch(prompt: "x") }
+    assert wait_for { @adapter.state == :busy }
+    push_notification("turn/completed",
+      Fixtures::Codex.turn_completed_notification(thread_id: "thr-1", turn_id: "trn-1", status: "failed"))
+
+    assert wait_for { @adapter.state == :prompt }
   end
 
   # Disconnect via subprocess EOF (read loop exits; client signals disconnect).

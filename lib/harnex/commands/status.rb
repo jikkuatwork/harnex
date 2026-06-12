@@ -102,14 +102,17 @@ module Harnex
     end
 
     def normalize_live_status(session)
-      task_complete = task_complete?(session)
+      task_failed = task_failed?(session)
+      task_complete = task_complete?(session) && !task_failed
+      work_state = task_failed ? "failed" : Harnex.work_state_for("running", task_complete: task_complete)
       session.merge(
         "state" => "running",
         "process_state" => "running",
         "terminal" => false,
         "task_complete" => task_complete,
+        "task_failed" => task_failed,
         "done" => Harnex.work_done_for("running", task_complete: task_complete),
-        "work_state" => Harnex.work_state_for("running", task_complete: task_complete),
+        "work_state" => work_state,
         "exit" => nil,
         "exit_code" => nil,
         "summary_out" => nil,
@@ -121,6 +124,11 @@ module Harnex
     def task_complete?(session)
       session["task_complete"] == true || session["task_complete"].to_s == "true" ||
         !session["last_completed_at"].to_s.empty?
+    end
+
+    def task_failed?(session)
+      session["task_failed"] == true || session["task_failed"].to_s == "true" ||
+        !session["last_failed_at"].to_s.empty?
     end
 
     def load_live_status(session)

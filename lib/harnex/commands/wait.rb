@@ -11,8 +11,8 @@ module Harnex
     EXIT_STATUS_GRACE_POLL_INTERVAL = 0.05
     FINAL_EVENT_GRACE_SECONDS = 5.0
 
-    EVENT_PREDICATES = %w[task_complete].freeze
-    LEGACY_EVENT_TYPES = %w[agent_state exited task_complete].freeze
+    EVENT_PREDICATES = %w[task_complete task_failed].freeze
+    LEGACY_EVENT_TYPES = %w[agent_state exited task_complete task_failed].freeze
 
     def self.usage(program_name = "harnex wait")
       <<~TEXT
@@ -21,10 +21,13 @@ module Harnex
         Options:
           --id ID         Session ID to wait for (required)
           --until STATE   Wait until session reaches STATE. Supported:
-                            done            (work fence — task_complete or
-                                             terminal exit, whichever comes first)
+                            done            (work fence — task_complete,
+                                             task_failed, or terminal exit,
+                                             whichever comes first)
                             task_complete   (events JSONL — fires on
-                                             turn/completed; adapter-agnostic)
+                                             successful turn completion)
+                            task_failed     (events JSONL — fires on
+                                             failed turn completion)
                             <other>         (agent_state HTTP poll, e.g.
                                              "prompt", "busy")
                           Without --until, waits for session exit (default).
@@ -40,7 +43,7 @@ module Harnex
 
         Gotchas:
           done is the safest work-level fence for monitors.
-          task_complete is an event predicate; prompt/busy are live state polls.
+          task_complete/task_failed are event predicates; prompt/busy are live state polls.
           Prompt state alone does not prove work acceptance. Verify artifacts/tests.
           Exit waits can resolve from terminal summary rows when live registry/
           exit-status files are already gone.
@@ -140,7 +143,7 @@ module Harnex
           event = parse_event(line)
           next unless event
 
-          task_complete_seen = true if event_type(event) == "task_complete"
+          task_complete_seen = true if %w[task_complete task_failed].include?(event_type(event))
           if matches?(event, predicate, task_complete_seen)
             return [emit_event_match(event, start_time, predicate), f.pos, task_complete_seen]
           end
@@ -173,14 +176,25 @@ module Harnex
     def matches?(event, predicate, task_complete_seen)
       type = event_type(event)
       case predicate
-      when "task_complete", "done"
+      when "task_complete"
         type == "task_complete"
+      when "task_failed"
+        type == "task_failed"
+      when "done"
+        %w[task_complete task_failed].include?(type)
       when "prompt"
         type == "task_complete" ||
           (task_complete_seen && type == "agent_state" && event["state"] == "prompt")
       else
         false
       end
+    end
+
+    def done_event_failed?(event)
+      return true if event_type(event) == "task_failed"
+
+      status = event["status"].to_s
+      !status.empty? && !%w[completed success succeeded].include?(status)
     end
 
     def emit_event_match(event, start_time, predicate)
@@ -193,17 +207,22 @@ module Harnex
         waited_seconds: waited
       }
       if predicate == "done"
+        failed = done_event_failed?(event)
         payload.merge!(
-          status: "done",
+          ok: !failed,
+          status: failed ? "failed" : "done",
           state: "running",
           process_state: "running",
           terminal: false,
-          task_complete: true,
-          done: true,
-          work_state: "completed"
+          task_complete: !failed,
+          done: !failed,
+          work_state: failed ? "failed" : "completed"
         )
+        payload[:last_error] = event["message"] || event["error"] if failed
       end
       puts JSON.generate(payload)
+      return 1 if predicate == "done" && done_event_failed?(event)
+
       0
     end
 
@@ -431,7 +450,8 @@ module Harnex
       data = JSON.parse(File.read(exit_path))
       exit_code = data["exit_code"]
       task_complete = data["task_complete"] == true || data["task_complete"].to_s == "true"
-      exit_success = exit_code.nil? || exit_code.to_i == 0
+      task_failed = data["task_failed"] == true || data["task_failed"].to_s == "true"
+      exit_success = !task_failed && (exit_code.nil? || exit_code.to_i == 0)
       state = exit_success ? "completed" : "failed"
       done = task_complete || exit_success
       payload = data.merge(
@@ -441,6 +461,7 @@ module Harnex
         "process_state" => "exited",
         "terminal" => true,
         "task_complete" => task_complete,
+        "task_failed" => task_failed,
         "done" => done,
         "work_state" => Harnex.work_state_for(state, task_complete: task_complete)
       )
@@ -486,6 +507,7 @@ module Harnex
 
     def terminal_payload(status)
       task_complete = !!status["task_complete"]
+      task_failed = !!status["task_failed"]
       work_state = status["work_state"] || Harnex.work_state_for(status["state"], task_complete: task_complete)
       done = status.key?("done") ? !!status["done"] : work_state == "completed"
       {
@@ -495,6 +517,7 @@ module Harnex
         process_state: status["process_state"] || Harnex.process_state_for(status["state"], terminal: true),
         terminal: status.key?("terminal") ? !!status["terminal"] : true,
         task_complete: task_complete,
+        task_failed: task_failed,
         done: done,
         work_state: work_state,
         exit: status["exit"],

@@ -18,10 +18,11 @@ Prefer signals in this order:
 | `harnex status` | Session liveness and coarse state |
 
 For unattended monitors, prefer `harnex wait --until done`: it returns on the
-work-level `task_complete` signal or terminal exit, whichever comes first. For
-structured sessions (Pi RPC and Codex app-server), `harnex wait --until
-task_complete` remains the exact turn-level fence. Neither knows your acceptance
-criteria; verify the expected artifact or tests afterward.
+work-level `task_complete` or `task_failed` signal, or terminal exit, whichever
+comes first. Failed work returns non-zero. For structured sessions (Pi RPC and
+Codex app-server), `harnex wait --until task_complete` remains the exact
+successful-turn fence. Neither knows your acceptance criteria; verify the
+expected artifact or tests afterward.
 
 ## Completion Test
 
@@ -34,8 +35,9 @@ harnex wait --id pi-i-NN --until done --timeout 5400 &&
   test -z "$(git status --short)"
 ```
 
-`harnex wait --until done` succeeds from `task_complete` or durable terminal
-telemetry (`--summary-out` / `.harnex/dispatch.jsonl` / exit status), not from
+`harnex wait --until done` succeeds from `task_complete` or durable successful
+terminal telemetry (`--summary-out` / `.harnex/dispatch.jsonl` / exit status),
+returns non-zero for `task_failed` / failed terminal telemetry, and does not use
 tmp done markers.
 
 Adjust the artifact path to the task. The point is to avoid declaring done while

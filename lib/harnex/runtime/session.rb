@@ -16,6 +16,7 @@ module Harnex
       agent_session_id cost_usd
     ].freeze
     BUDGET_META_FIELDS = %w[read_budget_lines output_ceiling_lines].freeze
+    SUCCESSFUL_TURN_STATUSES = %w[completed success succeeded].freeze
     class EventCounters
       def initialize
         @counts = {
@@ -103,6 +104,8 @@ module Harnex
       @session_finalized = false
       @turn_started_seen = false
       @last_completed_at = nil
+      @last_failed_at = nil
+      @last_failed_status = nil
       @pi_streamed_text_by_message = {}
       @auto_stop = !!auto_stop
       @auto_stop_fired = false
@@ -221,14 +224,19 @@ module Harnex
       end
 
       payload[:input_state] = adapter.input_state(screen_snapshot) if include_input_state
-      task_complete = !!@last_completed_at
+      task_complete = task_complete?
+      task_failed = task_failed?
+      work_state = task_failed ? "failed" : Harnex.work_state_for("running", task_complete: task_complete)
       payload[:agent_state] = @state_machine.to_s
       payload[:process_state] = "running"
       payload[:inbox] = @inbox.stats
       payload[:last_completed_at] = @last_completed_at&.iso8601
+      payload[:last_failed_at] = @last_failed_at&.iso8601
       payload[:task_complete] = task_complete
+      payload[:task_failed] = task_failed
       payload[:done] = Harnex.work_done_for("running", task_complete: task_complete)
-      payload[:work_state] = Harnex.work_state_for("running", task_complete: task_complete)
+      payload[:work_state] = work_state
+      payload[:last_error] = @last_error
       payload[:model] = summary_model
       payload[:effort] = meta_hash["effort"]
       payload[:auto_disconnects] = @event_counters.snapshot[:disconnections]
@@ -236,7 +244,11 @@ module Harnex
     end
 
     def task_complete?
-      !!@last_completed_at
+      !!@last_completed_at && !task_failed?
+    end
+
+    def task_failed?
+      !!@last_failed_at
     end
 
     def git_start
@@ -257,7 +269,7 @@ module Harnex
       inject_sequence([{ text: text, newline: newline }])
     end
 
-    def inject_stop(turn_id: nil)
+    def inject_stop(turn_id: nil, interrupt: true)
       unless structured_transport?
         raise "session is not running" unless pid && Harnex.alive_pid?(pid)
       end
@@ -274,15 +286,21 @@ module Harnex
             end
           end
         end
-        @inject_mutex.synchronize do
-          begin
-            adapter.interrupt(turn_id: turn_id)
-          rescue StandardError
-            nil
+        if interrupt
+          @inject_mutex.synchronize do
+            begin
+              adapter.interrupt(turn_id: turn_id)
+            rescue StandardError
+              nil
+            end
+            @state_machine.force_busy!
           end
-          @state_machine.force_busy!
+          return { ok: true, signal: "interrupt_sent" }
         end
-        return { ok: true, signal: "interrupt_sent" }
+
+        @state_machine.force_busy!
+        signal_rpc_done! unless @pid
+        return { ok: true, signal: "terminate_sent" }
       end
 
       @inject_mutex.synchronize do
@@ -336,7 +354,12 @@ module Harnex
 
       turn_id = nil
       @inject_mutex.synchronize do
-        turn_id = adapter.dispatch(**dispatch)
+        begin
+          turn_id = adapter.dispatch(**dispatch)
+        rescue StandardError => e
+          mark_task_failed(status: "dispatch_error", error: e.message)
+          raise
+        end
         @state_machine.force_busy!
         @injected_count += 1
         @last_injected_at = Time.now
@@ -460,14 +483,25 @@ module Harnex
         @state_machine.force_busy!
         emit_event("turn_started", turnId: params.dig("turn", "id"))
       when "turn/completed"
-        @last_completed_at = Time.now
         @state_machine.force_prompt!
         turn = params["turn"] || {}
-        payload = { turnId: turn["id"] }
-        payload[:status] = turn["status"] if turn["status"]
-        payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"]
-        emit_event("task_complete", **payload)
-        schedule_auto_stop("task_complete", turn_id: payload[:turnId])
+        status = turn["status"]
+        turn_id = turn["id"] || params["turnId"]
+        payload = { turnId: turn_id }
+        payload[:status] = status if status
+        payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"].is_a?(Hash)
+        if successful_turn_status?(status)
+          @last_completed_at = Time.now
+          emit_event("task_complete", **payload)
+        else
+          mark_task_failed(
+            turn_id: turn_id,
+            status: status,
+            error: extract_turn_error_message(turn),
+            codex_error_info: extract_turn_error_info(turn)
+          )
+        end
+        schedule_auto_stop("turn_completed", interrupt: false)
       when "item/completed"
         emit_event("item_completed", item: params["item"])
         @event_counters.record_item(params["item"])
@@ -487,13 +521,68 @@ module Harnex
       when "account/rateLimits/updated"
         @rate_limits = params
       when "error"
-        @last_error = params["message"].to_s unless params["message"].to_s.empty?
+        message = extract_error_notification_message(params)
+        @last_error = message unless message.to_s.empty?
         @state_machine.force_busy!
-        emit_event("disconnected", source: "error_notification", message: params["message"])
-        signal_rpc_done!
+        emit_event(
+          "error",
+          source: "error_notification",
+          message: message,
+          codex_error_info: extract_error_notification_info(params),
+          will_retry: params["willRetry"],
+          threadId: params["threadId"],
+          turnId: params["turnId"]
+        )
+        signal_rpc_done! if params["turnId"].to_s.empty?
       end
     rescue StandardError => e
       warn("harnex: rpc notification handler error: #{e.message}")
+    end
+
+    def successful_turn_status?(status)
+      text = status.to_s
+      return true if text.empty?
+
+      SUCCESSFUL_TURN_STATUSES.include?(text)
+    end
+
+    def mark_task_failed(turn_id: nil, status: nil, error: nil, codex_error_info: nil)
+      @last_failed_at = Time.now
+      @last_failed_status = status.to_s.empty? ? "failed" : status.to_s
+      @last_error = error.to_s unless error.to_s.empty?
+
+      payload = { status: @last_failed_status }
+      payload[:turnId] = turn_id if turn_id
+      payload[:message] = error unless error.to_s.empty?
+      payload[:codex_error_info] = codex_error_info if codex_error_info
+      emit_event("task_failed", **payload)
+    end
+
+    def extract_error_notification_message(params)
+      error = params["error"]
+      if error.is_a?(Hash)
+        error["message"] || error.dig("error", "message") || params["message"]
+      else
+        params["message"]
+      end
+    end
+
+    def extract_error_notification_info(params)
+      error = params["error"]
+      error.is_a?(Hash) ? error["codexErrorInfo"] : nil
+    end
+
+    def extract_turn_error_message(turn)
+      error = turn["error"]
+      return error["message"] if error.is_a?(Hash)
+      return error if error.is_a?(String)
+
+      nil
+    end
+
+    def extract_turn_error_info(turn)
+      error = turn["error"]
+      error.is_a?(Hash) ? error["codexErrorInfo"] : nil
     end
 
     def handle_jsonl_notification(message)
@@ -509,7 +598,7 @@ module Harnex
         @state_machine.force_prompt!
         emit_event("task_complete")
         adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
-        schedule_auto_stop("task_complete")
+        schedule_auto_stop("task_complete", interrupt: false)
       when "message_start"
         @pi_streamed_text_by_message[pi_message_key(message["message"])] = false
       when "message_update"
@@ -578,10 +667,19 @@ module Harnex
 
     def handle_rpc_disconnect(error)
       msg = error.is_a?(Hash) ? error["message"] : error&.message
+      if normal_auto_stop_disconnect?(msg)
+        signal_rpc_done!
+        return
+      end
+
       @last_error = msg.to_s unless msg.to_s.empty?
       @state_machine.force_busy!
       emit_event("disconnected", source: "transport", message: msg) rescue nil
       signal_rpc_done!
+    end
+
+    def normal_auto_stop_disconnect?(message)
+      message.to_s.empty? && @auto_stop_fired && (task_complete? || task_failed?)
     end
 
     def dispatch_initial_prompt
@@ -738,10 +836,11 @@ module Harnex
       return unless defined?(@exit_code) && !@exit_code.nil?
 
       exit_path = Harnex.exit_status_path(repo_root, id)
-      task_complete = !!@last_completed_at
-      state = @exit_code.to_i == 0 ? "completed" : "failed"
+      task_complete = task_complete?
+      task_failed = task_failed?
+      state = task_failed || @exit_code.to_i != 0 ? "failed" : "completed"
       payload = {
-        ok: true,
+        ok: !task_failed && state == "completed",
         id: id,
         cli: adapter.key,
         session_id: session_id,
@@ -750,6 +849,7 @@ module Harnex
         state: state,
         process_state: "exited",
         task_complete: task_complete,
+        task_failed: task_failed,
         done: Harnex.work_done_for(state, task_complete: task_complete),
         work_state: Harnex.work_state_for(state, task_complete: task_complete),
         started_at: @started_at.iso8601,
@@ -955,7 +1055,7 @@ module Harnex
       schedule_auto_stop("prompt_after_busy") if seen_busy && new_state == :prompt
     end
 
-    def schedule_auto_stop(reason, turn_id: nil)
+    def schedule_auto_stop(reason, turn_id: nil, interrupt: true)
       return unless @auto_stop
 
       should_fire = @auto_stop_mutex.synchronize do
@@ -970,7 +1070,7 @@ module Harnex
 
       thread = Thread.new do
         begin
-          inject_stop(turn_id: turn_id)
+          inject_stop(turn_id: turn_id, interrupt: interrupt)
         rescue StandardError => e
           warn("harnex: auto-stop failed after #{reason}: #{e.message}")
         end
@@ -1016,8 +1116,15 @@ module Harnex
 
     def normalize_auto_stop_exit_code!
       return unless @auto_stop
-      return unless @last_completed_at
       return unless @auto_stop_fired
+
+      if task_failed?
+        @exit_code = 1 if @exit_code.nil? || @exit_code.zero? || @term_signal
+        @term_signal = nil if @exit_code == 1
+        return
+      end
+
+      return unless task_complete?
 
       @exit_code = 0
       @term_signal = nil
@@ -1025,8 +1132,10 @@ module Harnex
 
     def classify_exit
       return "timeout" if @exit_code == 124
-      return "success" if @exit_code == 0 && session_summary_present?
       return "boot_failure" if boot_failure_exit?
+      return "failure" if task_failed?
+      return "success" if @exit_code == 0 && task_complete?
+      return "success" if @exit_code == 0 && session_summary_present?
       return "failure" unless @exit_code == 0
 
       "disconnected"
@@ -1110,7 +1219,7 @@ module Harnex
         files_changed: @git_end[:files_changed],
         commits: @git_end[:commits],
         exit: @exit_reason,
-        task_complete: !!@last_completed_at,
+        task_complete: task_complete?,
         signal: @term_signal,
         exit_code: @exit_code,
         last_error: @last_error,
@@ -1256,6 +1365,7 @@ module Harnex
       @event_counters.record(type)
       @events_mutex.synchronize do
         return unless @events_log
+        return if @events_log.closed?
 
         @events_log_seq += 1
         event = {

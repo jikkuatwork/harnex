@@ -85,6 +85,7 @@ module Harnex
     end
 
     def classify(session)
+      return ["failed", "task_failed"] if session.respond_to?(:task_failed?) && session.task_failed?
       return ["completed", "task_complete"] if session.task_complete?
       return ["timeout", "timeout"] if session.exit_code == 124
       return ["killed", "process_kill"] if session.term_signal

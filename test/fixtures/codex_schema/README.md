@@ -11,7 +11,7 @@ against the matching schema here.
 
 ## Pinned version
 
-    codex-cli 0.130.0
+    codex-cli 0.139.0
 
 The `Phase 6` drift gate (`test/harnex/contract/schema_freshness_test.rb`,
 landing in commit 6 of plan 29) re-runs the generator at test time and
@@ -39,7 +39,7 @@ v2 protocol (the default JSON-RPC transport `harnex run codex` uses):
   response shape that yields the turn id.
 - `v2/TurnStartedNotification.json`,
   `v2/TurnCompletedNotification.json` — the notifications that drive
-  busy/prompt state and `harnex wait --until task_complete`.
+  busy/prompt state plus `task_complete` / `task_failed` work events.
 - `v2/ThreadTokenUsageUpdatedNotification.json` — the cumulative
   `tokenUsage.total` snapshot that flows into the DISPATCH row's
   `actual.{input,output,reasoning,cached}_tokens` fields.
@@ -90,4 +90,4 @@ without buying contract coverage for code that doesn't exist yet.
 
 ## Footprint
 
-16 schema files, ~276 KB total.
+16 schema files, ~284 KB total.

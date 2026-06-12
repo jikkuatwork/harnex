@@ -70,6 +70,23 @@ class WaitUntilTaskCompleteTest < Minitest::Test
     assert_equal "task_complete", payload["event"]
   end
 
+  def test_until_done_returns_failure_when_task_failed_present
+    write_registry(pid: Process.pid)
+    write_events(
+      { type: "started", seq: 1 },
+      { type: "task_failed", seq: 2, turnId: "trn-f", status: "failed", message: "missing key" }
+    )
+
+    output, status = capture_output { waiter("--until", "done").run }
+    assert_equal 1, status
+    payload = JSON.parse(output)
+    assert_equal false, payload["ok"]
+    assert_equal false, payload["done"]
+    assert_equal "failed", payload["work_state"]
+    assert_equal "task_failed", payload["event"]
+    assert_equal "missing key", payload["last_error"]
+  end
+
   def test_ignores_terminal_words_inside_structured_event_payload
     write_events(
       {

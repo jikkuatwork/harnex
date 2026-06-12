@@ -7,11 +7,15 @@ class DispatchHistoryTest < Minitest::Test
   FakeAdapter = Struct.new(:key, keyword_init: true)
   FakeSession = Struct.new(
     :id, :description, :adapter, :started_at, :ended_at, :exit_code, :term_signal,
-    :summary_out, :events_log_path, :git_start, :git_end, :task_complete,
+    :summary_out, :events_log_path, :git_start, :git_end, :task_complete, :task_failed,
     keyword_init: true
   ) do
     def task_complete?
       !!task_complete
+    end
+
+    def task_failed?
+      !!task_failed
     end
 
     def meta_hash
@@ -68,6 +72,7 @@ class DispatchHistoryTest < Minitest::Test
 
   def test_status_classification
     {
+      { task_failed: true, exit_code: 0 } => ["failed", "task_failed"],
       { task_complete: true } => ["completed", "task_complete"],
       { exit_code: 124 } => ["timeout", "timeout"],
       { term_signal: 15 } => ["killed", "process_kill"],
@@ -185,7 +190,8 @@ class DispatchHistoryTest < Minitest::Test
       events_log_path: "/tmp/events.log",
       git_start: {},
       git_end: {},
-      task_complete: false
+      task_complete: false,
+      task_failed: false
     }
     FakeSession.new(**defaults.merge(overrides))
   end

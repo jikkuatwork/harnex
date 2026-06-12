@@ -183,14 +183,15 @@ and stops the session after the first task completion or PTY prompt return.
 Choose the wait predicate that matches how you launched the worker:
 
 - `harnex wait --id ID --until done --timeout SECS` is the safest unattended
-  work fence. It returns when Harnex sees `task_complete` or a terminal exit,
-  whichever comes first.
+  work fence. It returns when Harnex sees `task_complete`, `task_failed`, or a
+  terminal exit, whichever comes first; failed work returns non-zero.
 - `harnex wait --id ID` waits for the wrapped process to exit. This is right
   for already-exited sessions and terminal-summary recovery, but interactive
   agents can stay open after finishing a turn.
 - For structured Pi RPC and Codex app-server sessions, use
   `harnex wait --id ID --until task_complete --timeout SECS` when you need the
-  exact turn-completion event instead of terminal-exit fallback.
+  exact successful-turn event instead of terminal-exit fallback. Use
+  `--until task_failed` to wait specifically for a failed structured turn.
 - `harnex send --wait-for-idle` is an atomic send fence for PTY-style
   interactions. It proves the turn returned to an idle/prompt state, not that
   your acceptance criteria passed.

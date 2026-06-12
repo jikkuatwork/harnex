@@ -412,8 +412,8 @@ class SessionTest < Minitest::Test
     calls = Queue.new
     session = build_session(command: adapter.build_command, adapter: adapter, auto_stop: true)
     session.send(:prepare_events_log)
-    session.define_singleton_method(:inject_stop) do |turn_id: nil|
-      calls << [:stop, turn_id]
+    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+      calls << [:stop, turn_id, interrupt]
       { ok: true, signal: "test_stop" }
     end
 
@@ -422,7 +422,7 @@ class SessionTest < Minitest::Test
       "params" => { "turn" => { "id" => "trn-1", "status" => "completed" } }
     })
 
-    assert_equal [:stop, "trn-1"], Timeout.timeout(2) { calls.pop }
+    assert_equal [:stop, nil, false], Timeout.timeout(2) { calls.pop }
 
     session.send(:handle_rpc_notification, {
       "method" => "turn/completed",
@@ -440,7 +440,7 @@ class SessionTest < Minitest::Test
     calls = Queue.new
     session = build_session(adapter: adapter, auto_stop: true)
     session.send(:prepare_output_log)
-    session.define_singleton_method(:inject_stop) do |turn_id: nil|
+    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
       calls << :stop
       { ok: true, signal: "test_stop" }
     end

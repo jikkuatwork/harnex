@@ -265,8 +265,7 @@ module Harnex
 
             if message["error"]
               err_msg = message.dig("error", "message") || "RPC error"
-              pending.push(StandardError.new("codex_appserver RPC error: #{err_msg}"))
-              signal_disconnect(message["error"])
+              pending.push(StandardError.new(err_msg))
             else
               pending.push(message["result"] || {})
             end
