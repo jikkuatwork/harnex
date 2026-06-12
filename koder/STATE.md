@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-06-09 | 01:03 AM | IST
+Updated: 2026-06-12 | 10:53 AM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-12 | 10:53 AM | IST: `harnex 0.7.7` shipped, tagged `v0.7.7`,
+  pushed to RubyGems, and installed locally. Installed `harnex --version`
+  reports `harnex 0.7.7 (2026-06-12)`. Codex app-server failed turns now
+  emit `task_failed`, preserve nested Codex error messages, make
+  `wait --until done` return non-zero, avoid stale auto-stop
+  `turn/interrupt`, and refresh schema fixtures to `codex-cli 0.139.0`.
+  Verification record: `koder/releases/0.7.7.md`.
 - 2026-06-09 | 01:03 AM | IST: `harnex 0.7.6` shipped, tagged `v0.7.6`,
   pushed to RubyGems, and installed locally. Installed `harnex --version`
   reports `harnex 0.7.6 (2026-06-09)`. #50 is released: status JSON now
@@ -223,6 +230,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
+- `harnex 0.7.7` is installed locally. Codex app-server failures are explicit
+  failed work (`task_failed`, `work_state=failed`, non-zero `wait --until done`)
+  rather than false completion.
 - #50 is shipped in `harnex 0.7.6`: work-level completion is explicit via
   `done`/`work_state`, and `harnex wait --until done` is the safe monitor
   fence for queue workers that may remain live at a prompt.
@@ -237,9 +247,10 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   extension markers (no brittle screen regex parsing).
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.6 (2026-06-09)`
-  and includes the Pi RPC adapter, #48 terminal-status/wait fallback, and #50
-  work-level `done`/`work_state` completion semantics.
+- Local installed `harnex` on PATH reports `harnex 0.7.7 (2026-06-12)`
+  and includes the Pi RPC adapter, #48 terminal-status/wait fallback, #50
+  work-level `done`/`work_state` completion semantics, and the Codex
+  `task_failed` fix.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
