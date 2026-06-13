@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-06-12 | 10:53 AM | IST
+Updated: 2026-06-13 | 07:30 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-13 | 07:30 PM | IST: #51 filed from Holm Queue `030`: harnex
+  emitted `task_failed` correctly, but a repo-local watcher swallowed the
+  non-zero wait/sweep result and kept polling. The issue asks to make native
+  harnex watch work-terminal aware so downstream repos do not hand-roll this
+  footgun.
 - 2026-06-12 | 10:53 AM | IST: `harnex 0.7.7` shipped, tagged `v0.7.7`,
   pushed to RubyGems, and installed locally. Installed `harnex --version`
   reports `harnex 0.7.7 (2026-06-12)`. Codex app-server failed turns now
@@ -245,6 +250,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   installed `harnex` can dispatch with `harnex run pi ...`.
 - #45 is the next Pi track: visible Pi PTY/TUI support only via stable
   extension markers (no brittle screen regex parsing).
+- #51 is open: make native watch work-terminal aware for `task_complete` /
+  `task_failed` so downstream repos can avoid unsafe bash polling loops.
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
 - Local installed `harnex` on PATH reports `harnex 0.7.7 (2026-06-12)`
@@ -256,16 +263,19 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #47 — draft the implementation plan for the queue-aware telemetry contract
+1. #51 — plan native watch support for terminal `task_complete` /
+   `task_failed` monitoring, using Holm's local `scripts/harnex/watch.sh` as
+   reference.
+2. #47 — draft the implementation plan for the queue-aware telemetry contract
    (preferred split: attribution/agent/reliability first; validation report
    ingestion second).
-2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-3. #42 — resume Codex app-server orchestrator auto-recovery work.
-4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+4. #42 — resume Codex app-server orchestrator auto-recovery work.
+5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-5. #41 Slice C — public API surface doc at `docs/public_api.md`.
-6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+6. #41 Slice C — public API surface doc at `docs/public_api.md`.
+7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
