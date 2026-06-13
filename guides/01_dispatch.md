@@ -73,7 +73,7 @@ for i in 1 2 3; do
   harnex run pi --id w-$i --tmux w-$i --detach \
     --context "Read and execute /tmp/task-$i.md" --auto-stop &
 done
-for i in 1 2 3; do harnex wait --id w-$i --until done & done
+for i in 1 2 3; do harnex watch --id w-$i --until done --max-wait 90m & done
 wait
 ```
 
@@ -125,18 +125,24 @@ Use the lightest primitive that gives the signal you need:
 | Continuous pane view | `harnex pane --id pi-i-NN --follow` |
 | Transcript tail | `harnex logs --id pi-i-NN --lines 80` |
 | Structured events | `harnex events --id pi-i-NN --snapshot` |
-| Work completion/failure fence | `harnex wait --id pi-i-NN --until done` |
+| Existing-session work monitor | `harnex watch --id pi-i-NN --until done --max-wait 90m` |
+| Primitive work completion/failure fence | `harnex wait --id pi-i-NN --until done` |
 | Native successful-turn completion | `harnex wait --id pi-i-NN --until task_complete` |
 
-For unattended policy-only stall recovery, use built-in watch mode:
+For visible `--tmux` or detached dispatches, prefer `harnex watch --id`: it
+returns `0` on done, non-zero on `task_failed`/failed terminal summaries, and
+`124` on `--max-wait` timeout. Use `--done-marker` / `--fail-marker` only as
+compatibility outputs for older queue scripts.
+
+For foreground launch-and-stall-recovery, use `harnex run --watch`:
 
 ```bash
 harnex run pi --id pi-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"
 ```
 
-`--watch` is foreground-blocking. Use it when a single process should launch
-and monitor the worker. Use pane/log/event polling or a buddy when you need
-interpretation, multiple sessions, or a separate watcher.
+`run --watch` is foreground-blocking. Use it when a single process should
+launch and monitor the worker. Use pane/log/event polling or a buddy when you
+need interpretation across multiple sessions.
 
 ## Verify And Stop
 

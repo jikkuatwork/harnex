@@ -4,7 +4,14 @@ A buddy is a second harnex session that watches one or more workers and nudges
 them if they stall. Use a buddy when the work is long-running, unattended, or
 needs interpretation that simple stall policy cannot provide.
 
-For simple inactivity recovery, prefer built-in watch mode:
+For simple work-terminal monitoring of an existing visible/detached session,
+prefer the native watcher:
+
+```bash
+harnex watch --id pi-i-NN --until done --max-wait 90m
+```
+
+For foreground launch-and-inactivity recovery, use built-in run watch mode:
 
 ```bash
 harnex run pi --id pi-i-NN --watch --preset impl --context "Read /tmp/task-impl-NN.md"

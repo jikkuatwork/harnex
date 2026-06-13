@@ -1,5 +1,8 @@
+require "fileutils"
 require "json"
 require "net/http"
+require "optparse"
+require "stringio"
 require "uri"
 
 module Harnex
@@ -204,6 +207,207 @@ module Harnex
 
     def now
       @monotonic_clock.call
+    end
+  end
+
+  class TerminalWatcher
+    TIMEOUT_EXIT_CODE = 124
+
+    def initialize(
+      id:,
+      repo_path: Dir.pwd,
+      until_state: "done",
+      max_wait: nil,
+      done_marker: nil,
+      fail_marker: nil,
+      stop_on_terminal: false,
+      out: $stdout,
+      err: $stderr
+    )
+      @id = Harnex.normalize_id(id)
+      @repo_path = repo_path
+      @until_state = until_state.to_s.strip.empty? ? "done" : until_state.to_s
+      @max_wait = max_wait
+      @done_marker = done_marker
+      @fail_marker = fail_marker
+      @stop_on_terminal = stop_on_terminal
+      @out = out
+      @err = err
+    end
+
+    def run
+      raise "harnex watch: only --until done is supported" unless @until_state == "done"
+
+      output, warnings, exit_code = capture_wait
+      @err.write(warnings) unless warnings.empty?
+      @out.write(output) unless output.empty?
+
+      payload = parse_payload(output)
+      outcome = classify(exit_code, payload)
+      case outcome
+      when :success
+        write_marker(@done_marker, payload, outcome: outcome, exit_code: exit_code)
+      when :failed
+        write_marker(@fail_marker, payload, outcome: outcome, exit_code: exit_code)
+      end
+
+      stop_session if @stop_on_terminal && outcome != :timeout
+      exit_code
+    end
+
+    private
+
+    def capture_wait
+      argv = ["--id", @id, "--repo", @repo_path, "--until", @until_state]
+      argv += ["--timeout", @max_wait.to_s] if @max_wait
+
+      out_buffer = StringIO.new
+      err_buffer = StringIO.new
+      original_stdout = $stdout
+      original_stderr = $stderr
+      $stdout = out_buffer
+      $stderr = err_buffer
+      exit_code = Waiter.new(argv).run
+      [out_buffer.string, err_buffer.string, exit_code]
+    ensure
+      $stdout = original_stdout
+      $stderr = original_stderr
+    end
+
+    def parse_payload(output)
+      line = output.to_s.lines.reverse.find { |candidate| !candidate.strip.empty? }
+      return {} unless line
+
+      parsed = JSON.parse(line)
+      parsed.is_a?(Hash) ? parsed : {}
+    rescue JSON::ParserError
+      {}
+    end
+
+    def classify(exit_code, payload)
+      return :timeout if exit_code == TIMEOUT_EXIT_CODE || payload["status"].to_s == "timeout"
+      return :success if exit_code.to_i.zero? && (payload.empty? || payload["ok"] != false)
+
+      :failed
+    end
+
+    def write_marker(path, payload, outcome:, exit_code:)
+      marker_path = path.to_s.strip
+      return if marker_path.empty?
+
+      expanded_path = File.expand_path(marker_path)
+      FileUtils.mkdir_p(File.dirname(expanded_path))
+      marker_payload = {
+        ok: outcome == :success,
+        id: @id,
+        outcome: outcome.to_s,
+        exit_code: exit_code,
+        status: payload["status"],
+        work_state: payload["work_state"],
+        task_complete: payload["task_complete"] || payload["event"] == "task_complete",
+        task_failed: payload["task_failed"] || payload["event"] == "task_failed",
+        done: payload["done"],
+        terminal: payload["terminal"],
+        source: "harnex watch"
+      }.compact
+      File.write(expanded_path, JSON.generate(marker_payload) + "\n")
+    end
+
+    def stop_session
+      repo_root = Harnex.resolve_repo_root(@repo_path)
+      registry = Harnex.read_registry(repo_root, @id)
+      return unless registry
+
+      uri = URI("http://#{registry.fetch('host')}:#{registry.fetch('port')}/stop")
+      request = Net::HTTP::Post.new(uri)
+      request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+
+      response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 2) do |http|
+        http.request(request)
+      end
+      @err.puts("harnex watch: stop-on-terminal failed with HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
+    rescue StandardError => e
+      @err.puts("harnex watch: stop-on-terminal failed: #{e.message}")
+    end
+  end
+
+  class WatchCommand
+    def self.usage(program_name = "harnex watch")
+      <<~TEXT
+        Usage: #{program_name} --id ID [options]
+
+        Options:
+          --id ID              Existing session ID to watch (required)
+          --until done         Watch work-level terminal state (default: done)
+          --repo PATH          Resolve session using PATH's repo root (default: current repo)
+          --max-wait DUR       Wall-clock cap before returning timeout (examples: 900, 15m, 2h)
+          --timeout DUR        Alias for --max-wait
+          --done-marker PATH   Write a JSON marker when work completes successfully
+          --fail-marker PATH   Write a JSON marker when work fails
+          --stop-on-terminal   Stop the live session after success/failure (not on timeout)
+          -h, --help           Show this help
+
+        `harnex watch` is the safe watcher for existing --tmux or detached
+        dispatches. It exits 0 for task_complete/done, non-zero for task_failed
+        or failed terminal summaries, and 124 for --max-wait timeouts.
+
+        For launch-and-babysit stall recovery, use `harnex run --watch`.
+      TEXT
+    end
+
+    def initialize(argv)
+      @argv = argv.dup
+      @options = {
+        id: nil,
+        repo_path: Dir.pwd,
+        until_state: "done",
+        max_wait: nil,
+        done_marker: nil,
+        fail_marker: nil,
+        stop_on_terminal: false,
+        help: false
+      }
+    end
+
+    def run
+      parser.parse!(@argv)
+      if @options[:help]
+        puts self.class.usage
+        return 0
+      end
+
+      raise "--id is required for harnex watch" unless @options[:id]
+
+      TerminalWatcher.new(
+        id: @options[:id],
+        repo_path: @options[:repo_path],
+        until_state: @options[:until_state],
+        max_wait: @options[:max_wait],
+        done_marker: @options[:done_marker],
+        fail_marker: @options[:fail_marker],
+        stop_on_terminal: @options[:stop_on_terminal]
+      ).run
+    end
+
+    private
+
+    def parser
+      @parser ||= OptionParser.new do |opts|
+        opts.banner = "Usage: harnex watch --id ID [options]"
+        opts.on("--id ID", "Existing session ID to watch") { |value| @options[:id] = Harnex.normalize_id(value) }
+        opts.on("--until STATE", "Watch until terminal state") { |value| @options[:until_state] = value }
+        opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
+        opts.on("--max-wait DUR", "Wall-clock cap") do |value|
+          @options[:max_wait] = Harnex.parse_duration_seconds(value, option_name: "--max-wait")
+        end
+        opts.on("--timeout DUR", "Alias for --max-wait") do |value|
+          @options[:max_wait] = Harnex.parse_duration_seconds(value, option_name: "--timeout")
+        end
+        opts.on("--done-marker PATH", "Write marker on successful completion") { |value| @options[:done_marker] = value }
+        opts.on("--fail-marker PATH", "Write marker on failed completion") { |value| @options[:fail_marker] = value }
+        opts.on("--stop-on-terminal", "Stop live session after success/failure") { @options[:stop_on_terminal] = true }
+        opts.on("-h", "--help", "Show help") { @options[:help] = true }
+      end
     end
   end
 end

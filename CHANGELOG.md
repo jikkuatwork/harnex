@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-06-13 | 08:45 PM | IST
+
+### Added
+
+- `harnex watch --id <id> --until done` now provides a native work-terminal
+  watcher for existing visible/detached sessions. It exits `0` for successful
+  work, non-zero for `task_failed` / failed terminal telemetry, `124` for
+  wall-clock timeout, and can write optional done/fail marker files for legacy
+  queue integrations.
+
+### Changed
+
+- Monitoring docs now recommend native `harnex watch` for unattended
+  single-dispatch monitoring and reserve `harnex run --watch` for foreground
+  launch-and-stall-recovery.
+
 ## [0.7.7] - 2026-06-12 | 10:48 AM | IST
 
 ### Fixed

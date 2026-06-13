@@ -71,6 +71,125 @@ class RunWatcherTest < Minitest::Test
     end
   end
 
+  def test_terminal_watch_succeeds_on_task_complete_and_writes_done_marker
+    Dir.mktmpdir("harnex-terminal-watch-success") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "watch-done-#{$$}"
+      marker = File.join(repo, "done.json")
+      write_terminal_event(repo, id, type: "task_complete", seq: 2)
+
+      out = StringIO.new
+      err = StringIO.new
+      watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, done_marker: marker, out: out, err: err)
+      assert_equal 0, watcher.run
+
+      payload = JSON.parse(out.string)
+      assert payload["ok"]
+      assert_equal true, payload["done"]
+      assert_equal "completed", payload["work_state"]
+      assert_equal "task_complete", payload["event"]
+      assert_empty err.string
+
+      marker_payload = JSON.parse(File.read(marker))
+      assert_equal true, marker_payload["ok"]
+      assert_equal "success", marker_payload["outcome"]
+      assert_equal true, marker_payload["task_complete"]
+    end
+  end
+
+  def test_terminal_watch_fails_on_task_failed_without_status_polling
+    Dir.mktmpdir("harnex-terminal-watch-failed-event") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "watch-failed-#{$$}"
+      marker = File.join(repo, "failed.json")
+      write_terminal_registry(repo, id, port: 9)
+      write_terminal_event(repo, id, type: "task_failed", seq: 2, status: "failed", message: "stream error")
+
+      out = StringIO.new
+      err = StringIO.new
+      watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, fail_marker: marker, out: out, err: err)
+      Net::HTTP.stub(:start, ->(*) { flunk("terminal watch should not poll /status after task_failed") }) do
+        assert_equal 1, watcher.run
+      end
+
+      payload = JSON.parse(out.string)
+      assert_equal false, payload["ok"]
+      assert_equal false, payload["done"]
+      assert_equal "failed", payload["work_state"]
+      assert_equal "task_failed", payload["event"]
+      assert_equal "stream error", payload["last_error"]
+      assert_empty err.string
+
+      marker_payload = JSON.parse(File.read(marker))
+      assert_equal false, marker_payload["ok"]
+      assert_equal "failed", marker_payload["outcome"]
+      assert_equal true, marker_payload["task_failed"]
+    ensure
+      FileUtils.rm_f(Harnex.registry_path(repo, id)) if repo && id
+    end
+  end
+
+  def test_terminal_watch_fails_from_terminal_summary_without_live_registry
+    Dir.mktmpdir("harnex-terminal-watch-failed-summary") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "watch-summary-failed-#{$$}"
+      dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
+      FileUtils.mkdir_p(File.dirname(dispatch_path))
+      File.write(dispatch_path, JSON.generate({
+        "meta" => {
+          "id" => id,
+          "repo" => repo,
+          "started_at" => Time.now.iso8601,
+          "ended_at" => Time.now.iso8601
+        },
+        "actual" => {
+          "task_complete" => false,
+          "exit" => "failure",
+          "exit_code" => 7
+        },
+        "predicted" => {}
+      }) + "\n")
+
+      out = StringIO.new
+      err = StringIO.new
+      watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, out: out, err: err)
+      assert_equal 7, watcher.run
+      assert_empty err.string
+      payload = JSON.parse(out.string)
+      assert_equal false, payload["ok"]
+      assert_equal false, payload["done"]
+      assert_equal "failed", payload["work_state"]
+      assert_equal true, payload["terminal"]
+      assert_equal dispatch_path, payload["summary_out"]
+    end
+  end
+
+  def test_terminal_watch_timeout_returns_124_without_fail_marker
+    Dir.mktmpdir("harnex-terminal-watch-timeout") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "watch-timeout-#{$$}"
+      marker = File.join(repo, "failed.json")
+      write_terminal_event(repo, id, type: "started", seq: 1)
+
+      out = StringIO.new
+      err = StringIO.new
+      watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, max_wait: 0.1, fail_marker: marker, out: out, err: err)
+      assert_equal 124, watcher.run
+      assert_empty err.string
+      payload = JSON.parse(out.string)
+      assert_equal "timeout", payload["status"]
+      assert_equal false, payload["done"]
+      refute File.exist?(marker), "timeout must not be collapsed into fail-marker"
+    end
+  end
+
+  def test_watch_command_help_returns_zero
+    command = Harnex::WatchCommand.new(["--help"])
+    out, = capture_io { assert_equal 0, command.run }
+    assert_match(/Usage: harnex watch/, out)
+    assert_match(/--max-wait DUR/, out)
+  end
+
   private
 
   def build_watcher(id, stall_after_s:, max_resumes:)
@@ -102,6 +221,24 @@ class RunWatcherTest < Minitest::Test
     })
     @registry_paths << path
     token
+  end
+
+  def write_terminal_registry(repo, id, port:)
+    Harnex.write_registry(Harnex.registry_path(repo, id), {
+      "id" => id,
+      "pid" => Process.pid,
+      "host" => "127.0.0.1",
+      "port" => port,
+      "repo_root" => repo,
+      "events_log_path" => Harnex.events_log_path(repo, id),
+      "started_at" => Time.now.iso8601
+    })
+  end
+
+  def write_terminal_event(repo, id, event)
+    path = Harnex.events_log_path(repo, id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.open(path, "ab") { |file| file.write(JSON.generate(event) + "\n") }
   end
 
   def with_watch_server(statuses:)

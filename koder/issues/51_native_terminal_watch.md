@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-06-13
 updated: 2026-06-13
@@ -89,18 +89,30 @@ enforce a wall-clock cap.
 
 ## Acceptance criteria
 
-- [ ] `harnex watch --id <id> --until done` or an equivalent built-in surface
+- [x] `harnex watch --id <id> --until done` or an equivalent built-in surface
       exists for existing visible/detached sessions.
-- [ ] Tests cover a successful `task_complete` / `done` result and exit `0`.
-- [ ] Tests cover a `task_failed` event from `wait --until done`; the watcher
+- [x] Tests cover a successful `task_complete` / `done` result and exit `0`.
+- [x] Tests cover a `task_failed` event from `wait --until done`; the watcher
       exits non-zero immediately and does not continue pane/status polling.
-- [ ] Tests cover a terminal failed summary when no live registry/session exists.
-- [ ] Tests cover wall-clock timeout/cap behavior as distinct from task failure.
-- [ ] Docs and `agents-guide monitoring` examples use the native work-terminal
+- [x] Tests cover a terminal failed summary when no live registry/session exists.
+- [x] Tests cover wall-clock timeout/cap behavior as distinct from task failure.
+- [x] Docs and `agents-guide monitoring` examples use the native work-terminal
       watcher for unattended single-dispatch monitoring, and distinguish it from
       activity/stall-only babysitting.
-- [ ] Existing `harnex wait --until done` behavior remains intact for callers who
+- [x] Existing `harnex wait --until done` behavior remains intact for callers who
       need the primitive directly.
+
+## Resolution
+
+Implemented `harnex watch --id <id> --until done` as a native work-terminal
+watcher for existing sessions. It delegates to the existing `wait --until done`
+fence, preserves `task_failed` as non-zero, returns `124` for wall-clock caps,
+supports optional done/fail JSON marker files, and can optionally stop a live
+session after terminal success/failure. `harnex run --watch` remains the
+foreground launch-and-stall-recovery babysitter.
+
+Validation: full suite green on 2026-06-13 — 487 runs, 1672 assertions, 0
+failures, 0 errors, 2 skips.
 
 ## Non-goals
 

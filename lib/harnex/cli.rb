@@ -15,6 +15,8 @@ module Harnex
         Sender.new(@argv.drop(1)).run
       when "wait"
         Waiter.new(@argv.drop(1)).run
+      when "watch"
+        WatchCommand.new(@argv.drop(1)).run
       when "stop"
         Stopper.new(@argv.drop(1)).run
       when "status"
@@ -59,6 +61,8 @@ module Harnex
         Sender.usage
       when "wait"
         Waiter.usage
+      when "watch"
+        WatchCommand.usage
       when "stop"
         Stopper.usage
       when "status"
@@ -90,6 +94,7 @@ module Harnex
           harnex run <cli> [options] [--] [cli-args...]
           harnex send --id ID [options] [text...]
           harnex wait --id ID [options]
+          harnex watch --id ID [options]
           harnex stop --id ID [options]
           harnex status [options]
           harnex logs --id ID [options]
@@ -104,6 +109,7 @@ module Harnex
           run     Start a wrapped interactive session and local API
           send    Send text to an active session
           wait    Block until a session exits or reaches a state
+          watch   Safely watch existing work until done/task_failed/timeout
           stop    Send the adapter stop sequence to a session
           status  List live sessions
           logs    Read session output transcripts
@@ -129,6 +135,7 @@ module Harnex
           harnex run aider --id blue-cat
           harnex run codex -- --cd /path/to/repo
           harnex status
+          harnex watch --id main --until done --max-wait 15m
           harnex logs --id main --follow
           harnex events --id main --snapshot
           harnex history --limit 20

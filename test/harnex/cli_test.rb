@@ -6,6 +6,7 @@ class CliTest < Minitest::Test
     out, = capture_io { assert_equal 0, cli.run }
     assert_match(/Usage:/, out)
     assert_match(/harnex run <cli>/, out)
+    assert_match(/harnex watch --id ID/, out)
     assert_match(/harnex logs --id ID/, out)
     assert_match(/harnex events --id ID/, out)
     assert_match(/harnex pane --id ID/, out)
@@ -13,8 +14,15 @@ class CliTest < Minitest::Test
     assert_match(/harnex doctor/, out)
     assert_match(/logs\s+Read session output transcripts/, out)
     assert_match(/events\s+Stream per-session JSONL runtime events/, out)
+    assert_match(/watch\s+Safely watch existing work/, out)
     assert_match(/pane\s+Capture the current tmux pane/, out)
     assert_match(/Working with agents .* harnex agents-guide/, out)
+  end
+
+  def test_help_watch_returns_watch_usage
+    cli = Harnex::CLI.new(["help", "watch"])
+    out, = capture_io { assert_equal 0, cli.run }
+    assert_match(/Usage: harnex watch/, out)
   end
 
   def test_help_logs_returns_logs_usage
@@ -45,6 +53,12 @@ class CliTest < Minitest::Test
     cli = Harnex::CLI.new(["help", "doctor"])
     out, = capture_io { assert_equal 0, cli.run }
     assert_match(/Usage: harnex doctor/, out)
+  end
+
+  def test_watch_command_dispatches_to_watch_help
+    cli = Harnex::CLI.new(["watch", "--help"])
+    out, = capture_io { assert_equal 0, cli.run }
+    assert_match(/--max-wait DUR/, out)
   end
 
   def test_logs_command_dispatches_to_logs_help

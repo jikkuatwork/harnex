@@ -17,12 +17,15 @@ Prefer signals in this order:
 | `harnex pane` | Live UI interpretation and prompt/error diagnosis |
 | `harnex status` | Session liveness and coarse state |
 
-For unattended monitors, prefer `harnex wait --until done`: it returns on the
-work-level `task_complete` or `task_failed` signal, or terminal exit, whichever
-comes first. Failed work returns non-zero. For structured sessions (Pi RPC and
-Codex app-server), `harnex wait --until task_complete` remains the exact
-successful-turn fence. Neither knows your acceptance criteria; verify the
-expected artifact or tests afterward.
+For unattended monitors on existing visible/detached sessions, prefer
+`harnex watch --until done`: it returns on the work-level `task_complete` or
+`task_failed` signal, or terminal exit, whichever comes first. Successful work
+exits `0`, failed work exits non-zero, and wall-clock caps exit `124`. For
+callers that need the lower-level primitive, `harnex wait --until done` exposes
+the same work fence. For structured sessions (Pi RPC and Codex app-server),
+`harnex wait --until task_complete` remains the exact successful-turn fence.
+None of these know your acceptance criteria; verify the expected artifact or
+tests afterward.
 
 ## Completion Test
 
@@ -30,15 +33,19 @@ For unattended work, first gate on harnex work completion, then verify the task
 artifact and repo health:
 
 ```bash
-harnex wait --id pi-i-NN --until done --timeout 5400 &&
+harnex watch --id pi-i-NN --until done --max-wait 90m \
+  --done-marker /tmp/pi-i-NN-done.json \
+  --fail-marker /tmp/pi-i-NN-failed.json &&
   test -f path/to/expected-artifact &&
   test -z "$(git status --short)"
 ```
 
-`harnex wait --until done` succeeds from `task_complete` or durable successful
-terminal telemetry (`--summary-out` / `.harnex/dispatch.jsonl` / exit status),
-returns non-zero for `task_failed` / failed terminal telemetry, and does not use
-tmp done markers.
+`harnex watch --until done` wraps the `harnex wait --until done` work fence:
+it succeeds from `task_complete` or durable successful terminal telemetry
+(`--summary-out` / `.harnex/dispatch.jsonl` / exit status), returns non-zero for
+`task_failed` / failed terminal telemetry, returns `124` for `--max-wait`, and
+only writes done/fail markers as compatibility outputs after harnex has seen a
+terminal work signal.
 
 Adjust the artifact path to the task. The point is to avoid declaring done while
 a worker is between edits or between commits.
@@ -76,41 +83,28 @@ harnex events --id pi-i-NN
 For task completion:
 
 ```bash
+harnex watch --id pi-i-NN --until done --max-wait 15m
+# Primitive equivalent when a script wants raw wait semantics:
 harnex wait --id pi-i-NN --until done --timeout 900
-# Or, when you specifically need the structured turn event:
+# Or, when you specifically need the structured successful-turn event:
 harnex wait --id pi-i-NN --until task_complete --timeout 900
 ```
 
 ## Background Sweeper
 
-Consumers often run a small shell loop that checks terminal state, then drops
-to pane diagnostics only while work is still running. Keep a hard wall-clock cap
-so an unattended pipeline cannot wait forever:
+Avoid custom shell loops that repeatedly call `harnex wait`/`harnex status` and
+then accidentally swallow a failed work result. For a single unattended
+visible/detached dispatch, use the native watcher with a hard wall-clock cap:
 
 ```bash
-start=$(date +%s)
-max_wait=5400
-
-while :; do
-  if test "$(($(date +%s) - start))" -gt "$max_wait"; then
-    echo "wall-clock cap hit for pi-i-NN" >&2
-    exit 2
-  fi
-
-  row=$(harnex status --id pi-i-NN --json | ruby -rjson -e 'rows=JSON.parse(STDIN.read); print JSON.generate(rows.first || {})')
-  done=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["done"] ? "true" : "false")')
-  work_state=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["work_state"].to_s)')
-  state=$(printf '%s' "$row" | ruby -rjson -e 'print(JSON.parse(STDIN.read)["state"].to_s)')
-
-  case "$done:$work_state" in
-    true:*) echo "pi-i-NN work completed"; break ;;
-    false:failed) echo "pi-i-NN work failed; process state: $state" >&2; exit 1 ;;
-    *) harnex pane --id pi-i-NN --lines 20 ;;
-  esac
-
-  sleep 60
-done
+harnex watch --id pi-i-NN --until done --max-wait 90m \
+  --done-marker /tmp/pi-i-NN-done.json \
+  --fail-marker /tmp/pi-i-NN-failed.json
 ```
+
+If that exits `124`, inspect the pane/logs/events and decide whether to nudge,
+stop, or continue. If it exits any other non-zero code, treat the work as
+failed; do not continue polling the same task as though it were still running.
 
 Recommended caps:
 
@@ -120,17 +114,18 @@ Recommended caps:
 | Medium implementation | 90 minutes |
 | Large unattended phase | 3 hours |
 
-## Built-In Watch Mode
+## Built-In Stall Babysitter
 
 Use `harnex run --watch` when one foreground process should launch the worker
-and apply bounded stall recovery:
+and apply bounded stall recovery. This is different from `harnex watch --id`,
+which watches an existing session's work-terminal state:
 
 ```bash
 harnex run pi --id pi-i-NN --watch --preset impl \
   --context "Read /tmp/task-impl-NN.md"
 ```
 
-`--watch` exits with:
+`run --watch` exits with:
 
 | Code | Meaning |
 | --- | --- |
@@ -145,6 +140,7 @@ interpretation.
 
 - Polling `state=completed` alone and missing live sessions with `task_complete=true`.
 - Polling `state=prompt` alone and calling it done.
+- Wrapping `harnex wait` in loops that swallow non-zero `task_failed` results.
 - Blocking orchestrators on `/tmp/*-done.txt` as the only completion signal.
 - Letting an unattended loop run with no wall-clock cap.
 - Reading raw tmux panes instead of `harnex pane`.

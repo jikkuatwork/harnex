@@ -68,8 +68,9 @@ job, watch it work, stop it when done.
   `harnex events` streams structured JSONL lifecycle events.
 
 - **You don't want to babysit.** Use `--context --auto-stop` for
-  one-shot work, `--watch` for bounded stall recovery, or
-  `--wait-for-idle` as a send fence.
+  one-shot work, `harnex watch` for existing visible/detached dispatches,
+  `run --watch` for bounded foreground stall recovery, or `--wait-for-idle`
+  as a send fence.
 
 - **You want local-only orchestration.** Everything runs on your
   machine. No cloud services, no API keys beyond what the agents need.
@@ -150,18 +151,27 @@ harnex agents-guide monitoring
 
 ## Built-in dispatch monitoring
 
-For unattended dispatches, use `--watch` instead of writing a bash poll loop:
+For unattended visible/background dispatches, use `harnex watch` instead of
+writing a bash poll loop around `harnex wait`:
 
 ```bash
-harnex run pi --id pi-impl-42 --watch --preset impl \
+harnex run pi --id pi-impl-42 --tmux pi-impl-42 \
   --context "Implement koder/plans/42_plan.md. Run tests and commit when done."
+harnex watch --id pi-impl-42 --until done --max-wait 90m \
+  --done-marker /tmp/pi-impl-42-done.json \
+  --fail-marker /tmp/pi-impl-42-failed.json
 ```
 
-`--watch` runs a foreground babysitter that checks session activity every 60s,
-force-resumes on stall up to a cap, and exits when the target session exits or
-the resume cap is reached. It is foreground-only; use `--tmux` or `--detach`
-for visible/background sessions, and `--watch` when the current command should
-block as the monitor.
+`harnex watch --until done` is the safe work-terminal watcher for existing
+`--tmux` or detached sessions. It exits `0` for `task_complete`/done, non-zero
+for `task_failed` or failed terminal summaries, and `124` for `--max-wait`
+timeouts. It does not keep pane/status polling after a terminal failure signal.
+
+`harnex run --watch` is a separate foreground babysitter that checks session
+activity every 60s, force-resumes on stall up to a cap, and exits when the
+target session exits or the resume cap is reached. It is foreground-only; use
+`--tmux` or `--detach` for visible/background sessions, and `run --watch` when
+the current command should launch and monitor one worker.
 
 Presets map to stall policy defaults:
 
@@ -180,11 +190,15 @@ and stops the session after the first task completion or PTY prompt return.
 
 ## Completion and waiting
 
-Choose the wait predicate that matches how you launched the worker:
+Choose the wait/watch predicate that matches how you launched the worker:
 
-- `harnex wait --id ID --until done --timeout SECS` is the safest unattended
-  work fence. It returns when Harnex sees `task_complete`, `task_failed`, or a
-  terminal exit, whichever comes first; failed work returns non-zero.
+- `harnex watch --id ID --until done --max-wait DUR` is the safest unattended
+  monitor for an existing visible or detached dispatch. It wraps the work-level
+  fence, preserves the timeout/failure distinction, and can write done/fail
+  marker files for legacy queue integrations.
+- `harnex wait --id ID --until done --timeout SECS` is the primitive work fence.
+  It returns when Harnex sees `task_complete`, `task_failed`, or a terminal
+  exit, whichever comes first; failed work returns non-zero.
 - `harnex wait --id ID` waits for the wrapped process to exit. This is right
   for already-exited sessions and terminal-summary recovery, but interactive
   agents can stay open after finishing a turn.
@@ -313,6 +327,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until the turn returns idle) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
 | `harnex status` | List running sessions; with `--id ID --json`, terminal summaries can classify completed/failed sessions after exit |
+| `harnex watch --id <id>` | Safely monitor existing visible/detached work until `done`, `task_failed`, or timeout; optional done/fail markers |
 | `harnex pane --id <id>` | Capture a tmux-backed session's screen (`--follow` for live) |
 | `harnex logs --id <id>` | Read session transcript (`--follow` to tail) |
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
