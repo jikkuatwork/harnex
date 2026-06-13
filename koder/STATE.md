@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-06-13 | 08:37 PM | IST
+Updated: 2026-06-13 | 08:47 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-06-13 | 08:47 PM | IST: `harnex 0.7.8` shipped, tagged `v0.7.8`,
+  pushed to RubyGems, and installed locally. Installed `harnex --version`
+  reports `harnex 0.7.8 (2026-06-13)`. #51 is released: `harnex watch --id
+  <id> --until done` is the native work-terminal watcher for existing
+  visible/detached sessions, with `--max-wait`, optional done/fail markers,
+  and optional `--stop-on-terminal`. Verification record:
+  `koder/releases/0.7.8.md`.
 - 2026-06-13 | 08:37 PM | IST: #51 landed. Added `harnex watch --id <id>
   --until done` for existing visible/detached sessions, with `--max-wait`,
   optional done/fail markers, and optional `--stop-on-terminal`. Docs now
@@ -241,9 +248,12 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
-- `harnex 0.7.7` is installed locally. Codex app-server failures are explicit
-  failed work (`task_failed`, `work_state=failed`, non-zero `wait --until done`)
-  rather than false completion.
+- `harnex 0.7.8` is installed locally. `harnex watch --id <id> --until done`
+  is available as the safe work-terminal watcher for existing visible/detached
+  sessions.
+- `harnex 0.7.7` fixed Codex app-server failures as explicit failed work
+  (`task_failed`, `work_state=failed`, non-zero `wait --until done`) rather
+  than false completion.
 - #50 is shipped in `harnex 0.7.6`: work-level completion is explicit via
   `done`/`work_state`, and `harnex wait --until done` is the safe monitor
   fence for queue workers that may remain live at a prompt.
@@ -256,14 +266,14 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   installed `harnex` can dispatch with `harnex run pi ...`.
 - #45 is the next Pi track: visible Pi PTY/TUI support only via stable
   extension markers (no brittle screen regex parsing).
-- #51 is implemented but unreleased: `harnex watch --id <id> --until done`
-  is the native work-terminal watcher for existing visible/detached sessions.
+- #51 is shipped in `harnex 0.7.8`: native `harnex watch --id <id> --until
+  done` covers existing visible/detached sessions without unsafe bash loops.
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.7 (2026-06-12)`
+- Local installed `harnex` on PATH reports `harnex 0.7.8 (2026-06-13)`
   and includes the Pi RPC adapter, #48 terminal-status/wait fallback, #50
-  work-level `done`/`work_state` completion semantics, and the Codex
-  `task_failed` fix.
+  work-level `done`/`work_state` completion semantics, the Codex
+  `task_failed` fix, and #51 native terminal watch.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
