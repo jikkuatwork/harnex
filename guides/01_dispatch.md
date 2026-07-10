@@ -95,6 +95,22 @@ harnex run codex --cwd /tmp/leximaze_eval_run_001 \
 `--root DIR` only overrides harnex's root attribution; it does not change the
 child process cwd. Neither flag is a sandbox.
 
+For queue closeout, ask workers to write a compact sidecar in addition to their
+plain-text `koder/` artifact:
+
+```bash
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
+  --artifact-report .harnex/reports/pi-i-NN.json \
+  --context 'Update the canonical koder file and write harnex.artifact_report.v1 proof to $HARNEX_ARTIFACT_REPORT_PATH' \
+  --auto-stop
+```
+
+The worker should keep the full explanation in `koder/` and put only compact
+machine-readable proof in the sidecar: validation command/status, typed
+artifact summaries (`finding`, `review`, `gate`, `blocker`, etc.), evidence,
+confidence, and canonical refs. Harnex records missing/malformed sidecars as
+warning telemetry instead of failing the wrapped process.
+
 Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
 (e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).
 

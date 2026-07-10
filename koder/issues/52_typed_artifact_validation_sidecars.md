@@ -1,9 +1,9 @@
 ---
-status: open
+status: closed
 priority: P1
 issue_kind: slice
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-10
 tags: telemetry,artifacts,validation,queue,koder,harnex
 ---
 
@@ -134,20 +134,20 @@ At finalize, harnex should:
 
 ## Acceptance criteria
 
-- [ ] `harnex run` accepts an artifact/validation report path, or equivalent
+- [x] `harnex run` accepts an artifact/validation report path, or equivalent
       metadata, and exposes the path to the worker as an environment variable.
-- [ ] Dispatch finalization ingests a valid v1 report and records compact
+- [x] Dispatch finalization ingests a valid v1 report and records compact
       validation/artifact data in the summary JSONL row.
-- [ ] Missing report, malformed JSON, unsupported schema, and oversized report
+- [x] Missing report, malformed JSON, unsupported schema, and oversized report
       are handled with explicit warning telemetry and no wrapped-process crash.
-- [ ] Validation command results can be represented without scraping final prose.
-- [ ] Typed artifacts include at least `type`, `summary`, `evidence`,
+- [x] Validation command results can be represented without scraping final prose.
+- [x] Typed artifacts include at least `type`, `summary`, `evidence`,
       `confidence`, and optional `canonical_ref`.
-- [ ] The dispatch row records report path, byte size, and sha256 so queue
+- [x] The dispatch row records report path, byte size, and sha256 so queue
       closeout can link to the exact sidecar.
-- [ ] Docs and `harnex agents-guide` show workers writing the sidecar while
+- [x] Docs and `harnex agents-guide` show workers writing the sidecar while
       keeping canonical explanations in plain-text `koder/` artifacts.
-- [ ] Tests cover valid report ingestion, missing/malformed/oversized reports,
+- [x] Tests cover valid report ingestion, missing/malformed/oversized reports,
       and backward compatibility when no report path is configured.
 
 ## Out of scope
@@ -168,6 +168,16 @@ At finalize, harnex should:
   machine-readable.
 - Complements #51 because `harnex watch --until done` can prove terminal work
   state, while this sidecar proves task acceptance criteria.
+
+## Resolution
+
+Implemented for `harnex 0.7.10`: `--artifact-report PATH` and
+`--validation-report PATH` expose `HARNEX_ARTIFACT_REPORT_PATH`,
+`HARNEX_VALIDATION_REPORT_PATH`, and `HARNEX_ARTIFACT_REPORT_SCHEMA` to the
+worker. Dispatch finalization ingests bounded `harnex.artifact_report.v1`
+sidecars into top-level `artifact_report`, `validation`, and `artifacts` blocks.
+Missing/malformed/unsupported/oversized reports record warning telemetry and do
+not crash or change wrapped-process exit status.
 
 ## Triage
 

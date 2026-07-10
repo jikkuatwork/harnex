@@ -8,11 +8,11 @@ module Harnex
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --cwd --root --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
+      --artifact-report --validation-report --cwd --root --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --summary-out --cwd --root --timeout --inbox-ttl
+      --max-resumes --preset --context --meta --summary-out --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -37,6 +37,10 @@ module Harnex
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
           --summary-out PATH Append dispatch telemetry summary JSONL to PATH
+          --artifact-report PATH
+                             Worker-written harnex.artifact_report.v1 JSON sidecar to ingest at exit
+          --validation-report PATH
+                             Alias for --artifact-report; also exposed as HARNEX_VALIDATION_REPORT_PATH
           --cwd DIR          Run the wrapped agent from DIR and use DIR as the session root
           --root DIR         Override harnex session/root attribution without changing child cwd
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
@@ -61,6 +65,7 @@ module Harnex
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
           #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
           #{program_name} codex --cwd /tmp/public-bundle --id eval-001 --context "Read README.md and write OUTPUT.md" --auto-stop
+          #{program_name} pi --id pi-i-52 --artifact-report .harnex/reports/pi-i-52.json --context "Write proof to $HARNEX_ARTIFACT_REPORT_PATH" --auto-stop
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
         Gotchas:
@@ -91,6 +96,7 @@ module Harnex
         context: nil,
         meta: nil,
         summary_out: nil,
+        artifact_report: nil,
         cwd: nil,
         root: nil,
         auto_stop: false,
@@ -117,6 +123,7 @@ module Harnex
 
       repo_root = resolve_run_root(cli_name, child_args)
       @options[:summary_out] = resolve_summary_out(repo_root)
+      @options[:artifact_report] = resolve_artifact_report(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
       effective_child_args = apply_context(apply_codex_service_tier(cli_name, child_args))
@@ -178,6 +185,7 @@ module Harnex
       tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
+      tmux_cmd += ["--artifact-report", @options[:artifact_report]] if @options[:artifact_report]
       tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
       tmux_cmd += ["--root", @options[:root]] if @options[:root]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
@@ -287,6 +295,7 @@ module Harnex
         description: @options[:description],
         meta: @options[:meta],
         summary_out: @options[:summary_out],
+        artifact_report_path: @options[:artifact_report],
         inbox_ttl: @options[:inbox_ttl],
         auto_stop: @options[:auto_stop],
         launch_cwd: history_cwd,
@@ -468,6 +477,13 @@ module Harnex
           @options[:summary_out] = required_option_value(arg, argv[index])
         when /\A--summary-out=(.+)\z/
           @options[:summary_out] = required_option_value("--summary-out", Regexp.last_match(1))
+        when "--artifact-report", "--validation-report"
+          index += 1
+          @options[:artifact_report] = required_option_value(arg, argv[index])
+        when /\A--artifact-report=(.+)\z/
+          @options[:artifact_report] = required_option_value("--artifact-report", Regexp.last_match(1))
+        when /\A--validation-report=(.+)\z/
+          @options[:artifact_report] = required_option_value("--validation-report", Regexp.last_match(1))
         when "--cwd"
           index += 1
           @options[:cwd] = expand_existing_directory(required_option_value(arg, argv[index]), option_name: arg)
@@ -546,7 +562,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|cwd|root|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|artifact-report|validation-report|cwd|root|timeout|inbox-ttl)=/
           nil
         when /\A--preset=/
           nil
@@ -565,7 +581,7 @@ module Harnex
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--summary-out=",
-          "--cwd=", "--root=", "--timeout=", "--inbox-ttl="
+          "--artifact-report=", "--validation-report=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl="
         )
     end
 
@@ -643,6 +659,15 @@ module Harnex
       return Harnex.default_summary_out_path(repo_root) if configured.nil?
 
       File.expand_path(configured, repo_root)
+    end
+
+    def resolve_artifact_report(repo_root)
+      configured = @options[:artifact_report]
+      return nil if configured.nil?
+
+      path = File.expand_path(configured, repo_root)
+      FileUtils.mkdir_p(File.dirname(path))
+      path
     end
 
     def default_inbox_ttl

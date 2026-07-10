@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-07-10 | 10:57 PM | IST
+
+### Added
+
+- `harnex run --artifact-report PATH` / `--validation-report PATH` now expose a
+  worker-writable `harnex.artifact_report.v1` sidecar path via
+  `HARNEX_ARTIFACT_REPORT_PATH` and `HARNEX_VALIDATION_REPORT_PATH`, ingest the
+  report at dispatch finalization, and append compact top-level
+  `artifact_report`, `validation`, and `artifacts` blocks to the dispatch
+  summary row.
+
+### Changed
+
+- Dispatch telemetry docs, README, and the packaged dispatch agents-guide now
+  document sidecar proof while keeping plain-text `koder/` artifacts canonical.
+
+### Fixed
+
+- Missing, malformed, unsupported-schema, and oversized artifact reports now
+  fail soft with `artifact_report.ingest_status` warning telemetry instead of
+  crashing or changing the wrapped process exit code.
+
 ## [0.7.9] - 2026-07-10 | 10:33 PM | IST
 
 ### Added

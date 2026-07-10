@@ -59,10 +59,10 @@ module Harnex
     end
 
     attr_reader :repo_root, :launch_cwd, :child_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
-                :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path,
+                :inbox, :description, :meta, :summary_out, :artifact_report_path, :output_log_path, :events_log_path,
                 :started_at, :ended_at, :exit_code, :term_signal
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -76,6 +76,9 @@ module Harnex
       @meta = meta
       @summary_out = summary_out.to_s.strip
       @summary_out = nil if @summary_out.empty?
+      @artifact_report_path = artifact_report_path.to_s.strip
+      @artifact_report_path = nil if @artifact_report_path.empty?
+      @artifact_report_path = File.expand_path(@artifact_report_path, repo_root) if @artifact_report_path
       @registry_path = Harnex.registry_path(repo_root, @id)
       @output_log_path = Harnex.output_log_path(repo_root, @id)
       @events_log_path = Harnex.events_log_path(repo_root, @id)
@@ -772,6 +775,11 @@ module Harnex
         "HARNEX_SESSION_REPO_ROOT" => repo_root
       }
       env["HARNEX_DESCRIPTION"] = description if description
+      if artifact_report_path
+        env["HARNEX_ARTIFACT_REPORT_PATH"] = artifact_report_path
+        env["HARNEX_VALIDATION_REPORT_PATH"] = artifact_report_path
+        env["HARNEX_ARTIFACT_REPORT_SCHEMA"] = Harnex::ArtifactReport::SCHEMA
+      end
       env["HARNEX_SPAWNER_PANE"] = ENV["TMUX_PANE"] if ENV["TMUX_PANE"]
       env
     end
@@ -1157,11 +1165,13 @@ module Harnex
     end
 
     def build_summary_record
-      {
+      record = {
         meta: build_summary_meta,
         predicted: summary_predicted_payload,
         actual: build_summary_actual
       }
+      record.merge!(artifact_report_summary) if artifact_report_path
+      record
     end
 
     def build_summary_meta
@@ -1295,6 +1305,21 @@ module Harnex
     def summary_predicted_payload
       predicted = meta_hash["predicted"]
       predicted.is_a?(Hash) ? predicted : {}
+    end
+
+    def artifact_report_summary
+      Harnex::ArtifactReport.ingest(artifact_report_path)
+    rescue StandardError => e
+      {
+        "artifact_report" => {
+          "path" => artifact_report_path,
+          "bytes" => nil,
+          "sha256" => nil,
+          "ingest_status" => "error",
+          "schema" => nil,
+          "warning" => "artifact report ingest failed: #{e.message}"
+        }
+      }
     end
 
     def meta_hash

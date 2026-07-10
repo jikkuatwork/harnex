@@ -268,6 +268,22 @@ Dispatch briefs can declare soft budget metadata through `--meta`:
 harnex run pi --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
 ```
 
+Workers can also write a small machine-readable proof sidecar while keeping the
+canonical explanation in plain-text `koder/` files:
+
+```bash
+harnex run pi --id pi-i-52 \
+  --artifact-report .harnex/reports/pi-i-52.json \
+  --context 'Run validation, update koder/issues/52.md, and write JSON proof to $HARNEX_ARTIFACT_REPORT_PATH' \
+  --auto-stop
+```
+
+The sidecar schema is `harnex.artifact_report.v1`; harnex exposes the path as
+`HARNEX_ARTIFACT_REPORT_PATH` / `HARNEX_VALIDATION_REPORT_PATH`, then records a
+compact `artifact_report`, `validation`, and `artifacts` summary in the dispatch
+row. Missing or malformed reports are warning telemetry, not wrapped-process
+crashes.
+
 Those declared values are copied into summary `meta`. Terminal summary
 `actual` records timing, exit classification, token usage when the adapter can
 capture it, adapter-reported `cost_usd` when reliably available, git deltas,
