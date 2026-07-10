@@ -264,6 +264,30 @@ class DispatchRowSchemaTest < Minitest::Test
     end
   end
 
+  def test_reliability_does_not_count_generic_no_summary_exit_as_real_disconnection
+    Dir.mktmpdir("harnex-dispatch-reliability") do |repo|
+      summary_path = File.join(repo, "DISPATCH.jsonl")
+      session = Harnex::Session.new(
+        adapter: Harnex::Adapters::Generic.new(RbConfig.ruby),
+        command: [RbConfig.ruby, "-e", "exit 0"],
+        repo_root: repo,
+        host: "127.0.0.1",
+        id: "schema-reliability",
+        summary_out: summary_path
+      )
+      silence_session_stdout(session)
+
+      assert_equal 0, session.run(validate_binary: false)
+
+      record = JSON.parse(File.read(summary_path).lines.last)
+      assert_equal "disconnected", record.dig("actual", "exit")
+      assert_equal 1, record.dig("actual", "disconnections")
+      assert_equal "normal", record.dig("reliability", "adapter_close")
+      assert_equal 0, record.dig("reliability", "real_disconnections")
+      assert_equal 0, record.dig("reliability", "stream_interruptions")
+    end
+  end
+
   def test_agent_version_probe_returns_string_for_real_binary
     adapter = Harnex::Adapters::Generic.new(RbConfig.ruby)
     version = adapter.agent_version

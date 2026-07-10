@@ -1236,7 +1236,7 @@ module Harnex
     end
 
     def build_summary_reliability
-      counters = summary_event_counters
+      counters = reliability_event_counters
       real_disconnections = counters[:disconnections].to_i
       {
         "adapter_close" => summary_adapter_close(real_disconnections),
@@ -1250,7 +1250,7 @@ module Harnex
     end
 
     def build_summary_actual
-      counters = summary_event_counters
+      counters = legacy_summary_event_counters
       output_measurements = summary_output_measurements
 
       actual = {
@@ -1362,7 +1362,7 @@ module Harnex
       summary_string(match[1])
     end
 
-    def summary_event_counters
+    def legacy_summary_event_counters
       counters = @event_counters.snapshot
       if %w[disconnected boot_failure].include?(@exit_reason)
         counters[:disconnections] = [counters[:disconnections], 1].max
@@ -1370,9 +1370,19 @@ module Harnex
       counters
     end
 
+    def reliability_event_counters
+      counters = @event_counters.snapshot
+      if structured_transport? && %w[disconnected boot_failure].include?(@exit_reason)
+        counters[:disconnections] = [counters[:disconnections], 1].max
+      end
+      counters
+    end
+
     def summary_adapter_close(real_disconnections)
       return "interrupted" if @exit_code == 124 || @term_signal
-      return "lost" if %w[disconnected boot_failure].include?(@exit_reason) || real_disconnections.to_i.positive?
+      return "lost" if real_disconnections.to_i.positive?
+      return "lost" if structured_transport? && %w[disconnected boot_failure].include?(@exit_reason)
+      return "normal" if @exit_code == 0
       return "normal" if %w[success failure].include?(@exit_reason)
 
       "unknown"

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-07-10 | 11:19 PM | IST
+
+### Fixed
+
+- The new `reliability` block no longer treats legacy generic-PTY
+  `exit="disconnected"` rows (process exited 0 but no adapter usage summary was
+  parsed) as real transport loss. Legacy `actual.disconnections` remains
+  compatible; new `reliability.real_disconnections` stays `0` for that normal
+  no-summary process exit case.
+
 ## [0.7.11] - 2026-07-10 | 11:14 PM | IST
 
 ### Added
