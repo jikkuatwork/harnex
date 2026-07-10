@@ -1,11 +1,11 @@
 ---
-status: open
+status: closed
 priority: P1
 ---
 
 # Issue 47 — Queue-aware dispatch telemetry contract
 
-**Status**: open
+**Status**: closed
 **Priority**: P1
 **Filed**: 2026-05-24
 **Tier**: B (plan -> impl -> verification)
@@ -156,14 +156,14 @@ Default mode remains permissive and emits warnings instead of failing.
 
 ## Acceptance Criteria
 
-- [ ] Harnex supports passing project/queue/entry/phase/tier/issue/plan/model/effort metadata at run start.
-- [ ] Dispatch summaries persist that metadata in a documented additive schema.
-- [ ] Structured adapters distinguish normal adapter close from real disconnection/recovery events.
-- [ ] A validation summary can be emitted from an explicit JSON sidecar/report without scraping prose final answers.
-- [ ] Schema tests cover queue attribution, effective model fields, validation summary, and reliability split.
-- [ ] `docs/dispatch-telemetry.md` documents the new fields and migration guidance from old fields.
-- [ ] Existing telemetry consumers remain compatible with current flat fields.
-- [ ] A sample analysis snippet can group dispatches by `project_id + queue_id + entry_id + phase + model_effective`.
+- [x] Harnex supports passing project/queue/entry/phase/tier/issue/plan/model/effort metadata at run start.
+- [x] Dispatch summaries persist that metadata in a documented additive schema.
+- [x] Structured adapters distinguish normal adapter close from real disconnection/recovery events.
+- [x] A validation summary can be emitted from an explicit JSON sidecar/report without scraping prose final answers.
+- [x] Schema tests cover queue attribution, effective model fields, validation summary, and reliability split.
+- [x] `docs/dispatch-telemetry.md` documents the new fields and migration guidance from old fields.
+- [x] Existing telemetry consumers remain compatible with current flat fields.
+- [x] A sample analysis snippet can group dispatches by `project_id + queue_id + entry_id + phase + model_effective`.
 
 ## Out of scope
 
@@ -276,6 +276,14 @@ points:
 
 Preferred implementation split remains: (1) attribution/agent/reliability schema
 + docs/tests; (2) validation report ingestion.
+
+## Resolution
+
+Implemented across `harnex 0.7.10` and `harnex 0.7.11`: #52 / 0.7.10 shipped
+explicit artifact/validation sidecar ingestion; 0.7.11 shipped first-class queue
+attribution flags, `--require-attribution`, and top-level `queue`, `agent`, and
+`reliability` dispatch summary blocks. Legacy `meta` / `actual` fields remain
+compatible; new consumers should prefer the top-level additive blocks.
 
 ## Triage
 

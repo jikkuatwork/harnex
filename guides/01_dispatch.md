@@ -111,6 +111,20 @@ artifact summaries (`finding`, `review`, `gate`, `blocker`, etc.), evidence,
 confidence, and canonical refs. Harnex records missing/malformed sidecars as
 warning telemetry instead of failing the wrapped process.
 
+Queue runners should pass first-class attribution so dispatch rows can be grouped
+without path/id heuristics:
+
+```bash
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
+  --project-id harnex --queue-id queue-005 --entry-id SP-4 \
+  --phase implement --intent queue-work --require-attribution \
+  --context "Read and execute /tmp/task-impl-NN.md"
+```
+
+`--require-attribution` fails before launch unless `project_id`, `phase`,
+`intent`, and at least one work id (`queue_id`, `entry_id`, `issue`, or `plan`)
+are present.
+
 Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
 (e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).
 

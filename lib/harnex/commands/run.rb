@@ -5,15 +5,33 @@ require "shellwords"
 module Harnex
   class Runner
     DEFAULT_TIMEOUT = 5.0
+    TELEMETRY_FLAGS = {
+      "--project-id" => "project_id",
+      "--queue-id" => "queue_id",
+      "--entry-id" => "entry_id",
+      "--entry-title" => "entry_title",
+      "--phase" => "phase",
+      "--tier" => "tier",
+      "--issue" => "issue",
+      "--plan" => "plan",
+      "--intent" => "intent",
+      "--model" => "model",
+      "--effort" => "effort"
+    }.freeze
+    TELEMETRY_KEYS_TO_FLAGS = TELEMETRY_FLAGS.invert.freeze
+    TELEMETRY_EQUALS_PREFIXES = TELEMETRY_FLAGS.keys.map { |flag| "#{flag}=" }.freeze
+
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --artifact-report --validation-report --cwd --root --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
-    ].freeze
+      --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
+      --require-attribution --auto-stop --fast --legacy-pty --help
+    ].concat(TELEMETRY_FLAGS.keys).freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --summary-out --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
-    ].freeze
+      --max-resumes --preset --context --meta --summary-out --artifact-report
+      --validation-report --cwd --root --timeout --inbox-ttl
+    ].concat(TELEMETRY_FLAGS.keys).freeze
 
     def self.usage(program_name = "harnex run")
       <<~TEXT
@@ -41,6 +59,19 @@ module Harnex
                              Worker-written harnex.artifact_report.v1 JSON sidecar to ingest at exit
           --validation-report PATH
                              Alias for --artifact-report; also exposed as HARNEX_VALIDATION_REPORT_PATH
+          --project-id ID    Queue telemetry project id (first-class flags override --meta)
+          --queue-id ID      Queue telemetry queue id
+          --entry-id ID      Queue telemetry entry id
+          --entry-title TEXT Queue telemetry entry title
+          --phase TEXT       Queue/work phase telemetry
+          --tier TEXT        Queue/work tier telemetry
+          --issue ID         Queue/work issue telemetry
+          --plan ID          Queue/work plan telemetry
+          --intent TEXT      Queue/work intent telemetry
+          --model NAME       Requested model metadata (also used for structured dispatch)
+          --effort LEVEL     Requested reasoning effort metadata (structured dispatch)
+          --require-attribution
+                             Fail before launch unless project/phase/intent and one work id are present
           --cwd DIR          Run the wrapped agent from DIR and use DIR as the session root
           --root DIR         Override harnex session/root attribution without changing child cwd
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
@@ -66,6 +97,7 @@ module Harnex
           #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
           #{program_name} codex --cwd /tmp/public-bundle --id eval-001 --context "Read README.md and write OUTPUT.md" --auto-stop
           #{program_name} pi --id pi-i-52 --artifact-report .harnex/reports/pi-i-52.json --context "Write proof to $HARNEX_ARTIFACT_REPORT_PATH" --auto-stop
+          #{program_name} pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution --context "Implement SP-4"
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
         Gotchas:
@@ -95,6 +127,8 @@ module Harnex
         watch: nil,
         context: nil,
         meta: nil,
+        telemetry: {},
+        require_attribution: false,
         summary_out: nil,
         artifact_report: nil,
         cwd: nil,
@@ -120,6 +154,8 @@ module Harnex
 
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
       validate_auto_stop_context!
+      apply_telemetry_options!
+      validate_required_attribution!
 
       repo_root = resolve_run_root(cli_name, child_args)
       @options[:summary_out] = resolve_summary_out(repo_root)
@@ -184,6 +220,11 @@ module Harnex
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
       tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
+      @options[:telemetry].each do |key, value|
+        flag = TELEMETRY_KEYS_TO_FLAGS[key]
+        tmux_cmd += [flag, value] if flag && value
+      end
+      tmux_cmd << "--require-attribution" if @options[:require_attribution]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--artifact-report", @options[:artifact_report]] if @options[:artifact_report]
       tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
@@ -465,6 +506,8 @@ module Harnex
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
         when "--auto-stop"
           @options[:auto_stop] = true
+        when "--require-attribution"
+          @options[:require_attribution] = true
         when "--fast"
           @options[:fast] = true
         when "--meta"
@@ -472,6 +515,12 @@ module Harnex
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
         when /\A--meta=(.+)\z/
           @options[:meta] = parse_meta(required_option_value("--meta", Regexp.last_match(1)))
+        when *TELEMETRY_FLAGS.keys
+          index += 1
+          @options[:telemetry][TELEMETRY_FLAGS.fetch(arg)] = required_option_value(arg, argv[index])
+        when telemetry_equals_regex
+          flag = "--#{Regexp.last_match(1)}"
+          @options[:telemetry][TELEMETRY_FLAGS.fetch(flag)] = required_option_value(flag, Regexp.last_match(2))
         when "--summary-out"
           index += 1
           @options[:summary_out] = required_option_value(arg, argv[index])
@@ -520,6 +569,10 @@ module Harnex
       [cli_name, forwarded]
     end
 
+    def telemetry_equals_regex
+      @telemetry_equals_regex ||= /\A--(#{TELEMETRY_FLAGS.keys.map { |flag| Regexp.escape(flag.delete_prefix("--")) }.join("|")})=(.+)\z/
+    end
+
     def unknown_long_flag?(arg)
       arg.start_with?("--")
     end
@@ -556,13 +609,15 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--fast", "--legacy-pty"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-attribution", "--fast", "--legacy-pty"
           nil
         when /\A--tmux=/
           nil
         when *VALUE_FLAGS
           index += 1
         when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|artifact-report|validation-report|cwd|root|timeout|inbox-ttl)=/
+          nil
+        when telemetry_equals_regex
           nil
         when /\A--preset=/
           nil
@@ -581,7 +636,8 @@ module Harnex
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--summary-out=",
-          "--artifact-report=", "--validation-report=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl="
+          "--artifact-report=", "--validation-report=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
+          *TELEMETRY_EQUALS_PREFIXES
         )
     end
 
@@ -608,6 +664,32 @@ module Harnex
       return if @options[:context]
 
       raise OptionParser::InvalidOption, "harnex run: --auto-stop requires --context"
+    end
+
+    def apply_telemetry_options!
+      explicit = @options[:telemetry]
+      return if explicit.empty? && @options[:meta].is_a?(Hash)
+      return if explicit.empty?
+
+      @options[:meta] = (@options[:meta].is_a?(Hash) ? @options[:meta].dup : {}).merge(explicit)
+    end
+
+    def validate_required_attribution!
+      return unless @options[:require_attribution]
+
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      missing = %w[project_id phase intent].select { |key| blank_value?(metadata[key]) }
+      unless %w[queue_id entry_id issue plan].any? { |key| !blank_value?(metadata[key]) }
+        missing << "one of queue_id/entry_id/issue/plan"
+      end
+      return if missing.empty?
+
+      raise OptionParser::InvalidOption,
+            "harnex run: --require-attribution missing #{missing.join(', ')}"
+    end
+
+    def blank_value?(value)
+      value.nil? || value.to_s.strip.empty?
     end
 
     def apply_codex_service_tier(cli_name, child_args)

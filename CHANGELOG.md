@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-07-10 | 11:14 PM | IST
+
+### Added
+
+- Dispatch summaries now include top-level additive `agent` and `reliability`
+  blocks for every run, and a top-level `queue` block when queue attribution is
+  provided. New consumers should prefer these blocks over legacy flat fields for
+  queue economics and reliability analytics.
+- `harnex run` now accepts first-class queue/agent telemetry flags:
+  `--project-id`, `--queue-id`, `--entry-id`, `--entry-title`, `--phase`,
+  `--tier`, `--issue`, `--plan`, `--intent`, `--model`, and `--effort`.
+  Explicit flags override same-named `--meta` values and are forwarded through
+  tmux re-exec.
+- `harnex run --require-attribution` fails before launching unless required
+  queue attribution is present (`project_id`, `phase`, `intent`, and at least
+  one work id).
+
+### Changed
+
+- Dispatch telemetry docs, README, and the packaged dispatch agents-guide now
+  document queue attribution, effective agent routing fields, reliability split,
+  and a sample queue grouping snippet.
+
 ## [0.7.10] - 2026-07-10 | 10:57 PM | IST
 
 ### Added

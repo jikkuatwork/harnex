@@ -2,6 +2,16 @@ require_relative "test_helper"
 require "json"
 
 class DispatchRowSchemaTest < Minitest::Test
+  AGENT_KEYS = %w[
+    adapter_transport
+    cli
+    model_effective
+    model_requested
+    provider
+    reasoning_effort
+    service_tier
+  ].freeze
+
   ACTUAL_KEYS = %w[
     adapter_transport
     agent_session_id
@@ -67,6 +77,28 @@ class DispatchRowSchemaTest < Minitest::Test
     tmux_session
   ].freeze
 
+  QUEUE_KEYS = %w[
+    entry_id
+    entry_title
+    intent
+    issue
+    phase
+    plan
+    project_id
+    queue_id
+    tier
+  ].freeze
+
+  RELIABILITY_KEYS = %w[
+    adapter_close
+    compactions
+    force_resumes
+    real_disconnections
+    recovered
+    stalls
+    stream_interruptions
+  ].freeze
+
   def test_dispatch_row_schema_includes_tier1_fields_and_stable_types
     Dir.mktmpdir("harnex-dispatch-schema") do |repo|
       init_git_repo(repo)
@@ -92,7 +124,12 @@ class DispatchRowSchemaTest < Minitest::Test
           "phase" => "tdd",
           "issue" => "35",
           "plan" => "tier-1",
-          "task_brief" => "dispatch telemetry hygiene"
+          "task_brief" => "dispatch telemetry hygiene",
+          "project_id" => "harnex",
+          "queue_id" => "queue-005",
+          "entry_id" => "SP-4",
+          "entry_title" => "Dispatch telemetry hygiene",
+          "intent" => "telemetry-contract"
         },
         summary_out: summary_path
       )
@@ -102,9 +139,12 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       record = JSON.parse(File.read(summary_path).lines.last)
-      assert_equal %w[actual meta predicted], record.keys.sort
+      assert_equal %w[actual agent meta predicted queue reliability], record.keys.sort
       assert_equal META_KEYS, record.fetch("meta").keys.sort
       assert_equal ACTUAL_KEYS, record.fetch("actual").keys.sort
+      assert_equal AGENT_KEYS, record.fetch("agent").keys.sort
+      assert_equal QUEUE_KEYS, record.fetch("queue").keys.sort
+      assert_equal RELIABILITY_KEYS, record.fetch("reliability").keys.sort
 
       meta = record.fetch("meta")
       assert_equal id, meta.fetch("id")
@@ -132,6 +172,35 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_match(/\A[0-9a-f]{40}\z/, meta.fetch("end_sha"))
       assert_kind_of String, meta.fetch("started_at")
       assert_kind_of String, meta.fetch("ended_at")
+
+      agent = record.fetch("agent")
+      assert_equal "codex", agent.fetch("cli")
+      assert_equal "openai", agent.fetch("provider")
+      assert_equal "gpt-5.3-codex", agent.fetch("model_requested")
+      assert_equal "gpt-5.3-codex", agent.fetch("model_effective")
+      assert_equal "high", agent.fetch("reasoning_effort")
+      assert_nil agent.fetch("service_tier")
+      assert_equal "pty", agent.fetch("adapter_transport")
+
+      queue = record.fetch("queue")
+      assert_equal "harnex", queue.fetch("project_id")
+      assert_equal "queue-005", queue.fetch("queue_id")
+      assert_equal "SP-4", queue.fetch("entry_id")
+      assert_equal "Dispatch telemetry hygiene", queue.fetch("entry_title")
+      assert_equal "35", queue.fetch("issue")
+      assert_equal "tier-1", queue.fetch("plan")
+      assert_equal "tdd", queue.fetch("phase")
+      assert_equal "1", queue.fetch("tier")
+      assert_equal "telemetry-contract", queue.fetch("intent")
+
+      reliability = record.fetch("reliability")
+      assert_equal "normal", reliability.fetch("adapter_close")
+      assert_equal 0, reliability.fetch("real_disconnections")
+      assert_equal 0, reliability.fetch("stream_interruptions")
+      assert_kind_of Integer, reliability.fetch("stalls")
+      assert_kind_of Integer, reliability.fetch("force_resumes")
+      assert_kind_of Integer, reliability.fetch("compactions")
+      assert_equal false, reliability.fetch("recovered")
 
       actual = record.fetch("actual")
       assert_equal "gpt-5.3-codex", actual.fetch("model")
@@ -189,6 +258,9 @@ class DispatchRowSchemaTest < Minitest::Test
 
       record = JSON.parse(File.read(summary_path).lines.last)
       assert_nil record.fetch("meta").fetch("tmux_session")
+      assert record.key?("agent")
+      assert record.key?("reliability")
+      refute record.key?("queue")
     end
   end
 

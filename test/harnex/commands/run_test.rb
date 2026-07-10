@@ -274,6 +274,58 @@ class RunnerTest < Minitest::Test
     assert_match(/--meta must be a JSON object/, error.message)
   end
 
+  def test_telemetry_flags_override_meta_regardless_of_order
+    argv = [
+      "codex",
+      "--project-id", "harnex",
+      "--queue-id", "queue-005",
+      "--entry-id=SP-4",
+      "--phase", "implement",
+      "--intent", "queue-work",
+      "--model", "gpt-test",
+      "--effort=high",
+      "--meta", '{"project_id":"old","phase":"old","intent":"old","model":"old"}'
+    ]
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_telemetry_options!)
+    meta = runner.instance_variable_get(:@options)[:meta]
+
+    assert_equal "harnex", meta.fetch("project_id")
+    assert_equal "queue-005", meta.fetch("queue_id")
+    assert_equal "SP-4", meta.fetch("entry_id")
+    assert_equal "implement", meta.fetch("phase")
+    assert_equal "queue-work", meta.fetch("intent")
+    assert_equal "gpt-test", meta.fetch("model")
+    assert_equal "high", meta.fetch("effort")
+  end
+
+  def test_require_attribution_rejects_missing_fields
+    runner = Harnex::Runner.new(["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
+    runner.send(:extract_wrapper_options, ["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
+    runner.send(:apply_telemetry_options!)
+
+    error = assert_raises(OptionParser::InvalidOption) { runner.send(:validate_required_attribution!) }
+
+    assert_match(/--require-attribution missing/, error.message)
+    assert_match(/intent/, error.message)
+    assert_match(/one of queue_id\/entry_id\/issue\/plan/, error.message)
+  end
+
+  def test_require_attribution_accepts_complete_metadata
+    runner = Harnex::Runner.new([
+      "codex", "--require-attribution", "--project-id", "harnex",
+      "--phase", "implement", "--intent", "queue-work", "--entry-id", "SP-4"
+    ])
+    runner.send(:extract_wrapper_options, [
+      "codex", "--require-attribution", "--project-id", "harnex",
+      "--phase", "implement", "--intent", "queue-work", "--entry-id", "SP-4"
+    ])
+    runner.send(:apply_telemetry_options!)
+
+    runner.send(:validate_required_attribution!)
+  end
+
   def test_extract_wrapper_options_parses_summary_out
     runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])

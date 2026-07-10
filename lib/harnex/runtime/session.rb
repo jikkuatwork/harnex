@@ -16,6 +16,11 @@ module Harnex
       agent_session_id cost_usd
     ].freeze
     BUDGET_META_FIELDS = %w[read_budget_lines output_ceiling_lines].freeze
+    QUEUE_FIELDS = %w[project_id queue_id entry_id entry_title issue plan phase tier intent].freeze
+    AGENT_FIELDS = %w[cli provider model_requested model_effective reasoning_effort service_tier adapter_transport].freeze
+    RELIABILITY_FIELDS = %w[
+      adapter_close real_disconnections stream_interruptions stalls force_resumes compactions recovered
+    ].freeze
     SUCCESSFUL_TURN_STATUSES = %w[completed success succeeded].freeze
     class EventCounters
       def initialize
@@ -1168,8 +1173,12 @@ module Harnex
       record = {
         meta: build_summary_meta,
         predicted: summary_predicted_payload,
-        actual: build_summary_actual
+        actual: build_summary_actual,
+        agent: build_summary_agent,
+        reliability: build_summary_reliability
       }
+      queue = build_summary_queue
+      record[:queue] = queue if queue
       record.merge!(artifact_report_summary) if artifact_report_path
       record
     end
@@ -1207,12 +1216,42 @@ module Harnex
       }.merge(summary_budget_meta)
     end
 
+    def build_summary_queue
+      queue = QUEUE_FIELDS.to_h { |field| [field, summary_string(meta_hash[field])] }
+      return nil if queue.values.all?(&:nil?)
+
+      queue
+    end
+
+    def build_summary_agent
+      {
+        "cli" => adapter.key,
+        "provider" => summary_agent_provider,
+        "model_requested" => summary_string(meta_hash["model"]),
+        "model_effective" => summary_string(summary_model),
+        "reasoning_effort" => summary_string(meta_hash["effort"]),
+        "service_tier" => summary_service_tier,
+        "adapter_transport" => adapter.transport.to_s
+      }
+    end
+
+    def build_summary_reliability
+      counters = summary_event_counters
+      real_disconnections = counters[:disconnections].to_i
+      {
+        "adapter_close" => summary_adapter_close(real_disconnections),
+        "real_disconnections" => real_disconnections,
+        "stream_interruptions" => real_disconnections,
+        "stalls" => counters[:stalls].to_i,
+        "force_resumes" => counters[:force_resumes].to_i,
+        "compactions" => counters[:compactions].to_i,
+        "recovered" => false
+      }
+    end
+
     def build_summary_actual
-      counters = @event_counters.snapshot
+      counters = summary_event_counters
       output_measurements = summary_output_measurements
-      if %w[disconnected boot_failure].include?(@exit_reason)
-        counters[:disconnections] = [counters[:disconnections], 1].max
-      end
 
       actual = {
         model: summary_model,
@@ -1296,6 +1335,52 @@ module Harnex
     def summary_model
       meta_hash["model"] || @usage_summary[:model] ||
         (adapter.current_model if adapter.respond_to?(:current_model))
+    end
+
+    def summary_service_tier
+      summary_string(meta_hash["service_tier"]) || service_tier_from_command
+    end
+
+    def service_tier_from_command
+      command.each_with_index do |arg, index|
+        text = arg.to_s
+        if text == "-c" || text == "--config"
+          parsed = parse_service_tier_config(command[index + 1])
+          return parsed if parsed
+        end
+        parsed = parse_service_tier_config(text)
+        return parsed if parsed
+      end
+      nil
+    end
+
+    def parse_service_tier_config(value)
+      text = value.to_s
+      match = text.match(/(?:\A|=)service_tier=\\?"?([^"\s]+)\\?"?/)
+      return nil unless match
+
+      summary_string(match[1])
+    end
+
+    def summary_event_counters
+      counters = @event_counters.snapshot
+      if %w[disconnected boot_failure].include?(@exit_reason)
+        counters[:disconnections] = [counters[:disconnections], 1].max
+      end
+      counters
+    end
+
+    def summary_adapter_close(real_disconnections)
+      return "interrupted" if @exit_code == 124 || @term_signal
+      return "lost" if %w[disconnected boot_failure].include?(@exit_reason) || real_disconnections.to_i.positive?
+      return "normal" if %w[success failure].include?(@exit_reason)
+
+      "unknown"
+    end
+
+    def summary_string(value)
+      text = value.to_s
+      text.empty? ? nil : text
     end
 
     def summary_tool_calls(counters)
