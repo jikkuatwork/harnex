@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-07-08 | 02:25 PM | IST
+Updated: 2026-07-10 | 02:16 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-07-10 | 02:16 PM | IST: #53 filed from a Lexi Maze public-bundle
+  dispatch smoke to add explicit `harnex run --cwd/--root` support and clean
+  no-git temp-directory behavior. No code changes.
 - 2026-07-08 | 02:25 PM | IST: #52 filed to track typed artifact and
   validation sidecar reports for harnex dispatches, preserving `koder/` plain
   text as canonical while making queue validation evidence machine-readable.
@@ -274,6 +277,8 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   done` covers existing visible/detached sessions without unsafe bash loops.
 - #52 is open: typed artifact/validation sidecar reports should make queue
   proof machine-readable without replacing plain-text `koder/` artifacts.
+- #53 is open: add explicit `harnex run --cwd/--root` support for public-bundle
+  dispatches and clean non-git temp-directory behavior.
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
 - Local installed `harnex` on PATH reports `harnex 0.7.8 (2026-06-13)`
@@ -285,18 +290,20 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #52 — implement typed artifact/validation sidecar report ingestion so
+1. #53 — implement explicit `harnex run --cwd/--root` dispatch directory support
+   for public-bundle evals and non-git temp dirs.
+2. #52 — implement typed artifact/validation sidecar report ingestion so
    queue closeout can read structured proof without prose scraping.
-2. #47 — draft the implementation plan for the queue-aware telemetry contract
+3. #47 — draft the implementation plan for the queue-aware telemetry contract
    (preferred split: attribution/agent/reliability first; validation report
    ingestion second).
-3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+4. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-4. #42 — resume Codex app-server orchestrator auto-recovery work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+5. #42 — resume Codex app-server orchestrator auto-recovery work.
+6. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+7. #41 Slice C — public API surface doc at `docs/public_api.md`.
+8. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
