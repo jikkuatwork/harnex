@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-07-10 | 10:42 PM | IST
+Updated: 2026-07-10 | 11:02 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-07-10 | 11:02 PM | IST: `harnex 0.7.10` shipped, tagged `v0.7.10`,
+  pushed to RubyGems, and installed locally. Installed `harnex --version`
+  reports `harnex 0.7.10 (2026-07-10)`. #52 is released: `harnex run
+  --artifact-report PATH` / `--validation-report PATH` exposes worker sidecar
+  env vars and ingests bounded `harnex.artifact_report.v1` proof into dispatch
+  `artifact_report`, `validation`, and `artifacts` blocks. Verification record:
+  `koder/releases/0.7.10.md`.
 - 2026-07-10 | 10:42 PM | IST: `harnex 0.7.9` shipped, tagged `v0.7.9`,
   pushed to RubyGems, and installed locally. Installed `harnex --version`
   reports `harnex 0.7.9 (2026-07-10)`. #53 is released: `harnex run --cwd
@@ -261,10 +268,11 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
-- `harnex 0.7.9` is installed locally. `harnex run --cwd DIR` is available
-  for public-bundle/non-git temp dispatch roots; `--root DIR` is available for
-  harnex attribution-only root overrides. `harnex watch --id <id> --until done`
-  remains the safe work-terminal watcher for existing visible/detached sessions.
+- `harnex 0.7.10` is installed locally. `harnex run --artifact-report PATH`
+  / `--validation-report PATH` is available for worker proof sidecars, and
+  `harnex run --cwd DIR` remains available for public-bundle/non-git temp
+  dispatch roots. `harnex watch --id <id> --until done` remains the safe
+  work-terminal watcher for existing visible/detached sessions.
 - `harnex 0.7.7` fixed Codex app-server failures as explicit failed work
   (`task_failed`, `work_state=failed`, non-zero `wait --until done`) rather
   than false completion.
@@ -282,34 +290,34 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
   extension markers (no brittle screen regex parsing).
 - #51 is shipped in `harnex 0.7.8`: native `harnex watch --id <id> --until
   done` covers existing visible/detached sessions without unsafe bash loops.
-- #52 is open: typed artifact/validation sidecar reports should make queue
-  proof machine-readable without replacing plain-text `koder/` artifacts.
+- #52 is shipped in `harnex 0.7.10`: typed artifact/validation sidecar reports
+  make queue proof machine-readable without replacing plain-text `koder/`
+  artifacts.
 - #53 is shipped in `harnex 0.7.9`: explicit `harnex run --cwd/--root`
   support covers public-bundle dispatches and clean non-git temp-directory
   behavior.
 - #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
   v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.9 (2026-07-10)`
-  and includes #53 `--cwd/--root`, the Pi RPC adapter, #48 terminal-status/wait
-  fallback, #50 work-level `done`/`work_state` completion semantics, the Codex
-  `task_failed` fix, and #51 native terminal watch.
+- Local installed `harnex` on PATH reports `harnex 0.7.10 (2026-07-10)`
+  and includes #52 artifact sidecars, #53 `--cwd/--root`, the Pi RPC adapter,
+  #48 terminal-status/wait fallback, #50 work-level `done`/`work_state`
+  completion semantics, the Codex `task_failed` fix, and #51 native terminal
+  watch.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. #52 — implement typed artifact/validation sidecar report ingestion so
-   queue closeout can read structured proof without prose scraping.
-2. #47 — draft the implementation plan for the queue-aware telemetry contract
-   (preferred split: attribution/agent/reliability first; validation report
-   ingestion second).
-3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+1. #47 — draft/implement the remaining queue-aware telemetry contract slices:
+   attribution/agent/reliability blocks and strict attribution mode. The
+   validation report sidecar slice is shipped via #52 / `harnex 0.7.10`.
+2. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-4. #42 — resume Codex app-server orchestrator auto-recovery work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+3. #42 — resume Codex app-server orchestrator auto-recovery work.
+4. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
+5. #41 Slice C — public API surface doc at `docs/public_api.md`.
+6. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
    attribution, summary KPIs).
 
 When ending a session, update only this handoff summary and next step.
