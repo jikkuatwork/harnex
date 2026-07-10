@@ -81,6 +81,20 @@ Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer
 matches `harnex status` or `harnex pane --id`.
 
+For public-bundle or benchmark runs, use `--cwd DIR` to make harnex launch the
+wrapped agent from that directory and associate session metadata/default
+telemetry with it:
+
+```bash
+harnex run codex --cwd /tmp/leximaze_eval_run_001 \
+  --id lm-run-001 \
+  --context "Read README.md and write RESPONSES.jsonl and OUTPUT.md" \
+  --auto-stop
+```
+
+`--root DIR` only overrides harnex's root attribution; it does not change the
+child process cwd. Neither flag is a sandbox.
+
 Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
 (e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).
 

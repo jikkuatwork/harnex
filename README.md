@@ -57,6 +57,24 @@ harnex stop --id planner
 That's the core loop. Start a fresh agent for each step, hand it one
 job, watch it work, stop it when done.
 
+### Run from a temporary/public bundle
+
+Use `--cwd DIR` when the worker should see a specific directory rather than
+the orchestrator's current repo. Harnex starts the wrapped agent in `DIR`, sets
+that directory as the session root, and resolves default telemetry such as
+`.harnex/dispatch.jsonl` there:
+
+```bash
+harnex run codex --cwd /tmp/leximaze_eval_run_001 \
+  --id lm-run-001 \
+  --context "Read README.md and write RESPONSES.jsonl and OUTPUT.md" \
+  --auto-stop
+```
+
+Use `--root DIR` only when you need to override harnex's root attribution
+without changing the child process cwd. `--cwd` is not a security sandbox; it is
+an explicit working-directory/root selector for automation.
+
 ## Why use this
 
 - **You want agents to plan, implement, review, and fix — in sequence.**
@@ -228,9 +246,11 @@ Schema details and compatibility policy are documented in
 
 ## Dispatch history
 
-Every finished `harnex run` writes dispatch records. In a git repo, the
-default path is `<repo>/.harnex/dispatch.jsonl`; outside a git repo, the
-compact history record falls back to `~/.local/state/harnex/dispatch.jsonl`.
+Every finished `harnex run` writes dispatch records. By default, the terminal
+summary JSONL path is `<session-root>/.harnex/dispatch.jsonl`; `--cwd DIR` makes
+`DIR` the session root, including for non-git temporary bundles. The compact
+history record is repo-local in a git tree and falls back to
+`~/.local/state/harnex/dispatch.jsonl` outside git.
 `harnex history` reads the compact records from that location, and
 `harnex status --id ID --json` / `harnex wait` can use the same durable
 terminal summaries when the live session registry is already gone.

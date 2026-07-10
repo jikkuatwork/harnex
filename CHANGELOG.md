@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-07-10 | 10:33 PM | IST
+
+### Added
+
+- `harnex run` now accepts wrapper-level `--cwd DIR` and `--root DIR` options.
+  `--cwd` starts the wrapped agent in `DIR` and makes that directory the
+  harnex session root for registry/session metadata and default dispatch
+  summaries. `--root` changes harnex root attribution without changing the
+  child process cwd.
+
+### Changed
+
+- `harnex run --help`, README, and the dispatch guide now document
+  public-bundle / temporary-workdir dispatches with `--cwd`.
+- Refreshed pinned Codex app-server schema fixtures against
+  `codex-cli 0.144.1` so the release suite is green with the current local
+  Codex CLI.
+
+### Fixed
+
+- Non-git temporary work directories no longer leak raw `git rev-parse` fatal
+  messages during harnex root probing.
+
 ## [0.7.8] - 2026-06-13 | 08:45 PM | IST
 
 ### Added

@@ -58,15 +58,16 @@ module Harnex
       end
     end
 
-    attr_reader :repo_root, :launch_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
+    attr_reader :repo_root, :launch_cwd, :child_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
                 :inbox, :description, :meta, :summary_out, :output_log_path, :events_log_path,
                 :started_at, :ended_at, :exit_code, :term_signal
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
       @launch_cwd = File.expand_path(launch_cwd.to_s.empty? ? repo_root : launch_cwd)
+      @child_cwd = child_cwd.to_s.empty? ? nil : File.expand_path(child_cwd)
       @host = host
       @id = Harnex.normalize_id(id)
       @watch = watch
@@ -153,7 +154,9 @@ module Harnex
     end
 
     def run_pty
-      @reader, @writer, @pid = PTY.spawn(child_env, *command)
+      spawn_args = [child_env, *command]
+      spawn_args << { chdir: child_cwd } if child_cwd
+      @reader, @writer, @pid = PTY.spawn(*spawn_args)
       @writer.sync = true
       arm_auto_stop_after_initial_context
       emit_started_event
@@ -402,7 +405,7 @@ module Harnex
       adapter.on_notification { |msg| handle_structured_notification(msg) }
       adapter.on_disconnect { |err| handle_structured_disconnect(err) }
 
-      adapter.start_rpc(env: child_env, cwd: repo_root)
+      adapter.start_rpc(env: child_env, cwd: child_cwd || repo_root)
       @pid = adapter.pid
       @state_machine.force_prompt!
       emit_started_event
@@ -821,7 +824,7 @@ module Harnex
     def registry_payload
       status_payload(include_input_state: false).merge(
         token: token,
-        cwd: Dir.pwd
+        cwd: child_cwd || Dir.pwd
       )
     end
 

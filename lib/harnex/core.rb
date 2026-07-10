@@ -32,7 +32,7 @@ module Harnex
   ].freeze
 
   def resolve_repo_root(path = Dir.pwd)
-    output, status = Open3.capture2("git", "rev-parse", "--show-toplevel", chdir: path)
+    output, status = Open3.capture2("git", "rev-parse", "--show-toplevel", chdir: path, err: File::NULL)
     status.success? ? output.strip : File.expand_path(path)
   rescue StandardError
     File.expand_path(path)

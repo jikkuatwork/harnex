@@ -11,7 +11,7 @@ against the matching schema here.
 
 ## Pinned version
 
-    codex-cli 0.139.0
+    codex-cli 0.144.1
 
 The `Phase 6` drift gate (`test/harnex/contract/schema_freshness_test.rb`,
 landing in commit 6 of plan 29) re-runs the generator at test time and
@@ -90,4 +90,4 @@ without buying contract coverage for code that doesn't exist yet.
 
 ## Footprint
 
-16 schema files, ~284 KB total.
+16 schema files, ~256 KB total.

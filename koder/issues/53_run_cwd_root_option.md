@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 priority: P2
 issue_kind: slice
 created: 2026-07-10
@@ -83,19 +83,19 @@ A single `--cwd` that also becomes session root may be enough for v1.
 
 ## Acceptance criteria
 
-- [ ] `harnex run` accepts an explicit directory flag before the child CLI name
+- [x] `harnex run` accepts an explicit directory flag before the child CLI name
       or among wrapper options.
-- [ ] The wrapped agent process starts with that directory as its cwd.
-- [ ] Harnex session metadata/root/history/summary-out defaults are associated
+- [x] The wrapped agent process starts with that directory as its cwd.
+- [x] Harnex session metadata/root/history/summary-out defaults are associated
       with the chosen directory, not the invoker's original cwd.
-- [ ] Non-git directories are supported without printing raw `git` fatal errors.
-- [ ] Relative `--context` file references in worker prompts can be written from
+- [x] Non-git directories are supported without printing raw `git` fatal errors.
+- [x] Relative `--context` file references in worker prompts can be written from
       the assumption that cwd is the selected bundle directory.
-- [ ] Existing child-argument passthrough still works; for Codex, `-- --cd ...`
+- [x] Existing child-argument passthrough still works; for Codex, `-- --cd ...`
       remains valid and independent.
-- [ ] Tests cover git cwd, non-git cwd, missing cwd, relative cwd, and interaction
+- [x] Tests cover git cwd, non-git cwd, missing cwd, relative cwd, and interaction
       with explicit `--summary-out`.
-- [ ] Docs and `harnex run --help` show a public-bundle/temporary-workdir example.
+- [x] Docs and `harnex run --help` show a public-bundle/temporary-workdir example.
 
 ## Out of scope
 
@@ -104,6 +104,13 @@ A single `--cwd` that also becomes session root may be enough for v1.
 - Containers/chroot/network policy.
 - Changing adapter-specific repo inference beyond ensuring the wrapper-level cwd
   is authoritative when supplied.
+
+## Resolution
+
+Implemented for `harnex 0.7.9`: `--cwd DIR` is the v1 public-bundle surface,
+with `--root DIR` available for attribution-only overrides. Regression coverage
+lives in `test/harnex/commands/run_test.rb`; docs are in `README.md`,
+`guides/01_dispatch.md`, and `harnex run --help`.
 
 ## Triage
 

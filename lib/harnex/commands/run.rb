@@ -8,11 +8,11 @@ module Harnex
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
-      --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
+      --cwd --root --timeout --inbox-ttl --auto-stop --fast --legacy-pty --help
     ].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --summary-out --timeout --inbox-ttl
+      --max-resumes --preset --context --meta --summary-out --cwd --root --timeout --inbox-ttl
     ].freeze
 
     def self.usage(program_name = "harnex run")
@@ -37,6 +37,8 @@ module Harnex
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
           --summary-out PATH Append dispatch telemetry summary JSONL to PATH
+          --cwd DIR          Run the wrapped agent from DIR and use DIR as the session root
+          --root DIR         Override harnex session/root attribution without changing child cwd
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
           --legacy-pty       (codex only) Use the legacy PTY adapter instead of
@@ -58,6 +60,7 @@ module Harnex
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md"
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
           #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
+          #{program_name} codex --cwd /tmp/public-bundle --id eval-001 --context "Read README.md and write OUTPUT.md" --auto-stop
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
         Gotchas:
@@ -88,6 +91,8 @@ module Harnex
         context: nil,
         meta: nil,
         summary_out: nil,
+        cwd: nil,
+        root: nil,
         auto_stop: false,
         detach: false,
         tmux: false,
@@ -110,7 +115,7 @@ module Harnex
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
       validate_auto_stop_context!
 
-      repo_root = Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
+      repo_root = resolve_run_root(cli_name, child_args)
       @options[:summary_out] = resolve_summary_out(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
@@ -173,6 +178,8 @@ module Harnex
       tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
+      tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
+      tmux_cmd += ["--root", @options[:root]] if @options[:root]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
       tmux_cmd << "--fast" if @options[:fast]
       tmux_cmd += ["--legacy-pty"] if @options[:legacy_pty]
@@ -181,11 +188,12 @@ module Harnex
       window_name = @options[:tmux_name] || @options[:id]
       shell_cmd = tmux_cmd.map { |arg| Shellwords.shellescape(arg) }.join(" ")
 
+      tmux_start_cwd = @options[:cwd] || @launch_cwd
       started =
         if ENV["TMUX"]
-          system("tmux", "new-window", "-c", @launch_cwd, "-n", window_name, "-d", shell_cmd)
+          system("tmux", "new-window", "-c", tmux_start_cwd, "-n", window_name, "-d", shell_cmd)
         else
-          system("tmux", "new-session", "-c", @launch_cwd, "-d", "-s", "harnex", "-n", window_name, shell_cmd)
+          system("tmux", "new-session", "-c", tmux_start_cwd, "-d", "-s", "harnex", "-n", window_name, shell_cmd)
         end
 
       raise "tmux failed to start #{cli_name.inspect}" unless started
@@ -281,12 +289,31 @@ module Harnex
         summary_out: @options[:summary_out],
         inbox_ttl: @options[:inbox_ttl],
         auto_stop: @options[:auto_stop],
-        launch_cwd: @launch_cwd
+        launch_cwd: history_cwd,
+        child_cwd: session_child_cwd
       )
     end
 
     def adapter_repo_path(cli_name, child_args)
       Harnex.build_adapter(cli_name, child_args, legacy_pty: @options[:legacy_pty]).infer_repo_path(child_args)
+    end
+
+    def resolve_run_root(cli_name, child_args)
+      return @options[:root] if @options[:root]
+      return @options[:cwd] if @options[:cwd]
+
+      Harnex.resolve_repo_root(adapter_repo_path(cli_name, child_args))
+    end
+
+    def history_cwd
+      @options[:root] || @options[:cwd] || @launch_cwd
+    end
+
+    def session_child_cwd
+      return @options[:cwd] if @options[:cwd]
+      return @launch_cwd if @options[:root]
+
+      nil
     end
 
     def apply_context(child_args)
@@ -441,6 +468,16 @@ module Harnex
           @options[:summary_out] = required_option_value(arg, argv[index])
         when /\A--summary-out=(.+)\z/
           @options[:summary_out] = required_option_value("--summary-out", Regexp.last_match(1))
+        when "--cwd"
+          index += 1
+          @options[:cwd] = expand_existing_directory(required_option_value(arg, argv[index]), option_name: arg)
+        when /\A--cwd=(.+)\z/
+          @options[:cwd] = expand_existing_directory(required_option_value("--cwd", Regexp.last_match(1)), option_name: "--cwd")
+        when "--root"
+          index += 1
+          @options[:root] = expand_existing_directory(required_option_value(arg, argv[index]), option_name: arg)
+        when /\A--root=(.+)\z/
+          @options[:root] = expand_existing_directory(required_option_value("--root", Regexp.last_match(1)), option_name: "--root")
         when "--timeout"
           index += 1
           @options[:timeout] = Float(required_option_value(arg, argv[index]))
@@ -509,7 +546,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|cwd|root|timeout|inbox-ttl)=/
           nil
         when /\A--preset=/
           nil
@@ -528,7 +565,7 @@ module Harnex
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--summary-out=",
-          "--timeout=", "--inbox-ttl="
+          "--cwd=", "--root=", "--timeout=", "--inbox-ttl="
         )
     end
 
@@ -583,6 +620,13 @@ module Harnex
       integer
     rescue ArgumentError
       raise OptionParser::InvalidArgument, "#{option_name} must be an integer"
+    end
+
+    def expand_existing_directory(value, option_name:)
+      path = File.expand_path(value.to_s, @launch_cwd)
+      return path if File.directory?(path)
+
+      raise OptionParser::InvalidArgument, "#{option_name} must be an existing directory: #{value}"
     end
 
     def parse_meta(value)

@@ -1,5 +1,6 @@
 require_relative "../../test_helper"
 require "open3"
+require "rbconfig"
 
 class RunnerTest < Minitest::Test
   def resolve_watch_options(argv)
@@ -304,6 +305,181 @@ class RunnerTest < Minitest::Test
     end
   end
 
+  def test_extract_wrapper_options_parses_cwd_before_cli
+    Dir.mktmpdir("harnex-run-cwd") do |cwd|
+      runner = Harnex::Runner.new(["--cwd", cwd, "codex"])
+      cli_name, forwarded = runner.send(:extract_wrapper_options, ["--cwd", cwd, "codex"])
+      opts = runner.instance_variable_get(:@options)
+
+      assert_equal "codex", cli_name
+      assert_equal [], forwarded
+      assert_equal cwd, opts[:cwd]
+    end
+  end
+
+  def test_extract_wrapper_options_rejects_missing_cwd_directory
+    missing = File.join(Dir.tmpdir, "harnex-missing-cwd-#{$$}")
+    runner = Harnex::Runner.new(["codex", "--cwd", missing])
+
+    error = assert_raises(OptionParser::InvalidArgument) do
+      runner.send(:extract_wrapper_options, ["codex", "--cwd", missing])
+    end
+
+    assert_match(/--cwd must be an existing directory/, error.message)
+  end
+
+  def test_run_cwd_is_authoritative_over_child_cd_passthrough
+    Dir.mktmpdir("harnex-run-cwd") do |root|
+      cwd = File.join(root, "bundle")
+      child_cd = File.join(root, "child-cd")
+      FileUtils.mkdir_p([cwd, child_cd])
+      runner = Harnex::Runner.new(["codex", "--cwd", cwd, "--", "--cd", child_cd])
+      cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--cwd", cwd, "--", "--cd", child_cd])
+
+      assert_equal "codex", cli_name
+      assert_equal ["--cd", child_cd], forwarded
+      assert_equal cwd, runner.send(:resolve_run_root, cli_name, forwarded)
+    end
+  end
+
+  def test_run_cwd_uses_non_git_directory_for_child_root_and_default_summary
+    Dir.mktmpdir("harnex-run-cwd") do |root|
+      launch = File.join(root, "orchestrator")
+      bundle = File.join(root, "bundle")
+      FileUtils.mkdir_p([launch, bundle])
+      result_path = File.join(root, "cwd.json")
+      id = "cwd-nongit-#{$$}"
+
+      Dir.chdir(launch) do
+        _out, err = capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--cwd", bundle,
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+        refute_match(/fatal: not a git repository/, err)
+      end
+
+      payload = JSON.parse(File.read(result_path))
+      assert_equal bundle, payload.fetch("pwd")
+      assert_equal bundle, payload.fetch("repo_root")
+
+      summary_path = File.join(bundle, ".harnex", "dispatch.jsonl")
+      assert_path_exists summary_path
+      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      assert_equal id, row.dig("meta", "id")
+      assert_equal bundle, row.dig("meta", "repo")
+      assert_equal 0, row.dig("actual", "exit_code")
+    end
+  end
+
+  def test_run_cwd_accepts_git_directory
+    Dir.mktmpdir("harnex-run-cwd-git") do |root|
+      launch = File.join(root, "orchestrator")
+      repo = File.join(root, "repo")
+      FileUtils.mkdir_p([launch, repo])
+      assert system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      result_path = File.join(root, "cwd.json")
+      id = "cwd-git-#{$$}"
+
+      Dir.chdir(launch) do
+        _out, err = capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--cwd", repo,
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+        refute_match(/fatal:/, err)
+      end
+
+      payload = JSON.parse(File.read(result_path))
+      assert_equal repo, payload.fetch("pwd")
+      assert_equal repo, payload.fetch("repo_root")
+      assert_path_exists File.join(repo, ".harnex", "dispatch.jsonl")
+    end
+  end
+
+  def test_run_cwd_expands_relative_directory_from_invocation_cwd
+    Dir.mktmpdir("harnex-run-relative-cwd") do |launch|
+      bundle = File.join(launch, "bundle")
+      FileUtils.mkdir_p(bundle)
+      result_path = File.join(launch, "cwd.json")
+
+      Dir.chdir(launch) do
+        capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", "cwd-relative-#{$$}",
+            "--cwd", "bundle",
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+      end
+
+      payload = JSON.parse(File.read(result_path))
+      assert_equal bundle, payload.fetch("pwd")
+      assert_equal bundle, payload.fetch("repo_root")
+    end
+  end
+
+  def test_run_cwd_resolves_explicit_summary_out_relative_to_selected_root
+    Dir.mktmpdir("harnex-run-summary-cwd") do |root|
+      launch = File.join(root, "orchestrator")
+      bundle = File.join(root, "bundle")
+      FileUtils.mkdir_p([launch, bundle])
+      result_path = File.join(root, "cwd.json")
+      id = "cwd-summary-#{$$}"
+
+      Dir.chdir(launch) do
+        capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--cwd", bundle,
+            "--summary-out", "reports/dispatch.jsonl",
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+      end
+
+      summary_path = File.join(bundle, "reports", "dispatch.jsonl")
+      assert_path_exists summary_path
+      refute_path_exists File.join(launch, "reports", "dispatch.jsonl")
+      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      assert_equal bundle, row.dig("meta", "repo")
+    end
+  end
+
+  def test_run_root_overrides_metadata_without_changing_child_cwd
+    Dir.mktmpdir("harnex-run-root") do |root|
+      launch = File.join(root, "orchestrator")
+      attributed_root = File.join(root, "attributed")
+      FileUtils.mkdir_p([launch, attributed_root])
+      result_path = File.join(root, "cwd.json")
+      id = "root-split-#{$$}"
+
+      Dir.chdir(launch) do
+        capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--root", attributed_root,
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+      end
+
+      payload = JSON.parse(File.read(result_path))
+      assert_equal launch, payload.fetch("pwd")
+      assert_equal attributed_root, payload.fetch("repo_root")
+      assert_path_exists File.join(attributed_root, ".harnex", "dispatch.jsonl")
+    end
+  end
+
   def test_extract_wrapper_options_bare_watch_enables_babysitter
     runner = Harnex::Runner.new(["codex", "--watch"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch"])
@@ -537,6 +713,18 @@ class RunnerTest < Minitest::Test
   ensure
     Harnex.define_singleton_method(:tmux_pane_for_pid, &original_tmux_lookup) if original_tmux_lookup
     FileUtils.rm_f(path) if path
+  end
+
+  def cwd_probe_script
+    <<~'RUBY'
+      require "json"
+
+      File.write(ARGV.fetch(0), JSON.generate(
+        "pwd" => Dir.pwd,
+        "repo_root" => ENV["HARNEX_SESSION_REPO_ROOT"],
+        "argv" => ARGV.drop(1)
+      ))
+    RUBY
   end
 
   def write_hanging_interrupt_codex_stub(path)
