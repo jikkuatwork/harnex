@@ -23,6 +23,35 @@ Current harnex telemetry is good for basic run accounting, but not yet strong en
 
 Without these signals, we tune routing from partial visibility.
 
+## Observed implementation gap — 2026-07-11
+
+The current write path is Harnex-owned and already emits two related JSONL
+surfaces:
+
+- `Harnex::DispatchHistory` appends a compact terminal row to the repo-local
+  `.harnex/dispatch.jsonl` (or the global state path outside a git repo).
+- `Harnex::Session#build_summary_record` writes the structured terminal summary
+  containing `meta`, `predicted`, `actual`, `agent`, `queue`, `validation`, and
+  `reliability` blocks. The Codex/Pi adapters feed model and usage observations
+  into the session before finalization.
+
+The current contract identifies the requested/effective model and records some
+provider-specific usage, but it cannot yet answer durable work-attribution
+questions reliably:
+
+- which model produced the surviving commit or changed paths;
+- changed files/LOC and test outcomes attributable to the dispatch;
+- token/cost totals when the adapter did not expose them, versus genuinely zero
+  usage;
+- whether a retry/fix/re-review superseded the earlier work or merely added
+  more effort to the same slice;
+- whether a top-level queue result was accepted, rejected, or still pending.
+
+The existing run-level row is therefore a useful accounting record, but not yet
+a complete model-effectiveness record. This issue should extend the existing
+contract rather than introduce a second telemetry writer or ask downstream
+orchestrators to infer authorship from free-form summaries and git history.
+
 ## Goal
 
 Add telemetry that makes throughput optimization first-class:
@@ -104,6 +133,18 @@ Add additive summary fields to the dispatch row (or linked child rows if fallbac
   - retry tax %
   - 429/disconnect rates
   - throughput by `project + phase + model_effective`
+- Dispatch summaries expose explicit attribution-quality and outcome fields:
+  - `attribution.status` (`complete`, `partial`, or `missing`)
+  - `outcome.status` (`accepted`, `rejected`, `no_change`, or `unknown`)
+  - `outcome.commit_sha` and changed-path/LOC measurements captured at
+    finalization, without claiming that git changes prove semantic authorship
+  - `usage.status` (`observed`, `unsupported`, or `missing`) so null usage is
+    not confused with zero usage
+- Retries, fixes, reviews, and superseding dispatches can be joined through
+  stable parent/child IDs and summarized without double-counting accepted work.
+- A fixture or integration test proves that two models contributing to one
+  queue entry produce separate effort rows and one deduplicated accepted-work
+  outcome.
 
 ## Out of scope (v1)
 
