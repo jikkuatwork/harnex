@@ -159,6 +159,7 @@ class CoreTest < Minitest::Test
       assert_equal 1, finish[:loc_added]
       assert_equal 0, finish[:loc_removed]
       assert_equal 1, finish[:files_changed]
+      assert_equal ["README.md"], finish[:changed_paths]
       assert_equal 1, finish[:commits]
     end
   end

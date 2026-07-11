@@ -417,8 +417,8 @@ class SessionJsonrpcTest < Minitest::Test
     assert_match(/Invalid request: invalid type: null/, err.message)
 
     rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-    assert_equal %w[started task_failed usage summary exited], rows.map { |row| row["type"] }
-    assert_equal "boot_failure", rows[-2]["exit"]
+    assert_equal %w[started attempt_started task_failed usage summary attempt_finished exited], rows.map { |row| row["type"] }
+    assert_equal "boot_failure", rows[-3]["exit"]
     assert_equal "boot_failure", rows[-1]["reason"]
 
     record = JSON.parse(File.read(summary_path).lines.last)

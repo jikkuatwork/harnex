@@ -74,6 +74,10 @@ module Harnex
         "openai"
       end
 
+      def usage_telemetry_supported?
+        true
+      end
+
       def base_command
         ["codex", "app-server"]
       end

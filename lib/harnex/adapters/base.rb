@@ -73,6 +73,12 @@ module Harnex
         {}
       end
 
+      # Whether this adapter has a supported source for token/cost telemetry.
+      # A supported source can still be missing for a particular run.
+      def usage_telemetry_supported?
+        false
+      end
+
       def send_wait_seconds(submit:, enter_only:)
         0.0
       end

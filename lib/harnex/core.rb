@@ -141,6 +141,7 @@ module Harnex
     end_sha = git_output(repo_root, "rev-parse", "HEAD")
     range = "#{start_sha}..#{end_sha}"
     shortstat = git_output(repo_root, "diff", "--shortstat", range)
+    changed_paths = git_output(repo_root, "diff", "--name-only", range).lines.map(&:strip).reject(&:empty?).first(200)
     commits = Integer(git_output(repo_root, "rev-list", "--count", range))
     stats = parse_git_shortstat(shortstat)
 
@@ -149,6 +150,7 @@ module Harnex
       loc_added: stats.fetch(:loc_added),
       loc_removed: stats.fetch(:loc_removed),
       files_changed: stats.fetch(:files_changed),
+      changed_paths: changed_paths,
       commits: commits
     }
   rescue StandardError

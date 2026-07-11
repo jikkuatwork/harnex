@@ -9,6 +9,11 @@ class ArtifactReportTest < Minitest::Test
         schema: Harnex::ArtifactReport::SCHEMA,
         status: "pass",
         canonical_artifacts: ["koder/issues/52_typed_artifact_validation_sidecars.md"],
+        outcome: {
+          status: "accepted",
+          summary: "Queue gate accepted the implementation.",
+          commit_sha: "0123456789abcdef"
+        },
         validation: {
           status: "pass",
           final_reported: true,
@@ -40,6 +45,11 @@ class ArtifactReportTest < Minitest::Test
       assert_equal ["koder/issues/52_typed_artifact_validation_sidecars.md"], metadata.fetch("canonical_artifacts")
       assert_equal 1, metadata.fetch("artifact_count")
 
+      outcome = payload.fetch("outcome")
+      assert_equal "accepted", outcome.fetch("status")
+      assert_equal "Queue gate accepted the implementation.", outcome.fetch("summary")
+      assert_equal "0123456789abcdef", outcome.fetch("commit_sha")
+
       validation = payload.fetch("validation")
       assert_equal "pass", validation.fetch("status")
       assert_equal true, validation.fetch("final_reported")
@@ -52,6 +62,20 @@ class ArtifactReportTest < Minitest::Test
       assert_equal ["test/harnex/artifact_report_test.rb"], artifact.fetch("evidence")
       assert_equal 1.0, artifact.fetch("confidence")
       assert_equal "koder/issues/52_typed_artifact_validation_sidecars.md", artifact.fetch("canonical_ref")
+    end
+  end
+
+  def test_ignores_invalid_outcome_status_without_rejecting_v1_report
+    Dir.mktmpdir("harnex-artifact-report") do |dir|
+      path = File.join(dir, "report.json")
+      File.write(path, JSON.generate(
+        schema: Harnex::ArtifactReport::SCHEMA,
+        outcome: { status: "made_up" }
+      ))
+
+      payload = Harnex::ArtifactReport.ingest(path)
+      refute payload.key?("outcome")
+      assert_equal "ok", payload.dig("artifact_report", "ingest_status")
     end
   end
 

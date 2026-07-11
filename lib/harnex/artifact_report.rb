@@ -74,6 +74,7 @@ module Harnex
     def build_payload(path, bytes:, sha256:, report:)
       artifacts = compact_artifacts(report["artifacts"])
       validation = compact_validation(report["validation"])
+      outcome = compact_outcome(report["outcome"])
       payload = {
         "artifact_report" => metadata(
           path,
@@ -89,6 +90,7 @@ module Harnex
       }
       payload["validation"] = validation if validation
       payload["artifacts"] = artifacts unless artifacts.empty?
+      payload["outcome"] = outcome if outcome
       payload
     end
 
@@ -142,6 +144,21 @@ module Harnex
         compact.delete_if { |_key, v| v.nil? }
         compact.empty? ? nil : compact
       end
+    end
+
+    def compact_outcome(value)
+      return nil unless value.is_a?(Hash)
+
+      status = value["status"].to_s
+      return nil unless %w[accepted rejected no_change unknown].include?(status)
+
+      payload = {
+        "status" => status,
+        "summary" => bounded_string_or_nil(value["summary"]),
+        "commit_sha" => bounded_string_or_nil(value["commit_sha"])
+      }
+      payload.delete_if { |_key, item| item.nil? }
+      payload
     end
 
     def compact_artifacts(value)

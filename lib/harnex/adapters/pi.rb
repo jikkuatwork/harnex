@@ -49,6 +49,10 @@ module Harnex
         @model
       end
 
+      def usage_telemetry_supported?
+        true
+      end
+
       def base_command
         ["pi", "--mode", "rpc"]
       end
@@ -181,6 +185,7 @@ module Harnex
             agent_session_id: @session_summary[:agent_session_id],
             tool_calls: @session_summary[:tool_calls],
             cost_usd: @session_summary[:cost_usd],
+            cost_source: @session_summary[:cost_source],
             model: @session_summary[:model],
             agent_provider: @session_summary[:agent_provider]
           }
@@ -369,6 +374,7 @@ module Harnex
           @session_summary[:total_tokens] = numeric_or_nil(tokens["total"])
           @session_summary[:tool_calls] = numeric_or_nil(data["toolCalls"])
           @session_summary[:cost_usd] = float_or_nil(data["cost"])
+          @session_summary[:cost_source] = "provider_reported" unless @session_summary[:cost_usd].nil?
           @session_summary[:agent_session_id] = data["sessionId"] if data["sessionId"]
           @session_summary[:model] = @model if @model
           @session_summary[:agent_provider] = @provider if @provider

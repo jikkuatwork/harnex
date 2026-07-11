@@ -15,11 +15,15 @@ class DispatchRowSchemaTest < Minitest::Test
   ACTUAL_KEYS = %w[
     adapter_transport
     agent_session_id
+    attempts_failed
+    attempts_succeeded
+    attempts_total
     cached_tokens
     commands_executed
     commits
     compactions
     cost_usd
+    disconnect_count
     disconnections
     duration_s
     effort
@@ -27,6 +31,7 @@ class DispatchRowSchemaTest < Minitest::Test
     events_log_path
     exit
     exit_code
+    fallback_triggered
     files_changed
     force_resumes
     input_tokens
@@ -41,12 +46,18 @@ class DispatchRowSchemaTest < Minitest::Test
     output_tokens
     rate_limits
     reasoning_tokens
+    retry_count
+    retry_tax_pct
     signal
     stalls
     task_complete
+    throttle_429_count
+    throughput_successes_per_h
+    throughput_tokens_per_s
     tool_calls
     total_tokens
     turn_count
+    unattributed
   ].freeze
 
   META_KEYS = %w[
@@ -87,6 +98,60 @@ class DispatchRowSchemaTest < Minitest::Test
     project_id
     queue_id
     tier
+  ].freeze
+
+  ATTEMPT_KEYS = %w[
+    deployment_effective
+    end_ts
+    ended_at
+    exit_reason
+    id
+    intent
+    kind
+    model_effective
+    model_requested
+    parent_attempt_id
+    parent_dispatch_id
+    phase
+    project_id
+    reasoning_effort
+    run_id
+    start_ts
+    started_at
+    status
+    wall_ms
+  ].freeze
+
+  ATTRIBUTION_KEYS = %w[
+    intent
+    phase
+    project_id
+    status
+    work_id
+    work_type
+  ].freeze
+
+  OUTCOME_KEYS = %w[
+    changed_paths
+    commit_sha
+    commits
+    files_changed
+    lines_changed
+    loc_added
+    loc_removed
+    source
+    status
+  ].freeze
+
+  USAGE_KEYS = %w[
+    cached_input_tokens
+    cost_source
+    cost_usd
+    input_tokens
+    output_tokens
+    reasoning_tokens
+    status
+    total_tokens
   ].freeze
 
   RELIABILITY_KEYS = %w[
@@ -139,11 +204,15 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       record = JSON.parse(File.read(summary_path).lines.last)
-      assert_equal %w[actual agent meta predicted queue reliability], record.keys.sort
+      assert_equal %w[actual agent attempt attribution meta outcome predicted queue reliability usage], record.keys.sort
       assert_equal META_KEYS, record.fetch("meta").keys.sort
       assert_equal ACTUAL_KEYS, record.fetch("actual").keys.sort
       assert_equal AGENT_KEYS, record.fetch("agent").keys.sort
+      assert_equal ATTEMPT_KEYS, record.fetch("attempt").keys.sort
+      assert_equal ATTRIBUTION_KEYS, record.fetch("attribution").keys.sort
+      assert_equal OUTCOME_KEYS, record.fetch("outcome").keys.sort
       assert_equal QUEUE_KEYS, record.fetch("queue").keys.sort
+      assert_equal USAGE_KEYS, record.fetch("usage").keys.sort
       assert_equal RELIABILITY_KEYS, record.fetch("reliability").keys.sort
 
       meta = record.fetch("meta")
@@ -193,6 +262,30 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal "1", queue.fetch("tier")
       assert_equal "telemetry-contract", queue.fetch("intent")
 
+      attempt = record.fetch("attempt")
+      assert_equal id, attempt.fetch("run_id")
+      assert_equal "initial", attempt.fetch("kind")
+      assert_equal "succeeded", attempt.fetch("status")
+      assert_kind_of String, attempt.fetch("id")
+      assert_kind_of Integer, attempt.fetch("wall_ms")
+
+      attribution = record.fetch("attribution")
+      assert_equal "complete", attribution.fetch("status")
+      assert_equal "harnex", attribution.fetch("project_id")
+      assert_equal "SP-4", attribution.fetch("work_id")
+      assert_equal "entry_id", attribution.fetch("work_type")
+
+      outcome = record.fetch("outcome")
+      assert_equal "no_change", outcome.fetch("status")
+      assert_equal [], outcome.fetch("changed_paths")
+      assert_nil outcome.fetch("commit_sha")
+
+      usage = record.fetch("usage")
+      assert_equal "observed", usage.fetch("status")
+      assert_nil usage.fetch("cost_usd")
+      assert_equal 104_158, usage.fetch("input_tokens")
+      assert_equal 250_880, usage.fetch("cached_input_tokens")
+
       reliability = record.fetch("reliability")
       assert_equal "normal", reliability.fetch("adapter_close")
       assert_equal 0, reliability.fetch("real_disconnections")
@@ -237,6 +330,14 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_kind_of Integer, actual.fetch("event_records")
       assert_equal Harnex.output_log_path(repo, id), actual.fetch("output_log_path")
       assert_equal Harnex.events_log_path(repo, id), actual.fetch("events_log_path")
+      assert_equal 1, actual.fetch("attempts_total")
+      assert_equal 1, actual.fetch("attempts_succeeded")
+      assert_equal 0, actual.fetch("attempts_failed")
+      assert_equal 0, actual.fetch("retry_count")
+      assert_equal 0, actual.fetch("throttle_429_count")
+      assert_equal 0, actual.fetch("disconnect_count")
+      assert_equal false, actual.fetch("unattributed")
+      assert_equal false, actual.fetch("fallback_triggered")
     end
   end
 

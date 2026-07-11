@@ -300,6 +300,28 @@ class RunnerTest < Minitest::Test
     assert_equal "high", meta.fetch("effort")
   end
 
+  def test_attempt_linkage_flags_override_meta_and_validate_kind
+    argv = [
+      "codex", "--parent-dispatch-id", "dispatch-1", "--parent-attempt-id=attempt-1",
+      "--attempt-kind", "retry", "--meta", '{"attempt_kind":"bad","parent_attempt_id":"old"}'
+    ]
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_telemetry_options!)
+    runner.send(:validate_attempt_metadata!)
+    meta = runner.instance_variable_get(:@options).fetch(:meta)
+
+    assert_equal "dispatch-1", meta.fetch("parent_dispatch_id")
+    assert_equal "attempt-1", meta.fetch("parent_attempt_id")
+    assert_equal "retry", meta.fetch("attempt_kind")
+
+    invalid = Harnex::Runner.new(["codex", "--attempt-kind", "unknown"])
+    invalid.send(:extract_wrapper_options, ["codex", "--attempt-kind", "unknown"])
+    invalid.send(:apply_telemetry_options!)
+    error = assert_raises(OptionParser::InvalidOption) { invalid.send(:validate_attempt_metadata!) }
+    assert_match(/--attempt-kind must be one of/, error.message)
+  end
+
   def test_require_attribution_rejects_missing_fields
     runner = Harnex::Runner.new(["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
     runner.send(:extract_wrapper_options, ["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])

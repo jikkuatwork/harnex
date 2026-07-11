@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- Dispatch summaries now include additive `usage`, `attribution`, `outcome`, and
+  per-session `attempt` blocks. `usage.status` distinguishes provider-observed,
+  explicit-zero, caller-estimated, unsupported, and missing values so nullable
+  cost/token fields are never mistaken for zero.
+- `harnex run` accepts `--parent-dispatch-id`, `--parent-attempt-id`, and
+  `--attempt-kind` (`initial`, `retry`, `fix`, `review`, or `superseding`) to
+  preserve parent/child relationships while retaining separate raw effort rows.
+- Terminal event streams now emit `attempt_started` / `attempt_finished` and
+  translate Pi internal retry notices into `attempt_retry_scheduled`; the
+  Session exposes an `attempt_fallback_switched` telemetry seam for recovery
+  and fallback owners.
+- Bounded artifact reports can optionally record a semantic outcome
+  (`accepted`, `rejected`, `no_change`, or `unknown`). Final outcome blocks
+  retain git commit/path/LOC observations without claiming they prove authorship.
+
+### Changed
+
+- Dispatch telemetry documentation now defines usage-cost provenance, strict
+  attribution quality, sidecar-backed outcomes, attempt linkage, and safe
+  throughput/reliability query examples.
+
 ## [0.7.12] - 2026-07-10 | 11:19 PM | IST
 
 ### Fixed

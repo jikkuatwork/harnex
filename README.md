@@ -281,8 +281,9 @@ harnex run pi --id pi-i-52 \
 The sidecar schema is `harnex.artifact_report.v1`; harnex exposes the path as
 `HARNEX_ARTIFACT_REPORT_PATH` / `HARNEX_VALIDATION_REPORT_PATH`, then records a
 compact `artifact_report`, `validation`, and `artifacts` summary in the dispatch
-row. Missing or malformed reports are warning telemetry, not wrapped-process
-crashes.
+row. A sidecar can also assert the bounded outcome (`accepted`, `rejected`,
+`no_change`, or `unknown`); git changes alone never imply semantic acceptance.
+Missing or malformed reports are warning telemetry, not wrapped-process crashes.
 
 Queue runners can pass first-class attribution without hiding it in prose:
 
@@ -293,13 +294,15 @@ harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 \
 
 Soft budget metadata is copied into summary `meta`; queue/agent/reliability
 metadata is copied into top-level `queue`, `agent`, and `reliability` summary
-blocks. Terminal summary `actual` records timing, exit classification, token
-usage when the adapter can capture it, adapter-reported `cost_usd` when
-reliably available, git deltas,
-task-completion state, operational counters (`stalls`, `force_resumes`,
-`disconnections`, `tool_calls`, `commands_executed`), output/event log paths,
-and rough volume measurements such as `lines_changed`, `output_lines`,
-`output_bytes`, and `event_records`.
+blocks. Every terminal row also has `usage` (so null is distinguishable from
+explicit zero or an estimate), `attribution`, `outcome`, and a joinable
+per-session `attempt` block. Terminal summary `actual` records timing, exit
+classification, token usage when the adapter can capture it, adapter-reported
+`cost_usd` when reliably available, git deltas, task-completion state,
+operational counters (`stalls`, `force_resumes`, `disconnections`,
+`tool_calls`, `commands_executed`), output/event log paths, and rough volume
+measurements such as `lines_changed`, `output_lines`, `output_bytes`, and
+`event_records`.
 Harnex records the data only; consumers decide whether to fail closed. See
 [docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) for the field
 contract.

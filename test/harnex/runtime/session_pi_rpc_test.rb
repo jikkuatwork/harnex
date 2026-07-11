@@ -44,6 +44,20 @@ class SessionPiRpcTest < Minitest::Test
     assert events.any? { |row| row["type"] == "task_complete" }
   end
 
+  def test_auto_retry_emits_attempt_retry_scheduled_without_creating_a_new_attempt
+    @session.send(:handle_jsonl_notification, {
+      "type" => "auto_retry_start",
+      "reason" => "transient_error"
+    })
+
+    retry_event, attempt_event = events.last(2)
+    assert_equal "auto_retry_start", retry_event.fetch("type")
+    assert_equal "attempt_retry_scheduled", attempt_event.fetch("type")
+    assert_equal @session.session_id, attempt_event.fetch("attempt_id")
+    assert_equal "adapter_auto_retry", attempt_event.fetch("trigger")
+    assert_equal 1, @session.instance_variable_get(:@event_counters).snapshot.fetch(:retries)
+  end
+
   def test_extension_ui_request_auto_cancels_dialog
     captured = nil
     @adapter.define_singleton_method(:respond_extension_ui_cancel) do |request_id:, method:|
@@ -158,6 +172,9 @@ class SessionPiRpcTest < Minitest::Test
     record = JSON.parse(File.read(summary_path).lines.last)
     assert_equal "stdio_jsonl_rpc", record.dig("actual", "adapter_transport")
     assert_equal 0.07, record.dig("actual", "cost_usd")
+    assert_equal "observed", record.dig("usage", "status")
+    assert_equal "provider_reported", record.dig("usage", "cost_source")
+    assert_equal 0.07, record.dig("usage", "cost_usd")
     assert_equal 3, record.dig("actual", "tool_calls")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")
@@ -192,6 +209,8 @@ class SessionPiRpcTest < Minitest::Test
 
     record = JSON.parse(File.read(summary_path).lines.last)
     assert_equal 0.33, record.dig("actual", "cost_usd")
+    assert_equal "observed", record.dig("usage", "status")
+    assert_equal "provider_reported", record.dig("usage", "cost_source")
     assert_equal 9, record.dig("actual", "tool_calls")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")

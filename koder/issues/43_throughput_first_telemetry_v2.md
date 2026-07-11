@@ -52,6 +52,20 @@ a complete model-effectiveness record. This issue should extend the existing
 contract rather than introduce a second telemetry writer or ask downstream
 orchestrators to infer authorship from free-form summaries and git history.
 
+## Implementation status — 2026-07-11
+
+Plan 31 implemented the telemetry-contract foundation: additive `usage`,
+`attribution`, `outcome`, and per-session `attempt` summary blocks; stable
+parent-attempt/parent-dispatch flags; changed-path/LOC observations; bounded
+sidecar-backed accepted/rejected outcomes; lifecycle events; Pi retry event
+translation; and a Session transition seam for future recovery/fallback owners.
+All of this is schema-tested and backward-compatible.
+
+This issue remains open only for runtime work owned by #42 and plan 30: a real
+recovery/fallback implementation must invoke the transition seam so a live
+integration test can measure pre/post economics and retry waste. Harnex does
+not fabricate fallback telemetry before such a path exists.
+
 ## Goal
 
 Add telemetry that makes throughput optimization first-class:

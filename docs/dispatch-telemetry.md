@@ -27,9 +27,12 @@ harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase i
   the same path available as `HARNEX_VALIDATION_REPORT_PATH` for worker prompts
   that only need validation proof.
 - `--project-id`, `--queue-id`, `--entry-id`, `--entry-title`, `--phase`,
-  `--tier`, `--issue`, `--plan`, `--intent`, `--model`, and `--effort` are
+  `--tier`, `--issue`, `--plan`, `--intent`, `--model`, `--effort`,
+  `--parent-dispatch-id`, `--parent-attempt-id`, and `--attempt-kind` are
   first-class queue/agent telemetry flags. They are persisted as caller-provided
-  strings and override same-named `--meta` values.
+  strings and override same-named `--meta` values. `--attempt-kind` is one of
+  `initial`, `retry`, `fix`, `review`, or `superseding`; linkage fields keep
+  independently-run follow-ups joinable without merging their raw usage.
 - `--require-attribution` fails before launch unless `project_id`, `phase`,
   `intent`, and at least one of `queue_id` / `entry_id` / `issue` / `plan` are
   present through first-class flags or `--meta`.
@@ -45,11 +48,11 @@ Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
 ## Metadata and prediction contract
 
-The consolidated record always has `meta`, `predicted`, `actual`, `agent`, and
-`reliability` blocks. When queue attribution fields are provided, harnex also
-adds a top-level `queue` block. When `--artifact-report` / `--validation-report`
-is configured, harnex may also add `artifact_report`, `validation`, and
-`artifacts` top-level blocks.
+The consolidated record always has `meta`, `predicted`, `actual`, `agent`,
+`usage`, `attribution`, `outcome`, `attempt`, and `reliability` blocks. When
+queue attribution fields are provided, harnex also adds a top-level `queue`
+block. When `--artifact-report` / `--validation-report` is configured, harnex
+may also add `artifact_report`, `validation`, and `artifacts` top-level blocks.
 
 Harnex-owned `meta` fields are always populated when derivable: `id`,
 `tmux_session`, `description`, `started_at`, `ended_at`, `harness`,
@@ -58,7 +61,8 @@ Harnex-owned `meta` fields are always populated when derivable: `id`,
 
 These top-level `--meta` keys pass through into `meta` when provided:
 `orchestrator`, `orchestrator_session`, `chain_id`, `parent_dispatch_id`,
-`tier`, `phase`, `issue`, `plan`, and `task_brief`. Queue-specific keys such as
+`parent_attempt_id`, `attempt_kind`, `tier`, `phase`, `issue`, `plan`, and
+`task_brief`. Queue-specific keys such as
 `project_id`, `queue_id`, `entry_id`, `entry_title`, and `intent` are used for
 the top-level `queue` block but are not duplicated into legacy `meta`. Unknown
 top-level keys are kept on `started.meta` but are not copied into the
@@ -136,6 +140,50 @@ Example grouping for queue analysis:
 jq -r 'select(.queue) | [.queue.project_id, .queue.queue_id, .queue.entry_id, .queue.phase, .agent.model_effective] | @tsv' .harnex/dispatch.jsonl
 ```
 
+## Usage, attribution, outcomes, and attempts
+
+`usage` makes nullable legacy `actual` token and cost fields interpretable:
+
+```json
+{
+  "usage": {
+    "status": "observed",
+    "cost_usd": 1.42,
+    "cost_source": "provider_reported",
+    "input_tokens": 120000,
+    "output_tokens": 8000,
+    "cached_input_tokens": 2000,
+    "reasoning_tokens": null,
+    "total_tokens": 130000
+  }
+}
+```
+
+`usage.status` is `observed` for an adapter measurement, `zero` for an explicit
+all-zero adapter measurement, `estimated` for caller-supplied
+`--meta '{"usage":{"status":"estimated",...}}'` values, `unsupported` when
+the adapter has no supported usage source, or `missing` when a supported source
+provided no observation. `cost_source` is `provider_reported` only for a
+reliable adapter value and `caller_estimate` for an estimate. `null` never means
+zero, and provider-reported cost is approximate telemetry, not a billing
+invoice.
+
+`attribution.status` is `complete` when `project_id`, `phase`, `intent`, and a
+work id are present; `partial` when any attribution is known but that contract
+is incomplete; otherwise `missing`. `outcome` keeps git observations separate
+from semantic acceptance: its `status` is `accepted`, `rejected`, `no_change`,
+or `unknown`; only a worker sidecar can assert accepted/rejected. The block also
+contains final commit/path/LOC observations and does **not** claim those changes
+prove authorship.
+
+Every row has one Harnex-session `attempt`. Its random `id` is distinct from
+operator-visible `run_id`; `parent_attempt_id` and `parent_dispatch_id` link
+retries/fixes/reviews while each row keeps separate raw token and cost values.
+The events JSONL adds `attempt_started` and `attempt_finished`. Adapters that
+report an internal retry additionally emit `attempt_retry_scheduled`; future
+recovery/fallback owners can emit `attempt_fallback_switched` without changing
+the row schema.
+
 ## Artifact and validation sidecars
 
 The artifact report sidecar is deliberately small and links machine-readable
@@ -146,6 +194,10 @@ valid v1 report looks like:
 {
   "schema": "harnex.artifact_report.v1",
   "status": "pass",
+  "outcome": {
+    "status": "accepted",
+    "summary": "Queue gate accepted the implementation."
+  },
   "canonical_artifacts": ["koder/issues/52_typed_artifact_validation_sidecars.md"],
   "validation": {
     "status": "pass",
@@ -167,8 +219,11 @@ valid v1 report looks like:
 ```
 
 At finalization, harnex reads at most 256 KiB from the report path. Valid
-reports add compact `validation` and `artifacts` blocks to the dispatch row. The
-`artifact_report` block always records the sidecar `path`, `bytes`, `sha256`,
+reports add compact `validation` and `artifacts` blocks to the dispatch row. A
+valid optional `outcome.status` (`accepted`, `rejected`, `no_change`, or
+`unknown`) is copied into the top-level outcome evidence; it is the only source
+that can assert semantic acceptance or rejection. The `artifact_report` block
+always records the sidecar `path`, `bytes`, `sha256`,
 `schema`, and `ingest_status` when a path was configured. Missing, malformed,
 unsupported-schema, and oversized reports fail soft with
 `artifact_report.ingest_status` plus `artifact_report.warning`; the wrapped
@@ -191,15 +246,37 @@ Git actuals are captured with `git rev-parse`, `git diff --shortstat`, and
 corresponding consolidated fields `null` and omit `git` events.
 
 The `actual` block includes model/effort hints from `--meta`, duration, token
-counts, `agent_session_id`, `cost_usd`, adapter transport, git deltas, exit
-reason, task completion state, signal/exit code, last error, operational
-counters (`stalls`, `force_resumes`, `disconnections`, `compactions`,
-`turn_count`, `tool_calls`, `commands_executed`), rate-limit payloads,
-output/event volume measurements, and output/events log paths.
+counts, `agent_session_id`, compatibility `cost_usd`, adapter transport, git
+deltas, exit reason, task completion state, signal/exit code, last error,
+operational counters (`stalls`, `force_resumes`, `disconnections`,
+`compactions`, `turn_count`, `tool_calls`, `commands_executed`), rate-limit
+payloads, output/event volume measurements, and output/events log paths. New
+additive attempt counters are `attempts_total`, `attempts_succeeded`,
+`attempts_failed`, `retry_count`, `throttle_429_count`, `disconnect_count`, and
+`fallback_triggered`. Throughput values are populated only for a
+sidecar-accepted outcome: `throughput_tokens_per_s` and
+`throughput_successes_per_h`; `retry_tax_pct` is `0.0` when no retry occurred
+and `null` until a retry source can measure attributable wasted tokens.
 
 `cost_usd` is adapter/provider-reported approximate USD cost when the adapter
 has a reliable structured source (for example Pi RPC `get_session_stats.cost`);
-it remains `null` for adapters without reliable cost telemetry.
+it remains `null` for adapters without reliable cost telemetry. Read `usage`
+with it to distinguish an unavailable value from a genuine zero.
+
+Examples for downstream analysis (never treat missing usage as zero):
+
+```bash
+# Accepted successes per hour, grouped by project/phase/effective model.
+jq -s 'map(select(.outcome.status == "accepted" and .attribution.status == "complete"))
+  | group_by([.attribution.project_id, .attribution.phase, .agent.model_effective])
+  | map({group: .[0].attribution.project_id + "/" + .[0].attribution.phase + "/" + .[0].agent.model_effective,
+         successes_per_hour: ((length * 3600) / (map(.actual.duration_s) | add))})' .harnex/dispatch.jsonl
+
+# Retry and real-disconnect rates for completed rows.
+jq -s 'map(select(.actual.attempts_total > 0))
+  | {retry_rate: ((map(.actual.retry_count) | add) / (map(.actual.attempts_total) | add)),
+     disconnect_rate: ((map(.actual.disconnect_count) | add) / (map(.actual.attempts_total) | add))}' .harnex/dispatch.jsonl
+```
 
 ## Exit taxonomy
 

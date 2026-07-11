@@ -1,11 +1,11 @@
 ---
-status: open
+status: closed
 priority: P1
 ---
 
 # Issue 46 — Restore dispatch cost telemetry by default
 
-**Status**: open
+**Status**: closed (implemented; unreleased)
 **Priority**: P1
 **Filed**: 2026-05-23
 **Tier**: B (plan -> impl -> verification)
@@ -56,6 +56,18 @@ and `zero`. Preserve `null` when no numeric amount is known. Keep raw usage
 separate per retry/fix/review dispatch so later queue aggregation can avoid
 double-counting one accepted result.
 
+## Resolution — 2026-07-11
+
+Implemented by plan 31. Dispatch rows now always include an additive top-level
+`usage` block with stable cost/token fields, `status`, and `cost_source`.
+Structured and transcript-derived values are `observed`; a true all-zero
+measurement is `zero`; caller metadata may declare a bounded `estimated`
+value; adapters without a usage source are `unsupported`; and supported adapters
+that did not yield a measurement are `missing`. Pi reports a numeric
+`get_session_stats.cost` as `provider_reported`; legacy `actual.cost_usd`
+remains unchanged for compatibility. Tests cover every status, including Pi's
+structured provider-reported fixture.
+
 ## Design constraints
 
 - Do **not** block #44 on cross-provider perfect cost normalization.
@@ -81,13 +93,13 @@ double-counting one accepted result.
 - Schema regression test covers the restored field.
 - Docs define the field and explain that it is provider/harness-reported approximate USD.
 - Existing telemetry consumers remain compatible with the additive field.
-- [ ] Usage status distinguishes observed, estimated, unsupported, missing, and
+- [x] Usage status distinguishes observed, estimated, unsupported, missing, and
       explicit zero cost without converting unavailable cost to `0`.
-- [ ] A top-level `usage` block documents cost provenance while preserving
+- [x] A top-level `usage` block documents cost provenance while preserving
       `actual.cost_usd` compatibility.
-- [ ] Tests cover observed, unsupported, missing, zero, and estimated-status
+- [x] Tests cover observed, unsupported, missing, zero, and estimated-status
       serialization, including Pi RPC usage fixtures.
-- [ ] Retry/fix/review dispatches retain separate raw cost and token values with
+- [x] Retry/fix/review dispatches retain separate raw cost and token values with
       stable parent relationships for deduplicated queue analysis.
 
 ## Out of scope

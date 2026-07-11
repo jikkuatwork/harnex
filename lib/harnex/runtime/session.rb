@@ -9,8 +9,13 @@ module Harnex
     AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT = 5.0
     USAGE_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
-      agent_session_id cost_usd tool_calls model agent_provider
+      agent_session_id cost_usd cost_source tool_calls model agent_provider
     ].freeze
+    USAGE_MEASUREMENT_FIELDS = %i[
+      input_tokens output_tokens reasoning_tokens cached_tokens total_tokens cost_usd
+    ].freeze
+    USAGE_STATUSES = %w[observed estimated unsupported missing zero].freeze
+    ATTEMPT_KINDS = %w[initial retry fix review superseding].freeze
     SESSION_SUMMARY_SIGNAL_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
       agent_session_id cost_usd
@@ -29,6 +34,8 @@ module Harnex
           force_resumes: 0,
           disconnections: 0,
           compactions: 0,
+          retries: 0,
+          throttle_429: 0,
           tool_calls: 0,
           commands_executed: 0
         }
@@ -44,6 +51,10 @@ module Harnex
           @counts[:disconnections] += 1
         when "compaction"
           @counts[:compactions] += 1
+        when "attempt_retry_scheduled"
+          @counts[:retries] += 1
+        when "throttle_429"
+          @counts[:throttle_429] += 1
         end
       end
 
@@ -260,6 +271,23 @@ module Harnex
 
     def task_failed?
       !!@last_failed_at
+    end
+
+    # Public seam for structured recovery/fallback owners (#42 / plan 30).
+    # The current session remains the parent attempt; a recovery implementation
+    # supplies a new child attempt id when it starts an independently billable arm.
+    def record_attempt_transition(type:, child_attempt_id: nil, trigger: nil)
+      unless %w[attempt_retry_scheduled attempt_fallback_switched].include?(type.to_s)
+        raise ArgumentError, "unsupported attempt transition #{type.inspect}"
+      end
+
+      emit_event(
+        type.to_s,
+        **attempt_lifecycle_context.merge(
+          child_attempt_id: summary_string(child_attempt_id),
+          trigger: summary_string(trigger)
+        )
+      )
     end
 
     def git_start
@@ -544,6 +572,7 @@ module Harnex
           threadId: params["threadId"],
           turnId: params["turnId"]
         )
+        emit_event("throttle_429", source: "error_notification", message: message) if throttle_429?(message, params)
         signal_rpc_done! if params["turnId"].to_s.empty?
       end
     rescue StandardError => e
@@ -581,6 +610,13 @@ module Harnex
     def extract_error_notification_info(params)
       error = params["error"]
       error.is_a?(Hash) ? error["codexErrorInfo"] : nil
+    end
+
+    def throttle_429?(message, params)
+      return true if message.to_s.match?(/\b429\b|rate limit/i)
+
+      error = params["error"]
+      error.is_a?(Hash) && error.values.any? { |value| value.to_s.match?(/\b429\b|rate limit/i) }
     end
 
     def extract_turn_error_message(turn)
@@ -641,7 +677,9 @@ module Harnex
       when "queue_update"
         nil
       when "auto_retry_start", "auto_retry_end"
-        emit_event(event_type, **message.reject { |k, _| k == "type" })
+        payload = message.reject { |k, _| k == "type" }
+        emit_event(event_type, **payload)
+        record_attempt_transition(type: "attempt_retry_scheduled", trigger: "adapter_auto_retry") if event_type == "auto_retry_start"
       when "extension_ui_request"
         handle_extension_ui_request(message)
       when "extension_error"
@@ -987,6 +1025,10 @@ module Harnex
       payload = { pid: @pid }
       payload[:meta] = meta if meta
       emit_event("started", **payload)
+      emit_event(
+        "attempt_started",
+        **attempt_lifecycle_context.merge(kind: summary_attempt_kind)
+      )
     end
 
     def emit_git_start_event
@@ -1010,12 +1052,26 @@ module Harnex
         loc_added: @git_end[:loc_added],
         loc_removed: @git_end[:loc_removed],
         files_changed: @git_end[:files_changed],
+        changed_paths: @git_end[:changed_paths],
         commits: @git_end[:commits]
       )
     end
 
     def emit_summary_event
       emit_event("summary", path: summary_out, exit: @exit_reason)
+    end
+
+    def emit_attempt_finished(attempt)
+      emit_event(
+        "attempt_finished",
+        **attempt_lifecycle_context.merge(
+          parent_attempt_id: attempt["parent_attempt_id"],
+          status: attempt["status"],
+          exit_reason: attempt["exit_reason"],
+          end_ts: attempt["end_ts"],
+          wall_ms: attempt["wall_ms"]
+        )
+      )
     end
 
     def emit_exit_event
@@ -1038,9 +1094,11 @@ module Harnex
         warn("harnex: failed to collect session-end telemetry: #{e.message}")
       end
       @exit_reason ||= classify_exit
-      append_summary_record(build_summary_record)
+      record = build_summary_record
+      append_summary_record(record)
       append_dispatch_history_record
       emit_summary_event
+      emit_attempt_finished(record.fetch(:attempt))
       emit_exit_event
     end
 
@@ -1170,16 +1228,23 @@ module Harnex
     end
 
     def build_summary_record
+      artifact_payload = artifact_report_path ? artifact_report_summary : nil
+      attribution = build_summary_attribution
+      outcome = build_summary_outcome(artifact_payload)
       record = {
         meta: build_summary_meta,
         predicted: summary_predicted_payload,
-        actual: build_summary_actual,
+        actual: build_summary_actual(outcome: outcome, attribution: attribution),
         agent: build_summary_agent,
+        usage: build_summary_usage,
+        attribution: attribution,
+        outcome: outcome,
+        attempt: build_summary_attempt,
         reliability: build_summary_reliability
       }
       queue = build_summary_queue
       record[:queue] = queue if queue
-      record.merge!(artifact_report_summary) if artifact_report_path
+      record.merge!(artifact_payload.reject { |key, _value| key == "outcome" }) if artifact_payload
       record
     end
 
@@ -1235,6 +1300,165 @@ module Harnex
       }
     end
 
+    def build_summary_usage
+      declared = meta_hash["usage"].is_a?(Hash) ? meta_hash["usage"] : {}
+      observed = USAGE_MEASUREMENT_FIELDS.any? { |field| !@usage_summary[field].nil? }
+      values = USAGE_MEASUREMENT_FIELDS.to_h do |field|
+        [field, @usage_summary[field].nil? ? declared_usage_value(declared, field) : @usage_summary[field]]
+      end
+      numeric_observations = USAGE_MEASUREMENT_FIELDS.filter_map do |field|
+        value = @usage_summary[field]
+        value if value.is_a?(Numeric)
+      end
+      estimated = declared["status"].to_s == "estimated"
+      status = if observed && numeric_observations.any? && numeric_observations.all?(&:zero?)
+                 "zero"
+               elsif observed
+                 "observed"
+               elsif estimated
+                 "estimated"
+               elsif adapter.usage_telemetry_supported?
+                 "missing"
+               else
+                 "unsupported"
+               end
+      cost_source = summary_string(@usage_summary[:cost_source])
+      cost_source ||= "provider_reported" if !@usage_summary[:cost_usd].nil?
+      cost_source ||= summary_string(declared["cost_source"]) || "caller_estimate" if status == "estimated"
+
+      {
+        "status" => status,
+        "cost_usd" => values[:cost_usd],
+        "cost_source" => cost_source,
+        "input_tokens" => values[:input_tokens],
+        "output_tokens" => values[:output_tokens],
+        "cached_input_tokens" => values[:cached_tokens],
+        "reasoning_tokens" => values[:reasoning_tokens],
+        "total_tokens" => values[:total_tokens]
+      }
+    end
+
+    def declared_usage_value(declared, field)
+      return nil unless declared["status"].to_s == "estimated"
+
+      declared[field.to_s] || declared[usage_field_alias(field)]
+    end
+
+    def usage_field_alias(field)
+      field == :cached_tokens ? "cached_input_tokens" : field.to_s
+    end
+
+    def build_summary_attribution
+      queue = build_summary_queue || {}
+      required = %w[project_id phase intent]
+      work_fields = %w[entry_id issue plan queue_id]
+      required_complete = required.all? { |field| !queue[field].nil? }
+      work_field = work_fields.find { |field| !queue[field].nil? }
+      known = required.any? { |field| !queue[field].nil? } || work_field
+      status = required_complete && work_field ? "complete" : (known ? "partial" : "missing")
+
+      {
+        "status" => status,
+        "project_id" => queue["project_id"],
+        "phase" => queue["phase"],
+        "intent" => queue["intent"],
+        "work_type" => work_field,
+        "work_id" => work_field ? queue[work_field] : nil
+      }
+    end
+
+    def build_summary_outcome(artifact_payload)
+      sidecar_outcome = artifact_payload&.dig("outcome") || {}
+      status = sidecar_outcome["status"]
+      status = "no_change" if status.nil? && @git_end.key?(:changed_paths) && @git_end[:changed_paths].empty?
+      status ||= "unknown"
+      status = "unknown" unless %w[accepted rejected no_change unknown].include?(status)
+
+      {
+        "status" => status,
+        "source" => sidecar_outcome["status"] ? "artifact_report" : "harnex_git_observation",
+        "commit_sha" => sidecar_outcome["commit_sha"] || summary_commit_sha,
+        "changed_paths" => @git_end.key?(:changed_paths) ? @git_end[:changed_paths] : nil,
+        "loc_added" => @git_end[:loc_added],
+        "loc_removed" => @git_end[:loc_removed],
+        "lines_changed" => summary_lines_changed,
+        "files_changed" => @git_end[:files_changed],
+        "commits" => @git_end[:commits]
+      }
+    end
+
+    def build_summary_attempt
+      {
+        "run_id" => id,
+        "id" => session_id,
+        "parent_attempt_id" => summary_string(meta_hash["parent_attempt_id"]),
+        "parent_dispatch_id" => summary_string(meta_hash["parent_dispatch_id"]) || @parent_harnex_id,
+        "kind" => summary_attempt_kind,
+        "project_id" => summary_string(meta_hash["project_id"]),
+        "phase" => summary_string(meta_hash["phase"]),
+        "intent" => summary_string(meta_hash["intent"]),
+        "model_requested" => summary_string(meta_hash["model"]),
+        "model_effective" => summary_string(summary_model),
+        "deployment_effective" => summary_service_tier,
+        "reasoning_effort" => summary_string(meta_hash["effort"]),
+        "started_at" => @started_at.iso8601,
+        "ended_at" => @ended_at&.iso8601,
+        "start_ts" => @started_at.iso8601,
+        "end_ts" => @ended_at&.iso8601,
+        "wall_ms" => @ended_at ? ((@ended_at - @started_at) * 1000).round : nil,
+        "exit_reason" => @exit_reason,
+        "status" => summary_attempt_succeeded? ? "succeeded" : "failed"
+      }
+    end
+
+    def attempt_lifecycle_context
+      {
+        run_id: id,
+        attempt_id: session_id,
+        parent_attempt_id: summary_string(meta_hash["parent_attempt_id"]),
+        parent_dispatch_id: summary_string(meta_hash["parent_dispatch_id"]) || @parent_harnex_id,
+        project: summary_string(meta_hash["project_id"]),
+        phase: summary_string(meta_hash["phase"]),
+        intent: summary_string(meta_hash["intent"]),
+        model_requested: summary_string(meta_hash["model"]),
+        model_effective: summary_string(summary_model),
+        deployment_effective: summary_service_tier,
+        reasoning_effort: summary_string(meta_hash["effort"]),
+        start_ts: @started_at.iso8601
+      }
+    end
+
+    def summary_attempt_kind
+      candidate = summary_string(meta_hash["attempt_kind"])
+      ATTEMPT_KINDS.include?(candidate) ? candidate : "initial"
+    end
+
+    def summary_attempt_succeeded?
+      return false if task_failed?
+
+      @exit_reason == "success"
+    end
+
+    def accepted_throughput_tokens_per_s(total_tokens, duration_s, accepted)
+      return nil unless accepted && total_tokens.is_a?(Numeric) && duration_s.to_f.positive?
+
+      total_tokens.to_f / duration_s
+    end
+
+    def accepted_throughput_successes_per_h(duration_s, accepted)
+      return nil unless accepted && duration_s.to_f.positive?
+
+      3600.0 / duration_s
+    end
+
+    def summary_commit_sha
+      start_sha = @git_start[:sha].to_s
+      end_sha = @git_end[:sha].to_s
+      return nil if start_sha.empty? || end_sha.empty? || start_sha == end_sha
+
+      end_sha
+    end
+
     def build_summary_reliability
       counters = reliability_event_counters
       real_disconnections = counters[:disconnections].to_i
@@ -1249,14 +1473,18 @@ module Harnex
       }
     end
 
-    def build_summary_actual
+    def build_summary_actual(outcome:, attribution:)
       counters = legacy_summary_event_counters
       output_measurements = summary_output_measurements
+      accepted = outcome["status"] == "accepted"
+      duration_s = @ended_at ? (@ended_at - @started_at).to_i : nil
+      attempt_succeeded = summary_attempt_succeeded?
+      total_tokens = @usage_summary[:total_tokens]
 
       actual = {
         model: summary_model,
         effort: meta_hash["effort"],
-        duration_s: @ended_at ? (@ended_at - @started_at).to_i : nil,
+        duration_s: duration_s,
         input_tokens: @usage_summary[:input_tokens],
         output_tokens: @usage_summary[:output_tokens],
         reasoning_tokens: @usage_summary[:reasoning_tokens],
@@ -1287,7 +1515,18 @@ module Harnex
         output_bytes: output_measurements[:bytes],
         event_records: @events_log_seq,
         output_log_path: output_log_path,
-        events_log_path: events_log_path
+        events_log_path: events_log_path,
+        attempts_total: 1,
+        attempts_succeeded: attempt_succeeded ? 1 : 0,
+        attempts_failed: attempt_succeeded ? 0 : 1,
+        retry_count: counters[:retries],
+        throttle_429_count: counters[:throttle_429],
+        disconnect_count: counters[:disconnections],
+        throughput_tokens_per_s: accepted_throughput_tokens_per_s(total_tokens, duration_s, accepted),
+        throughput_successes_per_h: accepted_throughput_successes_per_h(duration_s, accepted),
+        retry_tax_pct: counters[:retries].to_i.zero? ? 0.0 : nil,
+        unattributed: attribution["status"] != "complete",
+        fallback_triggered: false
       }
       actual
     end

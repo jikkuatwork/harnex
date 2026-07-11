@@ -16,7 +16,10 @@ module Harnex
       "--plan" => "plan",
       "--intent" => "intent",
       "--model" => "model",
-      "--effort" => "effort"
+      "--effort" => "effort",
+      "--parent-dispatch-id" => "parent_dispatch_id",
+      "--parent-attempt-id" => "parent_attempt_id",
+      "--attempt-kind" => "attempt_kind"
     }.freeze
     TELEMETRY_KEYS_TO_FLAGS = TELEMETRY_FLAGS.invert.freeze
     TELEMETRY_EQUALS_PREFIXES = TELEMETRY_FLAGS.keys.map { |flag| "#{flag}=" }.freeze
@@ -70,6 +73,12 @@ module Harnex
           --intent TEXT      Queue/work intent telemetry
           --model NAME       Requested model metadata (also used for structured dispatch)
           --effort LEVEL     Requested reasoning effort metadata (structured dispatch)
+          --parent-dispatch-id ID
+                             Parent dispatch id for retry/fix/review joins
+          --parent-attempt-id ID
+                             Parent attempt id for retry/fix/review joins
+          --attempt-kind KIND
+                             initial, retry, fix, review, or superseding (default: initial)
           --require-attribution
                              Fail before launch unless project/phase/intent and one work id are present
           --cwd DIR          Run the wrapped agent from DIR and use DIR as the session root
@@ -155,6 +164,7 @@ module Harnex
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
       validate_auto_stop_context!
       apply_telemetry_options!
+      validate_attempt_metadata!
       validate_required_attribution!
 
       repo_root = resolve_run_root(cli_name, child_args)
@@ -672,6 +682,15 @@ module Harnex
       return if explicit.empty?
 
       @options[:meta] = (@options[:meta].is_a?(Hash) ? @options[:meta].dup : {}).merge(explicit)
+    end
+
+    def validate_attempt_metadata!
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      kind = metadata["attempt_kind"].to_s
+      return if kind.empty? || Session::ATTEMPT_KINDS.include?(kind)
+
+      raise OptionParser::InvalidOption,
+            "harnex run: --attempt-kind must be one of #{Session::ATTEMPT_KINDS.join(', ')}"
     end
 
     def validate_required_attribution!

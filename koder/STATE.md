@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-07-10 | 11:25 PM | IST
+Updated: 2026-07-11 | 11:26 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -9,6 +9,13 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Past
 
+- 2026-07-11 | 11:26 PM | IST: Plan 31 implemented the #46 cost/usage
+  provenance follow-up (closed, unreleased): additive `usage`, `attribution`,
+  `outcome`, and per-session `attempt` blocks; parent-attempt linkage flags;
+  sidecar-backed outcome evidence; and lifecycle events. #43's contract
+  foundation is implemented, but it stays open for the live recovery/fallback
+  producer owned by #42 / plan 30. Full suite: 517 runs, 1912 assertions,
+  0 failures, 2 skips. Plan: `koder/plans/31_telemetry_provenance_and_outcomes.md`.
 - 2026-07-10 | 11:25 PM | IST: `harnex 0.7.12` shipped, tagged `v0.7.12`,
   pushed to RubyGems, and installed locally. Installed `harnex --version`
   reports `harnex 0.7.12 (2026-07-10)`. #47 is released: first-class queue
@@ -292,8 +299,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 - #48 is shipped in `harnex 0.7.5`: terminal summary state is canonical for
   `status --json --id` and `wait`, with tmp done markers treated as
   legacy compatibility hints.
-- #44 and #46 shipped in `harnex 0.7.4`; Pi RPC is first-class and the
-  installed `harnex` can dispatch with `harnex run pi ...`.
+- #44 and #46's original cost restoration shipped in `harnex 0.7.4`; Pi RPC
+  is first-class and the installed `harnex` can dispatch with `harnex run pi
+  ...`. The #46 usage-provenance follow-up is implemented but unreleased.
 - #45 is the next Pi track: visible Pi PTY/TUI support only via stable
   extension markers (no brittle screen regex parsing).
 - #51 is shipped in `harnex 0.7.8`: native `harnex watch --id <id> --until
@@ -322,8 +330,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 3. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
 4. #41 Slice C — public API surface doc at `docs/public_api.md`.
-5. #43 — throughput-first telemetry v2 (attempt lifecycle, retry tax,
-   attribution, summary KPIs).
+5. #43 — wire plan 31's attempt-transition seam into the real #42 recovery /
+   plan-30 fallback producer, then add live retry/disconnect/fallback economics
+   coverage before closing the issue.
 
 When ending a session, update only this handoff summary and next step.
 Put detailed historical notes in `CHANGELOG.md`, release matrices in

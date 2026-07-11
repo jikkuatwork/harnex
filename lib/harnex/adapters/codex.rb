@@ -60,6 +60,10 @@ module Harnex
         end
       end
 
+      def usage_telemetry_supported?
+        true
+      end
+
       def parse_session_summary(transcript_tail)
         summary = empty_session_summary
         text = transcript_tail.to_s

@@ -140,7 +140,9 @@ class SessionTest < Minitest::Test
     session.instance_variable_set(:@pid, 12_345)
     session.send(:emit_started_event)
 
-    row = JSON.parse(File.readlines(session.events_log_path).last)
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    row = rows.first
+    assert_equal %w[started attempt_started], rows.map { |event| event["type"] }
     assert_equal "started", row["type"]
     assert_equal 12_345, row["pid"]
     assert_equal({ "issue" => "23", "predicted" => { "input_tokens" => [1, 2] } }, row["meta"])
@@ -188,14 +190,19 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started git usage git summary exited], rows.map { |row| row["type"] }
+      assert_equal %w[started attempt_started git usage git summary attempt_finished exited], rows.map { |row| row["type"] }
 
-      git_start = rows[1]
+      attempt_started = rows[1]
+      assert_equal session.id, attempt_started["run_id"]
+      assert_equal "initial", attempt_started["kind"]
+      assert_kind_of String, attempt_started["attempt_id"]
+
+      git_start = rows[2]
       assert_equal "start", git_start["phase"]
       assert_match(/\A[0-9a-f]{40}\z/, git_start["sha"])
       refute_empty git_start["branch"]
 
-      usage = rows[2]
+      usage = rows[3]
       assert_equal 104_158, usage["input_tokens"]
       assert_equal 2_709, usage["output_tokens"]
       assert_equal 870, usage["reasoning_tokens"]
@@ -203,18 +210,20 @@ class SessionTest < Minitest::Test
       assert_equal 106_867, usage["total_tokens"]
       assert_equal "019ddf05-0f03-7d70-904f-23db7f00640f", usage["agent_session_id"]
 
-      git_end = rows[3]
+      git_end = rows[4]
       assert_equal "end", git_end["phase"]
       assert_equal 1, git_end["loc_added"]
       assert_equal 0, git_end["loc_removed"]
       assert_equal 1, git_end["files_changed"]
       assert_equal 1, git_end["commits"]
 
-      summary = rows[4]
+      summary = rows[5]
       assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), summary["path"]
       assert_equal "success", summary["exit"]
-      assert_equal 0, rows[5]["code"]
-      assert_equal "success", rows[5]["reason"]
+      attempt_finished = rows[6]
+      assert_equal "succeeded", attempt_finished["status"]
+      assert_equal 0, rows[7]["code"]
+      assert_equal "success", rows[7]["reason"]
 
       record = JSON.parse(File.read(summary["path"]).lines.last)
       assert_equal session.id, record.dig("meta", "id")
@@ -257,8 +266,8 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started usage summary exited], rows.map { |row| row["type"] }
-      assert_equal "disconnected", rows[-2]["exit"]
+      assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
+      assert_equal "disconnected", rows[-3]["exit"]
       assert_equal "disconnected", rows[-1]["reason"]
 
       record = JSON.parse(File.read(summary_path).lines.last)
@@ -283,8 +292,8 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started usage summary exited], rows.map { |row| row["type"] }
-      assert_nil rows[-2]["path"]
+      assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
+      assert_nil rows[-3]["path"]
       refute File.exist?(File.join(repo, "koder", "DISPATCH.jsonl"))
     end
   end
@@ -302,8 +311,8 @@ class SessionTest < Minitest::Test
 
       assert_match(/failed to write dispatch summary/, err)
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal "summary", rows[-2]["type"]
-      assert_equal repo, rows[-2]["path"]
+      assert_equal "summary", rows[-3]["type"]
+      assert_equal repo, rows[-3]["path"]
       assert_equal "exited", rows[-1]["type"]
     end
   end
@@ -318,6 +327,8 @@ class SessionTest < Minitest::Test
         force_resumes: 1,
         disconnections: 2,
         compactions: 1,
+        retries: 0,
+        throttle_429: 0,
         tool_calls: 0,
         commands_executed: 0
       },
@@ -502,9 +513,102 @@ class SessionTest < Minitest::Test
     assert_equal 15, data["signal"]
   end
 
+  def test_usage_status_distinguishes_observed_zero_estimated_unsupported_and_missing
+    observed = build_session(adapter: Harnex::Adapters::Codex.new)
+    observed.instance_variable_set(:@usage_summary, { input_tokens: 12, cost_usd: 0.3 })
+    assert_equal "observed", observed.send(:build_summary_usage).fetch("status")
+
+    zero = build_session(adapter: Harnex::Adapters::Codex.new)
+    zero.instance_variable_set(:@usage_summary, {
+      input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
+      cached_tokens: 0, total_tokens: 0, cost_usd: 0.0
+    })
+    zero_usage = zero.send(:build_summary_usage)
+    assert_equal "zero", zero_usage.fetch("status")
+    assert_equal 0.0, zero_usage.fetch("cost_usd")
+    assert_equal "provider_reported", zero_usage.fetch("cost_source")
+
+    estimated = build_session(meta: {
+      "usage" => { "status" => "estimated", "cost_usd" => 0.8, "total_tokens" => 150 }
+    })
+    estimated_usage = estimated.send(:build_summary_usage)
+    assert_equal "estimated", estimated_usage.fetch("status")
+    assert_equal 0.8, estimated_usage.fetch("cost_usd")
+    assert_equal 150, estimated_usage.fetch("total_tokens")
+    assert_equal "caller_estimate", estimated_usage.fetch("cost_source")
+
+    assert_equal "unsupported", build_session.send(:build_summary_usage).fetch("status")
+    assert_equal "missing", build_session(adapter: Harnex::Adapters::Codex.new).send(:build_summary_usage).fetch("status")
+  end
+
+  def test_summary_attribution_and_outcome_do_not_claim_git_authorship
+    complete = build_session(meta: {
+      "project_id" => "harnex", "phase" => "implement", "intent" => "queue-work", "entry_id" => "SP-4"
+    })
+    attribution = complete.send(:build_summary_attribution)
+    assert_equal "complete", attribution.fetch("status")
+    assert_equal "entry_id", attribution.fetch("work_type")
+    assert_equal "SP-4", attribution.fetch("work_id")
+
+    partial = build_session(meta: { "project_id" => "harnex" })
+    assert_equal "partial", partial.send(:build_summary_attribution).fetch("status")
+    assert_equal "missing", build_session.send(:build_summary_attribution).fetch("status")
+
+    complete.instance_variable_set(:@git_end, { changed_paths: [], loc_added: 0, loc_removed: 0, files_changed: 0, commits: 0 })
+    outcome = complete.send(:build_summary_outcome, nil)
+    assert_equal "no_change", outcome.fetch("status")
+    assert_equal "harnex_git_observation", outcome.fetch("source")
+    assert_nil outcome.fetch("commit_sha")
+  end
+
+  def test_summary_outcome_merges_sidecar_acceptance_with_git_evidence
+    Dir.mktmpdir("harnex-outcome") do |dir|
+      report_path = File.join(dir, "report.json")
+      File.write(report_path, JSON.generate(
+        schema: Harnex::ArtifactReport::SCHEMA,
+        outcome: { status: "accepted", summary: "Queue accepted." }
+      ))
+      session = build_session(repo_root: dir, artifact_report_path: report_path)
+      session.instance_variable_set(:@ended_at, Time.now)
+      session.instance_variable_set(:@exit_reason, "success")
+      session.instance_variable_set(:@git_start, { sha: "start" })
+      session.instance_variable_set(:@git_end, {
+        sha: "finish", changed_paths: ["lib/harnex/runtime/session.rb"],
+        loc_added: 3, loc_removed: 1, files_changed: 1, commits: 1
+      })
+
+      outcome = session.send(:build_summary_record).fetch(:outcome)
+      assert_equal "accepted", outcome.fetch("status")
+      assert_equal "artifact_report", outcome.fetch("source")
+      assert_equal "finish", outcome.fetch("commit_sha")
+      assert_equal ["lib/harnex/runtime/session.rb"], outcome.fetch("changed_paths")
+      assert_equal 4, outcome.fetch("lines_changed")
+    end
+  end
+
+  def test_attempt_transition_emits_linked_lifecycle_event
+    session = build_session(meta: { "parent_attempt_id" => "prior-attempt" })
+    session.send(:prepare_events_log)
+
+    session.record_attempt_transition(
+      type: "attempt_fallback_switched",
+      child_attempt_id: "fallback-attempt",
+      trigger: "disconnect_rate"
+    )
+
+    event = JSON.parse(File.readlines(session.events_log_path).last)
+    assert_equal "attempt_fallback_switched", event.fetch("type")
+    assert_equal session.session_id, event.fetch("attempt_id")
+    assert_equal "prior-attempt", event.fetch("parent_attempt_id")
+    assert_equal "fallback-attempt", event.fetch("child_attempt_id")
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+  end
+
   private
 
-  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
+  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -516,6 +620,7 @@ class SessionTest < Minitest::Test
       description: description,
       meta: meta,
       summary_out: summary_out,
+      artifact_report_path: artifact_report_path,
       inbox_ttl: inbox_ttl,
       auto_stop: auto_stop
     )
