@@ -25,6 +25,37 @@ Restore cost telemetry in DISPATCH summary rows as an additive, populated field:
 
 Use Pi RPC as the first high-confidence source. Other adapters can populate it later if they gain reliable structured cost data.
 
+## Remaining telemetry gap — 2026-07-11
+
+The original restoration is shipped, but cost provenance is still ambiguous for
+queue analysis. A `null` `actual.cost_usd` can currently mean that the adapter
+is unsupported, that a supported provider did not return cost, or that the
+summary did not receive a usage observation. Consumers also need to distinguish
+observed provider cost from future estimated cost, without treating missing
+cost as zero.
+
+Extend the existing summary contract rather than adding another telemetry
+writer. Add a top-level `usage` block while retaining `actual.*` fields for
+compatibility:
+
+```json
+{
+  "usage": {
+    "status": "observed",
+    "cost_usd": 1.42,
+    "cost_source": "provider_reported",
+    "input_tokens": 120000,
+    "output_tokens": 8000,
+    "total_tokens": 130000
+  }
+}
+```
+
+Recommended statuses are `observed`, `estimated`, `unsupported`, `missing`,
+and `zero`. Preserve `null` when no numeric amount is known. Keep raw usage
+separate per retry/fix/review dispatch so later queue aggregation can avoid
+double-counting one accepted result.
+
 ## Design constraints
 
 - Do **not** block #44 on cross-provider perfect cost normalization.
@@ -50,6 +81,14 @@ Use Pi RPC as the first high-confidence source. Other adapters can populate it l
 - Schema regression test covers the restored field.
 - Docs define the field and explain that it is provider/harness-reported approximate USD.
 - Existing telemetry consumers remain compatible with the additive field.
+- [ ] Usage status distinguishes observed, estimated, unsupported, missing, and
+      explicit zero cost without converting unavailable cost to `0`.
+- [ ] A top-level `usage` block documents cost provenance while preserving
+      `actual.cost_usd` compatibility.
+- [ ] Tests cover observed, unsupported, missing, zero, and estimated-status
+      serialization, including Pi RPC usage fixtures.
+- [ ] Retry/fix/review dispatches retain separate raw cost and token values with
+      stable parent relationships for deduplicated queue analysis.
 
 ## Out of scope
 
