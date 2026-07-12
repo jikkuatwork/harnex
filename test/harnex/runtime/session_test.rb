@@ -541,6 +541,26 @@ class SessionTest < Minitest::Test
     assert_equal "missing", build_session(adapter: Harnex::Adapters::Codex.new).send(:build_summary_usage).fetch("status")
   end
 
+  def test_context_status_distinguishes_missing_from_unsupported
+    unsupported = build_session.send(:build_summary_context)
+    assert_equal "unsupported", unsupported.fetch("status")
+    assert_nil unsupported.fetch("source")
+    assert_nil unsupported.fetch("terminal_tokens")
+    assert_nil unsupported.fetch("peak_percent")
+    assert_equal 0, unsupported.fetch("samples")
+    assert_equal 0, unsupported.fetch("missing_samples")
+    assert_nil unsupported.fetch("latest_sample_status")
+
+    missing = build_session(adapter: Harnex::Adapters::CodexAppServer.new).send(:build_summary_context)
+    assert_equal "missing", missing.fetch("status")
+    assert_equal "codex_thread_token_usage_last", missing.fetch("source")
+    assert_nil missing.fetch("terminal_tokens")
+    assert_nil missing.fetch("peak_percent")
+    assert_equal 0, missing.fetch("samples")
+    assert_equal 0, missing.fetch("missing_samples")
+    assert_nil missing.fetch("latest_sample_status")
+  end
+
   def test_summary_attribution_and_outcome_do_not_claim_git_authorship
     complete = build_session(meta: {
       "project_id" => "harnex", "phase" => "implement", "intent" => "queue-work", "entry_id" => "SP-4"

@@ -79,6 +79,16 @@ module Harnex
         false
       end
 
+      # Whether this adapter exposes active context-window occupancy separately
+      # from cumulative usage. Supported sources can still yield no valid sample.
+      def context_telemetry_supported?
+        false
+      end
+
+      def context_telemetry_source
+        nil
+      end
+
       def send_wait_seconds(submit:, enter_only:)
         0.0
       end

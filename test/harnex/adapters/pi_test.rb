@@ -135,7 +135,12 @@ class PiAdapterTest < Minitest::Test
                 "cacheRead" => 60,
                 "total" => 200
               },
-              "cost" => 0.12
+              "cost" => 0.12,
+              "contextUsage" => {
+                "tokens" => 64_000,
+                "contextWindow" => 200_000,
+                "percent" => 32
+              }
             }
           }
           response["id"] = command["id"] if command.key?("id")
@@ -169,9 +174,55 @@ class PiAdapterTest < Minitest::Test
     assert_equal "pi-session-1", summary[:agent_session_id]
     assert_equal "claude-sonnet-4-5", summary[:model]
     assert_equal "anthropic", summary[:agent_provider]
+    assert_equal "observed", summary.dig(:context, :status)
+    assert_equal "pi_get_session_stats", summary.dig(:context, :source)
+    assert_equal 64_000, summary.dig(:context, :terminal_tokens)
+    assert_equal 200_000, summary.dig(:context, :window_tokens)
+    assert_equal 32.0, summary.dig(:context, :terminal_percent)
   ensure
     @adapter.close rescue nil
     server&.join(1)
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
+  end
+
+  def test_context_usage_tracks_terminal_and_peak_across_stats_samples
+    @adapter.send(:absorb_session_stats, {
+      "contextUsage" => { "tokens" => 40_000, "contextWindow" => 200_000, "percent" => 20 }
+    })
+    @adapter.send(:absorb_session_stats, {
+      "contextUsage" => { "tokens" => 118_000, "contextWindow" => 200_000, "percent" => 59 }
+    })
+    @adapter.send(:absorb_session_stats, {
+      "contextUsage" => { "tokens" => 64_000, "contextWindow" => 200_000, "percent" => 32 }
+    })
+
+    context = @adapter.collect_session_summary.fetch(:context)
+    assert_equal "observed", context.fetch(:status)
+    assert_equal 64_000, context.fetch(:terminal_tokens)
+    assert_equal 32.0, context.fetch(:terminal_percent)
+    assert_equal 118_000, context.fetch(:peak_tokens)
+    assert_equal 59.0, context.fetch(:peak_percent)
+    assert_equal 3, context.fetch(:samples)
+    assert_equal 0, context.fetch(:missing_samples)
+    assert_equal "observed", context.fetch(:latest_sample_status)
+  end
+
+  def test_null_post_compaction_context_sample_preserves_valid_high_water
+    @adapter.send(:absorb_session_stats, {
+      "contextUsage" => { "tokens" => 118_000, "contextWindow" => 200_000, "percent" => 59 }
+    })
+    @adapter.send(:absorb_session_stats, {
+      "contextUsage" => { "tokens" => nil, "contextWindow" => 200_000, "percent" => nil }
+    })
+
+    context = @adapter.collect_session_summary.fetch(:context)
+    assert_equal "observed", context.fetch(:status)
+    assert_equal 118_000, context.fetch(:terminal_tokens)
+    assert_equal 118_000, context.fetch(:peak_tokens)
+    assert_equal 59.0, context.fetch(:terminal_percent)
+    assert_equal 59.0, context.fetch(:peak_percent)
+    assert_equal 2, context.fetch(:samples)
+    assert_equal 1, context.fetch(:missing_samples)
+    assert_equal "missing", context.fetch(:latest_sample_status)
   end
 end

@@ -15,6 +15,14 @@ module Harnex
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens cost_usd
     ].freeze
     USAGE_STATUSES = %w[observed estimated unsupported missing zero].freeze
+    CONTEXT_FIELDS = %i[
+      status source terminal_tokens window_tokens terminal_percent peak_tokens
+      peak_percent samples missing_samples latest_sample_status
+    ].freeze
+    CONTEXT_MEASUREMENT_FIELDS = %i[
+      terminal_tokens terminal_percent peak_tokens peak_percent
+    ].freeze
+    CONTEXT_SAMPLE_STATUSES = %w[observed estimated missing].freeze
     ATTEMPT_KINDS = %w[initial retry fix review superseding].freeze
     SESSION_SUMMARY_SIGNAL_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
@@ -118,6 +126,8 @@ module Harnex
       @git_start = {}
       @git_end = {}
       @usage_summary = {}
+      @context_summary = {}
+      @rpc_context_telemetry = nil
       @ended_at = nil
       @exit_reason = nil
       @last_error = nil
@@ -552,8 +562,12 @@ module Harnex
         # Schema: ThreadTokenUsageUpdatedNotification carries
         # `tokenUsage: { last, total, modelContextWindow? }` where each
         # breakdown has camelCase {input,output,cachedInput,reasoningOutput,total}Tokens.
-        # Snapshot it; the cumulative `total` is read at session end.
-        @token_usage = params["tokenUsage"] if params["tokenUsage"].is_a?(Hash)
+        # Snapshot cumulative `total` for usage and aggregate `last` separately
+        # as conservative active-context pressure.
+        if params["tokenUsage"].is_a?(Hash)
+          @token_usage = params["tokenUsage"]
+          record_rpc_context_sample(@token_usage)
+        end
       when "thread/status/changed"
         # State machine reflects RPC state; no event needed.
         nil
@@ -1039,7 +1053,9 @@ module Harnex
     end
 
     def emit_session_end_telemetry
-      @usage_summary = normalized_usage_summary(collect_session_summary)
+      summary = collect_session_summary
+      @usage_summary = normalized_usage_summary(summary)
+      @context_summary = normalized_context_summary(summary)
       emit_event("usage", **@usage_summary)
 
       @git_end = Harnex.git_capture_end(repo_root, @git_start[:sha])
@@ -1091,6 +1107,7 @@ module Harnex
         emit_session_end_telemetry
       rescue StandardError => e
         @usage_summary = normalized_usage_summary(nil)
+        @context_summary = normalized_context_summary(nil)
         warn("harnex: failed to collect session-end telemetry: #{e.message}")
       end
       @exit_reason ||= classify_exit
@@ -1237,6 +1254,7 @@ module Harnex
         actual: build_summary_actual(outcome: outcome, attribution: attribution),
         agent: build_summary_agent,
         usage: build_summary_usage,
+        context: build_summary_context,
         attribution: attribution,
         outcome: outcome,
         attempt: build_summary_attempt,
@@ -1336,6 +1354,44 @@ module Harnex
         "reasoning_tokens" => values[:reasoning_tokens],
         "total_tokens" => values[:total_tokens]
       }
+    end
+
+    def build_summary_context
+      measurement_present = CONTEXT_MEASUREMENT_FIELDS.any? do |field|
+        @context_summary[field].is_a?(Numeric)
+      end
+      reported_status = summary_string(@context_summary[:status])
+      status = if measurement_present
+                 %w[observed estimated].include?(reported_status) ? reported_status : "observed"
+               elsif adapter.context_telemetry_supported?
+                 "missing"
+               else
+                 "unsupported"
+               end
+      source = summary_string(@context_summary[:source])
+      source ||= adapter.context_telemetry_source if adapter.context_telemetry_supported?
+      latest_sample_status = summary_string(@context_summary[:latest_sample_status])
+      latest_sample_status = nil unless CONTEXT_SAMPLE_STATUSES.include?(latest_sample_status)
+
+      {
+        "status" => status,
+        "source" => source,
+        "terminal_tokens" => @context_summary[:terminal_tokens],
+        "window_tokens" => @context_summary[:window_tokens],
+        "terminal_percent" => @context_summary[:terminal_percent],
+        "peak_tokens" => @context_summary[:peak_tokens],
+        "peak_percent" => @context_summary[:peak_percent],
+        "samples" => context_sample_count(:samples),
+        "missing_samples" => context_sample_count(:missing_samples),
+        "latest_sample_status" => latest_sample_status
+      }
+    end
+
+    def context_sample_count(field)
+      value = @context_summary[field]
+      return 0 unless value.is_a?(Numeric) && value.finite? && !value.negative?
+
+      value.to_i
     end
 
     def declared_usage_value(declared, field)
@@ -1684,6 +1740,20 @@ module Harnex
       USAGE_FIELDS.to_h { |field| [field, summary[field] || summary[field.to_s]] }
     end
 
+    def normalized_context_summary(summary)
+      summary ||= {}
+      context = summary[:context] || summary["context"]
+      context = {} unless context.is_a?(Hash)
+      CONTEXT_FIELDS.to_h do |field|
+        value = if context.key?(field)
+                  context[field]
+                else
+                  context[field.to_s]
+                end
+        [field, value]
+      end
+    end
+
     # Structured adapters emit usage directly (JSON-RPC token snapshots,
     # Pi RPC stats). PTY adapters parse transcript tails when supported.
     def collect_session_summary
@@ -1697,18 +1767,34 @@ module Harnex
     end
 
     def summary_from_token_usage
-      return {} unless @token_usage.is_a?(Hash)
+      summary = {}
+      if @token_usage.is_a?(Hash) && @token_usage["total"].is_a?(Hash)
+        total = @token_usage["total"]
+        summary.merge!(
+          input_tokens: total["inputTokens"],
+          output_tokens: total["outputTokens"],
+          reasoning_tokens: total["reasoningOutputTokens"],
+          cached_tokens: total["cachedInputTokens"],
+          total_tokens: total["totalTokens"]
+        )
+      end
+      summary[:context] = @rpc_context_telemetry.snapshot if @rpc_context_telemetry
+      summary
+    end
 
-      total = @token_usage["total"]
-      return {} unless total.is_a?(Hash)
+    def record_rpc_context_sample(token_usage)
+      return unless adapter.context_telemetry_supported?
 
-      {
-        input_tokens: total["inputTokens"],
-        output_tokens: total["outputTokens"],
-        reasoning_tokens: total["reasoningOutputTokens"],
-        cached_tokens: total["cachedInputTokens"],
-        total_tokens: total["totalTokens"]
-      }
+      @rpc_context_telemetry ||= ContextTelemetry.new(
+        status: "estimated",
+        source: adapter.context_telemetry_source
+      )
+      last = token_usage["last"]
+      last = {} unless last.is_a?(Hash)
+      @rpc_context_telemetry.record(
+        tokens: last["totalTokens"],
+        window_tokens: token_usage["modelContextWindow"]
+      )
     end
 
     def transcript_tail

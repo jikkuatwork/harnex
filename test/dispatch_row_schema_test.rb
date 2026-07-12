@@ -154,6 +154,19 @@ class DispatchRowSchemaTest < Minitest::Test
     total_tokens
   ].freeze
 
+  CONTEXT_KEYS = %w[
+    latest_sample_status
+    missing_samples
+    peak_percent
+    peak_tokens
+    samples
+    source
+    status
+    terminal_percent
+    terminal_tokens
+    window_tokens
+  ].freeze
+
   RELIABILITY_KEYS = %w[
     adapter_close
     compactions
@@ -204,7 +217,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       record = JSON.parse(File.read(summary_path).lines.last)
-      assert_equal %w[actual agent attempt attribution meta outcome predicted queue reliability usage], record.keys.sort
+      assert_equal %w[actual agent attempt attribution context meta outcome predicted queue reliability usage], record.keys.sort
       assert_equal META_KEYS, record.fetch("meta").keys.sort
       assert_equal ACTUAL_KEYS, record.fetch("actual").keys.sort
       assert_equal AGENT_KEYS, record.fetch("agent").keys.sort
@@ -213,6 +226,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal OUTCOME_KEYS, record.fetch("outcome").keys.sort
       assert_equal QUEUE_KEYS, record.fetch("queue").keys.sort
       assert_equal USAGE_KEYS, record.fetch("usage").keys.sort
+      assert_equal CONTEXT_KEYS, record.fetch("context").keys.sort
       assert_equal RELIABILITY_KEYS, record.fetch("reliability").keys.sort
 
       meta = record.fetch("meta")
@@ -285,6 +299,18 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_nil usage.fetch("cost_usd")
       assert_equal 104_158, usage.fetch("input_tokens")
       assert_equal 250_880, usage.fetch("cached_input_tokens")
+
+      context = record.fetch("context")
+      assert_equal "unsupported", context.fetch("status")
+      assert_nil context.fetch("source")
+      assert_nil context.fetch("terminal_tokens")
+      assert_nil context.fetch("window_tokens")
+      assert_nil context.fetch("terminal_percent")
+      assert_nil context.fetch("peak_tokens")
+      assert_nil context.fetch("peak_percent")
+      assert_equal 0, context.fetch("samples")
+      assert_equal 0, context.fetch("missing_samples")
+      assert_nil context.fetch("latest_sample_status")
 
       reliability = record.fetch("reliability")
       assert_equal "normal", reliability.fetch("adapter_close")

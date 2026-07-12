@@ -184,10 +184,14 @@ class SessionJsonrpcTest < Minitest::Test
       thread_id: "thr-tok",
       turn_id: "trn-tok",
       token_usage: Fixtures::Codex.thread_token_usage(
+        last: Fixtures::Codex.token_usage_breakdown(
+          input_tokens: 70_000, output_tokens: 5_000, total_tokens: 75_000
+        ),
         total: Fixtures::Codex.token_usage_breakdown(
           input_tokens: 100, output_tokens: 25, cached_input_tokens: 80,
           reasoning_output_tokens: 10, total_tokens: 125
-        )
+        ),
+        model_context_window: 200_000
       )
     )
     fanout("thread/tokenUsage/updated", notif)
@@ -198,6 +202,13 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal 25, captured.dig("total", "outputTokens")
     assert_equal 10, captured.dig("total", "reasoningOutputTokens")
     assert_equal 80, captured.dig("total", "cachedInputTokens")
+
+    context = @session.send(:summary_from_token_usage).fetch(:context)
+    assert_equal "estimated", context.fetch(:status)
+    assert_equal "codex_thread_token_usage_last", context.fetch(:source)
+    assert_equal 75_000, context.fetch(:terminal_tokens)
+    assert_equal 200_000, context.fetch(:window_tokens)
+    assert_equal 37.5, context.fetch(:terminal_percent)
   end
 
   def test_jsonrpc_session_writes_token_usage_to_dispatch_row
@@ -221,11 +232,15 @@ class SessionJsonrpcTest < Minitest::Test
       thread_id: "thr-tok",
       turn_id: "trn-tok",
       token_usage: Fixtures::Codex.thread_token_usage(
+        last: Fixtures::Codex.token_usage_breakdown(
+          input_tokens: 72_000, output_tokens: 8_000, total_tokens: 80_000
+        ),
         total: Fixtures::Codex.token_usage_breakdown(
           input_tokens: 197_819, output_tokens: 25_018,
           cached_input_tokens: 6_408_576, reasoning_output_tokens: 12_501,
           total_tokens: 222_837
-        )
+        ),
+        model_context_window: 200_000
       )
     )
     session.send(:handle_rpc_notification, { "method" => "thread/tokenUsage/updated", "params" => notif })
@@ -244,6 +259,13 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal 0, record.dig("actual", "exit_code")
     assert_nil record.dig("actual", "signal")
     assert_nil record.dig("actual", "last_error")
+    assert_equal "estimated", record.dig("context", "status")
+    assert_equal "codex_thread_token_usage_last", record.dig("context", "source")
+    assert_equal 80_000, record.dig("context", "terminal_tokens")
+    assert_equal 200_000, record.dig("context", "window_tokens")
+    assert_equal 40.0, record.dig("context", "terminal_percent")
+    assert_equal 80_000, record.dig("context", "peak_tokens")
+    assert_equal 40.0, record.dig("context", "peak_percent")
   end
 
   def test_jsonrpc_session_with_no_token_usage_keeps_token_fields_null

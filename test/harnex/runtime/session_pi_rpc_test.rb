@@ -144,7 +144,12 @@ class SessionPiRpcTest < Minitest::Test
               "sessionId" => "pi-session-44",
               "toolCalls" => 3,
               "tokens" => { "input" => 20, "output" => 8, "cacheRead" => 4, "total" => 28 },
-              "cost" => 0.07
+              "cost" => 0.07,
+              "contextUsage" => {
+                "tokens" => 64_000,
+                "contextWindow" => 200_000,
+                "percent" => 32
+              }
             }
           }
           response["id"] = command["id"] if command.key?("id")
@@ -178,6 +183,13 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal 3, record.dig("actual", "tool_calls")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")
+    assert_equal "observed", record.dig("context", "status")
+    assert_equal "pi_get_session_stats", record.dig("context", "source")
+    assert_equal 64_000, record.dig("context", "terminal_tokens")
+    assert_equal 200_000, record.dig("context", "window_tokens")
+    assert_equal 32.0, record.dig("context", "terminal_percent")
+    assert_equal 64_000, record.dig("context", "peak_tokens")
+    assert_equal 32.0, record.dig("context", "peak_percent")
   ensure
     server&.join(1)
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
@@ -199,7 +211,19 @@ class SessionPiRpcTest < Minitest::Test
         cost_usd: 0.33,
         model: "claude-sonnet-4-5",
         agent_provider: "anthropic",
-        agent_session_id: "pi-session-xyz"
+        agent_session_id: "pi-session-xyz",
+        context: {
+          status: "observed",
+          source: "pi_get_session_stats",
+          terminal_tokens: 64_000,
+          window_tokens: 200_000,
+          terminal_percent: 32.0,
+          peak_tokens: 118_000,
+          peak_percent: 59.0,
+          samples: 2,
+          missing_samples: 1,
+          latest_sample_status: "missing"
+        }
       }
     end
 
@@ -214,5 +238,11 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal 9, record.dig("actual", "tool_calls")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")
+    assert_equal "observed", record.dig("context", "status")
+    assert_equal 64_000, record.dig("context", "terminal_tokens")
+    assert_equal 118_000, record.dig("context", "peak_tokens")
+    assert_equal 2, record.dig("context", "samples")
+    assert_equal 1, record.dig("context", "missing_samples")
+    assert_equal "missing", record.dig("context", "latest_sample_status")
   end
 end

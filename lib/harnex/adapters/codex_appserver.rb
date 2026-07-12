@@ -78,6 +78,14 @@ module Harnex
         true
       end
 
+      def context_telemetry_supported?
+        true
+      end
+
+      def context_telemetry_source
+        "codex_thread_token_usage_last"
+      end
+
       def base_command
         ["codex", "app-server"]
       end

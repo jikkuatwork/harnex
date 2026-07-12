@@ -49,8 +49,8 @@ Use `harnex history --json | jq .` for pipelines over the repo-local log.
 ## Metadata and prediction contract
 
 The consolidated record always has `meta`, `predicted`, `actual`, `agent`,
-`usage`, `attribution`, `outcome`, `attempt`, and `reliability` blocks. When
-queue attribution fields are provided, harnex also adds a top-level `queue`
+`usage`, `context`, `attribution`, `outcome`, `attempt`, and `reliability`
+blocks. When queue attribution fields are provided, harnex also adds a top-level `queue`
 block. When `--artifact-report` / `--validation-report` is configured, harnex
 may also add `artifact_report`, `validation`, and `artifacts` top-level blocks.
 
@@ -140,7 +140,7 @@ Example grouping for queue analysis:
 jq -r 'select(.queue) | [.queue.project_id, .queue.queue_id, .queue.entry_id, .queue.phase, .agent.model_effective] | @tsv' .harnex/dispatch.jsonl
 ```
 
-## Usage, attribution, outcomes, and attempts
+## Usage, context pressure, attribution, outcomes, and attempts
 
 `usage` makes nullable legacy `actual` token and cost fields interpretable:
 
@@ -167,6 +167,48 @@ provided no observation. `cost_source` is `provider_reported` only for a
 reliable adapter value and `caller_estimate` for an estimate. `null` never means
 zero, and provider-reported cost is approximate telemetry, not a billing
 invoice.
+
+`context` is separate from cumulative `usage`: it describes how full the active
+model context became, not how many tokens all requests accumulated:
+
+```json
+{
+  "context": {
+    "status": "observed",
+    "source": "pi_get_session_stats",
+    "terminal_tokens": 64000,
+    "window_tokens": 200000,
+    "terminal_percent": 32.0,
+    "peak_tokens": 118000,
+    "peak_percent": 59.0,
+    "samples": 7,
+    "missing_samples": 1,
+    "latest_sample_status": "missing"
+  }
+}
+```
+
+`terminal_*` is the final **valid** occupancy sample and `peak_*` is the
+independent high-water mark across valid samples. `window_tokens` is the model
+window paired with that terminal sample. `samples` counts bounded source
+samples, including unavailable ones; `missing_samples` counts that unavailable
+subset. Consequently, a null sample immediately after compaction leaves the
+last valid terminal and peak values intact while setting
+`latest_sample_status: "missing"`. Null never means zero.
+
+`context.status` is `observed` for Pi's dedicated
+`get_session_stats.contextUsage` signal, `estimated` for Codex app-server,
+`missing` when a supported source yielded no valid occupancy, or `unsupported`
+when the adapter has no active-context source. `source` is
+`pi_get_session_stats` or `codex_thread_token_usage_last` for those structured
+adapters and is null for unsupported adapters. Pi's percentage is adapter
+reported. Codex's `tokenUsage.last.totalTokens` is the latest model-reported
+active context size, but it excludes local items appended after that response;
+Harnex therefore labels it estimated and derives
+`terminal_percent = last.totalTokens / modelContextWindow * 100`. That is
+full-window pressure, not Codex TUI's baseline-adjusted “context left” display.
+No prompt, transcript, message, tool payload, or compaction summary is copied
+into this block.
 
 `attribution.status` is `complete` when `project_id`, `phase`, `intent`, and a
 work id are present; `partial` when any attribution is known but that contract
@@ -239,7 +281,9 @@ At process exit, harnex collects usage through the active adapter. JSON-RPC
 Codex sessions read cumulative `thread/tokenUsage/updated` data, Pi RPC sessions
 read `get_session_stats`, and PTY adapters parse the last 16 KB of transcript
 when they support a parser. Adapters without a parser emit nullable usage
-fields.
+fields. Separately, Pi aggregates bounded `contextUsage` samples and Codex
+aggregates `tokenUsage.last` plus `modelContextWindow`; neither source is
+substituted with cumulative usage when active occupancy is unavailable.
 
 Git actuals are captured with `git rev-parse`, `git diff --shortstat`, and
 `git rev-list --count` between the start and end SHAs. Git failures leave the

@@ -31,6 +31,10 @@ module Harnex
         @write_mutex = Mutex.new
         @summary_mutex = Mutex.new
         @session_summary = {}
+        @context_telemetry = ContextTelemetry.new(
+          status: "observed",
+          source: context_telemetry_source
+        )
         @model = nil
         @provider = nil
         @session_stats_requested = false
@@ -51,6 +55,14 @@ module Harnex
 
       def usage_telemetry_supported?
         true
+      end
+
+      def context_telemetry_supported?
+        true
+      end
+
+      def context_telemetry_source
+        "pi_get_session_stats"
       end
 
       def base_command
@@ -151,11 +163,17 @@ module Harnex
 
       def request_session_stats_async
         return if @closed
-        return if @session_stats_requested
 
-        @session_stats_requested = true
+        should_request = @summary_mutex.synchronize do
+          next false if @session_stats_requested
+
+          @session_stats_requested = true
+        end
+        return unless should_request
+
         write_line("type" => "get_session_stats")
       rescue StandardError
+        clear_session_stats_request
         nil
       end
 
@@ -187,7 +205,8 @@ module Harnex
             cost_usd: @session_summary[:cost_usd],
             cost_source: @session_summary[:cost_source],
             model: @session_summary[:model],
-            agent_provider: @session_summary[:agent_provider]
+            agent_provider: @session_summary[:agent_provider],
+            context: @context_telemetry.snapshot
           }
         end
       end
@@ -268,8 +287,7 @@ module Harnex
       end
 
       def attempt_live_summary_refresh
-        response = request("type" => "get_session_stats")
-        absorb_session_stats(response)
+        request("type" => "get_session_stats")
       rescue StandardError
         nil
       end
@@ -343,6 +361,8 @@ module Harnex
           @state = :prompt
           @last_completed_at = Time.now
           request_session_stats_async
+        when "compaction_end"
+          request_session_stats_async
         when "message_end"
           absorb_model_from_message(message["message"])
         end
@@ -367,6 +387,8 @@ module Harnex
         return unless data.is_a?(Hash)
 
         tokens = data["tokens"] || {}
+        context_usage = data["contextUsage"]
+        context_usage = {} unless context_usage.is_a?(Hash)
         @summary_mutex.synchronize do
           @session_summary[:input_tokens] = numeric_or_nil(tokens["input"])
           @session_summary[:output_tokens] = numeric_or_nil(tokens["output"])
@@ -378,7 +400,20 @@ module Harnex
           @session_summary[:agent_session_id] = data["sessionId"] if data["sessionId"]
           @session_summary[:model] = @model if @model
           @session_summary[:agent_provider] = @provider if @provider
+          @context_telemetry.record(
+            tokens: context_usage["tokens"],
+            window_tokens: context_usage["contextWindow"],
+            percent: context_usage["percent"]
+          )
         end
+      ensure
+        clear_session_stats_request
+      end
+
+      def clear_session_stats_request
+        @summary_mutex.synchronize { @session_stats_requested = false }
+      rescue StandardError
+        @session_stats_requested = false
       end
 
       def absorb_model_from_message(message)
