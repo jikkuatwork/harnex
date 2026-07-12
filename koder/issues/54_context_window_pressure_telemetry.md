@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 priority: P1
 issue_kind: slice
 created: 2026-07-12
@@ -85,21 +85,33 @@ Threshold-crossing events may be useful later, but are not required for v1.
 
 ## Acceptance criteria
 
-- [ ] Pi RPC maps `get_session_stats.contextUsage` into adapter summary state.
-- [ ] Multiple Pi stats samples preserve terminal context and peak/high-water
+- [x] Pi RPC maps `get_session_stats.contextUsage` into adapter summary state.
+- [x] Multiple Pi stats samples preserve terminal context and peak/high-water
       context independently.
-- [ ] A null post-compaction Pi context sample does not erase the prior peak and
+- [x] A null post-compaction Pi context sample does not erase the prior peak and
       is represented without pretending that null means zero.
-- [ ] Dispatch summaries include an additive, stable context block with status
+- [x] Dispatch summaries include an additive, stable context block with status
       and source provenance.
-- [ ] Codex app-server captures `modelContextWindow`; any occupancy estimate
+- [x] Codex app-server captures `modelContextWindow`; any occupancy estimate
       derived from `last` usage has documented semantics and provenance.
-- [ ] Unsupported adapters report `unsupported` rather than fabricated values.
-- [ ] Tests cover observed, missing, unsupported, multi-sample high-water, and
+- [x] Unsupported adapters report `unsupported` rather than fabricated values.
+- [x] Tests cover observed, missing, unsupported, multi-sample high-water, and
       compaction/null behavior.
-- [ ] `docs/dispatch-telemetry.md` explains the difference between cumulative
+- [x] `docs/dispatch-telemetry.md` explains the difference between cumulative
       usage and active context pressure.
-- [ ] Existing summary consumers remain compatible.
+- [x] Existing summary consumers remain compatible.
+
+## Resolution — 2026-07-12
+
+Implemented by plan 32 (unreleased). Dispatch rows now always include the stable
+`context` block. Pi aggregates dedicated observed `contextUsage` samples across
+completion, compaction, and final stats refreshes. Codex app-server preserves
+cumulative `total` in `usage` while conservatively treating
+`last.totalTokens / modelContextWindow` as estimated active pressure. The shared
+bounded accumulator retains final-valid and independent high-water values;
+unavailable post-compaction samples increment explicit counters and mark the
+latest sample missing without becoming zero. Focused tests and the full suite
+are green.
 
 ## Out of scope
 

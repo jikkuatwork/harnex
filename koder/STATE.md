@@ -1,347 +1,47 @@
 # Harnex State
 
-Updated: 2026-07-12 | 03:58 PM | IST
+Updated: 2026-07-12 | 05:55 PM | IST
 
-This is a thin handoff document. Keep it limited to past / present /
-future context for the next session. Durable change history belongs in
-`CHANGELOG.md`; release verification belongs in `koder/releases/`;
-implementation detail belongs in `koder/issues/` or `koder/plans/`.
+This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
+release evidence in `koder/releases/`, and implementation detail in the linked
+issue/plan files.
 
 ## Past
 
+- 2026-07-12 | 05:55 PM | IST: #54 active context-window pressure telemetry
+  implemented and closed (unreleased) via
+  `koder/plans/32_context_window_pressure_telemetry.md`. Dispatch rows now have
+  a stable `context` block: Pi supplies observed terminal/high-water samples,
+  Codex supplies conservative estimates, and compaction-null/missing/
+  unsupported states remain explicit. Implementation commit: `ec05ed0`.
+  Full suite: 524 runs, 2012 assertions, 0 failures, 2 skips.
 - 2026-07-11 | 11:26 PM | IST: Plan 31 implemented the #46 cost/usage
-  provenance follow-up (closed, unreleased): additive `usage`, `attribution`,
-  `outcome`, and per-session `attempt` blocks; parent-attempt linkage flags;
-  sidecar-backed outcome evidence; and lifecycle events. #43's contract
-  foundation is implemented, but it stays open for the live recovery/fallback
-  producer owned by #42 / plan 30. Full suite: 517 runs, 1912 assertions,
-  0 failures, 2 skips. Plan: `koder/plans/31_telemetry_provenance_and_outcomes.md`.
-- 2026-07-10 | 11:25 PM | IST: `harnex 0.7.12` shipped, tagged `v0.7.12`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.12 (2026-07-10)`. #47 is released: first-class queue
-  attribution flags, `--require-attribution`, and top-level `queue`, `agent`,
-  and `reliability` dispatch summary blocks. `0.7.11` was published/tagged but
-  superseded during installed smoke by this reliability patch. Verification
-  records: `koder/releases/0.7.11.md`, `koder/releases/0.7.12.md`.
-- 2026-07-10 | 11:02 PM | IST: `harnex 0.7.10` shipped, tagged `v0.7.10`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.10 (2026-07-10)`. #52 is released: `harnex run
-  --artifact-report PATH` / `--validation-report PATH` exposes worker sidecar
-  env vars and ingests bounded `harnex.artifact_report.v1` proof into dispatch
-  `artifact_report`, `validation`, and `artifacts` blocks. Verification record:
-  `koder/releases/0.7.10.md`.
-- 2026-07-10 | 10:42 PM | IST: `harnex 0.7.9` shipped, tagged `v0.7.9`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.9 (2026-07-10)`. #53 is released: `harnex run --cwd
-  DIR` supports public-bundle/non-git temp dispatch roots, `--root DIR`
-  supports attribution-only overrides, and Codex schema fixtures are refreshed
-  to `codex-cli 0.144.1`. Verification record: `koder/releases/0.7.9.md`.
-- 2026-07-10 | 02:16 PM | IST: #53 filed from a Lexi Maze public-bundle
-  dispatch smoke to add explicit `harnex run --cwd/--root` support and clean
-  no-git temp-directory behavior. No code changes.
-- 2026-07-08 | 02:25 PM | IST: #52 filed to track typed artifact and
-  validation sidecar reports for harnex dispatches, preserving `koder/` plain
-  text as canonical while making queue validation evidence machine-readable.
-  No code changes.
-- 2026-06-13 | 08:47 PM | IST: `harnex 0.7.8` shipped, tagged `v0.7.8`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.8 (2026-06-13)`. #51 is released: `harnex watch --id
-  <id> --until done` is the native work-terminal watcher for existing
-  visible/detached sessions, with `--max-wait`, optional done/fail markers,
-  and optional `--stop-on-terminal`. Verification record:
-  `koder/releases/0.7.8.md`.
-- 2026-06-13 | 08:37 PM | IST: #51 landed. Added `harnex watch --id <id>
-  --until done` for existing visible/detached sessions, with `--max-wait`,
-  optional done/fail markers, and optional `--stop-on-terminal`. Docs now
-  distinguish `harnex watch` (work-terminal monitoring) from `harnex run
-  --watch` (foreground stall babysitter). Full suite green: 487 runs, 1672
-  assertions, 0 failures, 2 skips.
-- 2026-06-13 | 07:30 PM | IST: #51 filed from Holm Queue `030`: harnex
-  emitted `task_failed` correctly, but a repo-local watcher swallowed the
-  non-zero wait/sweep result and kept polling. The issue asks to make native
-  harnex watch work-terminal aware so downstream repos do not hand-roll this
-  footgun.
-- 2026-06-12 | 10:53 AM | IST: `harnex 0.7.7` shipped, tagged `v0.7.7`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.7 (2026-06-12)`. Codex app-server failed turns now
-  emit `task_failed`, preserve nested Codex error messages, make
-  `wait --until done` return non-zero, avoid stale auto-stop
-  `turn/interrupt`, and refresh schema fixtures to `codex-cli 0.139.0`.
-  Verification record: `koder/releases/0.7.7.md`.
-- 2026-06-09 | 01:03 AM | IST: `harnex 0.7.6` shipped, tagged `v0.7.6`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.6 (2026-06-09)`. #50 is released: status JSON now
-  exposes `done`/`work_state`/`process_state`, `wait --until done` is the
-  safe queue monitor fence, and docs no longer gate on `state=completed`
-  alone. Verification record: `koder/releases/0.7.6.md`.
-- 2026-06-09 | 12:41 AM | IST: #50 filed from Holm Queue `020-01` after
-  `task_complete=true` coexisted with `state=running`, causing a state-only
-  watcher to stall despite the artifact being present. No code changes.
-- 2026-06-03 | 07:39 PM | IST: README refreshed to emphasize
-  `--context --auto-stop`, `--until task_complete` for interactive structured
-  sessions, durable terminal summaries, and timeout/artifact verification.
-  CHANGELOG Unreleased updated; docs-only, no test run.
-- 2026-05-26 | 05:21 PM | IST: `harnex 0.7.5` shipped, tagged `v0.7.5`,
-  pushed to RubyGems, and installed locally. Installed `harnex --version`
-  reports `harnex 0.7.5 (2026-05-26)`. #48 is now released: terminal
-  summary telemetry is canonical for `status --json --id` and `wait` over
-  tmp done markers. Verification record: `koder/releases/0.7.5.md`.
-- 2026-05-26 | 05:07 PM | IST: #48 landed (terminal summaries are canonical
-  over tmp done markers). Added `Harnex::TerminalStatus`, taught
-  `harnex status --json --id` to emit `running|completed|failed|unknown`
-  for inactive sessions via durable telemetry, and taught `harnex wait`
-  to succeed from summary rows when registry/exit files are missing.
-  Monitoring guides now demote `/tmp/*-done.txt` to legacy hints.
-  Tests added in `test/harnex/commands/status_test.rb` and
-  `test/harnex/commands/wait_test.rb`; full suite green
-  (472 runs, 1543 assertions, 0 failures, 2 skips).
-- 2026-05-25 | 08:49 AM | IST: `harnex 0.7.4` shipped, tagged
-  `v0.7.4`, pushed to RubyGems, and installed locally. Installed
-  `harnex --version` reports `harnex 0.7.4 (2026-05-25)` and
-  `harnex run --help` lists Pi; next dispatches can use plain
-  `harnex run pi ...`. Verification record: `koder/releases/0.7.4.md`.
-- 2026-05-25 | 08:39 AM | IST: Pi RPC dispatch/release-readiness
-  validation on branch `pi-harness`: three repo-local
-  `bin/harnex run pi --tmux --auto-stop` smokes in a temp git repo all
-  exited 0 with `task_complete=true`, `adapter_transport=stdio_jsonl_rpc`,
-  stats/cost populated, and no live tmux/session residue. Full suite green:
-  469 runs, 1521 assertions, 0 failures, 2 skips. At that point installed
-  `harnex` on PATH was still stale.
-- 2026-05-25 | 07:54 AM | IST: #47 response turn is recorded in
-  `koder/issues/47_queue_aware_dispatch_telemetry.md`; schema decisions are
-  settled enough to draft the implementation plan. No code changes.
-- 2026-05-24 | 11:08 PM | IST: #47 queue-aware dispatch telemetry
-  contract was filed and a review turn was added in
-  `koder/issues/47_queue_aware_dispatch_telemetry.md`; no code changes.
-- 2026-05-23 | 07:02 PM | IST: Pi-first docs refresh landed on
-  branch `pi-harness` so `harnex` guidance now defaults to `harnex run pi`
-  across dispatch/chain/buddy/monitoring/naming + CLI help examples
-  (README, `guides/01..05`, `lib/harnex/commands/run.rb`, `lib/harnex/cli.rb`).
-  Live smoke validation run: three `harnex run pi --context ... --auto-stop`
-  dispatches plus detached `run`+`send` flow succeeded and emitted Pi
-  structured telemetry (`adapter_transport=stdio_jsonl_rpc`, cost populated).
-- 2026-05-23 | 06:42 PM | IST: #44 + #46 landed together.
-  Added first-class `pi --mode rpc` adapter (`Harnex::Adapters::Pi`)
-  with structured completion/stop handling, extension-UI dialog
-  auto-cancel, synthesized output/tool events, and Pi
-  `get_session_stats` telemetry ingestion. Restored DISPATCH
-  `actual.cost_usd` (Pi-populated; nullable elsewhere). Added adapter/
-  session coverage (`test/harnex/adapters/pi_test.rb`,
-  `test/harnex/runtime/session_pi_rpc_test.rb`) and updated docs
-  (README, `docs/dispatch-telemetry.md`, `guides/01_dispatch.md`,
-  CHANGELOG). Full suite green: 469 runs, 1521 assertions, 0 failures,
-  2 skips.
-- 2026-05-23 | 04:07 PM | IST: Pi support research captured as
-  #44 (first-class `pi --mode rpc` adapter), #45 (deferred Pi PTY
-  adapter with extension markers), and #46 (restore `actual.cost_usd`
-  by default, starting with Pi structured stats). No code changes yet.
-- 2026-05-19 | 09:02 AM | IST: #43 filed to track throughput-first
-  telemetry v2 (attempt-level lifecycle, retry/fallback economics,
-  attribution enforcement, and throughput KPIs in dispatch rows).
-  No code changes yet.
-- 2026-05-15 | 10:16 AM | IST: README refreshed for current 0.7.x
-  surfaces (OpenCode, Codex app-server default / PTY fallback,
-  `--watch` vs `--watch-file`, history, and telemetry fields).
-  `docs/dispatch-telemetry.md` and `CHANGELOG.md` were updated with
-  the same docs-only correction. No code changes.
-- 2026-05-13 | 11:37 PM | IST: #42 filed to track durable
-  app-server orchestrator recovery. Decision: skip PTY regex sentry
-  for now and make a harnex-managed Codex app-server orchestrator
-  recover stream errors through structured error classification,
-  subprocess restart, `thread/resume`, bounded recovery prompting, and
-  telemetry. No code changes yet.
-- 2026-05-13 | 01:47 PM | IST: `harnex 0.7.3` shipped and was
-  installed locally. Release commit/tag: `9c8e094` / `v0.7.3`.
-  Headline changes: Codex app-server default `service_tier="flex"`
-  with `harnex run codex --fast` for `service_tier="fast"`,
-  first-class OpenCode adapter, #37/#38/#39 run-command fixes, and
-  Codex schema fixtures refreshed against `codex-cli 0.130.0`.
-  Verification record: `koder/releases/0.7.3.md`. Full suite green:
-  458 runs, 1479 assertions, 0 failures, 2 skips.
-- 2026-05-11 | 11:39 PM | IST: OpenCode landed as a first-class PTY
-  adapter (`Harnex::Adapters::Opencode`). `harnex run opencode` now
-  resolves to a dedicated adapter (not generic), with OpenCode-specific
-  `infer_repo_path` handling (`--dir`/`--dir=...` + positional project
-  path), double-`Ctrl+C` stop injection, and transcript-tail session id
-  extraction from `Continue opencode -s ...`. Added tests in
-  `test/harnex/adapters/opencode_test.rb`, updated generic-adapter tests
-  to keep unknown-CLI coverage on `aider`, and wired adapter registry in
-  `lib/harnex/adapters.rb`. Docs/changelog updated (README/TECHNICAL/
-  CHANGELOG). Validation: full suite green under
-  `HARNEX_SKIP_SCHEMA_DRIFT=1` (449 runs, 1463 assertions, 0 failures,
-  3 skips).
-- 2026-05-11 | 03:42 PM | IST: #41 Slice B landed.
-  Subprocess-restart machinery for deployment fallback (plan 30
-  Phase 2) added inside the new `Harnex::Codex::AppServer` module.
-  New on `Client`: class methods `spawn(deployment_config:)` and
-  `spawn_with_fallback(prior_thread_id:, deployment_config:,
-  handshake_params:, …handlers)`; instance method
-  `stop_for_fallback(in_flight_turn:, …grace seconds)` that issues
-  a bounded `turn/interrupt`, drains pending RPC, and reuses
-  `terminate_process` for TERM/KILL escalation. Adapter gains a
-  thin `CodexAppServer#switch_deployment(deployment_config:)` and
-  extracts `handshake_initialize_params` so the initial and
-  post-fallback handshakes share the same payload. Tests under
-  `test/harnex/codex/app_server/` (10 new runs; client_test +
-  switch_deployment_test) cover pending-RPC drain, turn/interrupt
-  wire-up, real-subprocess TERM/KILL teardown, idempotency,
-  threadId stability across the switch, no-orphan PIDs, and
-  failure-mode guards (no client / no thread). Suite green: 432
-  runs, 1430 assertions, 0 failures, 3 skips under
-  `HARNEX_SKIP_SCHEMA_DRIFT=1`. Out of scope for Slice B (deferred
-  to plan 30 Phases 3–5): trigger detection, Session-level counter
-  snapshots / per-arm telemetry split, `fallback_triggered`
-  events-log emission, CLI flags. Issue #41 — Slice C
-  (public-API surface doc) remains.
-- 2026-05-11 | 01:48 PM | IST: #41 Slice A landed.
-  `JsonRpcClient` extracted from
-  `lib/harnex/adapters/codex_appserver.rb` to a new file
-  `lib/harnex/codex/app_server/client.rb` as
-  `Harnex::Codex::AppServer::Client`. Pure refactor, zero behavior
-  change; suite green (422 runs, 0 failures) under
-  `HARNEX_SKIP_SCHEMA_DRIFT=1`. Sets up the namespace home for
-  plan 30 Phase 2 and future codex-specific resilience without
-  bloating the adapter. Done via harnex peer dispatch (`cx-i-41`).
-  Commits: `a8a71f9` (issue #41), `3a9f0bf` (refactor),
-  `989a08c` (dispatch telemetry). Issue #41 frames the broader
-  extraction; remaining slices are Slice B (plan 30 Phase 2 in the
-  new module) and Slice C (public API surface doc).
-- 2026-05-10 | 10:14 PM | IST: plan 30 Phase 1 verified.
-  Empirical Q1 confirmed against codex-cli 0.130.0 — fresh subprocess
-  can `thread/resume` a `threadId` produced by a torn-down subprocess
-  and complete a follow-up turn. New integration test
-  `test/integration/codex_resume_across_subprocess_test.rb`
-  (skipped unless `HARNEX_RUN_CODEX_INTEGRATION=1` + codex on PATH);
-  ~11s wallclock. Same-config / same-deployment only — cross-deployment
-  smoke deferred to a Phase 5 pre-merge check. Decision 2 (single-row
-  + per-arm split) stands; Phase 2 unblocked. Result paragraph added
-  to `koder/plans/30_deployment_fallback.md`.
-- 2026-05-10 | 09:26 PM | IST: #40 filed and plan 30 drafted.
-  External project filed the issue under a colliding number (31) — renamed
-  to #40, fixed heading, committed (`b52b731`). Telemetry section
-  expanded with per-arm split shape and ship-to-measure framing
-  (`79c630d`). Plan 30 (`e4c133c`, 221 lines, 5 phases) locks
-  cross-deployment-resume mechanism (subprocess restart, threadId
-  carries via codex local rollout) from the JSON-RPC schema; Q1
-  empirical verification gated as Phase 1 before code lands.
-- 2026-05-09 | 09:25 PM | IST: #39 landed.
-  `Harnex.default_summary_out_path` now defaults every non-empty repo
-  root to `<repo>/.harnex/dispatch.jsonl`, independent of legacy
-  `koder/` presence. Regression tests cover no-`koder`, legacy
-  `koder`, nil/empty roots, and `harnex run` resolution; smoke
-  verified no `koder/DISPATCH.jsonl` is created.
-- 2026-05-08 | 07:12 PM | IST: F24 / #38 landed. `harnex run`
-  now rejects unknown long flags before spawning an agent, points the
-  operator at `harnex run --help`, and still forwards everything past
-  the explicit `--` separator untouched. Regression tests cover
-  `--until`, arbitrary unknown flags, known `--auto-stop`, and agent
-  argv passthrough.
-- 2026-05-08 | 05:55 PM | IST: F23 / #37 landed. `harnex run
-  --auto-stop` now bounds JSON-RPC teardown after `task_complete`
-  (default 5s, `HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS` override),
-  starts TERM/KILL even when `turn/interrupt` never replies, fails
-  pending RPC requests on disconnect, and exits cleanly with no
-  registry/orphan tmux residue. Regression test covers a real
-  `bin/harnex run codex --auto-stop` subprocess with a stub app-server.
-- 2026-05-08 | 12:48 PM | IST: F21 landed. `harnex run` now writes a
-  repo-local `.harnex/dispatch.jsonl` terminal record, `harnex history`
-  reads it, and docs/tests cover path resolution, status classification,
-  commit detection, JSONL output, and a real `harnex run` integration.
-- 2026-05-07 | 07:28 PM | IST: #35 Tier 3 landed. DISPATCH dropped
-  four always-null fields (`actual.cost_usd`,
-  `actual.tests_run|passed|failed`, `meta.agent_deployment`) and
-  populated two: `meta.agent_provider` (per-adapter constant —
-  claude→anthropic, codex→openai) and `meta.agent_version` (lazy
-  `<cli> --version` probe with 2s `Timeout.timeout`, memoized,
-  nil on failure). `approvals_handled` left out of schema (deferred
-  until policy moves beyond auto-approve-everything); `predicted: {}`
-  kept as deliberate JSON Lines stable shape. Schema test updated;
-  two new probe tests cover real-binary success and missing-binary
-  fallback. Suite green: 402 runs, 1295 assertions.
-- 2026-05-07 | 07:30 PM | IST: #35 Tier 2 landed. DISPATCH `actual`
-  now carries `turn_count`, `tool_calls`, `commands_executed`,
-  `rate_limits`, `output_log_path`, `events_log_path`; `meta`
-  auto-derives `parent_dispatch_id` from `$HARNEX_ID` when not in
-  passthrough. New `EventCounters#record_item` tallies tool/command
-  items from `item/completed`. Schema test extended; suite green
-  (400 runs, 1300 assertions). `auto_disconnects` deferred — see the
-  issue file for rationale.
-- 2026-05-07 | 05:59 PM | IST: #36 Tier 2 landed.
-  `Waiter#wait_until_exit` (`lib/harnex/commands/wait.rb`) now polls
-  `exit_status_path` for up to 5s after `alive_pid?` flips false,
-  before reading exit status. Bounds the DISPATCH-row race that
-  affected `harnex wait` callers. Grace is overridable via
-  `HARNEX_EXIT_STATUS_GRACE_SECONDS`. Regression test in
-  `test/harnex/commands/wait_test.rb` spawns a real subprocess and
-  asserts the DISPATCH row is on disk by the time `wait` returns.
-  Suite green: 399 runs, 1292 assertions.
-- 2026-05-07: #35 Tier 1 (DISPATCH telemetry hygiene) landed.
-  Schema regression test in place.
-- `harnex 0.6.5` shipped and verified — see `CHANGELOG.md` and
-  `koder/releases/0.6.5.md`.
+  provenance follow-up (unreleased): additive usage/attribution/outcome/attempt
+  blocks and lifecycle events. #43 remains open for the real #42/plan-30
+  recovery/fallback producer. See
+  `koder/plans/31_telemetry_provenance_and_outcomes.md`.
+- 2026-07-10 | 11:25 PM | IST: `harnex 0.7.12` shipped and was installed
+  locally. Verification: `koder/releases/0.7.12.md`.
 
 ## Present
 
-- #54 and #55 were filed from Pi queue-orchestration analysis: structured
-  dispatches currently drop active context-window pressure, and primary
-  orchestrator usage/context remains outside child-dispatch telemetry.
-- `harnex 0.7.12` is installed locally. `harnex run` now supports queue-aware
-  attribution flags (`--project-id`, `--queue-id`, `--entry-id`, etc.),
-  `--require-attribution`, artifact/validation sidecars, and `--cwd/--root`.
-  `harnex watch --id <id> --until done` remains the safe work-terminal watcher
-  for existing visible/detached sessions.
-- `harnex 0.7.7` fixed Codex app-server failures as explicit failed work
-  (`task_failed`, `work_state=failed`, non-zero `wait --until done`) rather
-  than false completion.
-- #50 is shipped in `harnex 0.7.6`: work-level completion is explicit via
-  `done`/`work_state`, and `harnex wait --until done` is the safe monitor
-  fence for queue workers that may remain live at a prompt.
-- #47 is shipped in `harnex 0.7.12`: queue-aware telemetry has first-class
-  attribution flags plus top-level `queue`, `agent`, `validation`, `artifacts`,
-  `artifact_report`, and `reliability` summary blocks.
-- #48 is shipped in `harnex 0.7.5`: terminal summary state is canonical for
-  `status --json --id` and `wait`, with tmp done markers treated as
-  legacy compatibility hints.
-- #44 and #46's original cost restoration shipped in `harnex 0.7.4`; Pi RPC
-  is first-class and the installed `harnex` can dispatch with `harnex run pi
-  ...`. The #46 usage-provenance follow-up is implemented but unreleased.
-- #45 is the next Pi track: visible Pi PTY/TUI support only via stable
-  extension markers (no brittle screen regex parsing).
-- #51 is shipped in `harnex 0.7.8`: native `harnex watch --id <id> --until
-  done` covers existing visible/detached sessions without unsafe bash loops.
-- #52 is shipped in `harnex 0.7.10`: typed artifact/validation sidecar reports
-  make queue proof machine-readable without replacing plain-text `koder/`
-  artifacts.
-- #53 is shipped in `harnex 0.7.9`: explicit `harnex run --cwd/--root`
-  support covers public-bundle dispatches and clean non-git temp-directory
-  behavior.
-- #42 (Codex orchestrator recovery) and #43 (throughput-first telemetry
-  v2) remain open.
-- Local installed `harnex` on PATH reports `harnex 0.7.12 (2026-07-10)`
-  and includes #47 queue-aware telemetry, #52 artifact sidecars, #53
-  `--cwd/--root`, the Pi RPC adapter, #48 terminal-status/wait fallback, #50
-  work-level `done`/`work_state` completion semantics, the Codex `task_failed`
-  fix, and #51 native terminal watch.
+- `main` contains unreleased plan-31 telemetry foundations and #54 context
+  pressure telemetry. Installed `harnex` on `PATH` remains `0.7.12` and does
+  **not** include these unreleased changes.
+- #55 is the next telemetry slice: define logical primary-orchestrator
+  generations and queue-level primary-versus-worker orchestration-tax rollups.
+- #42 (Codex app-server recovery) and #43 (throughput telemetry v2 integration)
+  remain open; plan 30 Phases 3–5 still own live fallback production.
 - Test command:
   `ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require_relative f }'`
 
 ## Future
 
-1. #54 — capture terminal and peak active context pressure from Pi RPC and
-   other structured adapters without conflating it with cumulative usage.
-2. #55 — define logical primary-orchestrator generations and queue-level
-   primary-versus-worker orchestration-tax rollups.
-3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
-   prompt/readiness markers.
-4. #42 — resume Codex app-server orchestrator auto-recovery work.
-5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
-   telemetry split, and fallback CLI flags.
-6. #41 Slice C — public API surface doc at `docs/public_api.md`.
-7. #43 — wire plan 31's attempt-transition seam into the real #42 recovery /
-   plan-30 fallback producer, then add live retry/disconnect/fallback economics
-   coverage before closing the issue.
-
-When ending a session, update only this handoff summary and next step.
-Put detailed historical notes in `CHANGELOG.md`, release matrices in
-`koder/releases/`, and issue-specific detail in the relevant issue or
-plan file.
+1. #55 — design primary-orchestrator generation and orchestration-tax telemetry.
+2. Decide whether to release the accumulated plan-31 and #54 telemetry changes
+   before starting another telemetry layer.
+3. #45 — implement Pi PTY/TUI support only behind stable extension markers.
+4. #42 / plan 30 Phases 3–5 — resume structured recovery and fallback work.
+5. #41 Slice C — document the public API in `docs/public_api.md`.
+6. #43 — connect plan 31's attempt-transition seam to real recovery/fallback
+   producers, then add live retry/disconnect/fallback economics coverage.
