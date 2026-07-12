@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-07-11 | 11:26 PM | IST
+Updated: 2026-07-12 | 03:58 PM | IST
 
 This is a thin handoff document. Keep it limited to past / present /
 future context for the next session. Durable change history belongs in
@@ -282,6 +282,9 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Present
 
+- #54 and #55 were filed from Pi queue-orchestration analysis: structured
+  dispatches currently drop active context-window pressure, and primary
+  orchestrator usage/context remains outside child-dispatch telemetry.
 - `harnex 0.7.12` is installed locally. `harnex run` now supports queue-aware
   attribution flags (`--project-id`, `--queue-id`, `--entry-id`, etc.),
   `--require-attribution`, artifact/validation sidecars, and `--cwd/--root`.
@@ -324,13 +327,17 @@ implementation detail belongs in `koder/issues/` or `koder/plans/`.
 
 ## Future
 
-1. #45 — implement Pi PTY/TUI support gated on extension-provided stable
+1. #54 — capture terminal and peak active context pressure from Pi RPC and
+   other structured adapters without conflating it with cumulative usage.
+2. #55 — define logical primary-orchestrator generations and queue-level
+   primary-versus-worker orchestration-tax rollups.
+3. #45 — implement Pi PTY/TUI support gated on extension-provided stable
    prompt/readiness markers.
-2. #42 — resume Codex app-server orchestrator auto-recovery work.
-3. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
+4. #42 — resume Codex app-server orchestrator auto-recovery work.
+5. Plan 30 Phases 3–5 — disconnect-rate fallback trigger, per-arm
    telemetry split, and fallback CLI flags.
-4. #41 Slice C — public API surface doc at `docs/public_api.md`.
-5. #43 — wire plan 31's attempt-transition seam into the real #42 recovery /
+6. #41 Slice C — public API surface doc at `docs/public_api.md`.
+7. #43 — wire plan 31's attempt-transition seam into the real #42 recovery /
    plan-30 fallback producer, then add live retry/disconnect/fallback economics
    coverage before closing the issue.
 
