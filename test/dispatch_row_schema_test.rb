@@ -133,12 +133,14 @@ class DispatchRowSchemaTest < Minitest::Test
 
   OUTCOME_KEYS = %w[
     changed_paths
+    class
     commit_sha
     commits
     files_changed
     lines_changed
     loc_added
     loc_removed
+    report_status
     source
     status
   ].freeze
@@ -301,6 +303,8 @@ class DispatchRowSchemaTest < Minitest::Test
 
       outcome = record.fetch("outcome")
       assert_equal "no_change", outcome.fetch("status")
+      assert_equal "unknown", outcome.fetch("class")
+      assert_nil outcome.fetch("report_status")
       assert_equal [], outcome.fetch("changed_paths")
       assert_nil outcome.fetch("commit_sha")
 

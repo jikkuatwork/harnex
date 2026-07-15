@@ -23,9 +23,12 @@ For unattended monitors on existing visible/detached sessions, prefer
 exits `0`, failed work exits non-zero, and wall-clock caps exit `124`. For
 callers that need the lower-level primitive, `harnex wait --until done` exposes
 the same work fence. For structured sessions (Pi RPC and Codex app-server),
-`harnex wait --until task_complete` remains the exact successful-turn fence.
-None of these know your acceptance criteria; verify the expected artifact or
-tests afterward.
+`harnex wait --until task_complete` remains the exact accepted-turn fence.
+Codex acknowledgment-only auto-stop turns are typed
+`completed_no_activity` and fail this fence without transcript parsing.
+`--require-artifact-report` can additionally make sidecar shape/final-proof
+acceptance part of the verdict. Harnex still does not judge semantic quality;
+verify the expected artifact or tests afterward.
 
 ## Completion Test
 
@@ -103,8 +106,11 @@ harnex watch --id pi-i-NN --until done --max-wait 90m \
 ```
 
 If that exits `124`, inspect the pane/logs/events and decide whether to nudge,
-stop, or continue. If it exits any other non-zero code, treat the work as
-failed; do not continue polling the same task as though it were still running.
+stop, or continue. If it exits any other non-zero code, inspect
+`outcome_class` / `artifact_report_status` in the JSON or fail marker, treat the
+work as failed, and do not continue polling the same task as though it were
+still running. `completed_no_activity`, `report_missing`, `report_invalid`, and
+`report_rejected` are work-acceptance failures rather than successful turns.
 
 Recommended caps:
 

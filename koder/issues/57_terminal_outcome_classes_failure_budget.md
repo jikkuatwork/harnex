@@ -52,6 +52,17 @@ Outcome rollups must preserve both attempt count and failure family, and callers
 must be able to distinguish fatal no-work from reconstructable proof defects.
 See #60 and #61.
 
+## Progress
+
+Harnex 0.7.14 implements the #60/#61 proof-acceptance subset: every new row has
+additive `outcome.class` / `outcome.report_status`, with
+`completed_with_proof`, `completed_with_activity`, `completed_no_activity`,
+`report_missing`, `report_invalid`, `report_rejected`, `task_failed`, and
+`unknown` classifications. Watch/wait/terminal marker payloads preserve these
+proof failures. This does **not** close #57: boot/registration/permission/
+timeout/disconnection classes, correlated-family rollups, and the run-scoped
+budget command remain.
+
 ## Goal
 
 1. An additive `outcome.class` on every dispatch row, from a small closed

@@ -215,8 +215,11 @@ module Harnex
           process_state: "running",
           terminal: false,
           task_complete: !failed,
+          task_failed: failed,
           done: !failed,
-          work_state: failed ? "failed" : "completed"
+          work_state: failed ? "failed" : "completed",
+          outcome_class: event["outcome_class"],
+          artifact_report_status: event["artifact_report_status"]
         )
         payload[:last_error] = event["message"] || event["error"] if failed
       end
@@ -520,6 +523,8 @@ module Harnex
         task_failed: task_failed,
         done: done,
         work_state: work_state,
+        outcome_class: status["outcome_class"],
+        artifact_report_status: status["artifact_report_status"],
         exit: status["exit"],
         exit_code: status["exit_code"],
         summary_out: status["summary_out"],

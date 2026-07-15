@@ -48,6 +48,8 @@ module Harnex
         "task_failed" => false,
         "done" => false,
         "work_state" => "unknown",
+        "outcome_class" => nil,
+        "artifact_report_status" => nil,
         "exit" => nil,
         "exit_code" => nil,
         "summary_out" => nil,
@@ -130,6 +132,7 @@ module Harnex
     def build_from_summary(record, summary_path, fallback_repo_root)
       meta = record["meta"] || {}
       actual = record["actual"] || {}
+      outcome = record["outcome"] || {}
       state = classify_summary_state(actual)
       task_complete = !!actual["task_complete"]
       task_failed = state == "failed" && !task_complete
@@ -144,6 +147,8 @@ module Harnex
         "task_failed" => task_failed,
         "done" => Harnex.work_done_for(state, task_complete: task_complete),
         "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
+        "outcome_class" => blank_to_nil(outcome["class"]),
+        "artifact_report_status" => blank_to_nil(outcome["report_status"]),
         "exit" => blank_to_nil(actual["exit"]),
         "exit_code" => actual["exit_code"],
         "summary_out" => summary_path,
@@ -188,6 +193,8 @@ module Harnex
         "task_failed" => task_failed,
         "done" => Harnex.work_done_for(state, task_complete: task_complete),
         "work_state" => Harnex.work_state_for(state, task_complete: task_complete),
+        "outcome_class" => nil,
+        "artifact_report_status" => nil,
         "exit" => history_exit(status),
         "exit_code" => nil,
         "summary_out" => blank_to_nil(record["summary_out_path"]),

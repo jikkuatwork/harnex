@@ -28,9 +28,28 @@ harnex run codex -- --cd ~/other/repo
 | `--preset NAME`     | Watch preset (`impl`, `plan`, `gate`), requires `--watch`           |
 | `--watch-file PATH` | Auto-send a file-change hook (`--watch PATH`/`--watch=PATH` legacy) |
 | `--context TXT`     | Give the agent a task on startup                                    |
-| `--auto-stop`       | With `--context`, stop after the first task completion              |
+| `--auto-stop`       | With `--context`, stop after accepted task completion               |
+| `--artifact-report PATH` | Expose and ingest a bounded v1 proof sidecar                   |
+| `--require-artifact-report` | Fail closed unless the sidecar is accepted final proof      |
 | `--fast`            | For Codex, use `service_tier="fast"` instead of default `flex`      |
 | `--timeout SEC`     | Wait budget for detached registration                               |
+
+Codex app-server auto-stop rejects completion with no structured command/tool
+activity, Git delta, or fresh accepted/no-change report as
+`completed_no_activity`. Strict artifact-report mode works across transports
+and returns non-zero for missing, invalid, rejected, or stale proof.
+
+### `harnex artifact-report` — Initialize and validate proof
+
+```bash
+harnex artifact-report init .harnex/reports/worker.json
+harnex artifact-report validate .harnex/reports/worker.json --final
+```
+
+`init` writes a schema-valid in-progress skeleton (`--force` replaces an
+existing file). `validate` emits bounded machine-readable field diagnostics;
+`--final` additionally requires accepted/no-change final proof and successful
+validation records.
 
 ### `harnex send` — Talk to a running agent
 

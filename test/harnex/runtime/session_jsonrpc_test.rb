@@ -140,6 +140,163 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal "completed", completed["status"]
   end
 
+  def test_auto_stop_rejects_acknowledgment_only_turn_without_parsing_prose
+    @session.instance_variable_set(:@auto_stop, true)
+    stops = Queue.new
+    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+      stops << [turn_id, interrupt]
+      { ok: true, signal: "test" }
+    end
+
+    fanout("item/completed", Fixtures::Codex.item_completed_agent_message(
+      text: "Got it—I will execute the task now."
+    ))
+    fanout("turn/completed",
+      Fixtures::Codex.turn_completed_notification(thread_id: "thr-ack", turn_id: "trn-ack"))
+
+    assert_equal [nil, false], Timeout.timeout(2) { stops.pop }
+    failed = events.find { |event| event["type"] == "task_failed" }
+    assert_equal "completed_no_activity", failed.fetch("status")
+    assert_equal "completed_no_activity", failed.fetch("outcome_class")
+    assert_match(/without command\/tool execution/, failed.fetch("message"))
+    refute events.any? { |event| event["type"] == "task_complete" }
+  end
+
+  def test_initial_context_without_auto_stop_still_rejects_no_activity_completion
+    adapter = Harnex::Adapters::CodexAppServer.new(["[harnex session id=context-gate] execute task"])
+    session = Harnex::Session.new(
+      adapter: adapter,
+      command: adapter.build_command,
+      repo_root: @tmp,
+      host: "127.0.0.1",
+      id: "context-gate"
+    )
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => Fixtures::Codex.turn_completed_notification(thread_id: "thr-context", turn_id: "trn-context")
+    })
+
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    failed = rows.find { |event| event["type"] == "task_failed" }
+    assert_equal "completed_no_activity", failed.fetch("outcome_class")
+    refute session.task_complete?
+    assert session.task_failed?
+    session.instance_variable_set(:@exit_code, 0)
+    session.send(:normalize_work_acceptance_exit_code!)
+    assert_equal 1, session.exit_code
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+    output_log = session&.instance_variable_get(:@output_log)
+    output_log&.close unless output_log&.closed?
+  end
+
+  def test_auto_stop_accepts_structured_command_activity_regardless_of_final_prose
+    @session.instance_variable_set(:@auto_stop, true)
+    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+      { ok: true, signal: "test" }
+    end
+
+    fanout("item/completed", {
+      "item" => {
+        "id" => "cmd-1",
+        "type" => "commandExecution",
+        "command" => "ruby -c lib/harnex/runtime/session.rb",
+        "status" => "completed",
+        "exitCode" => 0
+      }
+    })
+    fanout("item/completed", Fixtures::Codex.item_completed_agent_message(text: "Acknowledged."))
+    fanout("turn/completed",
+      Fixtures::Codex.turn_completed_notification(thread_id: "thr-work", turn_id: "trn-work"))
+
+    completed = events.find { |event| event["type"] == "task_complete" }
+    assert_equal "completed_with_activity", completed.fetch("outcome_class")
+    assert @session.task_complete?
+    refute @session.task_failed?
+  end
+
+  def test_required_no_change_report_accepts_zero_activity_turn
+    report_path = File.join(@tmp, "no-change.json")
+    session = Harnex::Session.new(
+      adapter: Harnex::Adapters::CodexAppServer.new,
+      command: ["codex", "app-server"],
+      repo_root: @tmp,
+      host: "127.0.0.1",
+      id: "strict-no-change",
+      artifact_report_path: report_path,
+      require_artifact_report: true
+    )
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    File.write(report_path, JSON.generate(
+      schema: Harnex::ArtifactReport::SCHEMA,
+      status: "pass",
+      outcome: { status: "no_change", summary: "No change is required." },
+      validation: { status: "not_run", commands: [], final_reported: true },
+      artifacts: []
+    ))
+
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => Fixtures::Codex.turn_completed_notification(thread_id: "thr-proof", turn_id: "trn-proof")
+    })
+
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    completed = rows.find { |event| event["type"] == "task_complete" }
+    assert_equal "completed_with_proof", completed.fetch("outcome_class")
+    assert_equal "accepted", completed.fetch("artifact_report_status")
+    assert session.task_complete?
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+    output_log = session&.instance_variable_get(:@output_log)
+    output_log&.close unless output_log&.closed?
+  end
+
+  def test_json_printed_in_final_prose_does_not_satisfy_required_sidecar
+    report_path = File.join(@tmp, "missing-sidecar.json")
+    session = Harnex::Session.new(
+      adapter: Harnex::Adapters::CodexAppServer.new,
+      command: ["codex", "app-server"],
+      repo_root: @tmp,
+      host: "127.0.0.1",
+      id: "strict-prose-only",
+      artifact_report_path: report_path,
+      require_artifact_report: true
+    )
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    report_shaped_prose = JSON.generate(
+      schema: Harnex::ArtifactReport::SCHEMA,
+      status: "pass",
+      outcome: { status: "accepted", summary: "Printed only." }
+    )
+
+    session.send(:handle_rpc_notification, {
+      "method" => "item/completed",
+      "params" => Fixtures::Codex.item_completed_agent_message(text: report_shaped_prose)
+    })
+    session.send(:handle_rpc_notification, {
+      "method" => "turn/completed",
+      "params" => Fixtures::Codex.turn_completed_notification(thread_id: "thr-prose", turn_id: "trn-prose")
+    })
+
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    failed = rows.find { |event| event["type"] == "task_failed" }
+    assert_equal "report_missing", failed.fetch("outcome_class")
+    assert_equal "missing", failed.fetch("artifact_report_status")
+    refute session.task_complete?
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+    output_log = session&.instance_variable_get(:@output_log)
+    output_log&.close unless output_log&.closed?
+  end
+
   def test_item_completed_writes_synthesized_transcript_to_output_log
     text = "hello from codex"
     fanout("item/completed", Fixtures::Codex.item_completed_agent_message(text: text))

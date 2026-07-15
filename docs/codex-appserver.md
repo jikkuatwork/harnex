@@ -42,7 +42,7 @@ After the handshake the client is ready to issue `thread/start` and
 |-----------------------------|--------------------|-------|
 | `thread/started`            | (metadata)         | Stashes `threadId` |
 | `turn/started`              | `turn_started`     | Carries `turnId` |
-| `turn/completed`            | `task_complete` or `task_failed` | `status=completed` emits `task_complete`; failed/interrupted statuses emit `task_failed` with the Codex error message when present. |
+| `turn/completed`            | `task_complete` or `task_failed` | Failed/interrupted statuses emit `task_failed` with the Codex error. A completed `--context` turn emits `task_complete` only with structured command/tool activity, Git delta, or fresh accepted/no-change report proof; otherwise it emits typed `completed_no_activity`. |
 | `item/started`              | (silent)           | Streaming deltas opted out |
 | `item/completed`            | `item_completed` + synthesized transcript | See "tmux/STDOUT" below |
 | `error`                     | `error`            | Turn-level Codex error notification; preserves nested `error.message` and does not count as a transport disconnect. |
@@ -101,8 +101,20 @@ harnex wait --id cx-i-242 --until task_complete --timeout 300
 ```
 
 `--until done` returns non-zero when it sees `task_failed` or failed terminal
-telemetry. The task-complete/task-failed waiters tail the events JSONL — not the
-API socket — so they keep working across restarts and are adapter-agnostic.
+telemetry. This includes acknowledgment-only autonomous `--context` turns
+(`outcome_class=completed_no_activity`) and strict sidecar failures
+(`report_missing`, `report_invalid`, or `report_rejected`). Harnex classifies
+these from app-server item counters, Git state, and the configured report path;
+it does not inspect final-answer prose. The task-complete/task-failed waiters
+tail the events JSONL — not the API socket — so they keep working across
+restarts and are adapter-agnostic.
+
+For blind dispatches that require report proof, combine
+`--artifact-report PATH --require-artifact-report`. Only a fresh valid sidecar
+at `PATH` can satisfy the contract; report-shaped JSON printed in an
+`agentMessage` is ordinary transcript text and is ignored. Use
+`harnex artifact-report init PATH` and `harnex artifact-report validate PATH
+--final` to avoid hand-authoring the schema.
 
 ## `harnex doctor`
 
@@ -138,9 +150,12 @@ for autonomous worker dispatches; legacy-pty is for interactive/TUI use.
   yet — the agent is reasoning. The pane fills as soon as the
   first item completes.
 - **`task_failed` immediately after dispatch.** Check
-  `harnex events --id <session>` for the Codex error message; the most common
-  causes are auth/provider environment variables (for example
-  `OPENAI_API_KEY` / `AZURE_OPENAI_API_KEY`) or model unavailability.
+  `harnex events --id <session>`. Provider/model failures retain their Codex
+  error message. `completed_no_activity` means the turn ended with no
+  command/tool or Git/report proof; `report_missing` / `report_invalid` /
+  `report_rejected` identify strict sidecar defects. Common provider failures
+  include auth environment variables (for example `OPENAI_API_KEY` /
+  `AZURE_OPENAI_API_KEY`) and model unavailability.
 
 ## Schema fixtures
 

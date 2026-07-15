@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 priority: P1
 issue_kind: slice
 created: 2026-07-15
@@ -45,21 +45,21 @@ Provide an opt-in strict proof contract plus deterministic worker tooling:
 
 ## Acceptance Criteria
 
-- [ ] Strict mode fails closed when the sidecar file is absent even if the agent
+- [x] Strict mode fails closed when the sidecar file is absent even if the agent
       returned a normal final answer.
-- [ ] Strict mode rejects syntactically valid but schema-invalid JSON, including
+- [x] Strict mode rejects syntactically valid but schema-invalid JSON, including
       a missing schema and string-valued `outcome`.
-- [ ] Validator diagnostics name the failing field/shape without exposing
+- [x] Validator diagnostics name the failing field/shape without exposing
       report payloads or transcripts.
-- [ ] A helper emits a valid minimal `harnex.artifact_report.v1` skeleton and
+- [x] A helper emits a valid minimal `harnex.artifact_report.v1` skeleton and
       supports final validation without models reproducing schema prose.
-- [ ] Final dispatch telemetry distinguishes `report_missing`,
+- [x] Final dispatch telemetry distinguishes `report_missing`,
       `report_invalid`, and accepted proof using #57's outcome vocabulary.
-- [ ] Existing fail-soft behavior remains available when strict mode is not
+- [x] Existing fail-soft behavior remains available when strict mode is not
       requested.
-- [ ] Tests cover JSON printed only in final prose: it must not satisfy the
+- [x] Tests cover JSON printed only in final prose: it must not satisfy the
       required sidecar contract, and Harnex must not scrape it.
-- [ ] Agent guides show strict mode for blind/unattended queue work.
+- [x] Agent guides show strict mode for blind/unattended queue work.
 
 ## Related
 
@@ -67,6 +67,18 @@ Provide an opt-in strict proof contract plus deterministic worker tooling:
 - #56 — adapter preflight should exercise strict report acceptance.
 - #57 — outcome classes and failure-budget accounting.
 - #59 — conveyor runner should request strict proof.
+
+## Resolution
+
+Implemented for Harnex 0.7.14. `--require-artifact-report` now turns a
+configured sidecar into a fail-closed work contract while optional ingestion
+remains warning-only. `harnex artifact-report init PATH` writes a bounded
+schema-valid skeleton, and `harnex artifact-report validate PATH [--final]`
+returns machine-readable field diagnostics without report contents. Strict
+completion accepts only a fresh final `accepted` / `no_change` report and types
+missing, invalid, rejected, and stale proof in events, terminal verdicts, and
+dispatch outcomes. Only the configured file is read; transcript JSON is never
+scraped.
 
 ## Non-Goals
 

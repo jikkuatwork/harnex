@@ -33,7 +33,7 @@ module Harnex
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
       --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
-      --require-attribution --auto-stop --fast --legacy-pty --help
+      --require-artifact-report --require-attribution --auto-stop --fast --legacy-pty --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
@@ -58,7 +58,7 @@ module Harnex
           --preset NAME      Watch preset: impl, plan, gate (requires --watch)
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
-          --auto-stop        Stop after the first task completion from --context
+          --auto-stop        Stop after the first accepted task completion from --context
           --fast             (codex only) Use Codex service_tier="fast".
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
@@ -67,6 +67,9 @@ module Harnex
                              Worker-written harnex.artifact_report.v1 JSON sidecar to ingest at exit
           --validation-report PATH
                              Alias for --artifact-report; also exposed as HARNEX_VALIDATION_REPORT_PATH
+          --require-artifact-report
+                             Fail closed unless PATH contains accepted final proof;
+                             requires --artifact-report or --validation-report
           --project-id ID    Queue telemetry project id (first-class flags override --meta)
           --queue-id ID      Queue telemetry queue id
           --entry-id ID      Queue telemetry entry id
@@ -109,7 +112,9 @@ module Harnex
         Notes:
           Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
           Bare `--watch` enables the babysitter.
-          --auto-stop requires --context and fires once after the first completion.
+          --auto-stop requires --context. Structured Codex turns only count as
+          accepted completion after activity, Git delta, or accepted sidecar proof.
+          --require-artifact-report makes sidecar validation part of the run verdict.
           Explicit --stall-after/--max-resumes values override --preset defaults.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
@@ -155,6 +160,7 @@ module Harnex
         require_attribution: false,
         summary_out: nil,
         artifact_report: nil,
+        require_artifact_report: false,
         cwd: nil,
         root: nil,
         auto_stop: false,
@@ -178,6 +184,7 @@ module Harnex
 
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
       validate_auto_stop_context!
+      validate_required_artifact_report!
       apply_telemetry_options!
       validate_attempt_metadata!
       validate_orchestration_metadata!
@@ -253,6 +260,7 @@ module Harnex
       tmux_cmd << "--require-attribution" if @options[:require_attribution]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--artifact-report", @options[:artifact_report]] if @options[:artifact_report]
+      tmux_cmd << "--require-artifact-report" if @options[:require_artifact_report]
       tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
       tmux_cmd += ["--root", @options[:root]] if @options[:root]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
@@ -363,6 +371,7 @@ module Harnex
         meta: @options[:meta],
         summary_out: @options[:summary_out],
         artifact_report_path: @options[:artifact_report],
+        require_artifact_report: @options[:require_artifact_report],
         inbox_ttl: @options[:inbox_ttl],
         auto_stop: @options[:auto_stop],
         launch_cwd: history_cwd,
@@ -555,6 +564,8 @@ module Harnex
         when "--artifact-report", "--validation-report"
           index += 1
           @options[:artifact_report] = required_option_value(arg, argv[index])
+        when "--require-artifact-report"
+          @options[:require_artifact_report] = true
         when /\A--artifact-report=(.+)\z/
           @options[:artifact_report] = required_option_value("--artifact-report", Regexp.last_match(1))
         when /\A--validation-report=(.+)\z/
@@ -635,7 +646,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-attribution", "--fast", "--legacy-pty"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty"
           nil
         when /\A--tmux=/
           nil
@@ -690,6 +701,14 @@ module Harnex
       return if @options[:context]
 
       raise OptionParser::InvalidOption, "harnex run: --auto-stop requires --context"
+    end
+
+    def validate_required_artifact_report!
+      return unless @options[:require_artifact_report]
+      return unless @options[:artifact_report].to_s.strip.empty?
+
+      raise OptionParser::InvalidOption,
+            "harnex run: --require-artifact-report requires --artifact-report PATH"
     end
 
     def apply_telemetry_options!

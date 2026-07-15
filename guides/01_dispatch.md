@@ -22,6 +22,9 @@ Inside a harnex-managed session, these environment variables are available:
 | `HARNEX_SESSION_REPO_ROOT` | Repo root for the session |
 | `HARNEX_SESSION_ID` | Internal harnex instance ID |
 | `HARNEX_SPAWNER_PANE` | Tmux pane ID of the invoker |
+| `HARNEX_ARTIFACT_REPORT_PATH` | Absolute configured proof-sidecar path |
+| `HARNEX_ARTIFACT_REPORT_SCHEMA` | Required sidecar schema identifier |
+| `HARNEX_ARTIFACT_REPORT_REQUIRED` | `1` when report proof is fail-closed |
 
 Use `harnex send`, `harnex status`, `harnex wait`, `harnex pane`, and
 `harnex logs` to coordinate with peers. If you are not inside harnex,
@@ -64,9 +67,14 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
 ```
 
 For one-shot context dispatches that should clean themselves up, add
-`--auto-stop`. It requires `--context`, fires once on the first task
-completion, and does not keep the session alive for later reuse. This keeps
-parallel orchestration compact:
+`--auto-stop`. It requires `--context` and does not keep the session alive for
+later reuse. On Codex app-server, a turn launched from `--context` is accepted
+only after structured command/tool activity, Git delta, or fresh
+accepted/no-change sidecar proof. A prose-only acknowledgment emits
+`completed_no_activity`, is
+visible as `task_failed` before teardown, and exits non-zero. This keeps
+parallel orchestration compact without converting agent turn completion into
+accepted work completion:
 
 ```bash
 for i in 1 2 3; do
@@ -96,20 +104,32 @@ harnex run codex --cwd /tmp/leximaze_eval_run_001 \
 child process cwd. Neither flag is a sandbox.
 
 For queue closeout, ask workers to write a compact sidecar in addition to their
-plain-text `koder/` artifact:
+plain-text `koder/` artifact. For blind/unattended work, initialize and require
+the report so a normal final answer cannot bypass proof acceptance:
 
 ```bash
+harnex artifact-report init .harnex/reports/pi-i-NN.json
 harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --artifact-report .harnex/reports/pi-i-NN.json \
-  --context 'Update the canonical koder file and write harnex.artifact_report.v1 proof to $HARNEX_ARTIFACT_REPORT_PATH' \
+  --require-artifact-report \
+  --context 'Update the canonical koder file, finalize $HARNEX_ARTIFACT_REPORT_PATH, then run harnex artifact-report validate "$HARNEX_ARTIFACT_REPORT_PATH" --final' \
   --auto-stop
 ```
 
 The worker should keep the full explanation in `koder/` and put only compact
-machine-readable proof in the sidecar: validation command/status, typed
-artifact summaries (`finding`, `review`, `gate`, `blocker`, etc.), evidence,
-confidence, and canonical refs. Harnex records missing/malformed sidecars as
-warning telemetry instead of failing the wrapped process.
+machine-readable proof in the sidecar: an `accepted` or `no_change` outcome,
+validation command/status/exit codes, typed artifact summaries (`finding`,
+`review`, `gate`, `blocker`, etc.), evidence, confidence, and canonical refs.
+`harnex artifact-report validate PATH` checks the schema without echoing report
+payloads; `--final` additionally requires accepted final proof and
+`validation.final_reported=true`.
+
+Without `--require-artifact-report`, missing/malformed reports remain warning
+telemetry. Strict mode fails closed for missing, malformed, unsupported,
+oversized, schema-incomplete, rejected, or unchanged stale reports. JSON in the
+agent's final prose does not count: only the configured sidecar path is read.
+A fresh valid `no_change` report is the explicit proof path for intentional
+no-delta work.
 
 Queue runners should pass first-class attribution so dispatch rows can be grouped
 without path/id heuristics:

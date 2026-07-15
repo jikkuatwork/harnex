@@ -304,6 +304,8 @@ module Harnex
         exit_code: exit_code,
         status: payload["status"],
         work_state: payload["work_state"],
+        outcome_class: payload["outcome_class"],
+        artifact_report_status: payload["artifact_report_status"],
         task_complete: payload["task_complete"] || payload["event"] == "task_complete",
         task_failed: payload["task_failed"] || payload["event"] == "task_failed",
         done: payload["done"],

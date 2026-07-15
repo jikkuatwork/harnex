@@ -340,12 +340,13 @@ class SessionTest < Minitest::Test
     counters = Harnex::Session::EventCounters.new
     counters.record_item({ "type" => "mcpToolCall" })
     counters.record_item({ "type" => "dynamicToolCall" })
+    counters.record_item({ "type" => "fileChange" })
     counters.record_item({ "type" => "commandExecution" })
     counters.record_item({ "type" => "agentMessage" })
     counters.record_item(nil)
 
     snapshot = counters.snapshot
-    assert_equal 2, snapshot[:tool_calls]
+    assert_equal 3, snapshot[:tool_calls]
     assert_equal 1, snapshot[:commands_executed]
   end
 
@@ -434,6 +435,10 @@ class SessionTest < Minitest::Test
     })
 
     assert_equal [:stop, nil, false], Timeout.timeout(2) { calls.pop }
+    failed = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }.find { |event| event["type"] == "task_failed" }
+    assert_equal "completed_no_activity", failed.fetch("status")
+    assert_equal "completed_no_activity", failed.fetch("outcome_class")
+    refute session.task_complete?
 
     session.send(:handle_rpc_notification, {
       "method" => "turn/completed",
@@ -606,6 +611,42 @@ class SessionTest < Minitest::Test
     end
   end
 
+  def test_required_report_terminal_enforcement_types_invalid_ingest_states
+    cases = {
+      "malformed" => "{",
+      "unsupported_schema" => JSON.generate(schema: "example.v0"),
+      "missing_schema" => JSON.generate(status: "pass", outcome: "accepted"),
+      "oversized" => "x" * (Harnex::ArtifactReport::MAX_BYTES + 1)
+    }
+
+    cases.each do |name, contents|
+      Dir.mktmpdir("harnex-strict-#{name}") do |dir|
+        path = File.join(dir, "report.json")
+        session = build_session(
+          repo_root: dir,
+          artifact_report_path: path,
+          require_artifact_report: true
+        )
+        session.send(:prepare_events_log)
+        File.binwrite(path, contents)
+        session.instance_variable_set(:@exit_code, 0)
+
+        session.send(:enforce_required_artifact_report!)
+
+        assert session.task_failed?, name
+        assert_equal 1, session.exit_code, name
+        event = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }.last
+        assert_equal "task_failed", event.fetch("type"), name
+        assert_equal "report_invalid", event.fetch("outcome_class"), name
+        expected_status = name == "missing_schema" ? "unsupported_schema" : name
+        assert_equal expected_status, event.fetch("artifact_report_status"), name
+      ensure
+        events_log = session&.instance_variable_get(:@events_log)
+        events_log&.close unless events_log&.closed?
+      end
+    end
+  end
+
   def test_attempt_transition_emits_linked_lifecycle_event
     session = build_session(meta: { "parent_attempt_id" => "prior-attempt" })
     session.send(:prepare_events_log)
@@ -628,7 +669,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
+  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -641,6 +682,7 @@ class SessionTest < Minitest::Test
       meta: meta,
       summary_out: summary_out,
       artifact_report_path: artifact_report_path,
+      require_artifact_report: require_artifact_report,
       inbox_ttl: inbox_ttl,
       auto_stop: auto_stop
     )

@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 priority: P1
 issue_kind: slice
 created: 2026-07-15
@@ -44,17 +44,17 @@ signals rather than transcript prose:
 
 ## Acceptance Criteria
 
-- [ ] A Codex app-server turn that returns a final answer with zero commands,
+- [x] A Codex app-server turn that returns a final answer with zero commands,
       zero Git delta, and no required report is not `completed_with_proof`.
-- [ ] `--auto-stop` does not destroy the only recoverable session before the
+- [x] `--auto-stop` does not destroy the only recoverable session before the
       no-op outcome is exposed or one bounded resume is attempted.
-- [ ] `harnex watch --until done` returns nonzero (or a distinct documented
+- [x] `harnex watch --until done` returns nonzero (or a distinct documented
       outcome) for unproven no-activity completion.
-- [ ] A valid explicit `no_change` report can satisfy a no-delta task without
+- [x] A valid explicit `no_change` report can satisfy a no-delta task without
       requiring fake file edits or commands.
-- [ ] Tests cover both flex and fast Codex app-server metadata paths and prove
+- [x] Tests cover both flex and fast Codex app-server metadata paths and prove
       the classifier does not parse transcript prose.
-- [ ] Guides distinguish agent turn completion from accepted work completion.
+- [x] Guides distinguish agent turn completion from accepted work completion.
 
 ## Related
 
@@ -62,6 +62,17 @@ signals rather than transcript prose:
 - #57 — terminal outcome classes and process-failure budgets.
 - #59 — deterministic conveyor runner consumes the outcome.
 - #42 — Codex app-server recovery.
+
+## Resolution
+
+Implemented for Harnex 0.7.14. Autonomous Codex app-server turns launched from
+`--context` now require structured command/tool activity, Git delta, or a fresh
+accepted/no-change report before `task_complete`. Unproven completion emits a
+`task_failed` event with `outcome_class=completed_no_activity` before auto-stop,
+normalizes the terminal verdict to nonzero, and is preserved by watch/wait,
+terminal status, markers, and dispatch telemetry. The classifier uses only
+structured items, Git observations, and the configured sidecar path; final
+answer prose is never inspected.
 
 ## Non-Goals
 

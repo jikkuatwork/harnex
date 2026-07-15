@@ -203,8 +203,14 @@ For file-change hooks, use `--watch-file PATH`. The older
 `--watch PATH`/`--watch=PATH` form is still accepted for compatibility, while
 bare `--watch` means babysitter mode.
 
-For one-shot startup prompts, add `--auto-stop`. It requires `--context`
-and stops the session after the first task completion or PTY prompt return.
+For one-shot startup prompts, add `--auto-stop`. It requires `--context`.
+A Codex app-server turn launched from `--context` only counts as accepted
+autonomous work when structured command/tool activity, a Git delta, or a fresh
+accepted/no-change artifact report proves activity. An acknowledgment-only turn emits
+`outcome.class=completed_no_activity`, makes `watch --until done` return
+non-zero, and auto-stops with a non-zero verdict instead of reporting success.
+PTY adapters still stop on prompt return because they do not expose equivalent
+structured activity signals.
 
 ## Completion and waiting
 
@@ -269,21 +275,35 @@ harnex run pi --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
 ```
 
 Workers can also write a small machine-readable proof sidecar while keeping the
-canonical explanation in plain-text `koder/` files:
+canonical explanation in plain-text `koder/` files. Initialize the real schema
+instead of asking a model to reproduce it from prose:
 
 ```bash
-harnex run pi --id pi-i-52 \
-  --artifact-report .harnex/reports/pi-i-52.json \
-  --context 'Run validation, update koder/issues/52.md, and write JSON proof to $HARNEX_ARTIFACT_REPORT_PATH' \
+harnex artifact-report init .harnex/reports/pi-i-61.json
+harnex run pi --id pi-i-61 \
+  --artifact-report .harnex/reports/pi-i-61.json \
+  --require-artifact-report \
+  --context 'Run validation, update the canonical koder artifact, finalize $HARNEX_ARTIFACT_REPORT_PATH, and validate it with harnex artifact-report validate "$HARNEX_ARTIFACT_REPORT_PATH" --final' \
   --auto-stop
 ```
 
 The sidecar schema is `harnex.artifact_report.v1`; harnex exposes the path as
-`HARNEX_ARTIFACT_REPORT_PATH` / `HARNEX_VALIDATION_REPORT_PATH`, then records a
-compact `artifact_report`, `validation`, and `artifacts` summary in the dispatch
-row. A sidecar can also assert the bounded outcome (`accepted`, `rejected`,
-`no_change`, or `unknown`); git changes alone never imply semantic acceptance.
-Missing or malformed reports are warning telemetry, not wrapped-process crashes.
+`HARNEX_ARTIFACT_REPORT_PATH` / `HARNEX_VALIDATION_REPORT_PATH`, the schema as
+`HARNEX_ARTIFACT_REPORT_SCHEMA`, and strict mode as
+`HARNEX_ARTIFACT_REPORT_REQUIRED=1`. `harnex artifact-report validate PATH`
+checks field shapes; add `--final` to require `status=pass`, an
+`accepted`/`no_change` outcome with a summary, valid command exit codes, and
+`validation.final_reported=true`. Diagnostics contain bounded field paths and
+shape errors, not report payloads or transcripts.
+
+Without `--require-artifact-report`, report defects remain fail-soft warning
+telemetry. With it, a missing, malformed, unsupported, oversized,
+contract-incomplete, rejected, or unchanged stale report makes the work verdict
+non-zero. A fresh explicit `no_change` report can prove an intentional no-delta
+task without fake edits. Harnex records compact `artifact_report`, `validation`,
+and `artifacts` blocks plus `outcome.class` / `outcome.report_status`; Git
+changes alone never imply semantic acceptance, and JSON printed in final prose
+is never scraped as a sidecar.
 
 Queue runners can pass first-class attribution without hiding it in prose:
 
@@ -402,6 +422,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
+| `harnex artifact-report init\|validate PATH` | Create or validate bounded `harnex.artifact_report.v1` proof; use `validate --final` before strict completion |
 | `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |

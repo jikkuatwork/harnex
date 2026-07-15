@@ -103,7 +103,15 @@ class RunWatcherTest < Minitest::Test
       id = "watch-failed-#{$$}"
       marker = File.join(repo, "failed.json")
       write_terminal_registry(repo, id, port: 9)
-      write_terminal_event(repo, id, type: "task_failed", seq: 2, status: "failed", message: "stream error")
+      write_terminal_event(
+        repo,
+        id,
+        type: "task_failed",
+        seq: 2,
+        status: "completed_no_activity",
+        outcome_class: "completed_no_activity",
+        message: "turn completed without structured activity"
+      )
 
       out = StringIO.new
       err = StringIO.new
@@ -117,13 +125,15 @@ class RunWatcherTest < Minitest::Test
       assert_equal false, payload["done"]
       assert_equal "failed", payload["work_state"]
       assert_equal "task_failed", payload["event"]
-      assert_equal "stream error", payload["last_error"]
+      assert_equal "turn completed without structured activity", payload["last_error"]
+      assert_equal "completed_no_activity", payload["outcome_class"]
       assert_empty err.string
 
       marker_payload = JSON.parse(File.read(marker))
       assert_equal false, marker_payload["ok"]
       assert_equal "failed", marker_payload["outcome"]
       assert_equal true, marker_payload["task_failed"]
+      assert_equal "completed_no_activity", marker_payload["outcome_class"]
     ensure
       FileUtils.rm_f(Harnex.registry_path(repo, id)) if repo && id
     end

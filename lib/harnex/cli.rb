@@ -39,6 +39,8 @@ module Harnex
         Doctor.new(@argv.drop(1)).run
       when "orchestration"
         OrchestrationCommand.new(@argv.drop(1)).run
+      when "artifact-report"
+        ArtifactReportCommand.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -87,6 +89,8 @@ module Harnex
         Doctor.usage
       when "orchestration"
         OrchestrationCommand.usage
+      when "artifact-report"
+        ArtifactReportCommand.usage
       else
         usage
       end
@@ -108,6 +112,7 @@ module Harnex
           harnex agents-guide [topic]
           harnex doctor
           harnex orchestration sample|report [options]
+          harnex artifact-report init|validate PATH [options]
           harnex help [command]
 
         Commands:
@@ -128,6 +133,8 @@ module Harnex
           doctor  Run preflight checks and optional read-only session sweep
           orchestration
                   Emit external primary samples and report orchestration tax
+          artifact-report
+                  Initialize or validate harnex.artifact_report.v1 sidecars
           help    Show command help
 
         New to harnex? Start with: harnex guide
@@ -150,6 +157,8 @@ module Harnex
           harnex agents-guide dispatch
           harnex doctor
           harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
+          harnex artifact-report init .harnex/reports/cx-i-60.json
+          harnex artifact-report validate .harnex/reports/cx-i-60.json --final
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

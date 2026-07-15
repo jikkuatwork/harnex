@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-07-15 | 10:06 PM | IST
+
 ### Added
 
 - `harnex run` now accepts opt-in orchestration metadata flags
@@ -12,6 +14,31 @@
 - New `harnex orchestration sample` / `harnex orchestration report` commands
   ingest bounded external-primary samples and compute primary-versus-worker
   queue rollups without storing prompts, transcripts, tool payloads, or secrets.
+- New `harnex artifact-report init PATH` and `harnex artifact-report validate
+  PATH [--final]` commands provide a bounded v1 report skeleton and
+  machine-readable field diagnostics without echoing report payloads.
+- `harnex run --require-artifact-report` makes fresh accepted/no-change report
+  proof part of the work verdict and exposes strict mode to workers through
+  `HARNEX_ARTIFACT_REPORT_REQUIRED=1`.
+
+### Changed
+
+- Autonomous Codex app-server turns launched with `--context` now distinguish
+  provider turn completion from accepted work completion. Harnex requires
+  structured command/tool activity, a Git delta, or a fresh accepted/no-change
+  report before emitting `task_complete`; the classifier never parses final
+  prose and applies equally to flex and fast service tiers.
+- Dispatch outcomes now include additive `class` and `report_status` fields,
+  and watch/wait/status/marker payloads preserve typed proof failures.
+
+### Fixed
+
+- Acknowledgment-only Codex turns now emit `completed_no_activity` and return a
+  non-zero work/auto-stop verdict instead of being reported as successful work.
+- Strict report mode fails closed for missing, malformed, unsupported,
+  oversized, schema-incomplete, rejected, and unchanged stale sidecars. A valid
+  explicit `no_change` report remains an accepted proof path for intentional
+  no-delta work, while report-shaped JSON printed in final prose is ignored.
 
 ## [0.7.13] - 2026-07-15 | 12:24 PM | IST
 
