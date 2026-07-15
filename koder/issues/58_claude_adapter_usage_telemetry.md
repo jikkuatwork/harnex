@@ -1,11 +1,17 @@
 ---
 status: open
-priority: P1
+priority: P2
 issue_kind: slice
 created: 2026-07-15
 updated: 2026-07-15
 tags: claude,adapter,usage,cost,context,telemetry,pty
 ---
+
+> Priority note (2026-07-15): the operator's dispatch-model policy now keeps
+> Claude out of automatic dispatch (GPT-family only; Claude is
+> manual/interactive). This issue therefore covers explicitly-authorized
+> Claude dispatches and the adapter-generic completed-with-proof
+> classification fix; downgraded from P1 to P2.
 
 # Issue 58 — Claude adapter usage/cost/context capture and completion semantics
 

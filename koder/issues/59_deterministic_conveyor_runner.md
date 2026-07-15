@@ -58,7 +58,12 @@ history), where:
 The queue file should carry per row: phase sequence, adapter/model per phase,
 task/brief path, validation command(s), fix-cycle cap, fence/cap durations,
 and proof requirements — roughly what koder-pattern queue frontmatter already
-records, made machine-readable.
+records, made machine-readable. It also carries a queue-level
+`dispatch_models` policy (the adapter/model families allowed for automatic
+dispatch); the runner must never substitute outside that policy to keep a
+queue moving — when no in-policy adapter is healthy, it blocks and returns to
+the owner. Operator context: automatic dispatches are GPT-family by policy;
+Claude is manual/interactive only.
 
 ## Why Harnex
 
@@ -76,6 +81,9 @@ scope; this issue is that conductor.
       receipt validation and Git identity checks performed by the runner.
 - [ ] Breakers/budgets consume #57 outcome classes; breach halts with a
       machine-readable reason.
+- [ ] The runner honors the queue's `dispatch_models` policy: out-of-policy
+      substitution is impossible, and exhausting in-policy adapters blocks the
+      run with a clear verdict.
 - [ ] Unattended terminal step: checkpoint commit + configurable close hook +
       statistics emission without a live interactive session.
 - [ ] Coordinator-model dispatch happens only on declared exception paths, and

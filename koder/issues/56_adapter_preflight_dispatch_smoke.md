@@ -61,7 +61,9 @@ dispatch history like any other dispatch, flagged `phase: preflight`.
 - [ ] The preflight row lands in dispatch history and is excluded from
       throughput/cost rollups by default.
 - [ ] Docs recommend running preflight for the chosen adapter plus one declared
-      fallback adapter before any unattended queue run.
+      fallback adapter before any unattended queue run, noting that both must
+      be inside the caller's dispatch-model policy (out-of-policy adapters are
+      launch blockers, not fallbacks).
 
 ## Out of scope
 
