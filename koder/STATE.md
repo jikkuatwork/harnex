@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-07-15 | 03:53 PM | IST
+Updated: 2026-07-15 | 09:07 PM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in the linked
@@ -8,6 +8,10 @@ issue/plan files.
 
 ## Past
 
+- 2026-07-15 | 09:07 PM | IST: Holm Queue `086` filed #60 (ack-only
+  completion/auto-stop gate) and #61 (strict artifact-report acceptance/schema
+  tooling); #57 now carries the correlated-failure/budget evidence. Filing
+  only; no Harnex code changed.
 - 2026-07-15 | 12:39 PM | IST: #55 implemented and closed (unreleased).
   Harnex now has opt-in orchestration metadata on dispatch rows plus
   `harnex orchestration sample/report` for bounded external-primary samples and
@@ -40,6 +44,9 @@ issue/plan files.
 
 ## Present
 
+- #60/#61 are open from Holm Q086: Harnex can currently accept
+  acknowledgment-only task completion and treats required report defects as
+  warning-only; installed Harnex remains `0.7.13`.
 - `main` contains unreleased #55 orchestration-tax telemetry. Installed
   `harnex` on `PATH` remains `0.7.13` and does not include #55.
 - #42 (Codex app-server recovery) and #43 (throughput telemetry v2 integration)
@@ -53,13 +60,15 @@ issue/plan files.
 
 ## Future
 
-1. #56 preflight and #57 outcome classes are the highest-leverage small slices
+1. Implement #60 and #61, then fold their typed outcomes into #57 and exercise
+   them through #56 preflight before Holm resumes Q086.
+2. #56 preflight and #57 outcome classes are the highest-leverage small slices
    from the Queue `#002` post-mortem; #58 closes the largest per-adapter
    telemetry hole; #59 is a design track, plan first.
-2. Release #55 when ready so queue recovery runs can use
+3. Release #55 when ready so queue recovery runs can use
    `harnex orchestration sample/report`.
-3. #45 — implement Pi PTY/TUI support only behind stable extension markers.
-4. #42 / plan 30 Phases 3–5 — resume structured recovery and fallback work.
-5. #41 Slice C — document the public API in `docs/public_api.md`.
-6. #43 — connect plan 31's attempt-transition seam to real recovery/fallback
+4. #45 — implement Pi PTY/TUI support only behind stable extension markers.
+5. #42 / plan 30 Phases 3–5 — resume structured recovery and fallback work.
+6. #41 Slice C — document the public API in `docs/public_api.md`.
+7. #43 — connect plan 31's attempt-transition seam to real recovery/fallback
    producers, then add live retry/disconnect/fallback economics coverage.

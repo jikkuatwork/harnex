@@ -33,6 +33,25 @@ accumulated multiple two-attempt circuits across reconfigurations with no
 global cap — the run had no machine-checkable notion of "this queue has burned
 too many process failures; stop and return to the owner."
 
+## Additional source incident — Holm Queue 086
+
+Holm Queue `086` (2026-07-15) hit a manually declared six-failure budget even
+though no product test failure caused the stop:
+
+- two Codex app-server turns completed in 6-7s with zero commands, zero Git
+  delta, and acknowledgment-only final answers;
+- two review workers committed valid artifacts but wrote no sidecar, instead
+  printing report-shaped JSON in final prose;
+- one preflight and one implementation worker wrote syntactically valid but
+  contract-invalid reports;
+- the final implementation's targeted and package tests were green, but the
+  flat counter treated all six events as equivalent and stopped before review.
+
+This is three correlated failure classes, not six independent root causes.
+Outcome rollups must preserve both attempt count and failure family, and callers
+must be able to distinguish fatal no-work from reconstructable proof defects.
+See #60 and #61.
+
 ## Goal
 
 1. An additive `outcome.class` on every dispatch row, from a small closed
@@ -54,13 +73,19 @@ supplies the ledger and the arithmetic.
 
 - [ ] Every dispatch row carries exactly one `outcome.class` with a documented
       closed vocabulary and an `unknown` fallback.
-- [ ] Zero-token refusals are distinguishable from crashes, timeouts, and
-      completed-without-receipt.
+- [ ] Zero-token/no-activity completions are distinguishable from crashes,
+      timeouts, completed artifacts with a missing report, and schema-invalid
+      reports.
 - [ ] "Terminal state disconnected but typed report ingested" classifies as
       completed-with-proof, not as a reliability failure (see #47's
       generic-disconnection complaint).
 - [ ] One command aggregates outcome classes across a queue/run id and
       evaluates an optional caller-declared failure budget.
+- [ ] Rollups report both raw failed attempts and retry/failure families joined
+      by parent attempt/dispatch identity, so correlated retries do not look
+      like unrelated root causes.
+- [ ] Budget evaluation can name which outcome classes count as fatal; a caller
+      can separate no-work/boot failures from reconstructable proof warnings.
 - [ ] Reclassification is not required for historical rows; the contract is
       additive.
 - [ ] Tests cover each class plus the budget breach and non-breach paths.
