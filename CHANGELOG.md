@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-07-15 | 12:24 PM | IST
+
 ### Added
 
 - Dispatch summaries now include a stable additive `context` block with
