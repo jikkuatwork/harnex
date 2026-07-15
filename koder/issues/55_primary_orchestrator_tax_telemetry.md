@@ -1,9 +1,9 @@
 ---
-status: open
+status: closed
 priority: P1
 issue_kind: track
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-15
 tags: telemetry,orchestrator,queue,context,cost,rotation
 ---
 
@@ -129,23 +129,23 @@ routine control-plane work scales with child phase count.
 
 ## Acceptance criteria
 
-- [ ] A stable orchestration run id links multiple primary-session generations
+- [x] A stable orchestration run id links multiple primary-session generations
       and their child Harnex dispatches.
-- [ ] A Harnex-managed primary can be represented without synthetic duplicate
+- [x] A Harnex-managed primary can be represented without synthetic duplicate
       usage rows.
-- [ ] An explicit external-primary ingestion path exists and is opt-in.
-- [ ] A Pi integration can emit bounded context/usage samples without exposing
+- [x] An explicit external-primary ingestion path exists and is opt-in.
+- [x] A Pi integration can emit bounded context/usage samples without exposing
       message or tool content.
-- [ ] Rotation/compaction/recovery lifecycle events preserve generation
+- [x] Rotation/compaction/recovery lifecycle events preserve generation
       boundaries and reasons.
-- [ ] One documented query or CLI command computes primary-versus-worker usage,
+- [x] One documented query or CLI command computes primary-versus-worker usage,
       peak context, accepted outcomes, and per-accepted-entry orchestration
       ratios.
-- [ ] Missing and unsupported providers/harnesses remain distinguishable from
+- [x] Missing and unsupported providers/harnesses remain distinguishable from
       observed zero.
-- [ ] Tests cover one generation, multiple clean rotations, child retries/fixes,
+- [x] Tests cover one generation, multiple clean rotations, child retries/fixes,
       accepted-outcome deduplication, and absent primary telemetry.
-- [ ] Telemetry docs include privacy boundaries and explain that provider cost
+- [x] Telemetry docs include privacy boundaries and explain that provider cost
       is approximate where available.
 
 ## Out of scope
@@ -176,3 +176,27 @@ routine control-plane work scales with child phase count.
   double-count usage.
 - **First useful slice**: Pi-only external-primary samples plus an offline
   queue-run rollup, with unsupported status for every other harness.
+
+## Resolution - 2026-07-15
+
+Implemented the first production slice:
+
+- `harnex run` accepts opt-in orchestration metadata flags and emits a
+  top-level `orchestration` block when present, so child dispatches and
+  Harnex-managed primaries can join to one logical `run_id` and generation.
+- `harnex orchestration sample` appends bounded
+  `harnex.orchestrator_sample.v1` JSONL rows for external interactive
+  primaries. The sample schema stores ids, lifecycle event names, aggregate
+  usage/context counters, tool-call counts, compactions, and rotation reasons
+  only; no prompts, transcripts, tool arguments/results, secrets, or private
+  payloads.
+- `harnex orchestration report` computes `harnex.orchestration_tax.v1` rollups
+  from dispatch summaries plus optional external samples: primary usage/cost,
+  worker usage/cost, primary peak context by generation, tool calls,
+  compactions, accepted/rejected/blocked/unknown child outcomes deduplicated by
+  work id, primary usage/tool-calls per accepted entry, wall-time totals, and
+  explicit `missing` / `unsupported` coverage.
+
+The implementation does not install global hooks into Pi or any other client.
+A Pi extension or queue conductor can opt in by calling
+`harnex orchestration sample` with bounded counters.

@@ -303,6 +303,27 @@ operational counters (`stalls`, `force_resumes`, `disconnections`,
 `tool_calls`, `commands_executed`), output/event log paths, and rough volume
 measurements such as `lines_changed`, `output_lines`, `output_bytes`, and
 `event_records`.
+
+Long queue runners can also opt into logical primary-orchestrator rollups:
+
+```bash
+harnex run pi --orchestration-run-id queue-005 --orchestration-generation-id gen-1 \
+  --orchestration-role worker --project-id harnex --queue-id queue-005 \
+  --entry-id SP-4 --phase implement --intent queue-work ...
+
+harnex orchestration sample --out .harnex/orchestrator.jsonl \
+  --run-id queue-005 --generation-id primary-1 --session-id pi-primary-1 \
+  --context-tokens 64000 --context-window-tokens 200000 \
+  --usage-status observed --usage-total-tokens 129000 --tool-calls 31
+
+harnex orchestration report --dispatch .harnex/dispatch.jsonl \
+  --samples .harnex/orchestrator.jsonl --run-id queue-005 --json
+```
+
+External samples use the bounded `harnex.orchestrator_sample.v1` schema. They
+record ids, lifecycle/sample event names, aggregate usage/context counters,
+tool-call counts, compactions, and rotation reasons only; prompts, transcripts,
+tool arguments/results, secrets, and private payloads are out of scope.
 Harnex records the data only; consumers decide whether to fail closed. See
 [docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) for the field
 contract.

@@ -15,6 +15,8 @@ harnex run codex --meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{"
 harnex run codex --summary-out tmp/dispatch-summary.jsonl
 harnex run pi --artifact-report .harnex/reports/pi-i-52.json --context 'Write proof to $HARNEX_ARTIFACT_REPORT_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
+harnex run pi --orchestration-run-id queue-005 --orchestration-generation-id gen-1 --orchestration-role worker
+harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
 ```
 
 - `--meta JSON` must be a JSON object. The parsed object is echoed verbatim on
@@ -33,6 +35,12 @@ harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase i
   strings and override same-named `--meta` values. `--attempt-kind` is one of
   `initial`, `retry`, `fix`, `review`, or `superseding`; linkage fields keep
   independently-run follow-ups joinable without merging their raw usage.
+- `--orchestration-run-id`, `--orchestration-generation-id`,
+  `--orchestration-role`, `--orchestration-session-id`, and
+  `--orchestration-rotation-reason` opt a dispatch row into logical
+  primary-orchestrator rollups. `--orchestration-role` is `primary` or
+  `worker`; Harnex-managed primaries should use `primary` instead of emitting a
+  duplicate external sample for the same usage row.
 - `--require-attribution` fails before launch unless `project_id`, `phase`,
   `intent`, and at least one of `queue_id` / `entry_id` / `issue` / `plan` are
   present through first-class flags or `--meta`.
@@ -50,9 +58,11 @@ Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
 The consolidated record always has `meta`, `predicted`, `actual`, `agent`,
 `usage`, `context`, `attribution`, `outcome`, `attempt`, and `reliability`
-blocks. When queue attribution fields are provided, harnex also adds a top-level `queue`
-block. When `--artifact-report` / `--validation-report` is configured, harnex
-may also add `artifact_report`, `validation`, and `artifacts` top-level blocks.
+blocks. When queue attribution fields are provided, harnex also adds a
+top-level `queue` block. When orchestration fields are provided, harnex adds a
+top-level `orchestration` block. When `--artifact-report` /
+`--validation-report` is configured, harnex may also add `artifact_report`,
+`validation`, and `artifacts` top-level blocks.
 
 Harnex-owned `meta` fields are always populated when derivable: `id`,
 `tmux_session`, `description`, `started_at`, `ended_at`, `harness`,
@@ -225,6 +235,52 @@ The events JSONL adds `attempt_started` and `attempt_finished`. Adapters that
 report an internal retry additionally emit `attempt_retry_scheduled`; future
 recovery/fallback owners can emit `attempt_fallback_switched` without changing
 the row schema.
+
+## Orchestration tax rollups
+
+`harnex orchestration` joins one logical primary-orchestrator run across
+primary generations and child dispatches. It is opt-in and bounded: the sample
+path stores counters and lifecycle labels only.
+
+Harnex-managed primaries can be represented directly by their dispatch row:
+
+```bash
+harnex run pi --orchestration-run-id queue-005 \
+  --orchestration-generation-id primary-1 --orchestration-role primary ...
+```
+
+External interactive primaries can emit bounded samples through an integration
+or shell command:
+
+```bash
+harnex orchestration sample --out .harnex/orchestrator.jsonl \
+  --run-id queue-005 --generation-id primary-1 --project-id harnex \
+  --queue-id queue-005 --session-id pi-primary-1 \
+  --context-status observed --context-tokens 64000 \
+  --context-window-tokens 200000 --context-percent 32 \
+  --usage-status observed --usage-input-tokens 120000 \
+  --usage-output-tokens 9000 --usage-total-tokens 129000 \
+  --tool-calls 31 --compactions 1
+```
+
+The sample schema is `harnex.orchestrator_sample.v1`. Valid sample events are
+`sample`, `generation_started`, `generation_finished`, `rotation`, `recovery`,
+and `compaction`. Samples must never include prompts, transcripts, hidden
+reasoning, tool arguments/results, secrets, or private payloads.
+
+Reports join dispatch rows whose `orchestration.run_id` matches the requested
+run and optional external samples with the same `orchestration_run_id`:
+
+```bash
+harnex orchestration report --dispatch .harnex/dispatch.jsonl \
+  --samples .harnex/orchestrator.jsonl --run-id queue-005 --json
+```
+
+The report schema is `harnex.orchestration_tax.v1`. It includes primary usage
+and context coverage, per-generation peaks and rotation reasons, worker usage,
+accepted/rejected/blocked/unknown child outcomes deduplicated by work id,
+primary usage/tool calls per accepted entry, and explicit `missing` /
+`unsupported` statuses instead of treating absent telemetry as zero.
 
 ## Artifact and validation sidecars
 

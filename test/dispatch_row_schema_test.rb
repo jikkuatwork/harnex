@@ -177,6 +177,16 @@ class DispatchRowSchemaTest < Minitest::Test
     stream_interruptions
   ].freeze
 
+  ORCHESTRATION_KEYS = %w[
+    generation_id
+    project_id
+    queue_id
+    role
+    rotation_reason
+    run_id
+    session_id
+  ].freeze
+
   def test_dispatch_row_schema_includes_tier1_fields_and_stable_types
     Dir.mktmpdir("harnex-dispatch-schema") do |repo|
       init_git_repo(repo)
@@ -388,6 +398,42 @@ class DispatchRowSchemaTest < Minitest::Test
       assert record.key?("agent")
       assert record.key?("reliability")
       refute record.key?("queue")
+    end
+  end
+
+  def test_dispatch_row_includes_orchestration_block_when_opted_in
+    Dir.mktmpdir("harnex-dispatch-orchestration") do |repo|
+      summary_path = File.join(repo, "DISPATCH.jsonl")
+      session = Harnex::Session.new(
+        adapter: Harnex::Adapters::Generic.new(RbConfig.ruby),
+        command: [RbConfig.ruby, "-e", "exit 0"],
+        repo_root: repo,
+        host: "127.0.0.1",
+        id: "schema-orchestration",
+        meta: {
+          "project_id" => "harnex",
+          "queue_id" => "queue-055",
+          "orchestration_run_id" => "orch-run-1",
+          "orchestration_generation_id" => "gen-1",
+          "orchestration_role" => "primary",
+          "orchestration_rotation_reason" => "clean_rotation"
+        },
+        summary_out: summary_path
+      )
+      silence_session_stdout(session)
+
+      assert_equal 0, session.run(validate_binary: false)
+
+      record = JSON.parse(File.read(summary_path).lines.last)
+      orchestration = record.fetch("orchestration")
+      assert_equal ORCHESTRATION_KEYS, orchestration.keys.sort
+      assert_equal "orch-run-1", orchestration.fetch("run_id")
+      assert_equal "gen-1", orchestration.fetch("generation_id")
+      assert_equal "primary", orchestration.fetch("role")
+      assert_equal "harnex", orchestration.fetch("project_id")
+      assert_equal "queue-055", orchestration.fetch("queue_id")
+      assert_kind_of String, orchestration.fetch("session_id")
+      assert_equal "clean_rotation", orchestration.fetch("rotation_reason")
     end
   end
 

@@ -37,6 +37,8 @@ module Harnex
         AgentsGuide.new(@argv.drop(1)).run
       when "doctor"
         Doctor.new(@argv.drop(1)).run
+      when "orchestration"
+        OrchestrationCommand.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -83,6 +85,8 @@ module Harnex
         AgentsGuide.usage
       when "doctor"
         Doctor.usage
+      when "orchestration"
+        OrchestrationCommand.usage
       else
         usage
       end
@@ -103,6 +107,7 @@ module Harnex
           harnex pane --id ID [options]
           harnex agents-guide [topic]
           harnex doctor
+          harnex orchestration sample|report [options]
           harnex help [command]
 
         Commands:
@@ -121,6 +126,8 @@ module Harnex
           agents-guide
                   Show agent dispatch, chain, buddy, monitoring, and naming guides
           doctor  Run preflight checks and optional read-only session sweep
+          orchestration
+                  Emit external primary samples and report orchestration tax
           help    Show command help
 
         New to harnex? Start with: harnex guide
@@ -142,6 +149,7 @@ module Harnex
           harnex pane --id main --lines 40
           harnex agents-guide dispatch
           harnex doctor
+          harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

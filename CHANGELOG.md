@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- `harnex run` now accepts opt-in orchestration metadata flags
+  (`--orchestration-run-id`, `--orchestration-generation-id`,
+  `--orchestration-role`, `--orchestration-session-id`, and
+  `--orchestration-rotation-reason`) and emits a top-level `orchestration`
+  block when present.
+- New `harnex orchestration sample` / `harnex orchestration report` commands
+  ingest bounded external-primary samples and compute primary-versus-worker
+  queue rollups without storing prompts, transcripts, tool payloads, or secrets.
+
 ## [0.7.13] - 2026-07-15 | 12:24 PM | IST
 
 ### Added

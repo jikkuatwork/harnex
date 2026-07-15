@@ -31,6 +31,9 @@ module Harnex
     BUDGET_META_FIELDS = %w[read_budget_lines output_ceiling_lines].freeze
     QUEUE_FIELDS = %w[project_id queue_id entry_id entry_title issue plan phase tier intent].freeze
     AGENT_FIELDS = %w[cli provider model_requested model_effective reasoning_effort service_tier adapter_transport].freeze
+    ORCHESTRATION_FIELDS = %w[
+      run_id generation_id role project_id queue_id session_id rotation_reason
+    ].freeze
     RELIABILITY_FIELDS = %w[
       adapter_close real_disconnections stream_interruptions stalls force_resumes compactions recovered
     ].freeze
@@ -1262,6 +1265,8 @@ module Harnex
       }
       queue = build_summary_queue
       record[:queue] = queue if queue
+      orchestration = build_summary_orchestration
+      record[:orchestration] = orchestration if orchestration
       record.merge!(artifact_payload.reject { |key, _value| key == "outcome" }) if artifact_payload
       record
     end
@@ -1304,6 +1309,14 @@ module Harnex
       return nil if queue.values.all?(&:nil?)
 
       queue
+    end
+
+    def build_summary_orchestration
+      orchestration = Orchestration.normalize_metadata(meta_hash)
+      return nil unless orchestration
+
+      orchestration["session_id"] ||= summary_agent_session_id || session_id
+      orchestration
     end
 
     def build_summary_agent

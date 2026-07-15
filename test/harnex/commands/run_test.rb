@@ -65,6 +65,41 @@ class RunnerTest < Minitest::Test
     assert opts[:fast]
   end
 
+  def test_extract_wrapper_options_parses_orchestration_flags
+    argv = [
+      "codex",
+      "--orchestration-run-id", "orch-1",
+      "--orchestration-generation-id", "gen-1",
+      "--orchestration-role", "worker",
+      "--orchestration-session-id", "primary-session-1",
+      "--orchestration-rotation-reason", "clean_context_rotation"
+    ]
+    runner = Harnex::Runner.new(argv)
+    cli_name, forwarded = runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_telemetry_options!)
+    opts = runner.instance_variable_get(:@options)
+
+    assert_equal "codex", cli_name
+    assert_equal [], forwarded
+    assert_equal "orch-1", opts[:meta]["orchestration_run_id"]
+    assert_equal "gen-1", opts[:meta]["orchestration_generation_id"]
+    assert_equal "worker", opts[:meta]["orchestration_role"]
+    assert_equal "primary-session-1", opts[:meta]["orchestration_session_id"]
+    assert_equal "clean_context_rotation", opts[:meta]["orchestration_rotation_reason"]
+  end
+
+  def test_validate_orchestration_metadata_rejects_unknown_role
+    runner = Harnex::Runner.new(["codex", "--orchestration-role", "coordinator"])
+    runner.send(:extract_wrapper_options, ["codex", "--orchestration-role", "coordinator"])
+    runner.send(:apply_telemetry_options!)
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      runner.send(:validate_orchestration_metadata!)
+    end
+
+    assert_match(/--orchestration-role/, error.message)
+  end
+
   def test_codex_service_tier_defaults_to_flex
     runner = Harnex::Runner.new(["codex"])
     cli_name, child_args = runner.send(:extract_wrapper_options, ["codex"])
