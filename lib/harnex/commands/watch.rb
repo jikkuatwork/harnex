@@ -350,8 +350,9 @@ module Harnex
           -h, --help           Show this help
 
         `harnex watch` is the safe watcher for existing --tmux or detached
-        dispatches. It exits 0 for task_complete/done, non-zero for task_failed
-        or failed terminal summaries, and 124 for --max-wait timeouts.
+        dispatches. Exit codes follow the `harnex wait --until done` contract:
+        0 accepted work, 1 failed, 2 completed-but-proof-rejected, 3 no such
+        session, 124 for --max-wait timeouts.
 
         For launch-and-babysit stall recovery, use `harnex run --watch`.
       TEXT

@@ -1,5 +1,6 @@
 require "json"
 require "optparse"
+require "set"
 require "time"
 
 module Harnex
@@ -74,11 +75,58 @@ module Harnex
     end
 
     def filtered_records
-      records = load_records
+      records = derived_records
       records = records.select { |record| record["id"].to_s.include?(@options[:id]) } if @options[:id]
       records = records.select { |record| started_after?(record, @options[:since]) } if @options[:since]
       records = records.last(@options[:limit]) unless @options[:all]
       records
+    end
+
+    # One row per dispatch: start rows completed by an end row are dropped
+    # (the end row carries the outcome); uncompleted start rows surface as
+    # running (pid alive on this host) or interrupted (no end row, pid gone).
+    def derived_records
+      raw = load_records
+      ended = Set.new
+      raw.each do |record|
+        next unless DispatchHistory.end_record?(record)
+
+        session_id = record["session_id"].to_s
+        ended << "sid:#{session_id}" unless session_id.empty?
+        ended << "leg:#{record['id']}|#{record['started_at']}"
+      end
+
+      raw.filter_map do |record|
+        next record unless DispatchHistory.start_record?(record)
+        next nil if start_completed?(record, ended)
+
+        derive_live_record(record)
+      end
+    end
+
+    def start_completed?(record, ended)
+      session_id = record["session_id"].to_s
+      return true if !session_id.empty? && ended.include?("sid:#{session_id}")
+
+      ended.include?("leg:#{record['id']}|#{record['started_at']}")
+    end
+
+    def derive_live_record(record)
+      alive = DispatchHistory.same_host?(record) &&
+              record["pid"] && Harnex.alive_pid?(record["pid"])
+      record.merge(
+        "status" => alive ? "running" : "interrupted",
+        "terminal_event" => nil,
+        "duration_s" => alive ? seconds_since(record["started_at"]) : nil,
+        "ended_at" => nil
+      )
+    end
+
+    def seconds_since(timestamp)
+      seconds = (Time.now - Time.iso8601(timestamp.to_s)).to_i
+      seconds.negative? ? 0 : seconds
+    rescue ArgumentError
+      nil
     end
 
     def load_records
@@ -129,7 +177,9 @@ module Harnex
     end
 
     def format_duration(value)
-      seconds = Integer(value || 0)
+      return "-" if value.nil?
+
+      seconds = Integer(value)
       hours = seconds / 3600
       minutes = (seconds % 3600) / 60
       rest = seconds % 60

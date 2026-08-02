@@ -189,6 +189,23 @@ class DispatchRowSchemaTest < Minitest::Test
     session_id
   ].freeze
 
+  DISPATCH_START_KEYS = %w[
+    cli
+    description
+    events_log_path
+    host
+    id
+    meta
+    pid
+    record_type
+    repo_root
+    schema_version
+    session_id
+    started_at
+    summary_out_path
+    tier
+  ].freeze
+
   def test_dispatch_row_schema_includes_tier1_fields_and_stable_types
     Dir.mktmpdir("harnex-dispatch-schema") do |repo|
       init_git_repo(repo)
@@ -462,6 +479,52 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal "normal", record.dig("reliability", "adapter_close")
       assert_equal 0, record.dig("reliability", "real_disconnections")
       assert_equal 0, record.dig("reliability", "stream_interruptions")
+    end
+  end
+
+  def test_dispatch_stream_writes_paired_start_and_end_rows
+    Dir.mktmpdir("harnex-dispatch-start-row") do |repo|
+      init_git_repo(repo)
+
+      id = "schema-start-row"
+      session = Harnex::Session.new(
+        adapter: Harnex::Adapters::Generic.new(RbConfig.ruby),
+        command: [RbConfig.ruby, "-e", "exit 0"],
+        repo_root: repo,
+        host: "127.0.0.1",
+        id: id,
+        description: "start row",
+        meta: { "tier" => "1" }
+      )
+      silence_session_stdout(session)
+
+      assert_equal 0, session.run(validate_binary: false)
+
+      rows = File.readlines(File.join(repo, ".harnex", "dispatch.jsonl"), chomp: true)
+                 .map { |line| JSON.parse(line) }
+      start_row = rows.find { |row| row["record_type"] == "dispatch_start" }
+      end_row = rows.find { |row| row["record_type"] == "dispatch_end" }
+
+      assert start_row, "expected a dispatch_start row at registration"
+      assert end_row, "expected a dispatch_end row at teardown"
+      assert rows.index(start_row) < rows.index(end_row), "start row must precede end row"
+
+      assert_equal DISPATCH_START_KEYS, start_row.keys.sort
+      assert_equal 1, start_row.fetch("schema_version")
+      assert_equal id, start_row.fetch("id")
+      assert_kind_of Integer, start_row.fetch("pid")
+      assert_match(/\A\h{16}\z/, start_row.fetch("session_id"))
+      assert_kind_of String, start_row.fetch("host")
+      assert_equal repo, start_row.fetch("repo_root")
+      assert_equal "start row", start_row.fetch("description")
+      assert_equal "1", start_row.fetch("tier")
+      assert_equal({ "tier" => "1" }, start_row.fetch("meta"))
+      assert_kind_of String, start_row.fetch("started_at")
+      assert_equal Harnex.events_log_path(repo, id), start_row.fetch("events_log_path")
+
+      assert_equal start_row.fetch("session_id"), end_row.fetch("session_id")
+      assert_equal start_row.fetch("started_at"), end_row.fetch("started_at")
+      assert Harnex::DispatchHistory.end_matches_start?(end_row, start_row)
     end
   end
 

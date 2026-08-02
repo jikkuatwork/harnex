@@ -94,7 +94,7 @@ class WaiterTest < Minitest::Test
       }) + "\n")
 
       waiter = Harnex::Waiter.new(["--repo", repo, "--id", "failed-summary", "--until", "done"])
-      out, = capture_io { assert_equal 7, waiter.run }
+      out, = capture_io { assert_equal 1, waiter.run }
       payload = JSON.parse(out)
       refute payload["ok"]
       assert_equal false, payload["done"]
@@ -102,6 +102,8 @@ class WaiterTest < Minitest::Test
       assert_equal "failed", payload["state"]
       assert_equal "exited", payload["process_state"]
       assert_equal true, payload["terminal"]
+      assert_equal "failed", payload["wait_result"]
+      assert_equal 7, payload["exit_code"]
     end
   end
 
@@ -267,6 +269,157 @@ class WaiterTest < Minitest::Test
     server&.close
     server_thread&.join(1)
     FileUtils.rm_f(registry_path) if registry_path
+  end
+
+  # --- wait --until done exit-code contract (issue #62) ---
+
+  def test_wait_until_done_returns_3_when_no_signal_exists_at_all
+    Dir.mktmpdir("harnex-wait-no-session") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", "never-existed", "--until", "done"])
+      out, err = capture_io { assert_equal 3, waiter.run }
+      assert_match(/no session found/, err)
+
+      payload = JSON.parse(out)
+      refute payload["ok"]
+      assert_equal "no_such_session", payload["status"]
+      assert_equal "no_such_session", payload["wait_result"]
+    end
+  end
+
+  def test_wait_until_done_returns_2_for_rejected_proof_exit_status
+    Dir.mktmpdir("harnex-wait-rejected") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "rejected-proof-worker"
+      exit_path = Harnex.exit_status_path(repo, id)
+      File.write(exit_path, JSON.generate(
+        ok: false, id: id, exit_code: 3, state: "failed",
+        task_complete: false, task_failed: true,
+        outcome_class: "report_rejected", artifact_report_status: "rejected",
+        exited_at: Time.now.iso8601
+      ))
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done"])
+      out, = capture_io { assert_equal 2, waiter.run }
+
+      payload = JSON.parse(out)
+      refute payload["ok"]
+      assert_equal "rejected_proof", payload["wait_result"]
+      assert_equal "report_rejected", payload["outcome_class"]
+    ensure
+      FileUtils.rm_f(exit_path) if exit_path
+    end
+  end
+
+  def test_wait_until_done_blocks_while_pid_is_alive_despite_stale_exit_file
+    Dir.mktmpdir("harnex-wait-stale-exit") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "stale-exit-worker"
+      exit_path = Harnex.exit_status_path(repo, id)
+      registry_path = Harnex.registry_path(repo, id)
+      child_pid = spawn("sleep", "30")
+
+      # Leftover exit file from an earlier dispatch that reused the id.
+      File.write(exit_path, JSON.generate(
+        ok: true, id: id, exit_code: 0, state: "completed",
+        session_id: "previous-run", exited_at: (Time.now - 3600).iso8601
+      ))
+      Harnex.write_registry(registry_path, {
+        "id" => id,
+        "pid" => child_pid,
+        "session_id" => "current-run",
+        "host" => "127.0.0.1",
+        "port" => 19_996,
+        "started_at" => Time.now.iso8601,
+        "repo_root" => repo
+      })
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--timeout", "1"])
+      out, = capture_io { assert_equal 124, waiter.run }
+
+      payload = JSON.parse(out)
+      refute payload["ok"]
+      assert_equal "timeout", payload["status"]
+      assert_equal "timeout", payload["wait_result"]
+      assert_equal "running", payload["work_state"]
+    ensure
+      begin
+        Process.kill("KILL", child_pid) if child_pid
+        Process.waitpid(child_pid, Process::WNOHANG)
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+      FileUtils.rm_f(exit_path) if exit_path
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_wait_until_done_ignores_stale_events_from_previous_run_of_same_id
+    Dir.mktmpdir("harnex-wait-stale-events") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "stale-events-worker"
+      events_path = Harnex.events_log_path(repo, id)
+      registry_path = Harnex.registry_path(repo, id)
+      child_pid = spawn("sleep", "30")
+
+      # task_complete written by an earlier dispatch that reused the id.
+      stale_ts = (Time.now - 3600).utc.iso8601
+      File.write(events_path, JSON.generate(
+        schema_version: 1, seq: 9, ts: stale_ts, id: id, type: "task_complete"
+      ) + "\n")
+      Harnex.write_registry(registry_path, {
+        "id" => id,
+        "pid" => child_pid,
+        "host" => "127.0.0.1",
+        "port" => 19_995,
+        "started_at" => Time.now.iso8601,
+        "repo_root" => repo
+      })
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--timeout", "1"])
+      out, = capture_io { assert_equal 124, waiter.run }
+      assert_equal "timeout", JSON.parse(out)["wait_result"]
+    ensure
+      begin
+        Process.kill("KILL", child_pid) if child_pid
+        Process.waitpid(child_pid, Process::WNOHANG)
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+      FileUtils.rm_f(events_path) if events_path
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_wait_until_done_blocks_via_start_record_when_registry_is_missing
+    Dir.mktmpdir("harnex-wait-start-record") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "start-record-worker"
+      child_pid = spawn("sleep", "30")
+      Harnex::DispatchHistory.append(
+        Harnex::DispatchHistory.path_for(repo),
+        schema_version: 1, record_type: "dispatch_start", id: id,
+        session_id: "sess-start", pid: child_pid, host: Harnex.host_info[:host],
+        cli: "ruby", description: nil, started_at: Time.now.utc.iso8601,
+        repo_root: repo, tier: nil, meta: {}, summary_out_path: nil,
+        events_log_path: Harnex.events_log_path(repo, id)
+      )
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--timeout", "1"])
+      out, = capture_io { assert_equal 124, waiter.run }
+
+      payload = JSON.parse(out)
+      assert_equal "timeout", payload["wait_result"]
+      assert_equal "running", payload["work_state"]
+    ensure
+      begin
+        Process.kill("KILL", child_pid) if child_pid
+        Process.waitpid(child_pid, Process::WNOHANG)
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+    end
   end
 
   # --- wait-until-exit blocks until DISPATCH row + exit-status file land ---

@@ -33,8 +33,13 @@ module Harnex
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta --summary-out
       --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
-      --require-artifact-report --require-attribution --auto-stop --fast --legacy-pty --help
+      --require-artifact-report --require-attribution --auto-stop --fast --legacy-pty
+      --allow-live-parent --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
+
+    # Attempt kinds that redo the parent's work; dispatching one while the
+    # parent is still running duplicates work in the same checkout.
+    LIVE_PARENT_GUARDED_KINDS = %w[retry fix superseding].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
       --max-resumes --preset --context --meta --summary-out --artifact-report
@@ -86,7 +91,13 @@ module Harnex
           --parent-attempt-id ID
                              Parent attempt id for retry/fix/review joins
           --attempt-kind KIND
-                             initial, retry, fix, review, or superseding (default: initial)
+                             initial, retry, fix, review, or superseding (default: initial).
+                             retry requires --parent-dispatch-id so the
+                             duplicate-dispatch guard can verify the parent
+          --allow-live-parent
+                             Dispatch even though --parent-dispatch-id names a
+                             session that is still running (intentional
+                             parallelism, e.g. isolated worktrees)
           --orchestration-run-id ID
                              Logical primary-orchestrator run id for queue rollups
           --orchestration-generation-id ID
@@ -164,6 +175,7 @@ module Harnex
         cwd: nil,
         root: nil,
         auto_stop: false,
+        allow_live_parent: false,
         detach: false,
         tmux: false,
         tmux_name: nil,
@@ -195,6 +207,7 @@ module Harnex
       @options[:artifact_report] = resolve_artifact_report(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
+      validate_live_parent_guard!(repo_root)
       effective_child_args = apply_context(apply_codex_service_tier(cli_name, child_args))
       adapter = Harnex.build_adapter(cli_name, effective_child_args, legacy_pty: @options[:legacy_pty])
       @options[:detach] = true if @options[:tmux]
@@ -258,6 +271,7 @@ module Harnex
         tmux_cmd += [flag, value] if flag && value
       end
       tmux_cmd << "--require-attribution" if @options[:require_attribution]
+      tmux_cmd << "--allow-live-parent" if @options[:allow_live_parent]
       tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--artifact-report", @options[:artifact_report]] if @options[:artifact_report]
       tmux_cmd << "--require-artifact-report" if @options[:require_artifact_report]
@@ -355,6 +369,33 @@ module Harnex
       raise "harnex run: session #{@options[:id].inspect} is already active " \
             "(pid #{existing['pid']}, port #{existing['port']}). " \
             "Use a different --id or stop the existing session first."
+    end
+
+    # Duplicate-dispatch guard (issue #62): a retry/fix/superseding attempt
+    # whose parent dispatch is still running would duplicate work in the same
+    # checkout. Explicit --parent-dispatch-id only — the implicit HARNEX_ID
+    # lineage of a live spawner must not trip this.
+    def validate_live_parent_guard!(repo_root)
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      kind = metadata["attempt_kind"].to_s
+      parent_id = metadata["parent_dispatch_id"].to_s.strip
+
+      if kind == "retry" && parent_id.empty?
+        raise "harnex run: --attempt-kind retry requires --parent-dispatch-id " \
+              "so the duplicate-dispatch guard can verify the parent is not still running."
+      end
+
+      return if @options[:allow_live_parent]
+      return if parent_id.empty?
+      return unless LIVE_PARENT_GUARDED_KINDS.include?(kind)
+
+      live = Harnex.active_sessions(repo_root, id: parent_id).first
+      return unless live
+
+      raise "harnex run: refusing #{kind} dispatch — parent dispatch #{parent_id.inspect} " \
+            "is still running (pid #{live['pid']}, started #{live['started_at']}). " \
+            "Wait for it (harnex wait --id #{parent_id} --until done), stop it, " \
+            "or pass --allow-live-parent for intentional parallelism."
     end
 
     def build_session(adapter, repo_root)
@@ -541,6 +582,8 @@ module Harnex
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
         when "--auto-stop"
           @options[:auto_stop] = true
+        when "--allow-live-parent"
+          @options[:allow_live_parent] = true
         when "--require-attribution"
           @options[:require_attribution] = true
         when "--fast"
@@ -646,7 +689,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty", "--allow-live-parent"
           nil
         when /\A--tmux=/
           nil

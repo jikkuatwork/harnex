@@ -62,12 +62,107 @@ module Harnex
       end
     end
 
+    def start_record?(record)
+      record.is_a?(Hash) && record["record_type"] == "dispatch_start"
+    end
+
+    def end_record?(record)
+      return false unless record.is_a?(Hash)
+      return true if record["record_type"] == "dispatch_end"
+
+      # Legacy end rows predate record_type.
+      record["schema_version"] == 1 && record.key?("status") && !record.key?("record_type")
+    end
+
+    def end_matches_start?(end_record, start_record)
+      end_session = end_record["session_id"].to_s
+      start_session = start_record["session_id"].to_s
+      return end_session == start_session unless end_session.empty? || start_session.empty?
+
+      end_record["id"].to_s == start_record["id"].to_s &&
+        end_record["started_at"].to_s == start_record["started_at"].to_s
+    end
+
+    # Latest start row for `id` and any end row that completes it.
+    def latest_rows(path, id)
+      latest_start = nil
+      matching_end = nil
+
+      return { start: nil, end: nil } unless File.file?(path)
+
+      File.foreach(path) do |line|
+        record = JSON.parse(line)
+        next unless record.is_a?(Hash)
+        next unless record["id"].to_s == id
+
+        if start_record?(record)
+          latest_start = record
+          matching_end = nil
+        elsif end_record?(record)
+          matching_end = record if latest_start && end_matches_start?(record, latest_start)
+        end
+      rescue JSON::ParserError
+        next
+      end
+
+      { start: latest_start, end: matching_end }
+    end
+
+    # A dispatch_start row with no completing end row whose pid is alive on
+    # this host — evidence of a running session even when the live registry
+    # is not visible from the caller's context.
+    def live_start_record(repo_root:, id:)
+      normalized_id = Harnex.normalize_id(id)
+      rows = latest_rows(path_for(repo_root), normalized_id)
+      start = rows[:start]
+      return nil unless start
+      return nil if rows[:end]
+      return nil unless same_host?(start)
+
+      pid = start["pid"]
+      return nil unless pid && Harnex.alive_pid?(pid)
+
+      start
+    rescue StandardError
+      nil
+    end
+
+    def same_host?(record)
+      host = record["host"].to_s
+      return true if host.empty?
+
+      host == Harnex.host_info[:host].to_s
+    end
+
+    # Appended at registration so a running dispatch always has a durable
+    # trace; the dispatch_end row written in finalize_session! completes it.
+    def build_start_record(session)
+      {
+        schema_version: 1,
+        record_type: "dispatch_start",
+        id: session.id,
+        session_id: session.session_id,
+        pid: session.pid,
+        host: Harnex.host_info[:host],
+        cli: session.adapter.key,
+        description: session.description,
+        started_at: session.started_at.utc.iso8601,
+        repo_root: session.repo_root,
+        tier: session.__send__(:meta_hash)["tier"],
+        meta: session.__send__(:meta_hash),
+        summary_out_path: session.summary_out,
+        events_log_path: session.events_log_path
+      }
+    end
+
     def build_record(session)
       ended_at = session.ended_at || Time.now
       status, terminal_event = classify(session)
       {
         schema_version: 1,
+        record_type: "dispatch_end",
         id: session.id,
+        session_id: session.session_id,
         description: session.description,
         cli: session.adapter.key,
         started_at: session.started_at.utc.iso8601,

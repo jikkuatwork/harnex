@@ -117,7 +117,8 @@ class RunWatcherTest < Minitest::Test
       err = StringIO.new
       watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, fail_marker: marker, out: out, err: err)
       Net::HTTP.stub(:start, ->(*) { flunk("terminal watch should not poll /status after task_failed") }) do
-        assert_equal 1, watcher.run
+        # completed_no_activity is a rejected-proof outcome: wait contract code 2.
+        assert_equal 2, watcher.run
       end
 
       payload = JSON.parse(out.string)
@@ -163,7 +164,8 @@ class RunWatcherTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
       watcher = Harnex::TerminalWatcher.new(id: id, repo_path: repo, out: out, err: err)
-      assert_equal 7, watcher.run
+      # Wait contract: failed work returns 1; the child's exit code stays in the payload.
+      assert_equal 1, watcher.run
       assert_empty err.string
       payload = JSON.parse(out.string)
       assert_equal false, payload["ok"]

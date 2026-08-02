@@ -78,6 +78,7 @@ module Harnex
       File.foreach(path) do |line|
         record = JSON.parse(line)
         next unless record.is_a?(Hash)
+        next if DispatchHistory.start_record?(record)
 
         if summary_record?(record) && record.dig("meta", "id").to_s == id
           summary_record = record

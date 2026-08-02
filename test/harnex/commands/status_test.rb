@@ -162,6 +162,52 @@ class StatusCommandTest < Minitest::Test
     dir
   end
 
+  def test_status_labels_unreachable_live_api_as_degraded_registry_data
+    write_registry("degraded")
+
+    status = Harnex::Status.new(["--json", "--id", "degraded"])
+    out, = capture_io { assert_equal 0, status.run }
+    row = JSON.parse(out).first
+
+    assert_equal "running", row["state"]
+    assert_equal "registry", row["source"]
+    assert_equal true, row["degraded"]
+    assert_equal "unreachable", row["live_status"]
+  end
+
+  def test_status_id_reports_running_from_unpaired_start_record
+    Dir.mktmpdir("harnex-status-start-record") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      child_pid = spawn("sleep", "30")
+      Harnex::DispatchHistory.append(
+        Harnex::DispatchHistory.path_for(repo),
+        schema_version: 1, record_type: "dispatch_start", id: "cx-t-96",
+        session_id: "sess-96", pid: child_pid, host: Harnex.host_info[:host],
+        cli: "codex", description: "mid-run worker", started_at: Time.now.utc.iso8601,
+        repo_root: repo, tier: nil, meta: {}, summary_out_path: nil,
+        events_log_path: Harnex.events_log_path(repo, "cx-t-96")
+      )
+
+      status = Harnex::Status.new(["--json", "--id", "cx-t-96", "--repo", repo])
+      out, = capture_io { assert_equal 0, status.run }
+      row = JSON.parse(out).first
+
+      assert_equal "running", row["state"]
+      assert_equal "running", row["work_state"]
+      assert_equal false, row["done"]
+      assert_equal false, row["terminal"]
+      assert_equal "dispatch_start", row["source"]
+      assert_equal true, row["degraded"]
+    ensure
+      begin
+        Process.kill("KILL", child_pid) if child_pid
+        Process.waitpid(child_pid, Process::WNOHANG)
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+    end
+  end
+
   def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil, last_completed_at: nil)
     path = Harnex.registry_path(@repo_root, id)
     payload = {

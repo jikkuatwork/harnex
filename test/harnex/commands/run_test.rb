@@ -471,6 +471,117 @@ class RunnerTest < Minitest::Test
     runner.send(:validate_required_artifact_report!)
   end
 
+  # --- duplicate-dispatch guard (issue #62) ---
+
+  def guard_runner(argv)
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_telemetry_options!)
+    runner
+  end
+
+  def write_live_registry(repo, id, pid: Process.pid)
+    path = Harnex.registry_path(repo, id)
+    Harnex.write_registry(path, {
+      "id" => id,
+      "pid" => pid,
+      "host" => "127.0.0.1",
+      "port" => 19_997,
+      "started_at" => Time.now.iso8601,
+      "repo_root" => repo
+    })
+    path
+  end
+
+  def test_retry_attempt_kind_requires_parent_dispatch_id
+    runner = guard_runner(["codex", "--attempt-kind", "retry"])
+
+    error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, Dir.pwd) }
+    assert_match(/--attempt-kind retry requires --parent-dispatch-id/, error.message)
+  end
+
+  def test_retry_dispatch_refused_while_parent_is_live
+    Dir.mktmpdir("harnex-guard-live") do |repo|
+      registry_path = write_live_registry(repo, "cx-t-96")
+      runner = guard_runner(["codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-96"])
+
+      error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, repo) }
+      assert_match(/refusing retry dispatch/, error.message)
+      assert_match(/cx-t-96/, error.message)
+      assert_match(/--allow-live-parent/, error.message)
+    ensure
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_fix_and_superseding_dispatches_refused_while_parent_is_live
+    Dir.mktmpdir("harnex-guard-kinds") do |repo|
+      registry_path = write_live_registry(repo, "cx-i-96")
+
+      %w[fix superseding].each do |kind|
+        runner = guard_runner(["codex", "--attempt-kind", kind, "--parent-dispatch-id", "cx-i-96"])
+        error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, repo) }
+        assert_match(/refusing #{kind} dispatch/, error.message)
+      end
+    ensure
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_review_dispatch_allowed_while_parent_is_live
+    Dir.mktmpdir("harnex-guard-review") do |repo|
+      registry_path = write_live_registry(repo, "cx-i-97")
+      runner = guard_runner(["codex", "--attempt-kind", "review", "--parent-dispatch-id", "cx-i-97"])
+
+      runner.send(:validate_live_parent_guard!, repo)
+    ensure
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_retry_dispatch_allowed_when_parent_is_not_running
+    Dir.mktmpdir("harnex-guard-dead") do |repo|
+      runner = guard_runner(["codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-98"])
+
+      runner.send(:validate_live_parent_guard!, repo)
+    end
+  end
+
+  def test_allow_live_parent_overrides_guard
+    Dir.mktmpdir("harnex-guard-override") do |repo|
+      registry_path = write_live_registry(repo, "cx-t-99")
+      runner = guard_runner([
+        "codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-99", "--allow-live-parent"
+      ])
+
+      runner.send(:validate_live_parent_guard!, repo)
+    ensure
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_run_refuses_retry_with_live_parent_end_to_end
+    Dir.mktmpdir("harnex-guard-e2e") do |repo|
+      registry_path = write_live_registry(repo, "cx-t-100")
+
+      Dir.chdir(repo) do
+        runner = Harnex::Runner.new([
+          RbConfig.ruby, "--id", "cx-t-100-r1",
+          "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-100",
+          "--", "-e", "exit 0"
+        ])
+        error = assert_raises(RuntimeError) { runner.run }
+        assert_match(/refusing retry dispatch/, error.message)
+      end
+    ensure
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
+  def test_usage_documents_allow_live_parent
+    assert_match(/--allow-live-parent/, Harnex::Runner.usage)
+  end
+
   def test_resolve_summary_out_defaults_to_dot_harnex_when_koder_dir_exists
     Dir.mktmpdir("harnex-summary-repo") do |repo|
       FileUtils.mkdir_p(File.join(repo, "koder"))

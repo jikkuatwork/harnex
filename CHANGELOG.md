@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Added
+
+- Dispatch-start records (#62): every dispatch appends a durable
+  `dispatch_start` row to the repo dispatch stream at registration (id,
+  session_id, pid, host, started_at, meta, schema_version); the
+  `dispatch_end` row written at teardown completes it. End rows now carry
+  `record_type` and `session_id` so readers can pair them.
+- `harnex history` now shows uncompleted dispatches as `running` (pid alive
+  on this host) or `interrupted` (pid gone, no end row) instead of hiding
+  them until teardown.
+- Duplicate-dispatch guard (#62): `harnex run --attempt-kind retry` requires
+  `--parent-dispatch-id`, and retry/fix/superseding dispatches naming a
+  still-running parent in the same repo are refused with a clear error.
+  `--allow-live-parent` overrides for intentional parallelism; `review` is
+  exempt.
+
+### Changed
+
+- `harnex wait --until done` now has a documented exit-code contract
+  (guides/04_monitoring.md): `0` accepted work, `1` failed, `2` completed but
+  proof rejected, `3` no such session, `124` timeout. The wrapped process's
+  exit code is reported as payload data instead of being passed through.
+  Payloads carry a `wait_result` field.
+- `harnex wait --until done` re-checks liveness every poll (registry, then
+  uncompleted start row with alive pid) and blocks while the session's pid
+  is alive. Stale exit-status files and events from an earlier dispatch that
+  reused the same id are ignored while a live session is in view.
+- `harnex status` no longer silently reports stale registry data as live:
+  rows are labelled `source: live|registry|dispatch_start` with
+  `degraded: true` when the live status API was unreachable. With `--id`, a
+  running session whose registry row is missing is still reported running
+  from its uncompleted start row.
+- One canonical repo resolution for all dispatch-stream writers and readers:
+  history rows now key off the session's `repo_root` (matching the summary
+  path) instead of the launch cwd, and `repo_key` canonicalizes symlinked
+  paths via realpath so registries written from a symlinked cwd stay visible
+  to checkers resolving the physical path.
+
 ## [0.7.14] - 2026-07-15 | 10:06 PM | IST
 
 ### Added

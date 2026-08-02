@@ -6,8 +6,9 @@ require_relative "../test_helper"
 class DispatchHistoryTest < Minitest::Test
   FakeAdapter = Struct.new(:key, keyword_init: true)
   FakeSession = Struct.new(
-    :id, :description, :adapter, :started_at, :ended_at, :exit_code, :term_signal,
-    :summary_out, :events_log_path, :git_start, :git_end, :task_complete, :task_failed,
+    :id, :session_id, :pid, :repo_root, :description, :adapter, :started_at, :ended_at,
+    :exit_code, :term_signal, :summary_out, :events_log_path, :git_start, :git_end,
+    :task_complete, :task_failed,
     keyword_init: true
   ) do
     def task_complete?
@@ -38,7 +39,9 @@ class DispatchHistoryTest < Minitest::Test
 
     {
       "schema_version" => 1,
+      "record_type" => "dispatch_end",
       "id" => "cx-history",
+      "session_id" => "sess-1",
       "description" => "history test",
       "cli" => "codex",
       "status" => "completed",
@@ -50,6 +53,84 @@ class DispatchHistoryTest < Minitest::Test
       "events_log_path" => "/tmp/events.log",
       "tmux_state" => "torn-down"
     }.each { |key, value| assert_equal value, record.fetch(key) }
+  end
+
+  def test_start_record_schema
+    session = fake_session
+    record = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_start_record(session)))
+
+    assert_equal %w[
+      cli description events_log_path host id meta pid record_type
+      repo_root schema_version session_id started_at summary_out_path tier
+    ], record.keys.sort
+
+    assert_equal 1, record.fetch("schema_version")
+    assert_equal "dispatch_start", record.fetch("record_type")
+    assert_equal "cx-history", record.fetch("id")
+    assert_equal "sess-1", record.fetch("session_id")
+    assert_equal 4242, record.fetch("pid")
+    assert_equal "codex", record.fetch("cli")
+    assert_equal "/tmp/repo", record.fetch("repo_root")
+    assert_equal "2026-05-08T06:18:45Z", record.fetch("started_at")
+    assert_equal "B", record.fetch("tier")
+    assert_equal({ "tier" => "B", "issue" => "21" }, record.fetch("meta"))
+  end
+
+  def test_end_record_completes_start_record
+    start = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_start_record(fake_session)))
+    finish = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_record(fake_session)))
+
+    assert Harnex::DispatchHistory.start_record?(start)
+    refute Harnex::DispatchHistory.end_record?(start)
+    assert Harnex::DispatchHistory.end_record?(finish)
+    assert Harnex::DispatchHistory.end_matches_start?(finish, start)
+  end
+
+  def test_legacy_end_record_pairs_by_id_and_started_at
+    start = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_start_record(fake_session)))
+    legacy = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_record(fake_session)))
+    legacy.delete("record_type")
+    legacy.delete("session_id")
+
+    assert Harnex::DispatchHistory.end_record?(legacy)
+    assert Harnex::DispatchHistory.end_matches_start?(legacy, start)
+
+    other = legacy.merge("started_at" => "2026-05-08T09:00:00Z")
+    refute Harnex::DispatchHistory.end_matches_start?(other, start)
+  end
+
+  def test_live_start_record_reports_running_unpaired_start_row
+    Dir.mktmpdir("harnex-history-live") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      session = fake_session(pid: Process.pid)
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_start_record(session))
+
+      live = Harnex::DispatchHistory.live_start_record(repo_root: repo, id: "cx-history")
+      assert live
+      assert_equal "sess-1", live["session_id"]
+
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_record(session))
+      assert_nil Harnex::DispatchHistory.live_start_record(repo_root: repo, id: "cx-history")
+    end
+  end
+
+  def test_live_start_record_ignores_dead_pids_and_foreign_hosts
+    Dir.mktmpdir("harnex-history-live-dead") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+
+      dead_pid = spawn("true")
+      Process.wait(dead_pid)
+      dead = Harnex::DispatchHistory.build_start_record(fake_session(pid: dead_pid))
+      Harnex::DispatchHistory.append(path, dead)
+      assert_nil Harnex::DispatchHistory.live_start_record(repo_root: repo, id: "cx-history")
+
+      foreign = Harnex::DispatchHistory.build_start_record(fake_session(id: "cx-foreign", pid: Process.pid))
+      foreign[:host] = "some-other-host"
+      Harnex::DispatchHistory.append(path, foreign)
+      assert_nil Harnex::DispatchHistory.live_start_record(repo_root: repo, id: "cx-foreign")
+    end
   end
 
   def test_path_resolution_handles_repo_deep_tree_and_global_fallback
@@ -110,6 +191,48 @@ class DispatchHistoryTest < Minitest::Test
         rows = out.lines.map { |line| JSON.parse(line) }
 
         assert_equal ["second"], rows.map { |row| row.fetch("id") }
+      end
+    end
+  end
+
+  def test_history_command_shows_running_and_interrupted_rows_for_unpaired_starts
+    Dir.mktmpdir("harnex-history-running") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+
+      # Completed dispatch: start + end pair renders one end row.
+      done = fake_session(id: "cx-done", session_id: "sess-done")
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_start_record(done))
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_record(done))
+
+      # Mid-run dispatch: unpaired start row with an alive pid.
+      running = fake_session(id: "cx-running", session_id: "sess-running", pid: Process.pid)
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_start_record(running))
+
+      # Crashed dispatch: unpaired start row with a dead pid.
+      dead_pid = spawn("true")
+      Process.wait(dead_pid)
+      crashed = fake_session(id: "cx-crashed", session_id: "sess-crashed", pid: dead_pid)
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_start_record(crashed))
+
+      Dir.chdir(repo) do
+        out, = capture_io { assert_equal 0, Harnex::History.new(["--json", "--all"]).run }
+        rows = out.lines.map { |line| JSON.parse(line) }
+
+        assert_equal %w[cx-done cx-running cx-crashed], rows.map { |row| row.fetch("id") }
+
+        done_row = rows.find { |row| row["id"] == "cx-done" }
+        assert_equal "dispatch_end", done_row["record_type"]
+        assert_equal "completed", done_row["status"]
+
+        running_row = rows.find { |row| row["id"] == "cx-running" }
+        assert_equal "dispatch_start", running_row["record_type"]
+        assert_equal "running", running_row["status"]
+        assert_kind_of Integer, running_row["duration_s"]
+        assert_nil running_row["ended_at"]
+
+        crashed_row = rows.find { |row| row["id"] == "cx-crashed" }
+        assert_equal "interrupted", crashed_row["status"]
       end
     end
   end
@@ -180,6 +303,9 @@ class DispatchHistoryTest < Minitest::Test
   def fake_session(overrides = {})
     defaults = {
       id: "cx-history",
+      session_id: "sess-1",
+      pid: 4242,
+      repo_root: "/tmp/repo",
       description: "history test",
       adapter: FakeAdapter.new(key: "codex"),
       started_at: Time.utc(2026, 5, 8, 6, 18, 45),

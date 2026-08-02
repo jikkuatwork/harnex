@@ -205,6 +205,7 @@ module Harnex
       @server = ApiServer.new(self)
       @server.start
       persist_registry
+      append_dispatch_start_record
 
       stdin_state = STDIN.tty? ? STDIN.raw! : nil
       watch_thread = start_watch_thread
@@ -474,6 +475,7 @@ module Harnex
       @server = ApiServer.new(self)
       @server.start
       persist_registry
+      append_dispatch_start_record
 
       watch_thread = start_watch_thread
       @inbox.start
@@ -1993,11 +1995,24 @@ module Harnex
       warn("harnex: failed to write dispatch summary #{summary_out}: #{e.message}")
     end
 
+    def append_dispatch_start_record
+      DispatchHistory.append(dispatch_history_path, DispatchHistory.build_start_record(self))
+    rescue StandardError => e
+      warn("harnex: failed to write dispatch start record: #{e.message}")
+    end
+
     def append_dispatch_history_record
-      path = DispatchHistory.path_for(launch_cwd)
-      DispatchHistory.append(path, DispatchHistory.build_record(self))
+      DispatchHistory.append(dispatch_history_path, DispatchHistory.build_record(self))
     rescue StandardError => e
       warn("harnex: failed to write dispatch history: #{e.message}")
+    end
+
+    # One canonical stream per session: the start row and the end row must
+    # land in the same file so readers can pair them. repo_root — not the
+    # launch cwd — is the root that registry, events, and default summary
+    # paths already key off.
+    def dispatch_history_path
+      @dispatch_history_path ||= DispatchHistory.path_for(repo_root)
     end
 
     def normalized_usage_summary(summary)

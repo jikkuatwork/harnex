@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 priority: P1
 issue_kind: slice
 created: 2026-08-02
@@ -88,3 +88,39 @@ Code anchors (0.7.14):
   covered by tests for each terminal class.
 - No monitor consulting only documented signals can classify a healthy
   mid-run worker as dead.
+
+## Resolution (2026-08-02)
+
+All four goals implemented; unreleased on main pending the next gem release.
+
+1. **Dispatch-start record** — `DispatchHistory.build_start_record` appended
+   at registration in both `run_pty` and `run_structured`
+   (`session.rb#append_dispatch_start_record`); end rows gained
+   `record_type: "dispatch_end"` and `session_id` for pairing. Both rows go
+   through `dispatch_history_path` keyed off the session's `repo_root` (was
+   launch cwd) so writers and readers resolve one canonical stream.
+   `Harnex.repo_key` now canonicalizes via realpath (`canonical_repo_root`).
+2. **Live visibility** — `harnex history` pairs start/end rows and renders
+   unpaired starts as `running`/`interrupted`; `harnex status` labels
+   degraded sources (`source: live|registry|dispatch_start`,
+   `degraded: true`) and falls back to the live start record before terminal
+   summaries; `DispatchHistory.live_start_record` (host + pid alive checked)
+   is the shared liveness reader.
+3. **`wait --until done` contract** — exit codes 0 done / 1 failed /
+   2 rejected proof / 3 no-such-session / 124 timeout, `wait_result` in every
+   payload, liveness re-checked each poll (registry → start record), stale
+   exit files and stale events from a same-id predecessor ignored while a
+   live session is in view. Documented in `guides/04_monitoring.md`.
+4. **Duplicate-dispatch guard** — `Runner#validate_live_parent_guard!`:
+   retry requires `--parent-dispatch-id`; retry/fix/superseding naming a
+   live parent in the same repo are refused (review exempt);
+   `--allow-live-parent` overrides and is forwarded through tmux
+   re-invocation. Guard reads only explicit metadata, never the implicit
+   `HARNEX_ID` spawner lineage.
+
+Acceptance test: `test/integration/live_run_observability_test.rb`
+reproduces the Q096 shape end-to-end (worker mid-run, checkers in a separate
+process/cwd, registry deleted mid-run, wait blocking through completion,
+retry refused then allowed). Schema coverage in
+`test/dispatch_row_schema_test.rb` (start-row shape + pairing) and
+`test/harnex/dispatch_history_test.rb`.

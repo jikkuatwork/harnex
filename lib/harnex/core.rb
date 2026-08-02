@@ -157,8 +157,18 @@ module Harnex
     {}
   end
 
+  # Canonical path resolution shared by every registry/exit/events writer and
+  # reader. realpath collapses symlinked prefixes so a session registered from
+  # a symlinked cwd stays visible to checkers resolving the physical path.
+  def canonical_repo_root(path)
+    expanded = File.expand_path(path)
+    File.realpath(expanded)
+  rescue StandardError
+    expanded
+  end
+
   def repo_key(repo_root)
-    Digest::SHA256.hexdigest(repo_root)[0, 16]
+    Digest::SHA256.hexdigest(canonical_repo_root(repo_root))[0, 16]
   end
 
   def normalize_id(id)

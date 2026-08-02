@@ -22,7 +22,53 @@ For unattended monitors on existing visible/detached sessions, prefer
 `task_failed` signal, or terminal exit, whichever comes first. Successful work
 exits `0`, failed work exits non-zero, and wall-clock caps exit `124`. For
 callers that need the lower-level primitive, `harnex wait --until done` exposes
-the same work fence. For structured sessions (Pi RPC and Codex app-server),
+the same work fence.
+
+## Live-Run Visibility
+
+Every dispatch appends a `dispatch_start` row to the repo's dispatch stream
+(`.harnex/dispatch.jsonl`) at registration; the `dispatch_end` row at teardown
+completes it. Between those two rows the run is visible to every documented
+signal, from any cwd in the same repo:
+
+- `harnex status --id X` reports `state=running` for a live session. When the
+  live HTTP status API is unreachable it still reports running from the
+  registry (or, failing that, from the uncompleted start row) and labels the
+  row `degraded: true` with `source` set to `registry` or `dispatch_start`.
+- `harnex history` shows uncompleted dispatches as `running` (pid alive) or
+  `interrupted` (pid gone, no end row). Completed dispatches render one
+  `dispatch_end` row.
+- `harnex wait --until done` blocks while the session's pid is alive, up to
+  `--timeout`. "No signal yet" from a live worker is never terminal.
+
+A monitor consulting these signals can never classify a healthy mid-run
+worker as dead. If `status` says running, do not dispatch a replacement.
+
+## `wait --until done` Exit-Code Contract
+
+| Code | `wait_result` | Meaning |
+| --- | --- | --- |
+| `0` | `done` | Completed with accepted work |
+| `1` | `failed` | Work failed, process failed, or killed |
+| `2` | `rejected_proof` | Completed but proof rejected (`completed_no_activity`, `report_missing`, `report_invalid`, `report_rejected`) |
+| `3` | `no_such_session` | No live, start, event, or terminal signal for the id |
+| `124` | `timeout` | `--timeout` elapsed while the session was still running |
+
+The JSON payload always carries `wait_result` plus the work-state fields
+(`done`, `work_state`, `outcome_class`, `artifact_report_status`). The child
+process's own exit code is reported as data (`exit_code`), never passed
+through as wait's exit status. Treat `2` as a work-acceptance failure, `3` as
+a coordination error (wrong id or wrong repo), and only `0` as success.
+
+## Duplicate-Dispatch Guard
+
+`harnex run --attempt-kind retry` requires `--parent-dispatch-id`, and any
+retry/fix/superseding dispatch whose named parent is still running in the
+same repo is refused. Wait for the parent
+(`harnex wait --id <parent> --until done`) or stop it first. Pass
+`--allow-live-parent` only for intentional parallelism (e.g. isolated
+worktrees). `--attempt-kind review` is exempt: a completed parent may still
+sit at a live prompt while its work is reviewed. For structured sessions (Pi RPC and Codex app-server),
 `harnex wait --until task_complete` remains the exact accepted-turn fence.
 Codex acknowledgment-only auto-stop turns are typed
 `completed_no_activity` and fail this fence without transcript parsing.

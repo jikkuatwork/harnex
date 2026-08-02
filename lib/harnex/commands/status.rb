@@ -97,14 +97,49 @@ module Harnex
       return live unless @options[:id]
       return [live.first] unless live.empty?
 
+      running = running_from_start_record(fallback_repo_root)
+      return [running] if running
+
       terminal = Harnex::TerminalStatus.resolve(id: @options[:id], repo_root: fallback_repo_root)
       [terminal || Harnex::TerminalStatus.unknown(id: @options[:id], repo_root: fallback_repo_root)]
+    end
+
+    # Registry row missing but the dispatch stream has an uncompleted start
+    # row whose pid is alive: the worker is running, just not registry-visible
+    # from this context. Report running (labelled degraded), never dead.
+    def running_from_start_record(repo_root)
+      start = Harnex::DispatchHistory.live_start_record(repo_root: repo_root, id: @options[:id])
+      return nil unless start
+
+      {
+        "id" => start["id"].to_s,
+        "cli" => start["cli"],
+        "pid" => start["pid"],
+        "description" => start["description"],
+        "repo_root" => start["repo_root"] || repo_root,
+        "started_at" => start["started_at"],
+        "state" => "running",
+        "process_state" => "running",
+        "terminal" => false,
+        "task_complete" => false,
+        "task_failed" => false,
+        "done" => false,
+        "work_state" => "running",
+        "exit" => nil,
+        "exit_code" => nil,
+        "summary_out" => nil,
+        "ended_at" => nil,
+        "source" => "dispatch_start",
+        "degraded" => true,
+        "live_status" => "unreachable"
+      }
     end
 
     def normalize_live_status(session)
       task_failed = task_failed?(session)
       task_complete = task_complete?(session) && !task_failed
       work_state = task_failed ? "failed" : Harnex.work_state_for("running", task_complete: task_complete)
+      degraded = session["live_status"] == "unreachable"
       session.merge(
         "state" => "running",
         "process_state" => "running",
@@ -117,7 +152,8 @@ module Harnex
         "exit_code" => nil,
         "summary_out" => nil,
         "ended_at" => nil,
-        "source" => "live"
+        "source" => degraded ? "registry" : "live",
+        "degraded" => degraded
       )
     end
 
@@ -131,6 +167,9 @@ module Harnex
         !session["last_failed_at"].to_s.empty?
     end
 
+    # On HTTP failure the row is still backed by a verified-alive pid, but the
+    # data is the registry snapshot, not the live API — label it as degraded
+    # instead of silently passing it off as live.
     def load_live_status(session)
       uri = URI("http://#{session.fetch('host')}:#{session.fetch('port')}/status")
       request = Net::HTTP::Get.new(uri)
@@ -140,11 +179,11 @@ module Harnex
         http.request(request)
       end
 
-      return session unless response.is_a?(Net::HTTPSuccess)
+      return session.merge("live_status" => "unreachable") unless response.is_a?(Net::HTTPSuccess)
 
-      session.merge(JSON.parse(response.body))
+      session.merge(JSON.parse(response.body)).merge("live_status" => "ok")
     rescue StandardError
-      session
+      session.merge("live_status" => "unreachable")
     end
 
     def render_table(sessions)
