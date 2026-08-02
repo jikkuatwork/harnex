@@ -1,9 +1,10 @@
 ---
-status: planned
+status: resolved
 priority: P2
 issue_kind: slice
 created: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-03
+resolved: Shipped in harnex 0.9.0; Claude usage producer remains in #58
 plan: 33
 tags: telemetry, dispatch-jsonl, schema, cost, retention, phases
 ---
@@ -61,3 +62,11 @@ Known gaps in the rich row itself:
 - Codex dispatch records a non-null `cost_usd` with `cost_source` set.
 - Retry via #62's sanctioned path increments harness-owned attempt counters.
 - Events/output directories respect a configurable size/age cap.
+
+## Resolution
+
+Shipped in `harnex 0.9.0`: one rich v2 start/end stream, exact-model/tier/context
+Codex list-price cost, harness-derived attempt chains, phase policy, retention,
+and packaged migration docs. Holm migrated off the scratch mirror and imported
+its 1,156 legacy rich rows. Claude structured usage/cache-write mapping was
+explicitly deferred and remains owned by open issue #58.

@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 issue: 63
 plan: 33
 tier: B
@@ -267,11 +267,12 @@ retention acceptance criterion.
 
 ## Phase 7 — Docs, migration note, verification
 
-**Docs/migration implementation done 2026-08-03; release verification
-pending.** `docs/*.md` now ships in the gem; bundled/root guides describe the
-v2 stream, explicit-only mirror, price provenance/context guard, phase config,
-and retention. Holm and koder-pattern current guidance are being migrated in
-the same release window.
+**Done 2026-08-03; shipped in harnex 0.9.0.** `docs/*.md` ships in the gem;
+bundled/root guides describe the v2 stream, explicit-only mirror, price
+provenance/context guard, phase config, and retention. Holm and koder-pattern
+current guidance were migrated in the same release window. Full release suite:
+638 runs, 0 failures, 2 env-gated skips; source and installed real-dispatch
+smokes are recorded in `koder/releases/0.9.0.md`.
 
 Goal 7 plus release hygiene.
 

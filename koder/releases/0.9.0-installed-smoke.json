@@ -1,0 +1,158 @@
+{
+  "captured_at": "2026-08-03T01:16:00+05:30",
+  "dispatch": {
+    "end": {
+      "actual": {
+        "attempts_failed": 0,
+        "attempts_succeeded": 1,
+        "attempts_total": 1,
+        "fallback_triggered": false
+      },
+      "agent": {
+        "adapter_transport": "stdio_jsonrpc",
+        "cli": "codex",
+        "model_effective": "gpt-5.5",
+        "model_requested": "gpt-5.5",
+        "provider": "openai",
+        "reasoning_effort": "low",
+        "service_tier": "flex"
+      },
+      "artifact_report": {
+        "ingest_status": "ok",
+        "report_status": "pass",
+        "schema": "harnex.artifact_report.v1"
+      },
+      "attempt": {
+        "deployment_effective": "flex",
+        "end_ts": "2026-08-02T19:46:03Z",
+        "ended_at": "2026-08-02T19:46:03Z",
+        "exit_reason": "success",
+        "id": "1c0e4e846aca5ec3",
+        "intent": "installed-smoke",
+        "kind": "initial",
+        "model_effective": "gpt-5.5",
+        "model_requested": "gpt-5.5",
+        "parent_attempt_id": null,
+        "parent_dispatch_id": null,
+        "phase": "smoke",
+        "project_id": "harnex",
+        "reasoning_effort": "low",
+        "run_id": "cx-smoke-090-installed",
+        "start_ts": "2026-08-02T19:45:15Z",
+        "started_at": "2026-08-02T19:45:15Z",
+        "status": "succeeded",
+        "wall_ms": 48076
+      },
+      "attribution": {
+        "intent": "installed-smoke",
+        "phase": "smoke",
+        "project_id": "harnex",
+        "status": "complete",
+        "work_id": "63",
+        "work_type": "issue"
+      },
+      "context": {
+        "latest_sample_status": "estimated",
+        "missing_samples": 0,
+        "peak_percent": 4.72,
+        "peak_tokens": 12203,
+        "samples": 9,
+        "source": "codex_thread_token_usage_last",
+        "status": "estimated",
+        "terminal_percent": 4.72,
+        "terminal_tokens": 12203,
+        "window_tokens": 258400
+      },
+      "harness_version": "0.9.0",
+      "id": "cx-smoke-090-installed",
+      "outcome": {
+        "changed_paths": null,
+        "class": "completed_with_proof",
+        "commit_sha": null,
+        "commits": null,
+        "files_changed": null,
+        "lines_changed": null,
+        "loc_added": null,
+        "loc_removed": null,
+        "report_status": "accepted",
+        "source": "artifact_report",
+        "status": "accepted"
+      },
+      "record_type": "dispatch_end",
+      "reliability": {
+        "adapter_close": "normal",
+        "compactions": 0,
+        "force_resumes": 0,
+        "real_disconnections": 0,
+        "recovered": false,
+        "stalls": 0,
+        "stream_interruptions": 0
+      },
+      "schema_version": 2,
+      "status": "completed",
+      "usage": {
+        "cached_input_tokens": 77312,
+        "cost_price_as_of": "2026-08-03",
+        "cost_source": "price_table",
+        "cost_usd": 0.085113,
+        "input_tokens": 91716,
+        "output_tokens": 1985,
+        "reasoning_tokens": 404,
+        "status": "observed",
+        "total_tokens": 93701
+      }
+    },
+    "raw_dispatch_sha256": "940d32cb4d75d0f9dcd8e0fc912e52cbbf137dae9807332e96ca42692dd89e32",
+    "record_types": [
+      "dispatch_start",
+      "dispatch_end"
+    ],
+    "report_sha256": "ada323f3dc90458633a6c45389702ae90a8349cc8002d2a141c18272ac27dfcf",
+    "row_count": 2
+  },
+  "doctor": {
+    "dry_run": true,
+    "events_limit": 1073741824,
+    "ok": true,
+    "output_limit": 1073741824
+  },
+  "gem_sha256": "cd82d12a0f1646070da42e131a7c4c82af57cb0ebdfca0ea916227050108b10b",
+  "installed_version": "harnex 0.9.0 (2026-08-03)",
+  "mirror": {
+    "identical_to_tracked_end": true,
+    "raw_mirror_sha256": "9022647fee2b73ab956bf9788c51d611c42b96d17843567ec074737942e1d3bd",
+    "row_count": 1
+  },
+  "packaged_docs": [
+    "README.md",
+    "docs/configuration.md",
+    "docs/dispatch-telemetry.md",
+    "guides/01_dispatch.md"
+  ],
+  "privacy": {
+    "bounded_selected_fields_only": true,
+    "contains_credentials": false,
+    "contains_prompts": false,
+    "contains_transcripts": false,
+    "raw_files_tracked": false
+  },
+  "published": true,
+  "readers": {
+    "history": {
+      "id": "cx-smoke-090-installed",
+      "rows": 1
+    },
+    "status": {
+      "done": true,
+      "state": "completed"
+    },
+    "wait": {
+      "done": true,
+      "wait_result": "done"
+    }
+  },
+  "release": "0.9.0",
+  "release_commit": "abcbc1b",
+  "schema": "harnex.installed_release_smoke.v1",
+  "tag": "v0.9.0"
+}
