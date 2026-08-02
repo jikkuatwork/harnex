@@ -1,0 +1,265 @@
+{
+  "attempts": [
+    {
+      "dispatch_row_count": 2,
+      "end": {
+        "agent": {
+          "adapter_transport": "stdio_jsonrpc",
+          "cli": "codex",
+          "model_effective": "gpt-5.5",
+          "model_requested": "gpt-5.5",
+          "provider": "openai",
+          "reasoning_effort": "low",
+          "service_tier": "flex"
+        },
+        "artifact_report": {
+          "ingest_status": "ok",
+          "report_status": "in_progress",
+          "schema": "harnex.artifact_report.v1"
+        },
+        "attempt": {
+          "deployment_effective": "flex",
+          "end_ts": "2026-08-02T19:20:15Z",
+          "ended_at": "2026-08-02T19:20:15Z",
+          "exit_reason": "failure",
+          "id": "914674ba62c8601b",
+          "intent": "release-smoke",
+          "kind": "initial",
+          "model_effective": "gpt-5.5",
+          "model_requested": "gpt-5.5",
+          "parent_attempt_id": null,
+          "parent_dispatch_id": null,
+          "phase": "smoke",
+          "project_id": "harnex",
+          "reasoning_effort": "low",
+          "run_id": "cx-smoke-090",
+          "start_ts": "2026-08-02T19:20:15Z",
+          "started_at": "2026-08-02T19:20:15Z",
+          "status": "failed",
+          "wall_ms": 360
+        },
+        "attribution": {
+          "intent": "release-smoke",
+          "phase": "smoke",
+          "project_id": "harnex",
+          "status": "complete",
+          "work_id": "63",
+          "work_type": "issue"
+        },
+        "context": {
+          "latest_sample_status": null,
+          "missing_samples": 0,
+          "peak_percent": null,
+          "peak_tokens": null,
+          "samples": 0,
+          "source": "codex_thread_token_usage_last",
+          "status": "missing",
+          "terminal_percent": null,
+          "terminal_tokens": null,
+          "window_tokens": null
+        },
+        "duration_s": 0,
+        "harness_version": "0.9.0",
+        "id": "cx-smoke-090",
+        "outcome": {
+          "changed_paths": null,
+          "class": "report_invalid",
+          "commit_sha": null,
+          "commits": null,
+          "files_changed": null,
+          "lines_changed": null,
+          "loc_added": null,
+          "loc_removed": null,
+          "report_status": "invalid",
+          "source": "harnex_completion_gate",
+          "status": "unknown"
+        },
+        "record_type": "dispatch_end",
+        "reliability": {
+          "adapter_close": "normal",
+          "compactions": 0,
+          "force_resumes": 0,
+          "real_disconnections": 0,
+          "recovered": false,
+          "stalls": 0,
+          "stream_interruptions": 0
+        },
+        "schema_version": 2,
+        "status": "failed",
+        "terminal_event": "task_failed",
+        "usage": {
+          "cached_input_tokens": null,
+          "cost_price_as_of": null,
+          "cost_source": null,
+          "cost_usd": null,
+          "input_tokens": null,
+          "output_tokens": null,
+          "reasoning_tokens": null,
+          "status": "missing",
+          "total_tokens": null
+        }
+      },
+      "id": "cx-smoke-090",
+      "provider_error": "Missing environment variable: `AZURE_OPENAI_API_KEY`.",
+      "raw_dispatch_sha256": "4ffd6ff7e136bcd68259d8f6a1e4cb628be42ccab2608ab68acf402ce207eb2b",
+      "raw_events_sha256": "f89fc251749844dce877b61c91eb0a7681752dcf1efb616baec005200cac44ee",
+      "reason": "caller_environment_missing_provider_variable",
+      "record_types": [
+        "dispatch_start",
+        "dispatch_end"
+      ],
+      "result": "failed_closed"
+    },
+    {
+      "artifact_report_sha256": "fc404ef5ff78ef29276067b15d1eada8b21e5846ee994b452e02a1ea06907a2f",
+      "correction": "inherited_existing_tmux_provider_environment_without_printing_or_copying_values",
+      "dispatch_row_count": 2,
+      "end": {
+        "agent": {
+          "adapter_transport": "stdio_jsonrpc",
+          "cli": "codex",
+          "model_effective": "gpt-5.5",
+          "model_requested": "gpt-5.5",
+          "provider": "openai",
+          "reasoning_effort": "low",
+          "service_tier": "flex"
+        },
+        "artifact_report": {
+          "ingest_status": "ok",
+          "report_status": "pass",
+          "schema": "harnex.artifact_report.v1"
+        },
+        "attempt": {
+          "deployment_effective": "flex",
+          "end_ts": "2026-08-02T19:21:58Z",
+          "ended_at": "2026-08-02T19:21:58Z",
+          "exit_reason": "success",
+          "id": "163b423ab785fda8",
+          "intent": "release-smoke",
+          "kind": "initial",
+          "model_effective": "gpt-5.5",
+          "model_requested": "gpt-5.5",
+          "parent_attempt_id": null,
+          "parent_dispatch_id": null,
+          "phase": "smoke",
+          "project_id": "harnex",
+          "reasoning_effort": "low",
+          "run_id": "cx-smoke-090b",
+          "start_ts": "2026-08-02T19:21:23Z",
+          "started_at": "2026-08-02T19:21:23Z",
+          "status": "succeeded",
+          "wall_ms": 34890
+        },
+        "attribution": {
+          "intent": "release-smoke",
+          "phase": "smoke",
+          "project_id": "harnex",
+          "status": "complete",
+          "work_id": "63",
+          "work_type": "issue"
+        },
+        "context": {
+          "latest_sample_status": "estimated",
+          "missing_samples": 0,
+          "peak_percent": 4.55,
+          "peak_tokens": 11751,
+          "samples": 7,
+          "source": "codex_thread_token_usage_last",
+          "status": "estimated",
+          "terminal_percent": 4.55,
+          "terminal_tokens": 11751,
+          "window_tokens": 258400
+        },
+        "duration_s": 34,
+        "harness_version": "0.9.0",
+        "id": "cx-smoke-090b",
+        "outcome": {
+          "changed_paths": null,
+          "class": "completed_with_proof",
+          "commit_sha": null,
+          "commits": null,
+          "files_changed": null,
+          "lines_changed": null,
+          "loc_added": null,
+          "loc_removed": null,
+          "report_status": "accepted",
+          "source": "artifact_report",
+          "status": "accepted"
+        },
+        "record_type": "dispatch_end",
+        "reliability": {
+          "adapter_close": "normal",
+          "compactions": 0,
+          "force_resumes": 0,
+          "real_disconnections": 0,
+          "recovered": false,
+          "stalls": 0,
+          "stream_interruptions": 0
+        },
+        "schema_version": 2,
+        "status": "completed",
+        "terminal_event": "task_complete",
+        "usage": {
+          "cached_input_tokens": 59392,
+          "cost_price_as_of": "2026-08-03",
+          "cost_source": "price_table",
+          "cost_usd": 0.073761,
+          "input_tokens": 72955,
+          "output_tokens": 1667,
+          "reasoning_tokens": 134,
+          "status": "observed",
+          "total_tokens": 74622
+        }
+      },
+      "id": "cx-smoke-090b",
+      "marker_sha256": "06d8336520864507a13cd6f7e2759772aa592ca7ecf62374d5d779ef7e55753a",
+      "raw_dispatch_sha256": "855055569d9c98eb76985292bc1230ad73d5ca8b1f15ebedf9b510b507f0f8b9",
+      "record_types": [
+        "dispatch_start",
+        "dispatch_end"
+      ],
+      "result": "completed"
+    }
+  ],
+  "captured_at": "2026-08-03T01:09:00+05:30",
+  "mirror": {
+    "id": "mirror-smoke-090",
+    "identical_to_tracked_end": true,
+    "mirror_sha256": "53b96bb91ea17c1a6b32b9a4ca6c4862b834aeb6748543687de6790a98a7b259",
+    "rows": 1
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_prompts": false,
+    "contains_transcripts": false,
+    "bounded_selected_fields_only": true,
+    "raw_files_tracked": false
+  },
+  "readers": {
+    "history": {
+      "exit_code": 0,
+      "id": "cx-smoke-090b",
+      "output_sha256": "241f9039a917a7a988c85d568202aa8dc572f5193d55d1a3b9eeb47e45be4795",
+      "rows": 1
+    },
+    "status": {
+      "done": true,
+      "exit_code": 0,
+      "output_sha256": "fd55c66bc4a3ea18ec6182db520681297805b4321124318067121223c9b0f704",
+      "state": "completed"
+    },
+    "wait": {
+      "done": true,
+      "exit_code": 0,
+      "output_sha256": "e2d090d9b7271f1af177e2eada47711a3f19665fe9e91d6107f84ba5f60bbbc8",
+      "wait_result": "done"
+    }
+  },
+  "release": "0.9.0",
+  "schema": "harnex.release_smoke.v1",
+  "source_candidate": {
+    "code_head": "6e26f5b",
+    "release_date": "2026-08-03",
+    "version": "0.9.0"
+  }
+}
