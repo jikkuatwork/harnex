@@ -23,7 +23,7 @@ module Harnex
       terminal_tokens terminal_percent peak_tokens peak_percent
     ].freeze
     CONTEXT_SAMPLE_STATUSES = %w[observed estimated missing].freeze
-    ATTEMPT_KINDS = %w[initial retry fix review superseding].freeze
+    ATTEMPT_KINDS = %w[initial retry fix review fallback superseding].freeze
     SESSION_SUMMARY_SIGNAL_FIELDS = %i[
       input_tokens output_tokens reasoning_tokens cached_tokens total_tokens
       agent_session_id cost_usd
@@ -1783,6 +1783,101 @@ module Harnex
       @exit_reason == "success"
     end
 
+    def attempt_chain_summary
+      @attempt_chain_summary ||= begin
+        current = {
+          id: id,
+          parent_dispatch_id: summary_string(meta_hash["parent_dispatch_id"]) || @parent_harnex_id,
+          kind: summary_attempt_kind,
+          outcome: summary_attempt_succeeded? ? "succeeded" : "failed"
+        }
+        index = historical_attempt_index
+        nodes = [current]
+        seen = {}
+        seen[current[:id]] = true if current[:id]
+        parent = current[:parent_dispatch_id]
+        immediate_parent = nil
+
+        while parent && !seen[parent]
+          record = index[parent]
+          break unless record
+
+          node = historical_attempt_node(record)
+          break unless node
+
+          immediate_parent ||= node
+          nodes << node
+          seen[node[:id]] = true if node[:id]
+          parent = node[:parent_dispatch_id]
+        end
+
+        {
+          attempts_total: nodes.length,
+          attempts_succeeded: nodes.count { |node| node[:outcome] == "succeeded" },
+          attempts_failed: nodes.count { |node| node[:outcome] == "failed" },
+          fallback_triggered: nodes.any? { |node| node[:kind] == "fallback" },
+          recovered: current[:outcome] == "succeeded" && immediate_parent&.dig(:outcome) == "failed"
+        }
+      end
+    end
+
+    def historical_attempt_index
+      path = dispatch_history_path
+      return {} unless File.file?(path)
+
+      records = {}
+      duplicates = {}
+      File.foreach(path) do |line|
+        record = JSON.parse(line)
+        next unless DispatchHistory.end_record?(record)
+
+        dispatch_id = summary_string(record["id"])
+        next unless dispatch_id
+
+        if records.key?(dispatch_id)
+          records.delete(dispatch_id)
+          duplicates[dispatch_id] = true
+        elsif !duplicates.key?(dispatch_id)
+          records[dispatch_id] = record
+        end
+      rescue JSON::ParserError
+        next
+      end
+      records
+    rescue StandardError
+      {}
+    end
+
+    def historical_attempt_node(record)
+      attempt = record["attempt"].is_a?(Hash) ? record["attempt"] : {}
+      meta = record["meta"].is_a?(Hash) ? record["meta"] : {}
+      dispatch_id = summary_string(record["id"])
+      return nil unless dispatch_id
+
+      {
+        id: dispatch_id,
+        parent_dispatch_id: summary_string(attempt["parent_dispatch_id"]) || summary_string(meta["parent_dispatch_id"]),
+        kind: summary_string(attempt["kind"]),
+        outcome: historical_attempt_outcome(record, attempt)
+      }
+    end
+
+    def historical_attempt_outcome(record, attempt)
+      case summary_string(attempt["status"])
+      when "succeeded"
+        "succeeded"
+      when "failed"
+        "failed"
+      else
+        case summary_string(record["status"])
+        when "completed"
+          "succeeded"
+        when "failed", "timeout", "killed"
+          "failed"
+        end
+      end
+    end
+
     def accepted_throughput_tokens_per_s(total_tokens, duration_s, accepted)
       return nil unless accepted && total_tokens.is_a?(Numeric) && duration_s.to_f.positive?
 
@@ -1806,6 +1901,7 @@ module Harnex
     def build_summary_reliability
       counters = reliability_event_counters
       real_disconnections = counters[:disconnections].to_i
+      chain = attempt_chain_summary
       {
         "adapter_close" => summary_adapter_close(real_disconnections),
         "real_disconnections" => real_disconnections,
@@ -1813,7 +1909,7 @@ module Harnex
         "stalls" => counters[:stalls].to_i,
         "force_resumes" => counters[:force_resumes].to_i,
         "compactions" => counters[:compactions].to_i,
-        "recovered" => false
+        "recovered" => chain[:recovered]
       }
     end
 
@@ -1822,7 +1918,7 @@ module Harnex
       output_measurements = summary_output_measurements
       accepted = outcome["status"] == "accepted"
       duration_s = @ended_at ? (@ended_at - @started_at).to_i : nil
-      attempt_succeeded = summary_attempt_succeeded?
+      chain = attempt_chain_summary
       total_tokens = @usage_summary[:total_tokens]
 
       actual = {
@@ -1860,9 +1956,9 @@ module Harnex
         event_records: @events_log_seq,
         output_log_path: output_log_path,
         events_log_path: events_log_path,
-        attempts_total: 1,
-        attempts_succeeded: attempt_succeeded ? 1 : 0,
-        attempts_failed: attempt_succeeded ? 0 : 1,
+        attempts_total: chain[:attempts_total],
+        attempts_succeeded: chain[:attempts_succeeded],
+        attempts_failed: chain[:attempts_failed],
         retry_count: counters[:retries],
         throttle_429_count: counters[:throttle_429],
         disconnect_count: counters[:disconnections],
@@ -1870,7 +1966,7 @@ module Harnex
         throughput_successes_per_h: accepted_throughput_successes_per_h(duration_s, accepted),
         retry_tax_pct: counters[:retries].to_i.zero? ? 0.0 : nil,
         unattributed: attribution["status"] != "complete",
-        fallback_triggered: false
+        fallback_triggered: chain[:fallback_triggered]
       }
       actual
     end

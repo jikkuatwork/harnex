@@ -39,7 +39,7 @@ module Harnex
 
     # Attempt kinds that redo the parent's work; dispatching one while the
     # parent is still running duplicates work in the same checkout.
-    LIVE_PARENT_GUARDED_KINDS = %w[retry fix superseding].freeze
+    LIVE_PARENT_GUARDED_KINDS = %w[retry fix fallback superseding].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
       --max-resumes --preset --context --meta --summary-out --artifact-report
@@ -87,12 +87,12 @@ module Harnex
           --model NAME       Requested model metadata (also used for structured dispatch)
           --effort LEVEL     Requested reasoning effort metadata (structured dispatch)
           --parent-dispatch-id ID
-                             Parent dispatch id for retry/fix/review joins
+                             Parent dispatch id for retry/fix/review/fallback joins
           --parent-attempt-id ID
-                             Parent attempt id for retry/fix/review joins
+                             Parent attempt id for retry/fix/review/fallback joins
           --attempt-kind KIND
-                             initial, retry, fix, review, or superseding (default: initial).
-                             retry requires --parent-dispatch-id so the
+                             initial, retry, fix, review, fallback, or superseding (default: initial).
+                             retry/fallback requires --parent-dispatch-id so the
                              duplicate-dispatch guard can verify the parent
           --allow-live-parent
                              Dispatch even though --parent-dispatch-id names a
@@ -371,7 +371,7 @@ module Harnex
             "Use a different --id or stop the existing session first."
     end
 
-    # Duplicate-dispatch guard (issue #62): a retry/fix/superseding attempt
+    # Duplicate-dispatch guard (issue #62): a retry/fix/fallback/superseding attempt
     # whose parent dispatch is still running would duplicate work in the same
     # checkout. Explicit --parent-dispatch-id only — the implicit HARNEX_ID
     # lineage of a live spawner must not trip this.
@@ -380,8 +380,8 @@ module Harnex
       kind = metadata["attempt_kind"].to_s
       parent_id = metadata["parent_dispatch_id"].to_s.strip
 
-      if kind == "retry" && parent_id.empty?
-        raise "harnex run: --attempt-kind retry requires --parent-dispatch-id " \
+      if %w[retry fallback].include?(kind) && parent_id.empty?
+        raise "harnex run: --attempt-kind #{kind} requires --parent-dispatch-id " \
               "so the duplicate-dispatch guard can verify the parent is not still running."
       end
 

@@ -771,6 +771,129 @@ class SessionTest < Minitest::Test
     events_log&.close unless events_log&.closed?
   end
 
+  def test_attempt_chain_counts_prior_failures_current_fallback_and_recovery
+    Dir.mktmpdir("harnex-attempt-chain") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      write_attempt_end(stream, id: "cx-i-63-a", status: "failed", kind: "initial")
+      write_attempt_end(stream, id: "cx-i-63-b", status: "failed", kind: "retry", parent: "cx-i-63-a")
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "fallback", "parent_dispatch_id" => "cx-i-63-b" },
+        exit_reason: "success"
+      )
+
+      summary = session.send(:build_summary_record)
+      actual = summary.fetch(:actual)
+
+      assert_equal 3, actual.fetch(:attempts_total)
+      assert_equal 1, actual.fetch(:attempts_succeeded)
+      assert_equal 2, actual.fetch(:attempts_failed)
+      assert_equal true, actual.fetch(:fallback_triggered)
+      assert_equal true, summary.fetch(:reliability).fetch("recovered")
+    end
+  end
+
+  def test_attempt_chain_recovered_uses_immediate_parent_only
+    Dir.mktmpdir("harnex-attempt-recovered") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      write_attempt_end(stream, id: "cx-i-63-a", status: "failed", kind: "initial")
+      write_attempt_end(stream, id: "cx-i-63-b", status: "succeeded", kind: "retry", parent: "cx-i-63-a")
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "fallback", "parent_dispatch_id" => "cx-i-63-b" },
+        exit_reason: "success"
+      )
+
+      summary = session.send(:build_summary_record)
+      actual = summary.fetch(:actual)
+
+      assert_equal 3, actual.fetch(:attempts_total)
+      assert_equal 2, actual.fetch(:attempts_succeeded)
+      assert_equal 1, actual.fetch(:attempts_failed)
+      assert_equal false, summary.fetch(:reliability).fetch("recovered")
+    end
+  end
+
+  def test_attempt_chain_missing_parent_and_malformed_json_degrade_to_current
+    Dir.mktmpdir("harnex-attempt-missing") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      FileUtils.mkdir_p(File.dirname(stream))
+      File.open(stream, "wb") do |file|
+        file.write("{malformed\n")
+        file.write(JSON.generate("record_type" => "dispatch_start", "id" => "missing-parent"))
+        file.write("\n")
+      end
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "retry", "parent_dispatch_id" => "missing-parent" },
+        exit_reason: "failure"
+      )
+
+      summary = session.send(:build_summary_record)
+      actual = summary.fetch(:actual)
+
+      assert_equal 1, actual.fetch(:attempts_total)
+      assert_equal 0, actual.fetch(:attempts_succeeded)
+      assert_equal 1, actual.fetch(:attempts_failed)
+      assert_equal false, actual.fetch(:fallback_triggered)
+      assert_equal false, summary.fetch(:reliability).fetch("recovered")
+    end
+  end
+
+  def test_attempt_chain_duplicate_parent_rows_degrade_to_current
+    Dir.mktmpdir("harnex-attempt-duplicate") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      write_attempt_end(stream, id: "cx-i-63-parent", status: "failed", kind: "initial")
+      write_attempt_end(stream, id: "cx-i-63-parent", status: "succeeded", kind: "retry")
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "fallback", "parent_dispatch_id" => "cx-i-63-parent" },
+        exit_reason: "success"
+      )
+
+      summary = session.send(:build_summary_record)
+      actual = summary.fetch(:actual)
+
+      assert_equal 1, actual.fetch(:attempts_total)
+      assert_equal 1, actual.fetch(:attempts_succeeded)
+      assert_equal 0, actual.fetch(:attempts_failed)
+      assert_equal true, actual.fetch(:fallback_triggered)
+      assert_equal false, summary.fetch(:reliability).fetch("recovered")
+    end
+  end
+
+  def test_attempt_chain_cycle_is_bounded
+    Dir.mktmpdir("harnex-attempt-cycle") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      write_attempt_end(stream, id: "cx-i-63-a", status: "failed", kind: "retry", parent: "cx-i-63-b")
+      write_attempt_end(stream, id: "cx-i-63-b", status: "failed", kind: "retry", parent: "cx-i-63-a")
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "retry", "parent_dispatch_id" => "cx-i-63-a" },
+        exit_reason: "success"
+      )
+
+      summary = session.send(:build_summary_record)
+      actual = summary.fetch(:actual)
+
+      assert_equal 3, actual.fetch(:attempts_total)
+      assert_equal 1, actual.fetch(:attempts_succeeded)
+      assert_equal 2, actual.fetch(:attempts_failed)
+      assert_equal false, actual.fetch(:fallback_triggered)
+      assert_equal true, summary.fetch(:reliability).fetch("recovered")
+    end
+  end
+
   private
 
   def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
@@ -790,6 +913,29 @@ class SessionTest < Minitest::Test
       inbox_ttl: inbox_ttl,
       auto_stop: auto_stop
     )
+  end
+
+  def chain_session(repo_root:, stream:, meta:, exit_reason:)
+    session = build_session(repo_root: repo_root, meta: meta)
+    session.define_singleton_method(:dispatch_history_path) { stream }
+    session.instance_variable_set(:@ended_at, Time.now)
+    session.instance_variable_set(:@exit_reason, exit_reason)
+    session
+  end
+
+  def write_attempt_end(path, id:, status:, kind:, parent: nil)
+    record = {
+      "schema_version" => Harnex::DispatchHistory::SCHEMA_VERSION,
+      "record_type" => "dispatch_end",
+      "id" => id,
+      "status" => status == "succeeded" ? "completed" : "failed",
+      "attempt" => {
+        "kind" => kind,
+        "status" => status,
+        "parent_dispatch_id" => parent
+      }
+    }
+    Harnex::DispatchHistory.append(path, record)
   end
 
   def wait_for_queue(queue, timeout:)

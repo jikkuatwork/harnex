@@ -397,6 +397,18 @@ class RunnerTest < Minitest::Test
     assert_match(/--attempt-kind must be one of/, error.message)
   end
 
+  def test_fallback_attempt_kind_is_public
+    runner = Harnex::Runner.new(["codex", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
+    runner.send(:extract_wrapper_options, ["codex", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
+    runner.send(:apply_telemetry_options!)
+
+    runner.send(:validate_attempt_metadata!)
+
+    meta = runner.instance_variable_get(:@options).fetch(:meta)
+    assert_equal "fallback", meta.fetch("attempt_kind")
+    assert_includes Harnex::Runner.usage, "fallback"
+  end
+
   def test_require_attribution_rejects_missing_fields
     runner = Harnex::Runner.new(["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
     runner.send(:extract_wrapper_options, ["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
@@ -493,11 +505,13 @@ class RunnerTest < Minitest::Test
     path
   end
 
-  def test_retry_attempt_kind_requires_parent_dispatch_id
-    runner = guard_runner(["codex", "--attempt-kind", "retry"])
+  def test_retry_and_fallback_attempt_kinds_require_parent_dispatch_id
+    %w[retry fallback].each do |kind|
+      runner = guard_runner(["codex", "--attempt-kind", kind])
 
-    error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, Dir.pwd) }
-    assert_match(/--attempt-kind retry requires --parent-dispatch-id/, error.message)
+      error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, Dir.pwd) }
+      assert_match(/--attempt-kind #{kind} requires --parent-dispatch-id/, error.message)
+    end
   end
 
   def test_retry_dispatch_refused_while_parent_is_live
@@ -514,11 +528,11 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_fix_and_superseding_dispatches_refused_while_parent_is_live
+  def test_fix_fallback_and_superseding_dispatches_refused_while_parent_is_live
     Dir.mktmpdir("harnex-guard-kinds") do |repo|
       registry_path = write_live_registry(repo, "cx-i-96")
 
-      %w[fix superseding].each do |kind|
+      %w[fix fallback superseding].each do |kind|
         runner = guard_runner(["codex", "--attempt-kind", kind, "--parent-dispatch-id", "cx-i-96"])
         error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, repo) }
         assert_match(/refusing #{kind} dispatch/, error.message)
