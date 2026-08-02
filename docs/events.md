@@ -112,8 +112,10 @@ New event types:
 - `git`: emitted when git metadata is available. `phase: "start"` includes
   `sha` and `branch`; `phase: "end"` includes `sha`, `loc_added`,
   `loc_removed`, `files_changed`, and `commits`.
-- `summary`: emitted last before `exited`. It includes `path` (String or
-  `null`) and `exit` (`success`, `failure`, `timeout`, or `disconnected`).
+- `summary`: emitted last before `exited`. `path` is the canonical tracked
+  dispatch stream. `mirror_path` is present only when explicit
+  `--summary-out PATH` was configured. `exit` is `success`, `failure`,
+  `timeout`, or `disconnected`.
 
 Example telemetry sequence:
 
@@ -122,6 +124,10 @@ Example telemetry sequence:
 {"schema_version":1,"seq":2,"ts":"2026-05-01T11:30:00Z","id":"cx-i-372","type":"git","phase":"start","sha":"a8114695c1f0","branch":"main"}
 {"schema_version":1,"seq":3,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"usage","input_tokens":104158,"output_tokens":2709,"reasoning_tokens":870,"cached_tokens":250880,"total_tokens":106867,"agent_session_id":"019ddf05-0f03-7d70-904f-23db7f00640f"}
 {"schema_version":1,"seq":4,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"git","phase":"end","sha":"abc1234567","loc_added":312,"loc_removed":65,"files_changed":7,"commits":1}
-{"schema_version":1,"seq":5,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"summary","path":"/home/u/proj/koder/DISPATCH.jsonl","exit":"success"}
+{"schema_version":1,"seq":5,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"summary","path":"/home/u/proj/.harnex/dispatch.jsonl","exit":"success"}
 {"schema_version":1,"seq":6,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"exited","code":0,"reason":"success"}
 ```
+
+Events files are runtime logs, not the durable dispatch summary. Their age and
+size retention is configurable; current/live-session files are protected. See
+[configuration.md](configuration.md).

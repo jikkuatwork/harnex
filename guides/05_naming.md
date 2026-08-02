@@ -66,17 +66,27 @@ If `--id` is missing, harnex generates a random session ID. The tmux window may
 look right, but `harnex status`, `harnex pane --id`, and logs need the random
 ID.
 
-## Retry Suffixes
+## Retry Suffixes And Linkage
 
-If a session fails and you dispatch a fresh attempt, append a suffix:
+If a session fails and you dispatch a fresh attempt, use a new ID and link it
+to the completed parent so Harnex can derive chain counts and recovery:
 
 ```text
-pi-i-42      first attempt
-pi-i-42b     second attempt
-pi-i-42c     third attempt
+pi-i-42      initial attempt
+pi-i-42-r1   retry of pi-i-42
+pi-i-42-r2   retry of pi-i-42-r1
 ```
 
-Keep the old session's logs. They are useful for diagnosis.
+```bash
+harnex run pi --id pi-i-42-r1 --tmux pi-i-42-r1 \
+  --attempt-kind retry --parent-dispatch-id pi-i-42 \
+  --context "Retry the bounded task."
+```
+
+Retry/fix/fallback/superseding work is refused while its named parent is still
+running unless `--allow-live-parent` explicitly authorizes isolated parallelism.
+Keep old logs for diagnosis; retention removes only expired/over-cap logs that
+do not belong to a current or live session.
 
 ## Task Files
 
@@ -104,8 +114,8 @@ If a legacy workflow still expects a done marker, derive it from the session ID:
 ```
 
 Treat done markers as compatibility hints only. Canonical completion should come
-from harnex terminal telemetry (`harnex wait` / `harnex status --json` / summary
-rows in `.harnex/dispatch.jsonl`).
+from harnex terminal telemetry (`harnex wait` / `harnex status --json` / v2
+`dispatch_end` rows in `.harnex/dispatch.jsonl`).
 
 When a brief asks for a completion marker, make it one line and include the
 highest-signal result: tests passed, review clean, or the blocking issue.

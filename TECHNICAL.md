@@ -29,6 +29,9 @@ harnex run codex -- --cd ~/other/repo
 | `--watch-file PATH` | Auto-send a file-change hook (`--watch PATH`/`--watch=PATH` legacy) |
 | `--context TXT`     | Give the agent a task on startup                                    |
 | `--auto-stop`       | With `--context`, stop after accepted task completion               |
+| `--meta JSON`       | Attach bounded caller metadata                                      |
+| `--summary-out PATH` | Mirror the canonical v2 dispatch end row to another JSONL file     |
+| `--phase TEXT`      | First-class phase attribution (optionally repo-allowlisted)          |
 | `--artifact-report PATH` | Expose and ingest a bounded v1 proof sidecar                   |
 | `--require-artifact-report` | Fail closed unless the sidecar is accepted final proof      |
 | `--fast`            | For Codex, use `service_tier="fast"` instead of default `flex`      |
@@ -38,6 +41,20 @@ Codex app-server auto-stop rejects completion with no structured command/tool
 activity, Git delta, or fresh accepted/no-change report as
 `completed_no_activity`. Strict artifact-report mode works across transports
 and returns non-zero for missing, invalid, rejected, or stale proof.
+
+### `harnex doctor` — Preflight, drift, and retention
+
+```bash
+harnex doctor
+harnex doctor --sweep
+harnex doctor --prune --dry-run
+harnex doctor --prune
+```
+
+Plain output includes adapter prerequisites and events/output retention status.
+`--sweep` adds read-only live-session/tmux drift diagnostics. `--prune --dry-run`
+previews age/size-cap deletions; `--prune` applies them while preserving current
+and live-session files. See [docs/configuration.md](docs/configuration.md).
 
 ### `harnex artifact-report` — Initialize and validate proof
 
@@ -115,8 +132,10 @@ harnex history
 harnex history --json | jq .
 ```
 
-Reads `<repo>/.harnex/dispatch.jsonl`, where `<repo>` is found by walking up
-until `.git/` is present. Use `--global` for the no-repo fallback file.
+Reads the canonical v2 stream at `<git-root>/.harnex/dispatch.jsonl`; use
+`--global` for `~/.local/state/harnex/dispatch.jsonl` outside a repo. Each run
+has one `dispatch_start` plus one rich `dispatch_end`. `--summary-out` is an
+explicit-only end-row mirror, not a second default stream.
 
 ### `harnex logs` — Read session transcripts
 
@@ -246,8 +265,9 @@ Transport file (append-only JSONL):
 ```
 
 Each row uses schema v1 with envelope fields `schema_version`, `seq`, `ts`,
-`id`, and `type`. Emitted today: `started`, `send`, `exited`. `send.msg` is a
-200-character preview with `msg_truncated` when shortened.
+`id`, and `type`. Lifecycle, send, usage, git, summary, attempt, completion,
+and adapter-specific events are additive; consumers must ignore unknown event
+types. `send.msg` is a 200-character preview with `msg_truncated` when shortened.
 
 Schema details and compatibility guarantees are in [docs/events.md](docs/events.md).
 
@@ -300,7 +320,8 @@ When you run `harnex run codex --id worker`:
       hash(repo_root + id) % port_span + base_port
       walk forward until a free port is found
  6. Start HTTP server on 127.0.0.1:<port>
- 7. Write registry file:
+ 7. Opportunistically enforce configured age/size retention for events/output,
+      preserving current and live-session files; then write registry file:
       ~/.local/state/harnex/sessions/<repo_hash>--<id>.json
       and open transcript file:
       ~/.local/state/harnex/output/<repo_hash>--<id>.log

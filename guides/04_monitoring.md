@@ -91,8 +91,9 @@ harnex watch --id pi-i-NN --until done --max-wait 90m \
 
 `harnex watch --until done` wraps the `harnex wait --until done` work fence:
 it succeeds from `task_complete` or durable successful terminal telemetry
-(`--summary-out` / `.harnex/dispatch.jsonl` / exit status), returns non-zero for
-`task_failed` / failed terminal telemetry, returns `124` for `--max-wait`, and
+(the v2 `dispatch_end` in `.harnex/dispatch.jsonl`, an explicit mirror when
+configured, or exit status), returns non-zero for `task_failed` / failed
+terminal telemetry, returns `124` for `--max-wait`, and
 only writes done/fail markers as compatibility outputs after harnex has seen a
 terminal work signal.
 

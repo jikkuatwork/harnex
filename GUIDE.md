@@ -8,11 +8,11 @@ Treat harnex as a local supervisor harness, not as a conversation
 bus between agents.
 
 - Start a fresh worker for each step, usually with `--tmux`
-- Send one clear task, often by pointing the worker at a file
-- Use `--wait-for-idle` as a fence, then inspect with `harnex pane`
-- Ask the worker to write its output to a file when the next step
-  needs structured input
-- Stop the worker when that step is done
+- Give one clear startup task with `--context`; add `--auto-stop` for one-shot work
+- Monitor existing visible work with `harnex watch --until done`
+- Use `--wait-for-idle` only as a follow-up-send fence, then verify the artifact
+- Ask the worker to write its output to a file when the next step needs it
+- Stop completed interactive workers promptly
 
 For multi-step flows, chain fresh workers with file handoffs:
 Codex writes a plan, another Codex implements it, Claude reviews it,
@@ -49,14 +49,18 @@ automatically when the agent is ready. You don't have to wait
 or retry. Queueing exists, but the default workflow should still be
 one task per fresh worker.
 
-For unattended dispatch, prefer built-in monitoring over external poll loops:
+For unattended visible dispatch, prefer the native work-level watcher over
+external poll loops:
 
 ```bash
-harnex run codex --id impl --tmux impl --watch --preset impl
+harnex run codex --id impl --tmux impl \
+  --context "Read and execute /tmp/task-impl.md" --auto-stop
+harnex watch --id impl --until done --max-wait 90m
 ```
 
-This adds a foreground watcher that checks idle activity and performs bounded
-force-resume nudges. For full flag behavior and event-stream consumers, see
+`harnex run --watch --preset impl` is a separate foreground launch-and-stall
+babysitter; do not combine it with `--tmux` or `--detach`. For full flag
+behavior and event-stream consumers, see
 [TECHNICAL.md](TECHNICAL.md) and the built-in monitoring section in
 [README.md](README.md).
 
@@ -262,4 +266,7 @@ harnex agents-guide        # deeper agent-facing guidance
 ## What's next
 
 For the full command reference, flags, HTTP API, and internals,
-see [TECHNICAL.md](TECHNICAL.md).
+see [TECHNICAL.md](TECHNICAL.md). The packaged
+[dispatch telemetry](docs/dispatch-telemetry.md) and
+[configuration](docs/configuration.md) references cover the canonical v2 stream,
+phase allowlists, and log retention.

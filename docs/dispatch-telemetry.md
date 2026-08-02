@@ -1,12 +1,15 @@
 # Dispatch Telemetry
 
 `harnex run` captures predicted-vs-actual dispatch telemetry for a wrapped
-agent session. Raw measurements are emitted on the v1 events stream, and a
-consolidated JSONL summary is appended for downstream analysis.
+agent session. Raw measurements remain on the v1 per-session events stream.
+Durable summaries use one canonical v2 dispatch stream: every run appends one
+`dispatch_start` row at registration and one rich `dispatch_end` row at
+teardown.
 
-Every completed run also appends one compact dispatch-history record. In a git
-repo, `harnex history` reads `<repo>/.harnex/dispatch.jsonl`; outside a git repo
-it reads `~/.local/state/harnex/dispatch.jsonl`.
+Inside a git repo the stream is `<git-root>/.harnex/dispatch.jsonl`; outside a
+git repo it is `~/.local/state/harnex/dispatch.jsonl`. `harnex history`,
+`status --id`, and `wait` consume the same rows. Legacy v1 thin rows and
+pre-v2 envelope-less summaries may coexist and remain readable/skippable.
 
 ## CLI flags
 
@@ -22,7 +25,8 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 
 - `--meta JSON` must be a JSON object. The parsed object is echoed verbatim on
   the `started.meta` event.
-- `--summary-out PATH` writes the consolidated summary JSON line to `PATH`.
+- `--summary-out PATH` is an explicit-only compatibility mirror. It appends
+  the identical v2 `dispatch_end` row to `PATH`; it has no default.
 - `--artifact-report PATH` asks the worker to write a bounded
   `harnex.artifact_report.v1` JSON sidecar. Harnex exposes the absolute path as
   `HARNEX_ARTIFACT_REPORT_PATH` and ingests it at finalization.
@@ -54,19 +58,18 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 - `--require-attribution` fails before launch unless `project_id`, `phase`,
   `intent`, and at least one of `queue_id` / `entry_id` / `issue` / `plan` are
   present through first-class flags or `--meta`.
-- If `--summary-out` is omitted and harnex has a non-empty resolved repo root,
-  the summary path defaults to `<repo>/.harnex/dispatch.jsonl`, regardless of
-  whether the repo has a legacy `koder/` directory.
-- The compact history record is appended after the consolidated summary record.
-  In the common git-repo default, both records are written to
-  `<repo>/.harnex/dispatch.jsonl`; the compact record is the record intended for
-  `harnex history`.
+- Omitting `--summary-out` is the normal path: the canonical stream still gets
+  its start/end pair and no mirror is written.
+- The v2 `dispatch_end` combines the history envelope (`schema_version`,
+  `record_type`, id/status/timing fields) with all rich telemetry sections.
+  A default dispatch therefore adds exactly two rows, not separate thin and
+  rich end rows.
 
 Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
 ## Metadata and prediction contract
 
-The consolidated record always has `meta`, `predicted`, `actual`, `agent`,
+The v2 `dispatch_end` always has `meta`, `predicted`, `actual`, `agent`,
 `usage`, `context`, `attribution`, `outcome`, `attempt`, and `reliability`
 blocks. When queue attribution fields are provided, harnex also adds a
 top-level `queue` block. When orchestration fields are provided, harnex adds a
@@ -85,8 +88,8 @@ These top-level `--meta` keys pass through into `meta` when provided:
 `task_brief`. Queue-specific keys such as
 `project_id`, `queue_id`, `entry_id`, `entry_title`, and `intent` are used for
 the top-level `queue` block but are not duplicated into legacy `meta`. Unknown
-top-level keys are kept on `started.meta` but are not copied into the
-consolidated record.
+top-level keys are kept on `started.meta` but are not copied into the v2 end
+row.
 
 `predicted` is copied verbatim from `--meta.predicted` when it is a JSON object;
 otherwise it is `{}`. Harnex does no profile lookup or recommendation-table
@@ -169,7 +172,8 @@ jq -r 'select(.queue) | [.queue.project_id, .queue.queue_id, .queue.entry_id, .q
   "usage": {
     "status": "observed",
     "cost_usd": 1.42,
-    "cost_source": "provider_reported",
+    "cost_source": "price_table",
+    "cost_price_as_of": "2026-08-03",
     "input_tokens": 120000,
     "output_tokens": 8000,
     "cached_input_tokens": 2000,
@@ -183,10 +187,14 @@ jq -r 'select(.queue) | [.queue.project_id, .queue.queue_id, .queue.entry_id, .q
 all-zero adapter measurement, `estimated` for caller-supplied
 `--meta '{"usage":{"status":"estimated",...}}'` values, `unsupported` when
 the adapter has no supported usage source, or `missing` when a supported source
-provided no observation. `cost_source` is `provider_reported` only for a
-reliable adapter value and `caller_estimate` for an estimate. `null` never means
-zero, and provider-reported cost is approximate telemetry, not a billing
-invoice.
+provided no observation. `cost_source` is `provider_reported` for a reliable
+adapter value, `price_table` when Harnex computes exact maintained
+provider/model/service-tier/context-band list pricing, and `caller_estimate` for
+a declared estimate. Price-table rows carry `cost_price_as_of`; unknown models,
+service/context tiers, missing context evidence, or required token components
+remain null. Provider-reported values are never
+overwritten, and all cost telemetry is operational estimation rather than a
+billing invoice.
 
 `context` is separate from cumulative `usage`: it describes how full the active
 model context became, not how many tokens all requests accumulated:
@@ -243,13 +251,15 @@ and `report_status` records `accepted`, `missing`, `invalid`, `stale`,
 contains final commit/path/LOC observations and does **not** claim those changes
 prove authorship or semantic quality.
 
-Every row has one Harnex-session `attempt`. Its random `id` is distinct from
-operator-visible `run_id`; `parent_attempt_id` and `parent_dispatch_id` link
-retries/fixes/reviews while each row keeps separate raw token and cost values.
-The events JSONL adds `attempt_started` and `attempt_finished`. Adapters that
-report an internal retry additionally emit `attempt_retry_scheduled`; future
-recovery/fallback owners can emit `attempt_fallback_switched` without changing
-the row schema.
+Every end row has one Harnex-session `attempt`. Its random `id` is distinct
+from operator-visible `run_id`; `parent_attempt_id` and `parent_dispatch_id`
+link retries/fixes/reviews/fallbacks while each row keeps separate raw usage.
+At finalization Harnex walks the canonical stream's parent chain once to derive
+`actual.attempts_total`, succeeded/failed counts, `fallback_triggered`, and
+`reliability.recovered`; missing parents and malformed/cyclic history degrade
+safely to the resolvable chain. `retry_count` remains the separate in-run event
+counter. The events JSONL also carries `attempt_started`, `attempt_finished`,
+and adapter-reported retry/fallback events.
 
 ## Orchestration tax rollups
 
@@ -414,10 +424,10 @@ sidecar-accepted outcome: `throughput_tokens_per_s` and
 `throughput_successes_per_h`; `retry_tax_pct` is `0.0` when no retry occurred
 and `null` until a retry source can measure attributable wasted tokens.
 
-`cost_usd` is adapter/provider-reported approximate USD cost when the adapter
-has a reliable structured source (for example Pi RPC `get_session_stats.cost`);
-it remains `null` for adapters without reliable cost telemetry. Read `usage`
-with it to distinguish an unavailable value from a genuine zero.
+Legacy `actual.cost_usd` reflects adapter/provider-reported cost only. Prefer
+the top-level `usage` block: it also carries price-table-derived cost and its
+`cost_source` / `cost_price_as_of` provenance. Claude PTY currently has no
+bounded usage producer and reports `unsupported`; it is not silently priced.
 
 Examples for downstream analysis (never treat missing usage as zero):
 
@@ -445,5 +455,7 @@ jq -s 'map(select(.actual.attempts_total > 0))
   turn was observed.
 - `disconnected`: wrapped process exited `0` but no session summary was parsed.
 
-Summary file writes are best-effort. Write failures are printed as warnings and
-do not change the wrapped process exit code.
+Canonical dispatch-stream and explicit mirror writes are best-effort. Write
+failures are printed as warnings and do not change the wrapped process exit
+code. Repo phase allowlists and runtime-log retention are documented in
+[configuration.md](configuration.md).

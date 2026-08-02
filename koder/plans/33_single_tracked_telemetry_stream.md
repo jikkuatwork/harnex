@@ -164,8 +164,10 @@ input) — resolved with an adapter hook `usage_input_includes_cached?`;
 `ensure_thread!`/`resume` now capture the schema-required `model` field
 into `current_model`, which `summary_model` already consumed. New
 always-present `usage.cost_price_as_of` field records table vintage.
-Rates as of 2026-08-02; claude-sonnet-5 carries intro pricing ending
-2026-08-31 (refresh note in the pricing.rb header).
+Base rates were captured 2026-08-02; `gpt-5.5` tier/context rates were
+corrected 2026-08-03 after Holm's actual 958-row model corpus exposed the
+missing entry. Claude-sonnet-5 carries intro pricing ending 2026-08-31
+(refresh note in the pricing.rb header).
 
 Goal 3, Codex half — satisfies the issue's cost acceptance criterion.
 
@@ -180,6 +182,11 @@ Goal 3, Codex half — satisfies the issue's cost acceptance criterion.
 Exit: a Codex dispatch records non-null `cost_usd` with `cost_source` set.
 
 ## Phase 3 — Claude usage producer (first slice of subsumed #58)
+
+**Deferred from the 0.9.0 release on 2026-08-03.** Holm automatic dispatch is
+GPT-only, and Claude cache-write tokens still need a non-lossy field/formula
+decision before pricing. Interactive Claude remains explicit
+`usage.status: "unsupported"`; #58 stays open. This phase remains separable.
 
 Goal 3, Claude half. Separable: phases 4-7 do not depend on it, and the
 issue's acceptance criteria gate only Codex — if the Claude CLI surface
@@ -198,6 +205,11 @@ Exit: an auto-stop Claude dispatch records usage tokens and priced cost, or
 the phase is explicitly deferred in the release notes with #58 kept open.
 
 ## Phase 4 — Harness-owned attempt linkage
+
+**Done 2026-08-03.** One-pass/memoized chain derivation now owns attempt
+counts, fallback, and immediate-parent recovery; malformed, duplicate, missing,
+and cyclic history degrade safely. `fallback` is a public guarded attempt kind.
+Integrated suite: 638 runs, 0 failures, 2 env-gated skips.
 
 Goal 4, per locked decision 7.
 
@@ -218,6 +230,11 @@ increments harness-owned counters.
 
 ## Phase 5 — `meta.phase` allowlist validation
 
+**Done 2026-08-03.** Optional `.harnex/config.json` supports `warn`/`reject`;
+invalid explicit config fails before spawn and reject writes no dispatch row.
+The generic loader is shared with retention. Integrated suite: 638 runs, 0
+failures, 2 env-gated skips.
+
 Goal 5, per locked decision 8.
 
 - Minimal config loader for `.harnex/config.json` (repo-root of launch cwd,
@@ -231,6 +248,12 @@ Exit: a consumer can enforce a canonical phase set without patching harnex.
 
 ## Phase 6 — Events/output retention
 
+**Done 2026-08-03.** Defaults are 45 days + 1 GiB per owned directory with
+env/repo overrides, oldest-first pruning, current/registry/start-row live
+protection, lock + one-hour automatic throttle, bounded last-prune metadata,
+and doctor report/apply/dry-run surfaces. Integrated suite: 638 runs, 0
+failures, 2 env-gated skips.
+
 Goal 6, per locked decision 9.
 
 - Prune hook at dispatch registration + `harnex doctor --prune`; doctor
@@ -243,6 +266,12 @@ Exit: `{events,output}` respect configured size/age caps — the issue's
 retention acceptance criterion.
 
 ## Phase 7 — Docs, migration note, verification
+
+**Docs/migration implementation done 2026-08-03; release verification
+pending.** `docs/*.md` now ships in the gem; bundled/root guides describe the
+v2 stream, explicit-only mirror, price provenance/context guard, phase config,
+and retention. Holm and koder-pattern current guidance are being migrated in
+the same release window.
 
 Goal 7 plus release hygiene.
 

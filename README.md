@@ -60,9 +60,10 @@ job, watch it work, stop it when done.
 ### Run from a temporary/public bundle
 
 Use `--cwd DIR` when the worker should see a specific directory rather than
-the orchestrator's current repo. Harnex starts the wrapped agent in `DIR`, sets
-that directory as the session root, and resolves default telemetry such as
-`.harnex/dispatch.jsonl` there:
+the orchestrator's current repo. Harnex starts the wrapped agent in `DIR` and
+uses it for session attribution. Canonical dispatch telemetry is written to the
+enclosing git root's `.harnex/dispatch.jsonl`; a non-git directory uses the
+global `~/.local/state/harnex/dispatch.jsonl` fallback:
 
 ```bash
 harnex run codex --cwd /tmp/leximaze_eval_run_001 \
@@ -252,14 +253,18 @@ Schema details and compatibility policy are documented in
 
 ## Dispatch history
 
-Every finished `harnex run` writes dispatch records. By default, the terminal
-summary JSONL path is `<session-root>/.harnex/dispatch.jsonl`; `--cwd DIR` makes
-`DIR` the session root, including for non-git temporary bundles. The compact
-history record is repo-local in a git tree and falls back to
-`~/.local/state/harnex/dispatch.jsonl` outside git.
-`harnex history` reads the compact records from that location, and
-`harnex status --id ID --json` / `harnex wait` can use the same durable
-terminal summaries when the live session registry is already gone.
+Every `harnex run` writes exactly one v2 `dispatch_start` row at registration
+and one rich v2 `dispatch_end` row at teardown. Both use the canonical stream:
+`<git-root>/.harnex/dispatch.jsonl` inside a git repo, or
+`~/.local/state/harnex/dispatch.jsonl` otherwise. The end row combines the
+history envelope with usage, context, attribution, outcome, attempt,
+reliability, queue/orchestration, and optional artifact-report sections.
+
+`--summary-out PATH` has no default. It is an explicit compatibility mirror
+that copies the identical `dispatch_end` row to another JSONL file; do not pass
+it merely to preserve rich telemetry. `harnex history`,
+`harnex status --id ID --json`, and `harnex wait` all read the canonical stream
+when the live registry is gone. Mixed legacy v1 and v2 rows remain readable.
 
 Use `harnex history` to inspect it:
 
@@ -312,17 +317,17 @@ harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 \
   --phase implement --intent queue-work --require-attribution ...
 ```
 
-Soft budget metadata is copied into summary `meta`; queue/agent/reliability
-metadata is copied into top-level `queue`, `agent`, and `reliability` summary
-blocks. Every terminal row also has `usage` (so null is distinguishable from
-explicit zero or an estimate), `attribution`, `outcome`, and a joinable
-per-session `attempt` block. Terminal summary `actual` records timing, exit
-classification, token usage when the adapter can capture it, adapter-reported
-`cost_usd` when reliably available, git deltas, task-completion state,
-operational counters (`stalls`, `force_resumes`, `disconnections`,
-`tool_calls`, `commands_executed`), output/event log paths, and rough volume
-measurements such as `lines_changed`, `output_lines`, `output_bytes`, and
-`event_records`.
+Soft budget metadata is copied into end-row `meta`; queue/agent/reliability
+metadata is copied into top-level `queue`, `agent`, and `reliability` blocks.
+Every end row also has `usage` (so null is distinguishable from explicit zero or
+an estimate), `attribution`, `outcome`, and a joinable `attempt` block. When an
+adapter reports tokens but no cost, Harnex may compute provider list-price cost
+only for an exact maintained provider/model/service-tier/context-rate match; such rows use
+`usage.cost_source: "price_table"` and carry `usage.cost_price_as_of`.
+Provider-reported cost remains authoritative, estimates remain labelled, and
+unknown rates stay null. `actual` also records timing, exit classification, git
+deltas, task-completion state, harness-derived cross-dispatch attempt counts,
+operational counters, output/event paths, and bounded volume measurements.
 
 Long queue runners can also opt into logical primary-orchestrator rollups:
 
@@ -423,7 +428,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
 | `harnex artifact-report init\|validate PATH` | Create or validate bounded `harnex.artifact_report.v1` proof; use `validate --final` before strict completion |
-| `harnex doctor` | Run adapter dependency preflight checks; add `--sweep` for read-only session drift diagnostics |
+| `harnex doctor` | Run dependency and retention diagnostics; `--sweep` reports session drift, `--prune --dry-run` previews retention, and `--prune` applies it |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
 | `harnex recipes` | List and read tested workflow patterns (`show 01`, `show buddy`) |
@@ -442,6 +447,8 @@ longer used. Remove stale `~/.claude/skills/harnex-*` or
 
 - [GUIDE.md](GUIDE.md) — getting started walkthrough with examples
 - [TECHNICAL.md](TECHNICAL.md) — full command reference, flags, HTTP API, architecture
+- [docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) — v2 dispatch stream and field contract
+- [docs/configuration.md](docs/configuration.md) — phase allowlists and events/output retention
 
 ## License
 

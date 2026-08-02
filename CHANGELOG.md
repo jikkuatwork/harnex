@@ -25,6 +25,20 @@
   (cached ⊆ input → billable input = input − cached) from the codex PTY
   transcript line (input excludes cached → cached prices additively).
   Verified against the captured schema fixtures and a live app-server row.
+- Price-table lookup now covers Holm's effective `gpt-5.5` model and keys its
+  tier-sensitive rates by the recorded service tier (`standard`, `flex`, or
+  `fast`; `priority` aliases fast). Because published `gpt-5.5` rates split at
+  272K active context, Harnex also requires an observed peak below that boundary;
+  missing/long-context evidence remains unpriced rather than applying the wrong
+  short-context rate.
+- Optional repo phase policy in `.harnex/config.json`: an allowlist can `warn`
+  or `reject` non-canonical effective `meta.phase` values before spawn. Explicit
+  malformed policy files fail closed; no config preserves existing behavior.
+- Bounded events/output retention: 45-day and 1-GiB defaults per directory,
+  repo config plus environment overrides, current/live-session protection,
+  oldest-first age/size pruning, one-hour automatic throttle, and bounded
+  last-prune metadata. `harnex doctor` reports size/limits; `--prune --dry-run`
+  previews bounded candidate paths and `--prune` applies the policy.
 
 ### Changed
 
@@ -52,6 +66,15 @@
   one shot (branching on `record_type` first), so `wait --until done` and
   `status --id` fall back to the unified stream; legacy duck-types remain
   for pre-v2 files.
+- Cross-dispatch attempt fields are harness-derived from the canonical stream:
+  `attempts_total`/succeeded/failed, `fallback_triggered`, and
+  `reliability.recovered` follow bounded parent links and degrade safely on
+  missing, duplicate, malformed, or cyclic history. `fallback` is now a public,
+  live-parent-guarded attempt kind; in-run `retry_count` remains separate.
+- Public telemetry/configuration references under `docs/*.md` are now packaged
+  in the gem. README, GUIDE, TECHNICAL, agent guides, and event/telemetry docs
+  use the same canonical-stream, mirror, native-watch, pricing, phase-policy,
+  and retention terminology.
 
 ### Fixed
 
