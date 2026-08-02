@@ -41,6 +41,58 @@ class PricingTest < Minitest::Test
     assert_in_delta 7.7, priced[:cost_usd], 1e-9
   end
 
+  def test_gpt_5_5_flex_prices_effective_service_tier
+    priced = Harnex::Pricing.compute(
+      provider: "openai", model: "gpt-5.5", service_tier: "flex",
+      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
+      input_includes_cached: true
+    )
+
+    # 600k * 2.50 + 400k * 0.25 + 100k * 15.00 = 3_100_000 per-1M units
+    assert_in_delta 3.1, priced[:cost_usd], 1e-9
+    assert_equal "2026-08-03", priced[:as_of]
+  end
+
+  def test_gpt_5_5_service_tiers_price_distinctly
+    cases = {
+      "standard" => 6.2,
+      "flex" => 3.1,
+      "fast" => 15.5,
+      "priority" => 15.5
+    }
+
+    cases.each do |service_tier, expected_cost|
+      priced = Harnex::Pricing.compute(
+        provider: "openai", model: "gpt-5.5", service_tier: service_tier,
+        input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
+        input_includes_cached: true
+      )
+
+      assert_in_delta expected_cost, priced[:cost_usd], 1e-9, service_tier
+    end
+  end
+
+  def test_gpt_5_5_unknown_or_missing_service_tier_returns_nil
+    assert_nil Harnex::Pricing.compute(
+      provider: "openai", model: "gpt-5.5", service_tier: "turbo",
+      input_tokens: 100, output_tokens: 100, cached_tokens: 0
+    )
+    assert_nil Harnex::Pricing.compute(
+      provider: "openai", model: "gpt-5.5", service_tier: nil,
+      input_tokens: 100, output_tokens: 100, cached_tokens: 0
+    )
+  end
+
+  def test_flat_price_models_do_not_require_service_tier
+    priced = Harnex::Pricing.compute(
+      provider: "openai", model: "gpt-5.3-codex", service_tier: nil,
+      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
+      input_includes_cached: true
+    )
+
+    assert_in_delta 2.52, priced[:cost_usd], 1e-9
+  end
+
   def test_unknown_model_returns_nil
     assert_nil Harnex::Pricing.compute(
       provider: "openai", model: "gpt-legacy-unknown",

@@ -1591,6 +1591,7 @@ module Harnex
           input_tokens: values[:input_tokens],
           output_tokens: values[:output_tokens],
           cached_tokens: values[:cached_tokens],
+          service_tier: summary_service_tier,
           input_includes_cached: adapter.usage_input_includes_cached?
         )
         if priced

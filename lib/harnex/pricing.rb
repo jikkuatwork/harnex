@@ -1,8 +1,8 @@
 module Harnex
   # Static price table for computing usage.cost_usd when an adapter reports
   # tokens but no cost (plan 33 Phase 2, locked decision 6). Cost is computed,
-  # never guessed: an unknown provider/model or a missing token component
-  # leaves cost_usd null.
+  # never guessed: an unknown provider/model/service tier or a missing token
+  # component leaves cost_usd null.
   #
   # ## Update procedure
   #
@@ -20,6 +20,12 @@ module Harnex
   #    changes are meant to be conscious, test-visible edits.
   # 4. Never backfill: rows written before a table change keep the cost they
   #    were written with.
+  #
+  # Models whose pricing varies by service tier use a nested `service_tiers`
+  # table. For those models a nil or unknown service tier is unpriceable. Do
+  # not infer standard/flex/fast from context outside the recorded row. OpenAI
+  # documents `priority` as the fast tier alias for gpt-5.5 short-context
+  # pricing; Harnex maps that alias only where the source supports it.
   #
   # Known scheduled change: Anthropic's claude-sonnet-5 entry below carries
   # introductory pricing ($2/$10) that ends 2026-08-31; standard pricing is
@@ -55,6 +61,16 @@ module Harnex
       "openai" => {
         # Source: https://developers.openai.com/api/docs/pricing
         "gpt-5.3-codex" => { input: 1.75, cached_input: 0.175, output: 14.00, as_of: "2026-08-02" },
+        # Short-context service-tier rates read 2026-08-03. Long-context
+        # rates are deliberately absent until exact source pricing is known.
+        "gpt-5.5" => {
+          service_tier_aliases: { "priority" => "fast" }.freeze,
+          service_tiers: {
+            "standard" => { input: 5.00, cached_input: 0.50, output: 30.00, as_of: "2026-08-03" },
+            "flex" => { input: 2.50, cached_input: 0.25, output: 15.00, as_of: "2026-08-03" },
+            "fast" => { input: 12.50, cached_input: 1.25, output: 75.00, as_of: "2026-08-03" }
+          }.freeze
+        }.freeze,
         "gpt-5.2" => { input: 1.75, cached_input: 0.175, output: 14.00, as_of: "2026-08-02" },
         "gpt-5.1" => { input: 1.25, cached_input: 0.125, output: 10.00, as_of: "2026-08-02" },
         "gpt-5" => { input: 1.25, cached_input: 0.125, output: 10.00, as_of: "2026-08-02" },
@@ -72,10 +88,13 @@ module Harnex
     module_function
 
     # Returns { cost_usd:, as_of: } or nil when the cost cannot be computed
-    # (unknown provider/model, or input/output token counts missing).
+    # (unknown provider/model/service tier, or input/output token counts missing).
     def compute(provider:, model:, input_tokens:, output_tokens:, cached_tokens: nil,
+                service_tier: nil,
                 input_includes_cached: false)
       entry = PRICES.dig(provider.to_s, model.to_s)
+      return nil unless entry
+      entry = rates_for_service_tier(entry, service_tier)
       return nil unless entry
       return nil unless input_tokens.is_a?(Numeric) && output_tokens.is_a?(Numeric)
 
@@ -87,6 +106,17 @@ module Harnex
               cached * entry[:cached_input] +
               output_tokens * entry[:output]) / 1_000_000.0
       { cost_usd: cost.round(6), as_of: entry[:as_of] }
+    end
+
+    def rates_for_service_tier(entry, service_tier)
+      tiers = entry[:service_tiers]
+      return entry unless tiers
+
+      tier = service_tier.to_s
+      return nil if tier.empty?
+
+      aliases = entry[:service_tier_aliases] || {}
+      tiers[aliases.fetch(tier, tier)]
     end
   end
 end

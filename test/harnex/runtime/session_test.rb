@@ -580,6 +580,25 @@ class SessionTest < Minitest::Test
     assert_equal "price_table", usage.fetch("cost_source")
   end
 
+  def test_usage_price_table_uses_appserver_effective_service_tier
+    adapter = Harnex::Adapters::CodexAppServer.new
+    adapter.instance_variable_set(:@current_model, "gpt-5.5")
+    session = build_session(
+      adapter: adapter,
+      command: ["codex", "app-server", "-c", "service_tier=\"flex\""]
+    )
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000
+    })
+
+    usage = session.send(:build_summary_usage)
+    # App-server input includes cached and flex prices apply:
+    # 600k * 2.50 + 400k * 0.25 + 100k * 15.00 = 3_100_000 per-1M units
+    assert_in_delta 3.1, usage.fetch("cost_usd"), 1e-9
+    assert_equal "price_table", usage.fetch("cost_source")
+    assert_equal "2026-08-03", usage.fetch("cost_price_as_of")
+  end
+
   def test_usage_price_table_leaves_unknown_model_unpriced
     session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-unknown-model" })
     session.instance_variable_set(:@usage_summary, { input_tokens: 100, output_tokens: 10 })
