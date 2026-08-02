@@ -1,9 +1,10 @@
 ---
-status: open
+status: planned
 priority: P2
 issue_kind: slice
 created: 2026-08-02
 updated: 2026-08-02
+plan: 33
 tags: telemetry, dispatch-jsonl, schema, cost, retention, phases
 ---
 

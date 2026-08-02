@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-02 | 10:23 PM | IST
+Updated: 2026-08-02 | 11:58 PM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in the linked
@@ -20,24 +20,28 @@ issue/plan files.
 
 ## Present
 
-- No active blocker. Suite green at `v0.8.0` (573 runs, 0 failures, 2
-  env-gated skips) including the schema-drift gate, no skip flag needed.
-- Known cosmetic nit (pre-existing): `harnex history` renders a blank row
-  for 2026-05-era `{meta, predicted, actual}`-schema rows in
-  `.harnex/dispatch.jsonl`. Details in `koder/releases/0.8.0.md`. User has
-  approved taking this up next session (no issue doc filed yet — create one
-  at open if useful).
-- #63 (single tracked telemetry stream), #64 (observed-state receipts), and
-  #57 (terminal-outcome vocabulary + failure budget) remain filed and open.
+- No active blocker. Suite green at HEAD (574 runs, 0 failures, 2
+  env-gated skips).
+- 2026-08-02 | 11:58 PM | IST: `harnex history` blank-row fix landed
+  (`591e59b`, unreleased): legacy `{meta, predicted, actual}`-schema rows
+  are now skipped instead of rendering blank. CHANGELOG has the entry
+  under Unreleased.
+- **Plan 33 written** for #63 (single tracked telemetry stream):
+  `koder/plans/33_single_tracked_telemetry_stream.md` — 7 phases, locked
+  decisions include the v2 end-row envelope, `--summary-out` demoted to
+  explicit-only mirror, price-table cost (subsumes #58's cost gap), and
+  events/output retention caps. Not yet implemented.
+- #64 (observed-state receipts) and #57 (terminal-outcome vocabulary +
+  failure budget) remain filed and open.
 - #42 (Codex app-server recovery) and #43 (throughput telemetry v2) remain
   open; plan 30 Phases 3–5 still own live fallback production.
 
 ## Future
 
-1. **Next session (user-directed):** #63 — single versioned tracked
-   telemetry stream (subsumes #58 cost gap) — and the `harnex history`
-   blank-row fix for legacy-schema rows (see Present note +
-   `koder/releases/0.8.0.md`).
+1. **Next: implement plan 33 Phase 1** (unified v2 end row, single stream,
+   canonical path) — the keystone phase; phases 2–7 layer on it. Phase 3
+   (Claude usage producer) is marked separable if the CLI surface fights
+   back.
 2. #64 — observed-state receipts (harness-authored proof).
 3. Implement #56 adapter preflight using strict proof acceptance, then
    continue #57's remaining outcome classes and failure-budget rollup —
