@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.0] - 2026-08-03 | 01:11 AM | IST
+
+Minor bump: the durable dispatch row family is now v2, `--summary-out` changes
+from a default destination to an explicit mirror, and retention/phase policy add
+operator-visible behavior.
 
 ### Added
 
