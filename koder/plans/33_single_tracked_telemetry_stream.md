@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 issue: 63
 plan: 33
 tier: B
@@ -113,6 +113,13 @@ locally on 2026-08-02).
     appended by sessions, not part of this stream.
 
 ## Phase 1 — Unified v2 end row, single stream, canonical path
+
+**Done 2026-08-02.** Suite green (576 runs, 0 failures, 2 env-gated
+skips); smoke verified two v2 rows on the canonical path with
+`history`/`wait --until done`/`status --id` resolving from them.
+One note: with the default gone, non-git launch roots now stream to the
+global fallback file (one path rule) — previously the rich row landed in
+a repo-local `.harnex/` even without git.
 
 Goals 1 + 2 of the issue. The keystone phase; everything else layers on it.
 

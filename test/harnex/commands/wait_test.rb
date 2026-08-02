@@ -107,6 +107,49 @@ class WaiterTest < Minitest::Test
     end
   end
 
+  def test_wait_until_done_resolves_from_unified_v2_end_row
+    Dir.mktmpdir("harnex-wait-v2-row") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
+      FileUtils.mkdir_p(File.dirname(dispatch_path))
+      File.write(dispatch_path, JSON.generate({
+        "schema_version" => 2,
+        "record_type" => "dispatch_end",
+        "id" => "v2-done",
+        "session_id" => "sess-v2-done",
+        "cli" => "codex",
+        "status" => "completed",
+        "terminal_event" => "task_complete",
+        "started_at" => Time.now.iso8601,
+        "ended_at" => Time.now.iso8601,
+        "summary_out_path" => nil,
+        "meta" => {
+          "id" => "v2-done",
+          "repo" => repo,
+          "started_at" => Time.now.iso8601,
+          "ended_at" => Time.now.iso8601
+        },
+        "predicted" => {},
+        "actual" => {
+          "task_complete" => true,
+          "exit" => "success",
+          "exit_code" => 0
+        },
+        "outcome" => { "class" => "completed_with_proof", "report_status" => nil }
+      }) + "\n")
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", "v2-done", "--until", "done"])
+      out, = capture_io { assert_equal 0, waiter.run }
+      payload = JSON.parse(out)
+      assert payload["ok"]
+      assert_equal true, payload["done"]
+      assert_equal true, payload["task_complete"]
+      assert_equal "completed", payload["state"]
+      assert_equal "completed_with_proof", payload["outcome_class"]
+      assert_equal dispatch_path, payload["summary_out"]
+    end
+  end
+
   def test_wait_until_exit_reads_terminal_summary_when_exit_file_is_missing
     Dir.mktmpdir("harnex-wait-summary") do |repo|
       system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)

@@ -9,6 +9,12 @@ module Harnex
 
     MAX_REPO_WALK_LEVELS = 10
 
+    # v2 marks the unified era: one rich dispatch_end row per dispatch
+    # carrying both the thin envelope and the summary sections. Readers
+    # key on record_type, not this stamp; legacy clauses keep accepting
+    # v1 and envelope-less rows mixed in the same file.
+    SCHEMA_VERSION = 2
+
     def global_path
       File.join(STATE_DIR, "dispatch.jsonl")
     end
@@ -138,7 +144,7 @@ module Harnex
     # trace; the dispatch_end row written in finalize_session! completes it.
     def build_start_record(session)
       {
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
         record_type: "dispatch_start",
         id: session.id,
         session_id: session.session_id,
@@ -155,11 +161,15 @@ module Harnex
       }
     end
 
+    # The v2 end row: the thin envelope merged with the rich summary
+    # sections. The envelope carries no raw meta passthrough — the summary's
+    # meta section (a superset with provenance) rides in its place; top-level
+    # tier stays for the history renderer.
     def build_record(session)
       ended_at = session.ended_at || Time.now
       status, terminal_event = classify(session)
       {
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
         record_type: "dispatch_end",
         id: session.id,
         session_id: session.session_id,
@@ -172,11 +182,10 @@ module Harnex
         terminal_event: terminal_event,
         commit_sha: commit_sha(session.git_start, session.git_end),
         tier: session.__send__(:meta_hash)["tier"],
-        meta: session.__send__(:meta_hash),
         summary_out_path: session.summary_out,
         events_log_path: session.events_log_path,
         tmux_state: tmux_state(session.__send__(:summary_tmux_session))
-      }
+      }.merge(session.__send__(:build_summary_record))
     end
 
     def classify(session)

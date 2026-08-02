@@ -218,14 +218,15 @@ class SessionTest < Minitest::Test
       assert_equal 1, git_end["commits"]
 
       summary = rows[5]
-      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), summary["path"]
+      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), summary["path"]
+      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), summary["mirror_path"]
       assert_equal "success", summary["exit"]
       attempt_finished = rows[6]
       assert_equal "succeeded", attempt_finished["status"]
       assert_equal 0, rows[7]["code"]
       assert_equal "success", rows[7]["reason"]
 
-      record = JSON.parse(File.read(summary["path"]).lines.last)
+      record = JSON.parse(File.read(summary["mirror_path"]).lines.last)
       assert_equal session.id, record.dig("meta", "id")
       assert_equal "dispatch telemetry", record.dig("meta", "description")
       assert_equal "harnex", record.dig("meta", "harness")
@@ -281,7 +282,7 @@ class SessionTest < Minitest::Test
     end
   end
 
-  def test_summary_event_has_nil_path_when_no_summary_path_resolves
+  def test_summary_event_points_at_tracked_stream_without_mirror
     Dir.mktmpdir("harnex-session-summary") do |repo|
       session = build_session(
         command: [RbConfig.ruby, "-e", "exit 0"],
@@ -293,7 +294,8 @@ class SessionTest < Minitest::Test
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
       assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
-      assert_nil rows[-3]["path"]
+      assert_equal Harnex::DispatchHistory.path_for(repo), rows[-3]["path"]
+      refute rows[-3].key?("mirror_path")
       refute File.exist?(File.join(repo, "koder", "DISPATCH.jsonl"))
     end
   end
@@ -312,7 +314,8 @@ class SessionTest < Minitest::Test
       assert_match(/failed to write dispatch summary/, err)
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
       assert_equal "summary", rows[-3]["type"]
-      assert_equal repo, rows[-3]["path"]
+      assert_equal Harnex::DispatchHistory.path_for(repo), rows[-3]["path"]
+      assert_equal repo, rows[-3]["mirror_path"]
       assert_equal "exited", rows[-1]["type"]
     end
   end

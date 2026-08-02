@@ -115,6 +115,47 @@ class StatusCommandTest < Minitest::Test
     assert_equal 0, data.first["exit_code"]
   end
 
+  def test_status_json_id_returns_terminal_summary_from_unified_v2_end_row
+    repo = create_git_repo
+    dispatch_path = File.join(repo, ".harnex", "dispatch.jsonl")
+    FileUtils.mkdir_p(File.dirname(dispatch_path))
+    File.write(dispatch_path, JSON.generate({
+      "schema_version" => 2,
+      "record_type" => "dispatch_end",
+      "id" => "v2-48",
+      "session_id" => "sess-v2-48",
+      "cli" => "codex",
+      "status" => "completed",
+      "terminal_event" => "task_complete",
+      "started_at" => Time.now.iso8601,
+      "ended_at" => Time.now.iso8601,
+      "meta" => {
+        "id" => "v2-48",
+        "repo" => repo,
+        "started_at" => Time.now.iso8601,
+        "ended_at" => Time.now.iso8601
+      },
+      "actual" => {
+        "task_complete" => true,
+        "exit" => "success",
+        "exit_code" => 0
+      },
+      "predicted" => {}
+    }) + "\n")
+
+    status = Harnex::Status.new(["--json", "--repo", repo, "--id", "v2-48"])
+    out, = capture_io { assert_equal 0, status.run }
+    data = JSON.parse(out)
+
+    assert_equal 1, data.length
+    assert_equal "v2-48", data.first["id"]
+    assert_equal "completed", data.first["state"]
+    assert_equal true, data.first["terminal"]
+    assert_equal true, data.first["task_complete"]
+    assert_equal "success", data.first["exit"]
+    assert_equal 0, data.first["exit_code"]
+  end
+
   def test_status_json_id_returns_unknown_when_no_live_or_terminal_data_exists
     repo = create_git_repo
 

@@ -1247,7 +1247,9 @@ module Harnex
     end
 
     def emit_summary_event
-      emit_event("summary", path: summary_out, exit: @exit_reason)
+      payload = { path: dispatch_history_path, exit: @exit_reason }
+      payload[:mirror_path] = summary_out if summary_out
+      emit_event("summary", **payload)
     end
 
     def emit_attempt_finished(attempt)
@@ -1284,9 +1286,9 @@ module Harnex
         warn("harnex: failed to collect session-end telemetry: #{e.message}")
       end
       @exit_reason ||= classify_exit
-      record = build_summary_record
+      record = DispatchHistory.build_record(self)
+      append_dispatch_history_record(record)
       append_summary_record(record)
-      append_dispatch_history_record
       emit_summary_event
       emit_attempt_finished(record.fetch(:attempt))
       emit_exit_event
@@ -1983,6 +1985,8 @@ module Harnex
       meta.is_a?(Hash) ? meta : {}
     end
 
+    # Explicit-only mirror: the identical end record lands here in addition
+    # to the tracked stream when --summary-out is configured.
     def append_summary_record(record)
       return unless summary_out
 
@@ -2001,8 +2005,8 @@ module Harnex
       warn("harnex: failed to write dispatch start record: #{e.message}")
     end
 
-    def append_dispatch_history_record
-      DispatchHistory.append(dispatch_history_path, DispatchHistory.build_record(self))
+    def append_dispatch_history_record(record)
+      DispatchHistory.append(dispatch_history_path, record)
     rescue StandardError => e
       warn("harnex: failed to write dispatch history: #{e.message}")
     end

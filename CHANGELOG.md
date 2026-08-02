@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Single tracked telemetry stream** (#63, plan 33 Phase 1): a dispatch
+  now writes exactly two rows to the repo-tracked `.harnex/dispatch.jsonl`
+  — the `dispatch_start` row and one unified v2 `dispatch_end` row that
+  merges the thin envelope (top-level `schema_version: 2`, `record_type`,
+  `id`, `status`, `tier`, timing, `tmux_state`, …) with the rich summary
+  sections (`meta`, `predicted`, `actual`, `agent`, `usage`, `context`,
+  `attribution`, `outcome`, `attempt`, `reliability`, `queue?`,
+  `orchestration?`, artifact-report keys). Start rows stamp
+  `schema_version: 2` as well. Readers accept v1 and v2 rows mixed in one
+  file; `harnex history` keeps skipping pre-0.7.3 envelope-less rows.
+- `--summary-out` is now an explicit-only mirror: no default path. When
+  set, the identical v2 end record is appended there in addition to the
+  tracked stream. Consumers that redirected `--summary-out` to keep rich
+  rows should drop the flag — the tracked stream now carries everything.
+  `Harnex.default_summary_out_path` is removed; every writer and reader
+  resolves the stream through `DispatchHistory.path_for` (git-root walk,
+  global fallback), so non-git roots stream to the global file instead of
+  a repo-local `.harnex/` directory.
+- The `summary` event now points `path` at the tracked stream and carries
+  `mirror_path` when a mirror is configured.
+- `TerminalStatus` resolves a v2 end row as both summary and history in
+  one shot (branching on `record_type` first), so `wait --until done` and
+  `status --id` fall back to the unified stream; legacy duck-types remain
+  for pre-v2 files.
+
 ### Fixed
 
 - `harnex history` no longer renders blank rows for pre-0.7.3

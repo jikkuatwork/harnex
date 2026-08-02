@@ -80,7 +80,16 @@ module Harnex
         next unless record.is_a?(Hash)
         next if DispatchHistory.start_record?(record)
 
-        if summary_record?(record) && record.dig("meta", "id").to_s == id
+        # Branch on record_type first: a v2 end row carries both the thin
+        # envelope and the rich sections, so it resolves as summary and
+        # history in one shot — never double-counted via the legacy
+        # duck-types below, which stay for pre-v2 files.
+        if record["record_type"] == "dispatch_end"
+          next unless record["id"].to_s == id
+
+          history_record = record
+          summary_record = record if summary_record?(record)
+        elsif summary_record?(record) && record.dig("meta", "id").to_s == id
           summary_record = record
         elsif history_record?(record) && record["id"].to_s == id
           history_record = record
@@ -98,6 +107,7 @@ module Harnex
       record["meta"].is_a?(Hash) && record["actual"].is_a?(Hash)
     end
 
+    # Legacy thin end rows predate record_type.
     def history_record?(record)
       record["schema_version"] == 1 && record.key?("status")
     end

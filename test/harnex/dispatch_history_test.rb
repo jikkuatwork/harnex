@@ -26,7 +26,32 @@ class DispatchHistoryTest < Minitest::Test
     def summary_tmux_session
       nil
     end
+
+    def build_summary_record
+      {
+        meta: {
+          "id" => id,
+          "tier" => "B",
+          "issue" => "21",
+          "started_at" => started_at&.iso8601,
+          "ended_at" => ended_at&.iso8601
+        },
+        predicted: {},
+        actual: { "exit" => "success", "exit_code" => exit_code, "task_complete" => task_complete? },
+        agent: { "cli" => adapter.key },
+        usage: { "status" => "unsupported" },
+        context: { "status" => "unsupported" },
+        attribution: { "status" => "unattributed" },
+        outcome: { "status" => "no_change", "class" => "unknown" },
+        attempt: { "run_id" => id, "kind" => "initial", "status" => "succeeded" },
+        reliability: { "recovered" => false }
+      }
+    end
   end
+
+  SECTION_KEYS = %w[
+    actual agent attempt attribution context meta outcome predicted reliability usage
+  ].freeze
 
   def test_schema_round_trip
     session = fake_session(
@@ -38,7 +63,7 @@ class DispatchHistoryTest < Minitest::Test
     record = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_record(session)))
 
     {
-      "schema_version" => 1,
+      "schema_version" => 2,
       "record_type" => "dispatch_end",
       "id" => "cx-history",
       "session_id" => "sess-1",
@@ -48,11 +73,17 @@ class DispatchHistoryTest < Minitest::Test
       "terminal_event" => "task_complete",
       "commit_sha" => "b" * 40,
       "tier" => "B",
-      "meta" => { "tier" => "B", "issue" => "21" },
       "summary_out_path" => "tmp/summary.jsonl",
       "events_log_path" => "/tmp/events.log",
       "tmux_state" => "torn-down"
     }.each { |key, value| assert_equal value, record.fetch(key) }
+
+    # The rich summary sections ride alongside the envelope; the thin raw
+    # meta passthrough is replaced by the summary's meta section.
+    SECTION_KEYS.each { |key| assert record.key?(key), "expected section #{key}" }
+    assert_equal "cx-history", record.dig("meta", "id")
+    assert_equal "B", record.dig("meta", "tier")
+    assert_equal "success", record.dig("actual", "exit")
   end
 
   def test_start_record_schema
@@ -64,7 +95,7 @@ class DispatchHistoryTest < Minitest::Test
       repo_root schema_version session_id started_at summary_out_path tier
     ], record.keys.sort
 
-    assert_equal 1, record.fetch("schema_version")
+    assert_equal 2, record.fetch("schema_version")
     assert_equal "dispatch_start", record.fetch("record_type")
     assert_equal "cx-history", record.fetch("id")
     assert_equal "sess-1", record.fetch("session_id")
@@ -91,12 +122,43 @@ class DispatchHistoryTest < Minitest::Test
     legacy = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_record(fake_session)))
     legacy.delete("record_type")
     legacy.delete("session_id")
+    legacy["schema_version"] = 1
 
     assert Harnex::DispatchHistory.end_record?(legacy)
     assert Harnex::DispatchHistory.end_matches_start?(legacy, start)
 
     other = legacy.merge("started_at" => "2026-05-08T09:00:00Z")
     refute Harnex::DispatchHistory.end_matches_start?(other, start)
+  end
+
+  def test_latest_rows_pairs_v1_and_v2_rows_in_one_file
+    Dir.mktmpdir("harnex-history-mixed") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+
+      # v1-era pair: thin end row without record_type (legacy clause).
+      Harnex::DispatchHistory.append(path, {
+        schema_version: 1, record_type: "dispatch_start", id: "cx-v1",
+        session_id: "", pid: 1, started_at: "2026-05-01T06:00:00Z"
+      })
+      Harnex::DispatchHistory.append(path, history_record("cx-v1", "2026-05-01T06:00:00Z"))
+
+      # v2 pair from the current builders.
+      v2 = fake_session(id: "cx-v2", session_id: "sess-v2")
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_start_record(v2))
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_record(v2))
+
+      v1_rows = Harnex::DispatchHistory.latest_rows(path, "cx-v1")
+      assert v1_rows[:start]
+      assert v1_rows[:end]
+      assert_equal 1, v1_rows[:end]["schema_version"]
+
+      v2_rows = Harnex::DispatchHistory.latest_rows(path, "cx-v2")
+      assert v2_rows[:start]
+      assert v2_rows[:end]
+      assert_equal 2, v2_rows[:end]["schema_version"]
+      assert_kind_of Hash, v2_rows[:end]["actual"]
+    end
   end
 
   def test_live_start_record_reports_running_unpaired_start_row
@@ -249,16 +311,18 @@ class DispatchHistoryTest < Minitest::Test
         actual: { duration_s: 403, exit: "success" }
       })
       Harnex::DispatchHistory.append(path, history_record("current", "2026-05-08T06:00:00Z"))
+      Harnex::DispatchHistory.append(path, Harnex::DispatchHistory.build_record(fake_session(id: "cx-v2")))
 
       Dir.chdir(repo) do
         out, = capture_io { assert_equal 0, Harnex::History.new(["--json", "--all"]).run }
         rows = out.lines.map { |line| JSON.parse(line) }
-        assert_equal ["current"], rows.map { |row| row.fetch("id") }
+        assert_equal %w[current cx-v2], rows.map { |row| row.fetch("id") }
 
         table, = capture_io { assert_equal 0, Harnex::History.new(["--all"]).run }
         data_lines = table.lines.drop(1)
-        assert_equal 1, data_lines.size
+        assert_equal 2, data_lines.size
         assert_match(/\Acurrent\b/, data_lines.first)
+        assert_match(/\Acx-v2\b/, data_lines.last)
       end
     end
   end
@@ -282,11 +346,17 @@ class DispatchHistoryTest < Minitest::Test
       end
 
       path = File.join(repo, ".harnex", "dispatch.jsonl")
-      record = JSON.parse(File.readlines(path, chomp: true).last)
+      rows = File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
+      assert_equal %w[dispatch_start dispatch_end], rows.map { |row| row.fetch("record_type") }
+
+      record = rows.last
       assert_equal "cx-run-history", record.fetch("id")
       assert_equal "completed", record.fetch("status")
       assert_equal "B", record.fetch("tier")
       assert_equal Harnex.events_log_path(repo, "cx-run-history"), record.fetch("events_log_path")
+      assert_equal 2, record.fetch("schema_version")
+      SECTION_KEYS.each { |key| assert record.key?(key), "expected section #{key}" }
+      assert_nil record.fetch("summary_out_path")
     end
   end
 

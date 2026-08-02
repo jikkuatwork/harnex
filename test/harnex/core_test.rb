@@ -118,27 +118,6 @@ class CoreTest < Minitest::Test
     assert_equal "red plain", Harnex.strip_ansi("\e[31mred\e[0m plain")
   end
 
-  def test_default_summary_out_path_returns_dot_harnex_path
-    Dir.mktmpdir("harnex-summary-default") do |repo|
-      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), Harnex.default_summary_out_path(repo)
-    end
-  end
-
-  def test_default_summary_out_path_uses_dot_harnex_even_when_koder_present
-    Dir.mktmpdir("harnex-summary-default") do |repo|
-      FileUtils.mkdir_p(File.join(repo, "koder"))
-      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), Harnex.default_summary_out_path(repo)
-    end
-  end
-
-  def test_default_summary_out_path_returns_nil_for_nil_repo_root
-    assert_nil Harnex.default_summary_out_path(nil)
-  end
-
-  def test_default_summary_out_path_returns_nil_for_empty_repo_root
-    assert_nil Harnex.default_summary_out_path("")
-  end
-
   def test_git_capture_start_and_end
     Dir.mktmpdir("harnex-git-capture") do |repo|
       system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)

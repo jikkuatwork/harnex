@@ -206,6 +206,38 @@ class DispatchRowSchemaTest < Minitest::Test
     tier
   ].freeze
 
+  DISPATCH_END_ENVELOPE_KEYS = %w[
+    cli
+    commit_sha
+    description
+    duration_s
+    ended_at
+    events_log_path
+    id
+    record_type
+    schema_version
+    session_id
+    started_at
+    status
+    summary_out_path
+    terminal_event
+    tier
+    tmux_state
+  ].freeze
+
+  DISPATCH_END_SECTION_KEYS = %w[
+    actual
+    agent
+    attempt
+    attribution
+    context
+    meta
+    outcome
+    predicted
+    reliability
+    usage
+  ].freeze
+
   def test_dispatch_row_schema_includes_tier1_fields_and_stable_types
     Dir.mktmpdir("harnex-dispatch-schema") do |repo|
       init_git_repo(repo)
@@ -246,7 +278,28 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       record = JSON.parse(File.read(summary_path).lines.last)
-      assert_equal %w[actual agent attempt attribution context meta outcome predicted queue reliability usage], record.keys.sort
+      assert_equal (DISPATCH_END_ENVELOPE_KEYS + DISPATCH_END_SECTION_KEYS + %w[queue]).sort, record.keys.sort
+
+      assert_equal 2, record.fetch("schema_version")
+      assert_equal "dispatch_end", record.fetch("record_type")
+      assert_equal id, record.fetch("id")
+      assert_match(/\A\h{16}\z/, record.fetch("session_id"))
+      assert_equal "schema row", record.fetch("description")
+      assert_equal "codex", record.fetch("cli")
+      assert_equal "completed", record.fetch("status")
+      assert_kind_of Integer, record.fetch("duration_s")
+      assert_equal "1", record.fetch("tier")
+      assert_equal summary_path, record.fetch("summary_out_path")
+      assert_equal Harnex.events_log_path(repo, id), record.fetch("events_log_path")
+      assert_kind_of String, record.fetch("tmux_state")
+
+      # The mirror carries the identical record that landed in the tracked
+      # stream; the stream holds exactly one start and one end row.
+      stream_rows = File.readlines(File.join(repo, ".harnex", "dispatch.jsonl"), chomp: true)
+                        .map { |line| JSON.parse(line) }
+      assert_equal %w[dispatch_start dispatch_end], stream_rows.map { |row| row.fetch("record_type") }
+      assert_equal record, stream_rows.last
+
       assert_equal META_KEYS, record.fetch("meta").keys.sort
       assert_equal ACTUAL_KEYS, record.fetch("actual").keys.sort
       assert_equal AGENT_KEYS, record.fetch("agent").keys.sort
@@ -505,12 +558,13 @@ class DispatchRowSchemaTest < Minitest::Test
       start_row = rows.find { |row| row["record_type"] == "dispatch_start" }
       end_row = rows.find { |row| row["record_type"] == "dispatch_end" }
 
+      assert_equal 2, rows.size, "a default dispatch writes exactly one start and one end row"
       assert start_row, "expected a dispatch_start row at registration"
       assert end_row, "expected a dispatch_end row at teardown"
       assert rows.index(start_row) < rows.index(end_row), "start row must precede end row"
 
       assert_equal DISPATCH_START_KEYS, start_row.keys.sort
-      assert_equal 1, start_row.fetch("schema_version")
+      assert_equal 2, start_row.fetch("schema_version")
       assert_equal id, start_row.fetch("id")
       assert_kind_of Integer, start_row.fetch("pid")
       assert_match(/\A\h{16}\z/, start_row.fetch("session_id"))
@@ -525,6 +579,13 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal start_row.fetch("session_id"), end_row.fetch("session_id")
       assert_equal start_row.fetch("started_at"), end_row.fetch("started_at")
       assert Harnex::DispatchHistory.end_matches_start?(end_row, start_row)
+
+      # The v2 end row carries the envelope and the rich sections together
+      # (queue rides along because tier is a queue passthrough field).
+      assert_equal 2, end_row.fetch("schema_version")
+      assert_equal (DISPATCH_END_ENVELOPE_KEYS + DISPATCH_END_SECTION_KEYS + %w[queue]).sort, end_row.keys.sort
+      assert_equal id, end_row.dig("meta", "id")
+      assert_nil end_row.fetch("summary_out_path"), "no default mirror path"
     end
   end
 

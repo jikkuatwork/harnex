@@ -582,20 +582,11 @@ class RunnerTest < Minitest::Test
     assert_match(/--allow-live-parent/, Harnex::Runner.usage)
   end
 
-  def test_resolve_summary_out_defaults_to_dot_harnex_when_koder_dir_exists
-    Dir.mktmpdir("harnex-summary-repo") do |repo|
-      FileUtils.mkdir_p(File.join(repo, "koder"))
-      runner = Harnex::Runner.new(["codex"])
-
-      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
-    end
-  end
-
-  def test_resolve_summary_out_defaults_to_dot_harnex_without_koder_dir
+  def test_resolve_summary_out_returns_nil_when_unset
     Dir.mktmpdir("harnex-summary-repo") do |repo|
       runner = Harnex::Runner.new(["codex"])
 
-      assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
+      assert_nil runner.send(:resolve_summary_out, repo)
     end
   end
 
@@ -657,7 +648,7 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_run_cwd_uses_non_git_directory_for_child_root_and_default_summary
+  def test_run_cwd_uses_non_git_directory_for_child_root_and_walked_stream_path
     Dir.mktmpdir("harnex-run-cwd") do |root|
       launch = File.join(root, "orchestrator")
       bundle = File.join(root, "bundle")
@@ -681,12 +672,14 @@ class RunnerTest < Minitest::Test
       assert_equal bundle, payload.fetch("pwd")
       assert_equal bundle, payload.fetch("repo_root")
 
-      summary_path = File.join(bundle, ".harnex", "dispatch.jsonl")
-      assert_path_exists summary_path
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal id, row.dig("meta", "id")
-      assert_equal bundle, row.dig("meta", "repo")
-      assert_equal 0, row.dig("actual", "exit_code")
+      # Non-git root: one path rule sends the stream through the git-root
+      # walk (global fallback), never a repo-local .harnex file.
+      refute_path_exists File.join(bundle, ".harnex", "dispatch.jsonl")
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(bundle), id)
+      assert rows[:end], "expected end row in the walked stream path"
+      assert_equal id, rows[:end].dig("meta", "id")
+      assert_equal bundle, rows[:end].dig("meta", "repo")
+      assert_equal 0, rows[:end].dig("actual", "exit_code")
     end
   end
 
@@ -791,7 +784,11 @@ class RunnerTest < Minitest::Test
       payload = JSON.parse(File.read(result_path))
       assert_equal launch, payload.fetch("pwd")
       assert_equal attributed_root, payload.fetch("repo_root")
-      assert_path_exists File.join(attributed_root, ".harnex", "dispatch.jsonl")
+
+      refute_path_exists File.join(attributed_root, ".harnex", "dispatch.jsonl")
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(attributed_root), id)
+      assert rows[:end], "expected end row in the walked stream path"
+      assert_equal attributed_root, rows[:end].dig("meta", "repo")
     end
   end
 

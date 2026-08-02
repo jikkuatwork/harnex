@@ -67,7 +67,7 @@ module Harnex
           --fast             (codex only) Use Codex service_tier="fast".
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
-          --summary-out PATH Append dispatch telemetry summary JSONL to PATH
+          --summary-out PATH Also mirror the dispatch end record JSONL to PATH
           --artifact-report PATH
                              Worker-written harnex.artifact_report.v1 JSON sidecar to ingest at exit
           --validation-report PATH
@@ -842,9 +842,11 @@ module Harnex
       raise OptionParser::InvalidOption, "--meta must be valid JSON: #{e.message}"
     end
 
+    # Explicit-only mirror: the tracked dispatch stream is the canonical
+    # destination; --summary-out just duplicates the end record elsewhere.
     def resolve_summary_out(repo_root)
       configured = @options[:summary_out]
-      return Harnex.default_summary_out_path(repo_root) if configured.nil?
+      return nil if configured.nil?
 
       File.expand_path(configured, repo_root)
     end
