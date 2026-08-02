@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-02 | 08:52 PM | IST
+Updated: 2026-08-02 | 10:23 PM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in the linked
@@ -24,8 +24,9 @@ issue/plan files.
   env-gated skips) including the schema-drift gate, no skip flag needed.
 - Known cosmetic nit (pre-existing): `harnex history` renders a blank row
   for 2026-05-era `{meta, predicted, actual}`-schema rows in
-  `.harnex/dispatch.jsonl`. Details in `koder/releases/0.8.0.md`; not filed
-  as an issue — ask the user before filing/fixing.
+  `.harnex/dispatch.jsonl`. Details in `koder/releases/0.8.0.md`. User has
+  approved taking this up next session (no issue doc filed yet — create one
+  at open if useful).
 - #63 (single tracked telemetry stream), #64 (observed-state receipts), and
   #57 (terminal-outcome vocabulary + failure budget) remain filed and open.
 - #42 (Codex app-server recovery) and #43 (throughput telemetry v2) remain
@@ -33,7 +34,10 @@ issue/plan files.
 
 ## Future
 
-1. #63 — single versioned tracked telemetry stream (subsumes #58 cost gap).
+1. **Next session (user-directed):** #63 — single versioned tracked
+   telemetry stream (subsumes #58 cost gap) — and the `harnex history`
+   blank-row fix for legacy-schema rows (see Present note +
+   `koder/releases/0.8.0.md`).
 2. #64 — observed-state receipts (harness-authored proof).
 3. Implement #56 adapter preflight using strict proof acceptance, then
    continue #57's remaining outcome classes and failure-budget rollup —
