@@ -51,6 +51,11 @@
         "totalTokens"
       ],
       "properties": {
+        "cacheWriteInputTokens": {
+          "default": 0,
+          "type": "integer",
+          "format": "int64"
+        },
         "cachedInputTokens": {
           "type": "integer",
           "format": "int64"

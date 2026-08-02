@@ -55,6 +55,16 @@
         "null"
       ]
     },
+    "personality": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Personality"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "sandbox": {
       "anyOf": [
         {
@@ -65,26 +75,16 @@
         }
       ]
     },
-    "serviceTier": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "ephemeral": {
       "type": [
         "boolean",
         "null"
       ]
     },
-    "sessionStartSource": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/ThreadStartSource"
-        },
-        {
-          "type": "null"
-        }
+    "serviceTier": {
+      "type": [
+        "string",
+        "null"
       ]
     },
     "threadSource": {
@@ -98,10 +98,10 @@
         }
       ]
     },
-    "personality": {
+    "sessionStartSource": {
       "anyOf": [
         {
-          "$ref": "#/definitions/Personality"
+          "$ref": "#/definitions/ThreadStartSource"
         },
         {
           "type": "null"
@@ -407,6 +407,16 @@
         },
         "environmentId": {
           "type": "string"
+        },
+        "runtimeWorkspaceRoots": {
+          "description": "Environment-native runtime workspace roots. Omitted defaults to `cwd`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/LegacyAppPathString"
+          }
         }
       }
     }
