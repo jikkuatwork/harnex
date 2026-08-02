@@ -22,9 +22,12 @@ module Harnex
   #    were written with.
   #
   # Models whose pricing varies by service tier use a nested `service_tiers`
-  # table. For those models a nil or unknown service tier is unpriceable. Do
-  # not infer standard/flex/fast from context outside the recorded row. OpenAI
-  # documents `priority` as the fast tier alias for gpt-5.5 short-context
+  # table. For those models a nil or unknown service tier is unpriceable. A
+  # `max_context_tokens_exclusive` entry also requires an observed context
+  # high-water below that boundary; Harnex leaves cost null when context is
+  # missing or entered a differently-priced long-context tier. Do not infer
+  # standard/flex/fast or context tier outside the recorded measurements.
+  # OpenAI documents `priority` as the fast alias for gpt-5.5 short-context
   # pricing; Harnex maps that alias only where the source supports it.
   #
   # Known scheduled change: Anthropic's claude-sonnet-5 entry below carries
@@ -64,6 +67,7 @@ module Harnex
         # Short-context service-tier rates read 2026-08-03. Long-context
         # rates are deliberately absent until exact source pricing is known.
         "gpt-5.5" => {
+          max_context_tokens_exclusive: 272_000,
           service_tier_aliases: { "priority" => "fast" }.freeze,
           service_tiers: {
             "standard" => { input: 5.00, cached_input: 0.50, output: 30.00, as_of: "2026-08-03" },
@@ -90,11 +94,13 @@ module Harnex
     # Returns { cost_usd:, as_of: } or nil when the cost cannot be computed
     # (unknown provider/model/service tier, or input/output token counts missing).
     def compute(provider:, model:, input_tokens:, output_tokens:, cached_tokens: nil,
-                service_tier: nil,
+                service_tier: nil, context_tokens: nil,
                 input_includes_cached: false)
-      entry = PRICES.dig(provider.to_s, model.to_s)
-      return nil unless entry
-      entry = rates_for_service_tier(entry, service_tier)
+      model_entry = PRICES.dig(provider.to_s, model.to_s)
+      return nil unless model_entry
+      return nil unless context_priceable?(model_entry, context_tokens)
+
+      entry = rates_for_service_tier(model_entry, service_tier)
       return nil unless entry
       return nil unless input_tokens.is_a?(Numeric) && output_tokens.is_a?(Numeric)
 
@@ -106,6 +112,13 @@ module Harnex
               cached * entry[:cached_input] +
               output_tokens * entry[:output]) / 1_000_000.0
       { cost_usd: cost.round(6), as_of: entry[:as_of] }
+    end
+
+    def context_priceable?(entry, context_tokens)
+      limit = entry[:max_context_tokens_exclusive]
+      return true unless limit
+
+      context_tokens.is_a?(Numeric) && context_tokens >= 0 && context_tokens < limit
     end
 
     def rates_for_service_tier(entry, service_tier)

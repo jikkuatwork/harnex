@@ -590,6 +590,7 @@ class SessionTest < Minitest::Test
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000
     })
+    session.instance_variable_set(:@context_summary, { peak_tokens: 100_000 })
 
     usage = session.send(:build_summary_usage)
     # App-server input includes cached and flex prices apply:
@@ -597,6 +598,23 @@ class SessionTest < Minitest::Test
     assert_in_delta 3.1, usage.fetch("cost_usd"), 1e-9
     assert_equal "price_table", usage.fetch("cost_source")
     assert_equal "2026-08-03", usage.fetch("cost_price_as_of")
+  end
+
+  def test_usage_price_table_leaves_context_tiered_model_unpriced_without_context
+    adapter = Harnex::Adapters::CodexAppServer.new
+    adapter.instance_variable_set(:@current_model, "gpt-5.5")
+    session = build_session(
+      adapter: adapter,
+      command: ["codex", "app-server", "-c", "service_tier=\"flex\""]
+    )
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 1_000, output_tokens: 100, cached_tokens: 400
+    })
+
+    usage = session.send(:build_summary_usage)
+    assert_nil usage.fetch("cost_usd")
+    assert_nil usage.fetch("cost_source")
+    assert_nil usage.fetch("cost_price_as_of")
   end
 
   def test_usage_price_table_leaves_unknown_model_unpriced

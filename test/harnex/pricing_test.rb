@@ -44,7 +44,7 @@ class PricingTest < Minitest::Test
   def test_gpt_5_5_flex_prices_effective_service_tier
     priced = Harnex::Pricing.compute(
       provider: "openai", model: "gpt-5.5", service_tier: "flex",
-      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
+      context_tokens: 100_000, input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
       input_includes_cached: true
     )
 
@@ -64,7 +64,7 @@ class PricingTest < Minitest::Test
     cases.each do |service_tier, expected_cost|
       priced = Harnex::Pricing.compute(
         provider: "openai", model: "gpt-5.5", service_tier: service_tier,
-        input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
+        context_tokens: 100_000, input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000,
         input_includes_cached: true
       )
 
@@ -75,12 +75,23 @@ class PricingTest < Minitest::Test
   def test_gpt_5_5_unknown_or_missing_service_tier_returns_nil
     assert_nil Harnex::Pricing.compute(
       provider: "openai", model: "gpt-5.5", service_tier: "turbo",
-      input_tokens: 100, output_tokens: 100, cached_tokens: 0
+      context_tokens: 100_000, input_tokens: 100, output_tokens: 100, cached_tokens: 0
     )
     assert_nil Harnex::Pricing.compute(
       provider: "openai", model: "gpt-5.5", service_tier: nil,
-      input_tokens: 100, output_tokens: 100, cached_tokens: 0
+      context_tokens: 100_000, input_tokens: 100, output_tokens: 100, cached_tokens: 0
     )
+  end
+
+  def test_gpt_5_5_requires_observed_short_context
+    base = {
+      provider: "openai", model: "gpt-5.5", service_tier: "flex",
+      input_tokens: 100, output_tokens: 100, cached_tokens: 0
+    }
+
+    assert_nil Harnex::Pricing.compute(**base, context_tokens: nil)
+    assert_nil Harnex::Pricing.compute(**base, context_tokens: 272_000)
+    refute_nil Harnex::Pricing.compute(**base, context_tokens: 271_999)
   end
 
   def test_flat_price_models_do_not_require_service_tier
