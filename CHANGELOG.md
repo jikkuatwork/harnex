@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `harnex history` no longer renders blank rows for pre-0.7.3
+  `{meta, predicted, actual}`-schema telemetry rows in
+  `.harnex/dispatch.jsonl`: rows recognized as neither start nor end
+  records are skipped in both table and `--json` output. The raw file is
+  untouched — legacy rows remain available for forensics.
+
 ## [0.8.0] - 2026-08-02 | 08:46 PM | IST
 
 Minor bump: two behavior changes below (`wait --until done` exit codes,

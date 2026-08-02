@@ -85,6 +85,7 @@ module Harnex
     # One row per dispatch: start rows completed by an end row are dropped
     # (the end row carries the outcome); uncompleted start rows surface as
     # running (pid alive on this host) or interrupted (no end row, pid gone).
+    # Rows in neither shape (pre-0.7.3 schemas) are skipped entirely.
     def derived_records
       raw = load_records
       ended = Set.new
@@ -97,10 +98,13 @@ module Harnex
       end
 
       raw.filter_map do |record|
-        next record unless DispatchHistory.start_record?(record)
-        next nil if start_completed?(record, ended)
+        if DispatchHistory.start_record?(record)
+          next nil if start_completed?(record, ended)
 
-        derive_live_record(record)
+          derive_live_record(record)
+        elsif DispatchHistory.end_record?(record)
+          record
+        end
       end
     end
 

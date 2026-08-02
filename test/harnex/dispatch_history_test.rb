@@ -237,6 +237,32 @@ class DispatchHistoryTest < Minitest::Test
     end
   end
 
+  def test_history_command_skips_unrecognized_legacy_schema_rows
+    Dir.mktmpdir("harnex-history-legacy") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+
+      # Pre-0.7.3 telemetry schema: no top-level id/record_type/schema_version.
+      Harnex::DispatchHistory.append(path, {
+        meta: { id: "cx-old", started_at: "2026-05-09T21:20:45+05:30" },
+        predicted: {},
+        actual: { duration_s: 403, exit: "success" }
+      })
+      Harnex::DispatchHistory.append(path, history_record("current", "2026-05-08T06:00:00Z"))
+
+      Dir.chdir(repo) do
+        out, = capture_io { assert_equal 0, Harnex::History.new(["--json", "--all"]).run }
+        rows = out.lines.map { |line| JSON.parse(line) }
+        assert_equal ["current"], rows.map { |row| row.fetch("id") }
+
+        table, = capture_io { assert_equal 0, Harnex::History.new(["--all"]).run }
+        data_lines = table.lines.drop(1)
+        assert_equal 1, data_lines.size
+        assert_match(/\Acurrent\b/, data_lines.first)
+      end
+    end
+  end
+
   def test_run_writes_repo_local_dispatch_history
     Dir.mktmpdir("harnex-history-run") do |repo|
       init_git_repo(repo)
