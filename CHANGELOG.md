@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.0] - 2026-08-02 | 08:46 PM | IST
+
+Minor bump: two behavior changes below (`wait --until done` exit codes,
+`--attempt-kind retry` now requiring `--parent-dispatch-id`).
 
 ### Added
 
@@ -39,6 +42,8 @@
   path) instead of the launch cwd, and `repo_key` canonicalizes symlinked
   paths via realpath so registries written from a symlinked cwd stay visible
   to checkers resolving the physical path.
+- Refreshed the codex app-server schema fixtures against codex-cli 0.145.0
+  (10 fixtures; upstream-additive changes only, no adapter impact).
 
 ## [0.7.14] - 2026-07-15 | 10:06 PM | IST
 
