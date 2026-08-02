@@ -56,7 +56,74 @@ class DoctorTest < Minitest::Test
     FileUtils.rm_rf(repo) if repo
   end
 
+  def test_doctor_reports_retention_without_pruning
+    reset_retention_dirs
+    old = File.join(Harnex::STATE_DIR, "events", "old.jsonl")
+    File.write(old, "old")
+
+    doctor = Harnex::Doctor.new
+    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+      out, = capture_io { assert_equal 0, doctor.run }
+      payload = JSON.parse(out)
+
+      assert_equal true, payload.fetch("ok")
+      assert_equal 1, payload.dig("retention", "directories", "events", "count")
+      assert File.exist?(old)
+    end
+  end
+
+  def test_doctor_prune_dry_run_previews_without_mutation
+    reset_retention_dirs
+    old = old_retention_file("events", "old.jsonl")
+
+    doctor = Harnex::Doctor.new(["--prune", "--dry-run"])
+    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+      out, = capture_io { assert_equal 0, doctor.run }
+      payload = JSON.parse(out)
+
+      assert_equal true, payload.dig("retention", "dry_run")
+      assert_equal 1, payload.dig("retention", "directories", "events", "deleted_count")
+      assert File.exist?(old)
+    end
+  end
+
+  def test_doctor_prune_applies_deletions
+    reset_retention_dirs
+    old = old_retention_file("output", "old.log")
+
+    doctor = Harnex::Doctor.new(["--prune"])
+    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+      out, = capture_io { assert_equal 0, doctor.run }
+      payload = JSON.parse(out)
+
+      assert_equal false, payload.dig("retention", "dry_run")
+      assert_equal 1, payload.dig("retention", "directories", "output", "deleted_count")
+      refute File.exist?(old)
+    end
+  end
+
+  def test_doctor_rejects_dry_run_without_prune
+    error = assert_raises(OptionParser::InvalidOption) { Harnex::Doctor.new(["--dry-run"]).run }
+    assert_includes error.message, "--dry-run requires --prune"
+  end
+
   def success_status
     Minitest::Mock.new.expect(:success?, true)
+  end
+
+  def reset_retention_dirs
+    %w[events output].each do |name|
+      FileUtils.rm_rf(File.join(Harnex::STATE_DIR, name))
+      FileUtils.mkdir_p(File.join(Harnex::STATE_DIR, name))
+    end
+    FileUtils.rm_f(File.join(Harnex::STATE_DIR, "retention.json"))
+  end
+
+  def old_retention_file(kind, name)
+    path = File.join(Harnex::STATE_DIR, kind, name)
+    File.write(path, "old")
+    old = Time.now - 90 * 86_400
+    File.utime(old, old, path)
+    path
   end
 end

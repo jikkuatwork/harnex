@@ -558,6 +558,38 @@ class RunnerTest < Minitest::Test
     end
   end
 
+  def test_retention_env_rejects_before_spawn_and_rows
+    with_phase_policy_repo(config: nil) do |repo|
+      result_path = File.join(repo, "spawned.json")
+      id = "retention-invalid-env-#{$$}"
+      previous = ENV["HARNEX_OUTPUT_MAX_BYTES"]
+      ENV["HARNEX_OUTPUT_MAX_BYTES"] = "0"
+
+      Dir.chdir(repo) do
+        error = assert_raises(OptionParser::InvalidOption) do
+          Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+        assert_match(/invalid config/, error.message)
+        assert_match(/HARNEX_OUTPUT_MAX_BYTES/, error.message)
+      end
+
+      refute_path_exists result_path
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)
+      assert_nil rows[:start]
+      assert_nil rows[:end]
+    ensure
+      if previous.nil?
+        ENV.delete("HARNEX_OUTPUT_MAX_BYTES")
+      else
+        ENV["HARNEX_OUTPUT_MAX_BYTES"] = previous
+      end
+    end
+  end
+
   def test_repo_phase_policy_ignores_config_in_non_git_fallback
     Dir.mktmpdir("harnex-phase-nongit") do |root|
       FileUtils.mkdir_p(File.join(root, ".harnex"))

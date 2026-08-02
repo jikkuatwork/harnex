@@ -401,6 +401,7 @@ module Harnex
 
     def validate_repo_phase_policy!(repo_root)
       config = Harnex::Config.load_repo(repo_root)
+      Harnex::Config.retention_limits(config: config)
       phase_config = config.phase
       return unless phase_config
 

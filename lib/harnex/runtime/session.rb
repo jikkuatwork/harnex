@@ -183,6 +183,7 @@ module Harnex
 
     def run(validate_binary: true)
       validate_binary! if validate_binary
+      prune_retained_logs
       prepare_output_log
       prepare_events_log
 
@@ -1152,6 +1153,13 @@ module Harnex
       @output_log = File.open(output_log_path, "ab")
       @output_log.sync = true
       @output_log_failed = false
+    end
+
+    def prune_retained_logs
+      Harnex::Retention.auto_prune(
+        repo_root: repo_root,
+        current_paths: [output_log_path, events_log_path]
+      )
     end
 
     def prepare_events_log

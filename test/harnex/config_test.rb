@@ -40,13 +40,51 @@ class ConfigTest < Minitest::Test
 
   def test_load_repo_accepts_config_without_phase_section
     with_git_repo do |repo|
-      write_repo_config(repo, retention: { days: 14 })
+      write_repo_config(repo, other: { days: 14 })
 
       config = Harnex::Config.load_repo(repo)
 
       assert config.present?
       assert_nil config.phase
-      assert_equal({ "days" => 14 }, config.data.fetch("retention"))
+      assert_equal({ "days" => 14 }, config.data.fetch("other"))
+    end
+  end
+
+  def test_retention_limits_default_and_env_overrides
+    with_git_repo do |repo|
+      write_repo_config(repo, retention: { events: { max_age_days: 30, max_bytes: 1234 } })
+
+      config = Harnex::Config.load_repo(repo)
+      limits = Harnex::Config.retention_limits(
+        config: config,
+        env: {
+          "HARNEX_EVENTS_MAX_BYTES" => "4321",
+          "HARNEX_OUTPUT_MAX_AGE_DAYS" => "7"
+        }
+      )
+
+      assert_equal 30, limits.fetch("events").fetch("max_age_days")
+      assert_equal 4321, limits.fetch("events").fetch("max_bytes")
+      assert_equal 7, limits.fetch("output").fetch("max_age_days")
+      assert_equal 1_073_741_824, limits.fetch("output").fetch("max_bytes")
+    end
+  end
+
+  def test_retention_limits_reject_non_positive_config_and_env_values
+    with_git_repo do |repo|
+      write_repo_config(repo, retention: { events: { max_age_days: 0 } })
+
+      error = assert_raises(Harnex::Config::ConfigError) { Harnex::Config.load_repo(repo) }
+      assert_includes error.message, "$.retention.events.max_age_days"
+    end
+
+    with_git_repo do |repo|
+      config = Harnex::Config.load_repo(repo)
+      error = assert_raises(Harnex::Config::ConfigError) do
+        Harnex::Config.retention_limits(config: config, env: { "HARNEX_OUTPUT_MAX_BYTES" => "0" })
+      end
+      assert_includes error.message, "HARNEX_OUTPUT_MAX_BYTES"
+      assert_includes error.message, "positive integer"
     end
   end
 

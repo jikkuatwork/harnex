@@ -7,7 +7,7 @@ module Harnex
 
     def self.usage
       <<~TEXT
-        Usage: harnex doctor [--sweep]
+        Usage: harnex doctor [--sweep] [--prune [--dry-run]]
 
         Runs preflight checks for harnex's adapter dependencies.
         Currently verifies that Codex CLI is installed and at version
@@ -16,16 +16,21 @@ module Harnex
 
         Options:
           --sweep      Include a read-only report of harnex/tmux session drift
+          --prune      Apply bounded harnex events/output retention pruning
+          --dry-run    Preview --prune candidates without deleting
           -h, --help   Show this help
 
         Common patterns:
           harnex doctor
           harnex doctor --sweep
+          harnex doctor --prune --dry-run
+          harnex doctor --prune
           harnex doctor --help
 
         Gotchas:
           doctor validates local adapter prerequisites; it does not start sessions.
           --sweep is diagnostic only; it does not stop sessions or remove files.
+          --dry-run must be paired with --prune.
           Run it after installing or upgrading Codex CLI.
       TEXT
     end
@@ -34,21 +39,26 @@ module Harnex
       @argv = argv.dup
       @options = {
         sweep: false,
+        prune: false,
+        dry_run: false,
         help: false
       }
     end
 
     def run
       parser.parse!(@argv)
+      validate_options!
       if @options[:help]
         puts self.class.usage
         return 0
       end
 
       checks = [check_codex]
+      retention = retention_payload
       summary = {
-        ok: checks.all? { |c| c[:ok] },
-        checks: checks
+        ok: checks.all? { |c| c[:ok] } && retention.fetch(:ok, true),
+        checks: checks,
+        retention: retention
       }
       summary[:sweep] = sweep_payload if @options[:sweep]
       puts JSON.generate(summary)
@@ -59,10 +69,34 @@ module Harnex
 
     def parser
       @parser ||= OptionParser.new do |opts|
-        opts.banner = "Usage: harnex doctor [--sweep]"
+        opts.banner = "Usage: harnex doctor [--sweep] [--prune [--dry-run]]"
         opts.on("--sweep", "Include read-only session drift diagnostics") { @options[:sweep] = true }
+        opts.on("--prune", "Apply retention pruning") { @options[:prune] = true }
+        opts.on("--dry-run", "Preview --prune candidates without deleting") { @options[:dry_run] = true }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
+    end
+
+    def validate_options!
+      return if @options[:help]
+      return unless @options[:dry_run] && !@options[:prune]
+
+      raise OptionParser::InvalidOption, "--dry-run requires --prune"
+    end
+
+    def retention_payload
+      repo_root = Harnex.resolve_repo_root(Dir.pwd)
+      if @options[:prune]
+        Harnex::Retention.prune(
+          repo_root: repo_root,
+          dry_run: @options[:dry_run],
+          force: true
+        )
+      else
+        Harnex::Retention.status(repo_root: repo_root)
+      end
+    rescue Harnex::Config::ConfigError => e
+      { ok: false, error: e.message }
     end
 
     def check_codex
