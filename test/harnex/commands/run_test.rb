@@ -435,6 +435,155 @@ class RunnerTest < Minitest::Test
     runner.send(:validate_required_attribution!)
   end
 
+  def test_repo_phase_policy_passes_silently_without_config
+    with_phase_policy_repo(config: nil) do |repo|
+      out, err, result_path, id = run_phase_policy_probe(repo, "--phase", "implement")
+
+      assert_equal "", out
+      refute_match(/not allowlisted/, err)
+      assert_path_exists result_path
+      assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)[:end]
+    end
+  end
+
+  def test_repo_phase_policy_passes_silently_for_allowlisted_phase
+    with_phase_policy_repo(policy: "reject", allowlist: ["implement"]) do |repo|
+      out, err, result_path, id = run_phase_policy_probe(repo, "--phase", "implement")
+
+      assert_equal "", out
+      refute_match(/not allowlisted/, err)
+      assert_path_exists result_path
+      assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)[:end]
+    end
+  end
+
+  def test_repo_phase_policy_warns_and_continues
+    with_phase_policy_repo(policy: "warn", allowlist: ["code-review"]) do |repo|
+      _out, err, result_path, id = run_phase_policy_probe(repo, "--phase", "implement")
+
+      assert_match(/warning: harnex run: meta.phase "implement" is not allowlisted/, err)
+      assert_match(/policy: warn/, err)
+      assert_path_exists result_path
+      assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)[:end]
+    end
+  end
+
+  def test_repo_phase_policy_rejects_before_spawn_and_rows
+    with_phase_policy_repo(policy: "reject", allowlist: ["code-review"]) do |repo|
+      result_path = File.join(repo, "spawned.json")
+      id = "phase-reject-#{$$}"
+
+      Dir.chdir(repo) do
+        error = assert_raises(OptionParser::InvalidOption) do
+          Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--phase", "implement",
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+        assert_match(/meta.phase "implement" is not allowlisted/, error.message)
+        assert_match(/policy: reject/, error.message)
+      end
+
+      refute_path_exists result_path
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)
+      assert_nil rows[:start]
+      assert_nil rows[:end]
+    end
+  end
+
+  def test_repo_phase_policy_rejects_as_cli_config_error
+    with_phase_policy_repo(policy: "reject", allowlist: ["code-review"]) do |repo|
+      result_path = File.join(repo, "spawned.json")
+      id = "phase-cli-reject-#{$$}"
+
+      _stdout, stderr, status = Open3.capture3(
+        Gem.ruby,
+        "-I#{File.expand_path('../../../lib', __dir__)}",
+        File.expand_path("../../../bin/harnex", __dir__),
+        "run", RbConfig.ruby,
+        "--id", id,
+        "--phase", "implement",
+        "--", "-e", cwd_probe_script, result_path,
+        chdir: repo
+      )
+
+      assert_equal 2, status.exitstatus
+      assert_match(/meta.phase "implement" is not allowlisted/, stderr)
+      assert_match(/policy: reject/, stderr)
+      refute_path_exists result_path
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)
+      assert_nil rows[:start]
+      assert_nil rows[:end]
+    end
+  end
+
+  def test_repo_phase_policy_uses_first_class_phase_over_meta
+    with_phase_policy_repo(policy: "reject", allowlist: ["implement"]) do |repo|
+      _out, err, result_path, id = run_phase_policy_probe(
+        repo,
+        "--meta", '{"phase":"code-review"}',
+        "--phase", "implement"
+      )
+
+      refute_match(/not allowlisted/, err)
+      assert_path_exists result_path
+      assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)[:end]
+    end
+  end
+
+  def test_repo_phase_policy_rejects_invalid_config_before_spawn
+    with_phase_policy_repo(raw_config: { phase: { allowlist: ["implement"], policy: "audit" } }) do |repo|
+      result_path = File.join(repo, "spawned.json")
+      id = "phase-invalid-config-#{$$}"
+
+      Dir.chdir(repo) do
+        error = assert_raises(OptionParser::InvalidOption) do
+          Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--phase", "implement",
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+        assert_match(/invalid config/, error.message)
+        assert_match(/\$\.phase\.policy/, error.message)
+      end
+
+      refute_path_exists result_path
+      rows = Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)
+      assert_nil rows[:start]
+      assert_nil rows[:end]
+    end
+  end
+
+  def test_repo_phase_policy_ignores_config_in_non_git_fallback
+    Dir.mktmpdir("harnex-phase-nongit") do |root|
+      FileUtils.mkdir_p(File.join(root, ".harnex"))
+      File.write(File.join(root, ".harnex", "config.json"), JSON.generate(
+        phase: { allowlist: ["code-review"], policy: "reject" }
+      ))
+      result_path = File.join(root, "spawned.json")
+      id = "phase-nongit-#{$$}"
+
+      Dir.chdir(root) do
+        capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--phase", "implement",
+            "--", "-e", cwd_probe_script, result_path
+          ]).run
+        end
+      end
+
+      assert_path_exists result_path
+      refute_path_exists File.join(root, ".harnex", "dispatch.jsonl")
+      assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(root), id)[:end]
+    end
+  end
+
   def test_extract_wrapper_options_parses_summary_out
     runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])
@@ -1301,6 +1450,38 @@ class RunnerTest < Minitest::Test
         }
       ))
     RUBY
+  end
+
+  def with_phase_policy_repo(config: :default, policy: "reject", allowlist: ["implement"], raw_config: nil)
+    Dir.mktmpdir("harnex-phase-policy") do |repo|
+      assert system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      unless config.nil?
+        payload = raw_config || { phase: { allowlist: allowlist, policy: policy } }
+        FileUtils.mkdir_p(File.join(repo, ".harnex"))
+        File.write(File.join(repo, ".harnex", "config.json"), JSON.generate(payload))
+      end
+      yield repo
+    end
+  end
+
+  def run_phase_policy_probe(repo, *args)
+    result_path = File.join(repo, "spawned.json")
+    id = "phase-policy-#{$$}-#{rand(1_000_000)}"
+    out = nil
+    err = nil
+
+    Dir.chdir(repo) do
+      out, err = capture_io do
+        assert_equal 0, Harnex::Runner.new([
+          RbConfig.ruby,
+          "--id", id,
+          *args,
+          "--", "-e", cwd_probe_script, result_path
+        ]).run
+      end
+    end
+
+    [out, err, result_path, id]
   end
 
   def write_hanging_interrupt_codex_stub(path)

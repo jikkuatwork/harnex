@@ -203,6 +203,7 @@ module Harnex
       validate_required_attribution!
 
       repo_root = resolve_run_root(cli_name, child_args)
+      validate_repo_phase_policy!(repo_root)
       @options[:summary_out] = resolve_summary_out(repo_root)
       @options[:artifact_report] = resolve_artifact_report(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
@@ -396,6 +397,29 @@ module Harnex
             "is still running (pid #{live['pid']}, started #{live['started_at']}). " \
             "Wait for it (harnex wait --id #{parent_id} --until done), stop it, " \
             "or pass --allow-live-parent for intentional parallelism."
+    end
+
+    def validate_repo_phase_policy!(repo_root)
+      config = Harnex::Config.load_repo(repo_root)
+      phase_config = config.phase
+      return unless phase_config
+
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      phase = metadata["phase"].to_s
+      allowlist = phase_config.fetch("allowlist")
+      return if allowlist.include?(phase)
+
+      policy = phase_config.fetch("policy")
+      message = "harnex run: meta.phase #{phase.empty? ? '(none)' : phase.inspect} " \
+                "is not allowlisted by #{config.path} " \
+                "(allowed: #{allowlist.join(', ')}; policy: #{policy})"
+      if policy == "warn"
+        warn("harnex: warning: #{message}")
+      else
+        raise OptionParser::InvalidOption, message
+      end
+    rescue Harnex::Config::ConfigError => e
+      raise OptionParser::InvalidOption, "harnex run: invalid config #{e.message}"
     end
 
     def build_session(adapter, repo_root)
