@@ -47,7 +47,7 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
   `--parent-dispatch-id`, `--parent-attempt-id`, and `--attempt-kind` are
   first-class queue/agent telemetry flags. They are persisted as caller-provided
   strings and override same-named `--meta` values. `--attempt-kind` is one of
-  `initial`, `retry`, `fix`, `review`, or `superseding`; linkage fields keep
+  `initial`, `retry`, `fix`, `review`, `fallback`, or `superseding`; linkage fields keep
   independently-run follow-ups joinable without merging their raw usage.
 - `--orchestration-run-id`, `--orchestration-generation-id`,
   `--orchestration-role`, `--orchestration-session-id`, and

@@ -62,9 +62,9 @@ a coordination error (wrong id or wrong repo), and only `0` as success.
 
 ## Duplicate-Dispatch Guard
 
-`harnex run --attempt-kind retry` requires `--parent-dispatch-id`, and any
-retry/fix/superseding dispatch whose named parent is still running in the
-same repo is refused. Wait for the parent
+`harnex run --attempt-kind retry|fallback` requires
+`--parent-dispatch-id`, and any retry/fix/fallback/superseding dispatch whose
+named parent is still running in the same repo is refused. Wait for the parent
 (`harnex wait --id <parent> --until done`) or stop it first. Pass
 `--allow-live-parent` only for intentional parallelism (e.g. isolated
 worktrees). `--attempt-kind review` is exempt: a completed parent may still
