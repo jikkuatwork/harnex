@@ -37,6 +37,16 @@ module Harnex
         nil
       end
 
+      # Whether the usage this adapter captures reports input_tokens
+      # INCLUSIVE of cached_tokens. Depends on the capture path, not just
+      # the provider: codex app-server JSON reports cached as a subset of
+      # input, while the codex TUI line the PTY adapter scrapes shows
+      # non-cached input with cached as a separate additive count. Feeds
+      # Pricing.compute (plan 33 Phase 2).
+      def usage_input_includes_cached?
+        false
+      end
+
       # Probes `<base_command.first> --version` with a short timeout and
       # memoizes the result for the adapter's lifetime. Returns nil when
       # the binary is missing, exits non-zero, or stalls past the timeout.

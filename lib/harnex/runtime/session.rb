@@ -1583,10 +1583,28 @@ module Harnex
       cost_source ||= "provider_reported" if !@usage_summary[:cost_usd].nil?
       cost_source ||= summary_string(declared["cost_source"]) || "caller_estimate" if status == "estimated"
 
+      cost_price_as_of = nil
+      if values[:cost_usd].nil? && %w[observed zero].include?(status)
+        priced = Pricing.compute(
+          provider: summary_agent_provider,
+          model: summary_model,
+          input_tokens: values[:input_tokens],
+          output_tokens: values[:output_tokens],
+          cached_tokens: values[:cached_tokens],
+          input_includes_cached: adapter.usage_input_includes_cached?
+        )
+        if priced
+          values[:cost_usd] = priced[:cost_usd]
+          cost_source = "price_table"
+          cost_price_as_of = priced[:as_of]
+        end
+      end
+
       {
         "status" => status,
         "cost_usd" => values[:cost_usd],
         "cost_source" => cost_source,
+        "cost_price_as_of" => cost_price_as_of,
         "input_tokens" => values[:input_tokens],
         "output_tokens" => values[:output_tokens],
         "cached_input_tokens" => values[:cached_tokens],

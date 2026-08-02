@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Price-table cost for token-reporting adapters** (#63, plan 33
+  Phase 2; subsumes #58's cost gap): new `lib/harnex/pricing.rb` holds a
+  static per-1M-token USD rate table keyed by provider + model, each entry
+  `as_of`-dated and hand-copied from the provider pricing pages
+  (OpenAI gpt-5.x/codex and Anthropic Claude families, rates as of
+  2026-08-02; update procedure documented in the file header).
+  `build_summary_usage` applies it only when `cost_usd` is null, usage
+  status is `observed`/`zero`, and the effective model matches the table —
+  then `cost_source: "price_table"` and a new always-present
+  `usage.cost_price_as_of` field record provenance. Unknown models stay
+  null; provider-reported cost (Pi) is never overwritten; costs are never
+  backfilled.
+- The codex app-server adapter now captures the effective model from the
+  schema-required `model` field on `thread/start` / `thread/resume`
+  responses, so `agent.model_effective` (and price-table lookup) resolves
+  without the caller passing `--meta '{"model": ...}'`.
+- Token-semantics are capture-path-aware: new adapter hook
+  `usage_input_includes_cached?` distinguishes codex app-server JSON
+  (cached ⊆ input → billable input = input − cached) from the codex PTY
+  transcript line (input excludes cached → cached prices additively).
+  Verified against the captured schema fixtures and a live app-server row.
+
 ### Changed
 
 - **Single tracked telemetry stream** (#63, plan 33 Phase 1): a dispatch

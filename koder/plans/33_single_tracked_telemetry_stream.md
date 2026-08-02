@@ -153,6 +153,20 @@ resolve from them; suite green.
 
 ## Phase 2 — Price-table cost for token-reporting adapters
 
+**Done 2026-08-02.** Suite green (594 runs, 0 failures, 2 env-gated
+skips). Two findings beyond the plan text: (1) token semantics are
+capture-path-dependent, not provider-dependent — codex app-server JSON
+reports cached ⊆ input (live row: input 3,084,697 + output 17,705 ==
+total exactly) while the codex PTY transcript line reports non-cached
+input with cached additive (fixture: total == input + output, cached >
+input) — resolved with an adapter hook `usage_input_includes_cached?`;
+(2) nothing populated the effective model on the app-server path, so
+`ensure_thread!`/`resume` now capture the schema-required `model` field
+into `current_model`, which `summary_model` already consumed. New
+always-present `usage.cost_price_as_of` field records table vintage.
+Rates as of 2026-08-02; claude-sonnet-5 carries intro pricing ending
+2026-08-31 (refresh note in the pricing.rb header).
+
 Goal 3, Codex half — satisfies the issue's cost acceptance criterion.
 
 - Add `lib/harnex/pricing.rb` per locked decision 6; wire into

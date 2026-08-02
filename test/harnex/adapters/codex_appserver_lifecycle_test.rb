@@ -135,6 +135,26 @@ class CodexAppServerLifecycleTest < Minitest::Test
     assert_equal "thr-extract", extracted
   end
 
+  # Plan 33 Phase 2: the thread/start response's schema-required `model`
+  # field feeds Session#summary_model so price-table cost resolves without
+  # the caller passing `--meta '{"model": ...}'`.
+  def test_extract_model_reads_top_level_model
+    response = Fixtures::Codex.thread_start_response(id: "thr-m", model: "gpt-5.3-codex")
+
+    assert_equal "gpt-5.3-codex", @adapter.send(:extract_model, response)
+    assert_nil @adapter.send(:extract_model, {})
+    assert_nil @adapter.send(:extract_model, nil)
+  end
+
+  def test_dispatch_captures_current_model_from_thread_start_response
+    boot
+    assert_nil @adapter.current_model
+
+    @adapter.dispatch(prompt: "hello")
+
+    assert_equal "gpt-5.5", @adapter.current_model
+  end
+
   # 1. Golden turn lifecycle
   def test_golden_turn_lifecycle
     boot

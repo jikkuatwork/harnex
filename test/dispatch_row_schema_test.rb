@@ -147,6 +147,7 @@ class DispatchRowSchemaTest < Minitest::Test
 
   USAGE_KEYS = %w[
     cached_input_tokens
+    cost_price_as_of
     cost_source
     cost_usd
     input_tokens
@@ -380,7 +381,12 @@ class DispatchRowSchemaTest < Minitest::Test
 
       usage = record.fetch("usage")
       assert_equal "observed", usage.fetch("status")
-      assert_nil usage.fetch("cost_usd")
+      # Plan 33 Phase 2: price-table cost. PTY-scraped codex input excludes
+      # cached, so cached prices additively:
+      # 104,158 * 1.75 + 250,880 * 0.175 + 2,709 * 14.00 = 264,106.5 per-1M
+      assert_in_delta 0.2641065, usage.fetch("cost_usd"), 1e-6
+      assert_equal "price_table", usage.fetch("cost_source")
+      assert_match(/\A\d{4}-\d{2}-\d{2}\z/, usage.fetch("cost_price_as_of"))
       assert_equal 104_158, usage.fetch("input_tokens")
       assert_equal 250_880, usage.fetch("cached_input_tokens")
 

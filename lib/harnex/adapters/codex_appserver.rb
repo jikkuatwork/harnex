@@ -59,6 +59,7 @@ module Harnex
         @initial_prompt = extract_initial_prompt(extra_args)
         @client = nil
         @thread_id = nil
+        @current_model = nil
         @current_turn_id = nil
         @state = :disconnected
         @last_completed_at = nil
@@ -76,6 +77,21 @@ module Harnex
 
       def usage_telemetry_supported?
         true
+      end
+
+      # thread/tokenUsage/updated totals report cachedInputTokens as a
+      # subset of inputTokens (verified against a live captured row:
+      # input + output == total exactly, cached < input).
+      def usage_input_includes_cached?
+        true
+      end
+
+      # Effective model reported by the app-server's thread/start or
+      # thread/resume response (schema-required field). Feeds
+      # Session#summary_model so price-table cost can resolve without the
+      # caller passing `--meta '{"model": ...}'`.
+      def current_model
+        @current_model
       end
 
       def context_telemetry_supported?
@@ -202,6 +218,7 @@ module Harnex
         ensure_open!
         result = @client.request("thread/resume", { threadId: thread_id })
         @thread_id = thread_id
+        @current_model = extract_model(result) || @current_model
         @state = :prompt
         result
       end
@@ -279,12 +296,20 @@ module Harnex
 
         result = @client.request("thread/start", {})
         @thread_id = extract_thread_id(result)
+        @current_model = extract_model(result) || @current_model
       end
 
       def extract_thread_id(payload)
         return nil unless payload.is_a?(Hash)
 
         payload.dig("thread", "id")
+      end
+
+      def extract_model(payload)
+        return nil unless payload.is_a?(Hash)
+
+        model = payload["model"]
+        model.is_a?(String) && !model.empty? ? model : nil
       end
 
       def extract_initial_prompt(extra_args)

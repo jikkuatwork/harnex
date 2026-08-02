@@ -549,6 +549,88 @@ class SessionTest < Minitest::Test
     assert_equal "missing", build_session(adapter: Harnex::Adapters::Codex.new).send(:build_summary_usage).fetch("status")
   end
 
+  def test_usage_price_table_computes_cost_for_observed_codex_tokens
+    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 1_000_000, output_tokens: 100_000, reasoning_tokens: 40_000,
+      cached_tokens: 400_000, total_tokens: 1_100_000
+    })
+
+    usage = session.send(:build_summary_usage)
+    assert_equal "observed", usage.fetch("status")
+    # PTY-scraped codex input excludes cached — cached prices additively:
+    # 1M * 1.75 + 400k * 0.175 + 100k * 14.00 = 3_220_000 per-1M units
+    assert_in_delta 3.22, usage.fetch("cost_usd"), 1e-9
+    assert_equal "price_table", usage.fetch("cost_source")
+    assert_match(/\A\d{4}-\d{2}-\d{2}\z/, usage.fetch("cost_price_as_of"))
+  end
+
+  def test_usage_price_table_uses_appserver_reported_model
+    adapter = Harnex::Adapters::CodexAppServer.new
+    adapter.instance_variable_set(:@current_model, "gpt-5.3-codex")
+    session = build_session(adapter: adapter)
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000
+    })
+
+    usage = session.send(:build_summary_usage)
+    # App-server input includes cached — billable input = input - cached:
+    # 600k * 1.75 + 400k * 0.175 + 100k * 14.00 = 2_520_000 per-1M units
+    assert_in_delta 2.52, usage.fetch("cost_usd"), 1e-9
+    assert_equal "price_table", usage.fetch("cost_source")
+  end
+
+  def test_usage_price_table_leaves_unknown_model_unpriced
+    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-unknown-model" })
+    session.instance_variable_set(:@usage_summary, { input_tokens: 100, output_tokens: 10 })
+
+    usage = session.send(:build_summary_usage)
+    assert_equal "observed", usage.fetch("status")
+    assert_nil usage.fetch("cost_usd")
+    assert_nil usage.fetch("cost_source")
+    assert_nil usage.fetch("cost_price_as_of")
+  end
+
+  def test_usage_price_table_never_overwrites_provider_reported_cost
+    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000, cost_usd: 9.99
+    })
+
+    usage = session.send(:build_summary_usage)
+    assert_equal 9.99, usage.fetch("cost_usd")
+    assert_equal "provider_reported", usage.fetch("cost_source")
+    assert_nil usage.fetch("cost_price_as_of")
+  end
+
+  def test_usage_price_table_prices_zero_status_to_zero_cost
+    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+    session.instance_variable_set(:@usage_summary, {
+      input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0
+    })
+
+    usage = session.send(:build_summary_usage)
+    assert_equal "zero", usage.fetch("status")
+    assert_equal 0.0, usage.fetch("cost_usd")
+    assert_equal "price_table", usage.fetch("cost_source")
+  end
+
+  def test_usage_price_table_skips_estimated_status
+    session = build_session(
+      adapter: Harnex::Adapters::Codex.new,
+      meta: {
+        "model" => "gpt-5.3-codex",
+        "usage" => { "status" => "estimated", "input_tokens" => 500, "output_tokens" => 100 }
+      }
+    )
+
+    usage = session.send(:build_summary_usage)
+    assert_equal "estimated", usage.fetch("status")
+    assert_nil usage.fetch("cost_usd")
+    assert_equal "caller_estimate", usage.fetch("cost_source")
+    assert_nil usage.fetch("cost_price_as_of")
+  end
+
   def test_context_status_distinguishes_missing_from_unsupported
     unsupported = build_session.send(:build_summary_context)
     assert_equal "unsupported", unsupported.fetch("status")
