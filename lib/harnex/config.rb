@@ -97,7 +97,10 @@ module Harnex
           RETENTION_FIELDS.each do |field|
             next unless retention.fetch(dir).key?(field)
 
-            limits.fetch(dir)[field] = retention.fetch(dir).fetch(field)
+            limits.fetch(dir)[field] = parse_positive_integer!(
+              retention.fetch(dir).fetch(field),
+              "#{config.path}: $.retention.#{dir}.#{field}"
+            )
           end
         end
       end

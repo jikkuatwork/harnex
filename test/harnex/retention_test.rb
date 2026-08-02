@@ -125,6 +125,30 @@ class RetentionTest < Minitest::Test
     end
   end
 
+  def test_malformed_live_pid_metadata_does_not_abort_other_pruning
+    now = Time.utc(2026, 8, 3, 12, 0, 0)
+    stale = state_file("events", "stale.jsonl", bytes: 4, mtime: now - 90 * 86_400)
+    File.write(
+      File.join(Harnex::SESSIONS_DIR, "broken.json"),
+      JSON.generate("id" => "broken", "repo_root" => Dir.pwd, "pid" => "not-a-pid")
+    )
+    Harnex::DispatchHistory.append(
+      Harnex::DispatchHistory.global_path,
+      {
+        "schema_version" => 2,
+        "record_type" => "dispatch_start",
+        "id" => "broken-start",
+        "pid" => "not-a-pid",
+        "host" => Harnex.host_info.fetch(:host)
+      }
+    )
+
+    report = Harnex::Retention.prune(repo_root: Dir.pwd, force: true, now: now)
+
+    assert_equal true, report.fetch(:ok)
+    refute File.exist?(stale)
+  end
+
   def test_dry_run_reports_deletions_without_mutation
     now = Time.utc(2026, 8, 3, 12, 0, 0)
     old = state_file("events", "old.jsonl", bytes: 5, mtime: now - 90 * 86_400)
@@ -138,7 +162,10 @@ class RetentionTest < Minitest::Test
 
     assert File.exist?(old)
     assert_equal true, report.fetch(:dry_run)
-    assert_equal 1, report.fetch(:directories).fetch(:events).fetch(:deleted_count)
+    stats = report.fetch(:directories).fetch(:events)
+    assert_equal 1, stats.fetch(:deleted_count)
+    assert_includes stats.fetch(:deleted_paths), old
+    assert_equal false, stats.fetch(:deleted_paths_truncated)
   end
 
   def test_scope_safety_skips_nested_directories_and_symlinks

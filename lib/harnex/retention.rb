@@ -10,6 +10,7 @@ module Harnex
       "output" => "output"
     }.freeze
     THROTTLE_SECONDS = 3600
+    MAX_REPORTED_PATHS = 100
     METADATA_PATH = File.join(STATE_DIR, "retention.json").freeze
     LOCK_PATH = File.join(STATE_DIR, "retention.lock").freeze
 
@@ -145,6 +146,8 @@ module Harnex
         after_bytes: after_bytes,
         deleted_count: deleted.length,
         deleted_bytes: deleted.sum { |file| file.fetch(:bytes) },
+        deleted_paths: deleted.first(MAX_REPORTED_PATHS).map { |file| file.fetch(:path) },
+        deleted_paths_truncated: deleted.length > MAX_REPORTED_PATHS,
         protected_count: protected_files.length,
         protected_bytes: protected_files.sum { |file| file.fetch(:bytes) },
         max_age_days: limits.fetch("max_age_days"),
@@ -182,7 +185,7 @@ module Harnex
         protect(paths, data["events_log_path"])
         protect(paths, data["output_log_path"])
         protect_derived_session_paths(paths, data)
-      rescue JSON::ParserError, Errno::ENOENT, Errno::EACCES
+      rescue JSON::ParserError, ArgumentError, TypeError, Errno::ENOENT, Errno::EACCES
         next
       end
     end
@@ -218,7 +221,7 @@ module Harnex
         elsif DispatchHistory.end_record?(record)
           open.delete_if { |_key, start| DispatchHistory.end_matches_start?(record, start) }
         end
-      rescue JSON::ParserError
+      rescue JSON::ParserError, ArgumentError, TypeError
         next
       end
       open.values

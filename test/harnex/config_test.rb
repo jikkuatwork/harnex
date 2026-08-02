@@ -70,6 +70,17 @@ class ConfigTest < Minitest::Test
     end
   end
 
+  def test_retention_limits_normalize_numeric_string_config_values
+    with_git_repo do |repo|
+      write_repo_config(repo, retention: { events: { max_age_days: "30", max_bytes: "1234" } })
+
+      limits = Harnex::Config.retention_limits(config: Harnex::Config.load_repo(repo), env: {})
+
+      assert_equal 30, limits.fetch("events").fetch("max_age_days")
+      assert_equal 1234, limits.fetch("events").fetch("max_bytes")
+    end
+  end
+
   def test_retention_limits_reject_non_positive_config_and_env_values
     with_git_repo do |repo|
       write_repo_config(repo, retention: { events: { max_age_days: 0 } })
