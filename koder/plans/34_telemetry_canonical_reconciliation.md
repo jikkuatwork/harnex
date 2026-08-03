@@ -1,5 +1,5 @@
 ---
-status: release_pending
+status: completed
 issue: 67
 plan: 34
 tier: A
@@ -382,9 +382,12 @@ recovery/idempotency smoke, Holm close invokes the read-only assertion before
 session-ledger mutation, both repositories are clean/pushed, and no source
 mirror or historical migration path has been reintroduced.
 
-## Release-prep note
+## Release completion
 
-2026-08-04: `0.10.1` candidate metadata, changelog, and operator docs are
-prepared after the Plan 34 code-rereview pass. Release remains pending because
-tag, RubyGems publish, local gem install, installed-binary smoke, and
-`koder/releases/0.10.1.md` are still owner-gated.
+Completed 2026-08-04. `0.10.1` is published, tagged, installed, and verified;
+see `koder/releases/0.10.1.md`. The installed command passed actual legacy-rich
+and v2 recovery/idempotency/conflict smokes plus a real Codex dispatch. Holm
+Plan `722` wired `assert-canonical --source koder/scratch` into close after the
+scratch gate and before session-ledger mutation; runtime ordering tests and
+independent review passed. No mirror, automatic apply, source cleanup, or
+historical rewrite was introduced.

@@ -2,7 +2,7 @@
 
 ## [0.10.1] - 2026-08-04 | 12:20 AM | IST
 
-Patch release candidate: closes the recovery and regression-checking gap left
+Patch release: closes the recovery and regression-checking gap left
 after `0.10.0` removed the upstream telemetry mirror. The canonical
 `.harnex/dispatch.jsonl` stream remains the only writer; this release adds
 operator tooling to prove and repair that stream without schema migration.

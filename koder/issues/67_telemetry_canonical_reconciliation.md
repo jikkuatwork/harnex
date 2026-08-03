@@ -1,9 +1,10 @@
 ---
-status: open
+status: resolved
 priority: P2
 issue_kind: slice
 created: 2026-08-03
 updated: 2026-08-04
+resolved: 2026-08-04
 plan: 34
 tags: telemetry, recovery, invariant, jsonl, cli
 ---
@@ -118,7 +119,12 @@ harnex telemetry reconcile [options]
 
 ## Resolution
 
-Release pending. Plan 34 implementation and independent code rereview passed;
-`0.10.1` candidate metadata/docs are prepared with the release gate still
-owner-held. Do not mark resolved until tag, RubyGems publish, local install,
-installed-binary smoke, and release record are complete.
+Resolved in `harnex 0.10.1` (`v0.10.1`, release commit `a12e00c`). The gem is
+published and installed locally; focused/full suites, actual legacy-rich
+recovery, v2 recovery, idempotency, conflict/no-write, package-content, and a
+real installed Codex dispatch all passed. Evidence:
+`koder/releases/0.10.1.md`.
+
+Downstream Holm Plan `722` also shipped: close now runs the read-only canonical
+assertion after scratch validation and before session-ledger mutation. Runtime
+ordering tests and independent diff review passed with zero findings.
