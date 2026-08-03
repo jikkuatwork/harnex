@@ -38,8 +38,18 @@ module Harnex
           return 0
         end
         validate_options!(command, options)
-        puts JSON.generate(report(command, options))
-        1
+        result = TelemetryReconciler.new(
+          command: command,
+          canonical: canonical_path(options),
+          sources: options[:sources],
+          apply: command == "reconcile" && options[:apply]
+        ).run
+        if options[:json]
+          puts JSON.generate(result.report)
+        else
+          puts render_human(result.report)
+        end
+        result.exitstatus
       else
         raise OptionParser::ParseError, "unknown telemetry subcommand #{command.inspect}"
       end
@@ -79,29 +89,22 @@ module Harnex
       raise OptionParser::MissingArgument, "reconcile --source required"
     end
 
-    def report(command, options)
-      {
-        schema: "harnex.telemetry_reconcile.v1",
-        command: command,
-        status: "not_implemented",
-        canonical: canonical_label(options),
-        canonical_rows: 0,
-        families: {},
-        sources: options[:sources],
-        present: 0,
-        missing: 0,
-        conflicts: 0,
-        open_starts: 0,
-        appended: 0,
-        diagnostics: ["telemetry reconciliation is not implemented in this build"],
-        diagnostics_truncated: false
-      }
+    def canonical_path(options)
+      return Harnex::DispatchHistory.global_path if options[:global]
+
+      options[:canonical] || Harnex::DispatchHistory.path_for(Dir.pwd)
     end
 
-    def canonical_label(options)
-      return "global" if options[:global]
-
-      options[:canonical]
+    def render_human(report)
+      lines = [
+        "telemetry #{report.fetch(:command)}: #{report.fetch(:status)}",
+        "canonical: #{report.fetch(:canonical)}",
+        "rows: #{report.fetch(:canonical_rows)} missing=#{report.fetch(:missing)} conflicts=#{report.fetch(:conflicts)} open_starts=#{report.fetch(:open_starts)} appended=#{report.fetch(:appended)}"
+      ]
+      report.fetch(:diagnostics).each { |diagnostic| lines << "diagnostic: #{diagnostic}" }
+      truncated = report.fetch(:diagnostics_truncated)
+      lines << "diagnostics truncated: #{truncated}" if truncated.to_i.positive?
+      lines.join("\n")
     end
   end
 end
