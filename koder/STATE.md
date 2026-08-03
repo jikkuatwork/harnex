@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-03 | 11:24 PM | IST
+Updated: 2026-08-03 | 02:01 PM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -8,11 +8,6 @@ issue/plan files.
 
 ## Past
 
-- 2026-08-03 | 11:24 PM | IST: **Plan 34 RED staging blocker fixed in the
-  plan/issue docs** — RED-0 now records the existing missing-command failure,
-  GREEN-0 is bounded to CLI route/parser/report skeleton only, RED-1 requires
-  named behavioral failures plus fresh RED review, and the prior RED P1/P2/P3
-  findings are mapped to the staged correction.
 - 2026-08-03 | 02:00 PM | IST: **`harnex 0.10.0` shipped** (`de7cd12`, `v0.10.0`)
   covering #64, #65, and #66. Published to RubyGems and installed locally;
   `harnex --version` reports `0.10.0`. **Breaking:** `--summary-out` is gone.
@@ -50,11 +45,8 @@ issue/plan files.
 
 ## Present
 
-- Plan 34 / Issue 67 is ready for GREEN-0: add only the `harnex telemetry`
-  route/help, option parser, and `status: not_implemented` JSON report shell;
-  do not add source/canonical reads, scans, identity analysis, append, or writes
-  in that skeleton commit.
-- `0.10.0` is released, installed, and smoke-tested.
+- Nothing is in flight. `0.10.0` is released, installed, and smoke-tested; the
+  working tree is clean and `main` is pushed.
 - Consumers upgrading to `0.10.0` hit one breaking change: `--summary-out` now
   hard-errors. Holm already assumes canonical-only as of 2026-08-03, so no Holm
   change is needed; any other caller must drop the flag.
@@ -73,11 +65,9 @@ issue/plan files.
 
 ## Future
 
-1. Execute Plan 34 GREEN-0, then rerun the telemetry test file for RED-1 and
-   get the fresh RED review before scanner/assert/reconcile implementation.
-2. Run a live Codex dispatch against installed `0.10.0` to close the
+1. Run a live Codex dispatch against installed `0.10.0` to close the
    real-agent verification gap noted in `koder/releases/0.10.0.md`.
-3. Implement #56 adapter preflight, then converge #57/#59 into the deterministic
+2. Implement #56 adapter preflight, then converge #57/#59 into the deterministic
    queue runner required by Holm Plan 708.S04.
-4. #45 Pi PTY stable markers, then #42 / Plan 30 recovery/fallback phases and
+3. #45 Pi PTY stable markers, then #42 / Plan 30 recovery/fallback phases and
    #41 Slice C public API docs.
