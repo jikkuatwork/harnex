@@ -214,7 +214,7 @@ module Harnex
       conflicts.each { |left, right| diagnostic("identity conflict #{identity_label(left)} at #{left.path}:#{left.line} vs #{right.path}:#{right.line}") }
 
       {
-        rows: dedupe_rows(rows),
+        rows: dedupe_source_rows(rows),
         fatal: fatal,
         summary: {
           "paths" => unique.length,
@@ -331,11 +331,12 @@ module Harnex
       return false unless record.is_a?(Hash)
 
       meta = record["meta"]
+      rich_key_count = legacy_rich_key_count(record)
       meta.is_a?(Hash) &&
         !meta["id"].to_s.empty? &&
         normalized_time(meta["started_at"]) &&
         record["actual"].is_a?(Hash) &&
-        (RICH_KEYS & record.keys).length >= 2
+        (rich_key_count >= 2 || meta["harness"] == "harnex" && rich_key_count.positive?)
     end
 
     def build_row(record, path, line, family)
@@ -367,7 +368,29 @@ module Harnex
         first = group.first
         group.drop(1).each { |row| conflicts << [first, row] unless payload_equal?(first.record, row.record) }
       end
+      rows.group_by(&:match_identity).each_value do |group|
+        next unless group.map(&:family).uniq.length > 1
+
+        group.combination(2) do |left, right|
+          next if left.family == right.family
+
+          conflicts << [left, right] unless rows_payload_equal?(left, right)
+        end
+      end
       conflicts
+    end
+
+    def dedupe_source_rows(rows)
+      selected = []
+      rows.sort_by { |row| [row.sort_key[0], row.match_identity, family_preference(row), row.path, row.line] }.each do |row|
+        next if selected.any? { |candidate| candidate.identity == row.identity }
+
+        match = selected.find { |candidate| candidate.family != row.family && candidate.match_identity == row.match_identity }
+        next if match && rows_payload_equal?(match, row)
+
+        selected << row
+      end
+      selected
     end
 
     def dedupe_rows(rows)
@@ -380,6 +403,10 @@ module Harnex
         true
       end
     end
+
+    def legacy_rich_key_count(record) = (RICH_KEYS & record.keys).length
+
+    def family_preference(row) = row.family == :legacy ? 0 : 1
 
     def append_missing_under_lock(rows)
       FileUtils.mkdir_p(File.dirname(@canonical))

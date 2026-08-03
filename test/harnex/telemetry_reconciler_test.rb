@@ -16,8 +16,10 @@ class TelemetryReconcilerTest < Minitest::Test
   # - malformed canonical JSON: test_assert_canonical_rejects_malformed_canonical_json
   # - v2 identity/pairing/open starts: test_assert_canonical_enforces_v2_identity_pairing_and_allows_open_starts
   # - source drift and dry-run no-write: test_source_drift_fails_assert_and_reconcile_dry_run_without_writing
+  # - real pre-v2 harnex rich recovery: test_real_pre_v2_harnex_rich_shape_recovers_once_and_becomes_clean
   # - apply and idempotency: test_reconcile_apply_appends_missing_once_and_rerun_is_byte_identical
   # - identity conflict zero-write: test_identity_conflict_blocks_full_batch_without_writing
+  # - cross-family source conflicts: test_cross_family_source_rows_dedupe_equal_payloads_and_block_conflicts
   # - offset identity: test_equivalent_iso_offsets_deduplicate_legacy_identity
   # - source classification/exclusions: test_directory_sources_exclude_canonical_git_and_symlinks
   # - unrelated JSON and malformed declared telemetry: test_source_classifier_ignores_unrelated_json_but_fails_malformed_declared_telemetry
@@ -136,6 +138,40 @@ class TelemetryReconcilerTest < Minitest::Test
     end
   end
 
+  def test_real_pre_v2_harnex_rich_shape_recovers_once_and_becomes_clean
+    # seam: incident-regression + cli-subprocess
+    Dir.mktmpdir("harnex-telemetry-real-legacy") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "legacy-real-source.jsonl")
+      missing = real_pre_v2_harnex_rich(id: "cx-real-legacy", started_at: "2026-08-03T05:30:00+05:30")
+      write_jsonl(canonical, legacy_thin(id: "cx-old", started_at: "2026-08-03T00:00:00Z"))
+      write_jsonl(source, missing)
+      before = File.binread(canonical)
+
+      assert_result = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source, "--json")
+      dry_run = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--json")
+      assert_equal before, File.binread(canonical), "assert/dry-run must leave canonical bytes unchanged"
+      apply = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json")
+      after_apply = File.binread(canonical)
+      second = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json")
+
+      assert_report(
+        assert_result,
+        exitstatus: 1,
+        command: "assert-canonical",
+        status: "drift",
+        missing: 1,
+        diagnostic: "cx-real-legacy",
+        sources: { "paths" => 1, "files_scanned" => 1, "candidates" => 1 }
+      )
+      assert_report(dry_run, exitstatus: 1, command: "reconcile", status: "drift", missing: 1)
+      assert_report(apply, exitstatus: 0, command: "reconcile", status: "clean", appended: 1, missing: 0)
+      assert_includes File.readlines(canonical, chomp: true).map { |line| JSON.parse(line).dig("meta", "id") }, "cx-real-legacy"
+      assert_report(second, exitstatus: 0, command: "reconcile", status: "clean", appended: 0, missing: 0)
+      assert_equal after_apply, File.binread(canonical), "second apply must be byte-identical"
+    end
+  end
+
   def test_reconcile_apply_appends_missing_once_and_rerun_is_byte_identical
     # seam: behavior-change + cli-subprocess
     Dir.mktmpdir("harnex-telemetry-apply") do |dir|
@@ -173,6 +209,42 @@ class TelemetryReconcilerTest < Minitest::Test
 
       assert_equal before, File.binread(canonical), "any identity conflict must block the full apply batch"
       assert_report(result, exitstatus: 1, command: "reconcile", status: "conflict", diagnostic: "identity conflict")
+    end
+  end
+
+  def test_cross_family_source_rows_dedupe_equal_payloads_and_block_conflicts
+    # seam: incident-regression + cli-subprocess
+    Dir.mktmpdir("harnex-telemetry-cross-family") do |dir|
+      equal_canonical = File.join(dir, "equal.jsonl")
+      equal_source = File.join(dir, "equal-source.jsonl")
+      equal_legacy = legacy_rich(id: "cx-cross-equal", started_at: "2026-08-03T07:00:00Z")
+      write_jsonl(equal_canonical, legacy_thin(id: "cx-old", started_at: "2026-08-03T00:00:00Z"))
+      write_jsonl(
+        equal_source,
+        v2_end(id: "cx-cross-equal", session_id: "sess-cross", started_at: "2026-08-03T07:00:00Z"),
+        equal_legacy
+      )
+
+      equal_result = telemetry(dir, "reconcile", "--canonical", equal_canonical, "--source", equal_source, "--apply", "--json")
+      equal_ids = File.readlines(equal_canonical, chomp: true).map { |line| JSON.parse(line)["id"] || JSON.parse(line).dig("meta", "id") }
+
+      conflict_canonical = File.join(dir, "conflict.jsonl")
+      conflict_source = File.join(dir, "conflict-source.jsonl")
+      conflict_legacy = legacy_rich(id: "cx-cross-conflict", started_at: "2026-08-03T08:00:00Z", exit_code: 1)
+      write_jsonl(conflict_canonical, legacy_thin(id: "cx-old-conflict", started_at: "2026-08-03T00:00:00Z"))
+      write_jsonl(
+        conflict_source,
+        v2_end(id: "cx-cross-conflict", session_id: "sess-cross", started_at: "2026-08-03T13:30:00+05:30", exit_code: 0),
+        conflict_legacy
+      )
+      before_conflict = File.binread(conflict_canonical)
+
+      conflict_result = telemetry(dir, "reconcile", "--canonical", conflict_canonical, "--source", conflict_source, "--apply", "--json")
+
+      assert_report(equal_result, exitstatus: 0, command: "reconcile", status: "clean", appended: 1, missing: 0, conflicts: 0)
+      assert_equal 1, equal_ids.count("cx-cross-equal"), "equal cross-family source rows must append once"
+      assert_equal before_conflict, File.binread(conflict_canonical), "cross-family source conflicts must block the full apply batch"
+      assert_report(conflict_result, exitstatus: 1, command: "reconcile", status: "conflict", conflicts: 1, diagnostic: "identity conflict")
     end
   end
 
@@ -421,6 +493,27 @@ class TelemetryReconcilerTest < Minitest::Test
       "outcome" => { "status" => "changed" },
       "attempt" => { "run_id" => id },
       "reliability" => { "recovered" => false }
+    }
+  end
+
+  def real_pre_v2_harnex_rich(id: "cx-real-rich", started_at: "2026-08-03T00:00:00Z")
+    {
+      "meta" => {
+        "id" => id,
+        "started_at" => started_at,
+        "harness" => "harnex"
+      },
+      "predicted" => {
+        "finish_reason" => "task_complete"
+      },
+      "actual" => {
+        "exit" => "success",
+        "exit_code" => 0,
+        "status" => "completed",
+        "terminal_event" => "task_complete",
+        "duration_s" => 42.5,
+        "ended_at" => "2026-08-03T00:00:42Z"
+      }
     }
   end
 end
