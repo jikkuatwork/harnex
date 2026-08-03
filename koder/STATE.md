@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-03 | 02:04 PM | IST
+Updated: 2026-08-03 | 02:01 PM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
