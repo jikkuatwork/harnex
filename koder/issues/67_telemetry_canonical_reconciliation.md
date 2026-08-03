@@ -100,11 +100,14 @@ harnex telemetry reconcile [options]
   does not match its start fails without mutation.
 - Unpaired v2 starts are reported but pass.
 - `--source` accepts a file or recursively scans a directory for `.json` and
-  `.jsonl` candidates while excluding canonical, symlinks, and `.git`.
+  `.jsonl` candidates while excluding canonical, symlinks, and `.git`; directory
+  sources ignore generic summaries unless they match the rich dispatch end
+  shape.
 - A source rich row absent from canonical makes `assert-canonical` and dry-run
   `reconcile` report drift and exit non-zero.
 - `reconcile --apply` appends that row exactly once; a second apply is a no-op.
-- Same identity + different payload is a conflict and appends nothing.
+- v2 identity is `(session_id, id, normalized started_at UTC instant)`; same
+  identity + different payload is a conflict and appends nothing.
 - Legacy identities normalize equivalent ISO-8601 offsets before comparison.
 - Default output is human-readable; `--json` emits one bounded JSON object.
 - Full harnex suite passes, CLI help/docs describe the safety contract, and an

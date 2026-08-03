@@ -72,8 +72,9 @@ families are accepted:
 
 - v2 `dispatch_start`;
 - v2 `dispatch_end` (rich);
-- legacy end rows already accepted by harnex readers: thin v1 and
-  envelope-less rich (`meta` hash + `actual` hash).
+- legacy end rows accepted by canonical validation: thin v1 and envelope-less
+  rich (`meta` hash + `actual` hash). Envelope-less rich recovery is new
+  reconciler behavior; current `harnex history` readers skip those rows.
 
 Well-formed unknown historical objects are counted as `legacy_unknown` and
 warned, not failed; readers already skip them. Malformed JSON is always fatal.
@@ -82,30 +83,46 @@ Modern v2 checks are strict:
 
 - `schema_version == 2`;
 - nonempty `id`, `session_id`, and parseable `started_at`;
-- one row per `(record_type, session_id)`;
+- one start row and one end row per `(session_id, id, normalized started_at UTC
+  instant)`;
 - a v2 end must have exactly one start with matching `session_id`, `id`, and
   normalized `started_at` instant;
+- a second v2 row with the same identity and record type is a duplicate if its
+  parsed payload is equal, otherwise an identity conflict;
 - an unpaired start is allowed and counted as `open_starts`.
 
 ### Recoverable source candidates
 
-Only rich end records are recoverable:
+Only rich dispatch end records are recoverable:
 
-- v2 `record_type == "dispatch_end"`; or
-- envelope-less legacy rich rows with nonempty `meta.id`, parseable
-  `meta.started_at`, and an `actual` hash.
+- v2 `schema_version == 2` and `record_type == "dispatch_end"`, with nonempty
+  `session_id`, nonempty `id`, parseable `started_at`, and an `actual` hash; or
+- envelope-less legacy rich dispatch summaries with `meta` hash, nonempty
+  `meta.id`, parseable `meta.started_at`, an `actual` hash, and at least two
+  additional known harnex rich-summary section keys from this set: `predicted`,
+  `agent`, `usage`, `context`, `attribution`, `outcome`, `attempt`,
+  `reliability`.
 
 Thin v1 rows, start rows, generic JSON, queue summaries, receipts, and claims
-are ignored as recovery candidates.
+are ignored as recovery candidates. A directory-discovered file whose only
+would-be candidates fail the rich-dispatch shape is ignored, not treated as
+malformed telemetry.
 
 Identity:
 
-- v2 rich end: nonempty `session_id` when present;
-- otherwise: `(id, normalized started_at UTC instant)` where `id` and time come
-  from top-level fields first, then `meta`.
+- v2 rich end rows require nonempty `session_id`, nonempty `id`, and parseable
+  `started_at`. Their identity is `(session_id, id, normalized started_at UTC
+  instant)`. `session_id` is an additional discriminator, not a substitute for
+  dispatch ID and start instant.
+- envelope-less legacy rich rows have no trusted session ID. Their identity is
+  `(id, normalized started_at UTC instant)` where both fields come from `meta`.
+- Canonical duplicate/conflict checks compare identities inside the same
+  family. A v2 row and a legacy rich row may be considered the same recovered
+  dispatch only when `id` and normalized `started_at` match and their
+  recoverable payload is semantically equal; otherwise report a conflict with
+  both path:line locations.
 
-Comparison uses parsed JSON object equality, not byte order. An identical
-identity+payload is present; same identity+different payload is a conflict.
+Comparison uses parsed JSON object equality for payloads, not byte order.
 Equivalent timezone offsets normalize for identity only; payload text is not
 rewritten.
 
@@ -197,8 +214,12 @@ Add focused tests before production code. Required behavioral cases:
 8. equivalent ISO offsets deduplicate legacy identity;
 9. source directory excludes canonical, `.git`, and symlinks and ignores
    unrelated JSON;
-10. JSON report is bounded and contains no marker secrets placed in payloads;
-11. CLI help/unknown subcommand/option errors follow existing conventions.
+10. a directory source containing a generic JSON summary with `meta.id`,
+    `meta.started_at`, and `actual`, but without the required harnex
+    rich-summary section evidence, is ignored and does not produce drift or
+    conflicts;
+11. JSON report is bounded and contains no marker secrets placed in payloads;
+12. CLI help/unknown subcommand/option errors follow existing conventions.
 
 Run only the new test file first and capture the expected missing-command or
 missing-constant RED. RED must be behavioral, not a syntax/fixture failure.
@@ -282,6 +303,18 @@ Then Holm gets a separate, tiny integration change:
 - **Verified-state reporting:** implementation/test workers run `git diff
   --stat` after edits and report only command-verified file/test state, listing
   every validation command and result.
+
+## Plan review corrections
+
+- P1-1: v2 identity is `(session_id, id, normalized started_at UTC instant)`;
+  `session_id` cannot replace dispatch ID plus start instant, and v2/legacy
+  cross-family recovery matches only on `id`, normalized `started_at`, and
+  semantic payload equality.
+- P2-1: directory recovery accepts only rich dispatch end records, with legacy
+  envelope-less summaries requiring `meta`, `actual`, and at least two known
+  harnex rich-summary section keys; generic summaries are ignored.
+- P3-1: envelope-less rich recovery is described as new reconciler behavior,
+  not behavior already accepted by current `harnex history` readers.
 
 ## Definition of done
 
