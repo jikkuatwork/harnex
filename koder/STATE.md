@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-03 | 11:18 AM | IST
+Updated: 2026-08-03 | 11:45 AM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -8,6 +8,11 @@ issue/plan files.
 
 ## Past
 
+- 2026-08-03 | 11:45 AM | IST: **Open/close skills refreshed to the current
+  koder-pattern format** (`b84f5f1`). Tiny front doors now route to bounded
+  workflows and compact output contracts while retaining Harnex-specific
+  artifact-loading, timestamp, telemetry, and clean-close rules under
+  `.claude/skills/{open,close}/` (also exposed through the Pi alias).
 - 2026-08-03 | 11:08 AM | IST: **#64 observed-state receipts implemented and
   resolved**. Harnex now generates proof from Git/command/turn/
   usage observations, keeps review claims advisory, validates final receipts,
