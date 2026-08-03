@@ -1,0 +1,107 @@
+require "json"
+require "optparse"
+
+module Harnex
+  class TelemetryCommand
+    COMMANDS = %w[assert-canonical reconcile].freeze
+
+    def self.usage(program_name = "harnex telemetry")
+      <<~TEXT
+        Usage:
+          #{program_name} assert-canonical [--canonical PATH | --global] [--source PATH] [--json]
+          #{program_name} reconcile [--canonical PATH | --global] --source PATH [--apply] [--json]
+
+        Options:
+          --canonical PATH  Canonical dispatch JSONL path
+          --global          Use the global harnex dispatch JSONL
+          --source PATH     Source JSONL file or directory; repeatable
+          --apply           Append missing records when reconciling
+          --json            Emit JSON report
+          -h, --help        Show this help
+      TEXT
+    end
+
+    def initialize(argv)
+      @argv = argv.dup
+    end
+
+    def run
+      command = @argv.shift
+      case command
+      when nil, "-h", "--help"
+        puts self.class.usage
+        0
+      when *COMMANDS
+        options = parse_options(command, @argv)
+        if options[:help]
+          puts self.class.usage
+          return 0
+        end
+        validate_options!(command, options)
+        puts JSON.generate(report(command, options))
+        1
+      else
+        raise OptionParser::ParseError, "unknown telemetry subcommand #{command.inspect}"
+      end
+    end
+
+    private
+
+    def parse_options(command, argv)
+      options = { command: command, sources: [], apply: false, json: false }
+      parser(options).parse!(argv)
+      raise OptionParser::InvalidArgument, "unexpected arguments: #{argv.join(' ')}" unless argv.empty?
+
+      options
+    end
+
+    def parser(options)
+      OptionParser.new do |opts|
+        opts.banner = "Usage: harnex telemetry #{options[:command]} [options]"
+        opts.on("--canonical PATH") { |value| options[:canonical] = value }
+        opts.on("--global") { options[:global] = true }
+        opts.on("--source PATH") { |value| options[:sources] << value }
+        opts.on("--apply") { options[:apply] = true }
+        opts.on("--json") { options[:json] = true }
+        opts.on("-h", "--help") { options[:help] = true }
+      end
+    end
+
+    def validate_options!(command, options)
+      if options[:canonical] && options[:global]
+        raise OptionParser::InvalidOption, "--canonical and --global are mutually exclusive"
+      end
+      if command == "assert-canonical" && options[:apply]
+        raise OptionParser::InvalidOption, "--apply is only supported with reconcile"
+      end
+      return unless command == "reconcile" && options[:sources].empty?
+
+      raise OptionParser::MissingArgument, "reconcile --source required"
+    end
+
+    def report(command, options)
+      {
+        schema: "harnex.telemetry_reconcile.v1",
+        command: command,
+        status: "not_implemented",
+        canonical: canonical_label(options),
+        canonical_rows: 0,
+        families: {},
+        sources: options[:sources],
+        present: 0,
+        missing: 0,
+        conflicts: 0,
+        open_starts: 0,
+        appended: 0,
+        diagnostics: ["telemetry reconciliation is not implemented in this build"],
+        diagnostics_truncated: false
+      }
+    end
+
+    def canonical_label(options)
+      return "global" if options[:global]
+
+      options[:canonical]
+    end
+  end
+end

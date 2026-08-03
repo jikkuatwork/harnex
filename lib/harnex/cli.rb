@@ -41,6 +41,8 @@ module Harnex
         OrchestrationCommand.new(@argv.drop(1)).run
       when "artifact-report"
         ArtifactReportCommand.new(@argv.drop(1)).run
+      when "telemetry"
+        TelemetryCommand.new(@argv.drop(1)).run
       when "help"
         puts help(@argv[1])
         0
@@ -91,6 +93,8 @@ module Harnex
         OrchestrationCommand.usage
       when "artifact-report"
         ArtifactReportCommand.usage
+      when "telemetry"
+        TelemetryCommand.usage
       else
         usage
       end
@@ -113,6 +117,7 @@ module Harnex
           harnex doctor
           harnex orchestration sample|report [options]
           harnex artifact-report init|validate PATH [options]
+          harnex telemetry assert-canonical|reconcile [options]
           harnex help [command]
 
         Commands:
@@ -135,6 +140,8 @@ module Harnex
                   Emit external primary samples and report orchestration tax
           artifact-report
                   Validate harness-authored receipts or initialize legacy v1 documents
+          telemetry
+                  Assert or reconcile canonical dispatch telemetry
           help    Show command help
 
         New to harnex? Start with: harnex guide
@@ -159,6 +166,7 @@ module Harnex
           harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
           harnex artifact-report validate /path/from-dispatch-row.json --final
           harnex artifact-report init .harnex/reports/legacy-v1.json
+          harnex telemetry assert-canonical --canonical .harnex/dispatch.jsonl --json
           harnex send --id main --message "Summarize current progress."
       TEXT
     end
