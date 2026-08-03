@@ -88,8 +88,11 @@ harnex telemetry reconcile [options]
   not span more than three runtime subsystems.
 - **Phases:** plan review → RED test suite → RED review → implementation → code
   review → release gate. One plan only; no per-file decomposition.
-- **TDD:** strict red → green. Tests must prove the mutation path is blocked on
-  every conflict/corruption condition before implementation begins.
+- **TDD:** staged strict red → green. First land only the CLI
+  route/parser/report skeleton that turns the unknown-command RED into named
+  behavioral RED failures; only then implement scanner/assert/reconcile
+  behavior. Tests must prove the mutation path is blocked on every
+  conflict/corruption condition before append code begins.
 - **Release:** patch release `0.10.1` after independent code review and explicit
   owner confirmation at the publish gate.
 

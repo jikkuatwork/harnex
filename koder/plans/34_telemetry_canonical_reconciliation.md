@@ -202,7 +202,52 @@ findings before RED tests.
 
 ## Phase 2 — RED tests first
 
-Add focused tests before production code. Required behavioral cases:
+Add focused tests before production code, but stage the executable contract so
+the first RED proves only the missing command seam instead of masking every
+behavior behind one unknown top-level command.
+
+### RED-0 — command route/help absence
+
+Existing evidence is sufficient: commit `b38a143` runs the new file with
+`11 runs, 29 assertions, 11 failures, 0 errors`, and RED review `8931731`
+rejected it because each contract is hidden behind the same absent
+`telemetry` route in `lib/harnex/cli.rb`.
+
+### GREEN-0 — minimal skeleton only
+
+The first production commit is limited to:
+
+- require and route `harnex telemetry` plus `harnex help telemetry`;
+- parse only the approved `assert-canonical` / `reconcile` subcommands and
+  options, including `--canonical`/`--global`, repeatable `--source`, `--apply`,
+  and `--json`;
+- emit one bounded `harnex.telemetry_reconcile.v1` report shell with
+  `status: not_implemented` for executable subcommands and exit nonzero;
+- perform path/option resolution only. No canonical/source file reads, no
+  directory scan, no identity analysis, no append, and no writes.
+
+Focused GREEN-0 tests may assert help text, unknown subcommand, unknown option,
+`--canonical`/`--global` conflict, missing `reconcile --source`, JSON report
+schema/status, nonzero exits, and byte-identical canonical/source fixtures.
+All scanner, classifier, identity, drift, conflict, redaction, append, and
+idempotency tests must remain RED after this skeleton.
+
+### RED-1 — behavioral reconciliation contract
+
+After GREEN-0, rerun the full telemetry test file. RED-1 must show multiple
+named behavioral assertion failures with `0 errors`; it must no longer be a
+top-level unknown-command failure. A fresh RED review then reads Plan 34 and
+the tests only, including the prior RED findings below, before any scanner or
+mutation code lands.
+
+### GREEN-1 — implementation
+
+Only after RED-1 passes review may implementation add canonical/source reads,
+classification, identity comparison, reports with real counts, and locked
+append. Keep the first scanner/append commit separate from GREEN-0 so the
+skeleton cannot absorb production behavior.
+
+Required behavioral cases for RED-1:
 
 1. clean mixed-era canonical stream passes;
 2. malformed canonical JSON fails;
@@ -221,8 +266,8 @@ Add focused tests before production code. Required behavioral cases:
 11. JSON report is bounded and contains no marker secrets placed in payloads;
 12. CLI help/unknown subcommand/option errors follow existing conventions.
 
-Run only the new test file first and capture the expected missing-command or
-missing-constant RED. RED must be behavioral, not a syntax/fixture failure.
+Run only the new test file for each RED stage. RED must be behavioral, not a
+syntax/fixture failure.
 
 ## Phase 3 — RED contract review
 
@@ -315,6 +360,20 @@ Then Holm gets a separate, tiny integration change:
   harnex rich-summary section keys; generic summaries are ignored.
 - P3-1: envelope-less rich recovery is described as new reconciler behavior,
   not behavior already accepted by current `harnex history` readers.
+
+## RED review staging correction
+
+Verdict: fixed for planning. P1/P2/P3 open count: 0.
+
+- Prior RED P1-1 maps to RED-1: add an assertion where two valid v2 start/end
+  pairs share one `session_id` but have different `id` and/or normalized
+  `started_at`, and `assert-canonical --json` is clean with counts proving both
+  pairs survived independently.
+- Prior RED P2-1 maps to RED-1: make canonical exclusion and symlink pruning
+  observable with distinct would-be source candidates, not just an already
+  present row or a deduplicated identity.
+- Prior RED P3-1 maps to GREEN-0/RED-1: pin an unknown telemetry option through
+  the same parse-error convention as other commands.
 
 ## Definition of done
 
