@@ -383,4 +383,66 @@ class CoreTest < Minitest::Test
   ensure
     Open3.define_singleton_method(:capture2, &original_capture2) if original_capture2
   end
+
+  # --- registry durability (reliability regressions) ---
+
+  # Several threads in one session write the same registry: the startup
+  # persist, the inbox delivery thread, and one thread per API client. A
+  # temp name keyed only on the pid let one thread rename the file another
+  # was still writing, surfacing as ENOENT on the loser -- and, because the
+  # send path persisted the registry after the prompt had already reached the
+  # agent, reporting a delivered turn as failed.
+  def test_write_registry_is_safe_under_concurrent_writers
+    Dir.mktmpdir("harnex-registry-race") do |dir|
+      path = File.join(dir, "sessions", "sess.json")
+      errors = Queue.new
+
+      threads = 8.times.map do |i|
+        Thread.new do
+          80.times do
+            Harnex.write_registry(path, { "id" => "cx-1", "writer" => i })
+          rescue StandardError => e
+            errors << "#{e.class}: #{e.message}"
+          end
+        end
+      end
+      threads.each(&:join)
+
+      assert_equal 0, errors.size, "concurrent registry writes must not fail"
+      assert_kind_of Hash, JSON.parse(File.read(path))
+      leftovers = Dir.glob("#{path}.tmp.*")
+      assert_empty leftovers, "temp files must not be left behind"
+    end
+  end
+
+  def test_write_registry_recreates_a_reaped_state_directory
+    Dir.mktmpdir("harnex-registry-reaped") do |dir|
+      path = File.join(dir, "gone", "sessions", "sess.json")
+
+      Harnex.write_registry(path, { "id" => "cx-1" })
+
+      assert_equal "cx-1", JSON.parse(File.read(path)).fetch("id")
+    end
+  end
+
+  # A truncated, hand-edited, or foreign-written registry must not take down
+  # every command that scans sessions.
+  def test_alive_pid_treats_a_non_numeric_pid_as_dead
+    refute Harnex.alive_pid?("not-a-pid")
+    refute Harnex.alive_pid?(nil)
+    refute Harnex.alive_pid?("")
+  end
+
+  def test_active_sessions_prunes_a_corrupt_pid_instead_of_raising
+    FileUtils.mkdir_p(Harnex::SESSIONS_DIR)
+    corrupt = File.join(Harnex::SESSIONS_DIR, "corrupt-pid-fixture.json")
+    File.write(corrupt, JSON.generate("id" => "cx-corrupt", "repo_root" => Dir.pwd, "pid" => "not-a-pid"))
+
+    sessions = Harnex.active_sessions
+
+    refute_includes sessions.map { |row| row["id"] }, "cx-corrupt"
+    refute_path_exists corrupt, "a corrupt registry entry should be pruned"
+  ensure
+    FileUtils.rm_f(corrupt) if corrupt
+  end
 end

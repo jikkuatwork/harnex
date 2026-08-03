@@ -624,7 +624,6 @@ module Harnex
         artifact_report_status: status["artifact_report_status"],
         exit: status["exit"],
         exit_code: status["exit_code"],
-        summary_out: status["summary_out"],
         ended_at: status["ended_at"],
         source: status["source"]
       }

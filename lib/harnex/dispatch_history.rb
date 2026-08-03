@@ -156,7 +156,6 @@ module Harnex
         repo_root: session.repo_root,
         tier: session.__send__(:meta_hash)["tier"],
         meta: session.__send__(:meta_hash),
-        summary_out_path: session.summary_out,
         events_log_path: session.events_log_path,
         artifact_report_path: session.artifact_report_path,
         artifact_claims_path: session.artifact_claims_path
@@ -184,7 +183,6 @@ module Harnex
         terminal_event: terminal_event,
         commit_sha: commit_sha(session.git_start, session.git_end),
         tier: session.__send__(:meta_hash)["tier"],
-        summary_out_path: session.summary_out,
         events_log_path: session.events_log_path,
         tmux_state: tmux_state(session.__send__(:summary_tmux_session))
       }.merge(session.__send__(:build_summary_record))

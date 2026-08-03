@@ -1,6 +1,56 @@
 # Changelog
 
-## [Unreleased] - 2026-08-03 | 10:47 AM | IST
+## [0.10.0] - 2026-08-03 | 01:44 PM | IST
+
+Minor bump, **breaking**: `--summary-out` is removed outright, so the canonical
+`.harnex/dispatch.jsonl` is the only telemetry destination. Also fixes four
+runner reliability defects found while verifying that removal — concurrent
+registry corruption, a delivered send reported as failed, a corrupt registry
+entry crashing every session scan, and a closed stdout wedging the wrapped
+agent.
+
+### Fixed
+
+- **Concurrent registry writes no longer corrupt each other** (#66).
+  `write_registry` derived its temp path from the pid alone, but several
+  threads in one session write the same registry — the startup persist, the
+  inbox delivery thread, and one thread per API client. One thread renamed the
+  file another was still writing, and the loser raised `Errno::ENOENT`
+  (2080 failures in a 2400-write reproduction; now zero). Writes are also no
+  longer defeated by a state directory that was reaped mid-session.
+- **A failed registry write no longer fails an already delivered send** (#66).
+  Registry persistence runs *after* the prompt has reached the agent, so a
+  bookkeeping failure was reporting a dispatched turn as failed — enough to
+  make an orchestrator retry work already in flight. Post-injection refresh now
+  warns; startup persistence stays strict so an undiscoverable session still
+  fails loudly instead of running unreachable.
+- **One corrupt registry file no longer crashes every session scan** (#66).
+  A non-numeric pid raised `ArgumentError` out of `active_sessions`, taking
+  down `harnex status`, `harnex send`, and `harnex pane`. Such an entry is now
+  treated as dead and pruned, matching the existing self-healing for
+  unparseable JSON.
+- **A closed stdout no longer wedges the wrapped agent** (#66).
+  `Errno::EPIPE`/`EBADF` are not `IOError` subclasses, so they escaped the
+  output reader's rescue and killed the thread; the PTY then stopped draining
+  and the agent blocked forever on write, presenting as an agent hang with no
+  harness error. Draining is now unconditional and stdout echo is best-effort.
+  Both reader loops report an unexpected exit instead of vanishing silently.
+- `Retention` metadata writes route through the shared atomic writer instead of
+  repeating the same pid-only temp-name pattern.
+
+### Removed
+
+- **BREAKING: `--summary-out` is gone** (#65). `.harnex/dispatch.jsonl` is now
+  the only destination a dispatch writes telemetry to. Passing `--summary-out
+  PATH` or `--summary-out=PATH` is rejected as an unknown flag and exits
+  non-zero; it is deliberately not a silent ignore, so a stale caller fails
+  immediately rather than believing it still has a second copy. 0.9.0 demoted
+  the flag to an explicit-only mirror but left it in place; that mirror was the
+  source of a three-times-hand-reconciled stranded-telemetry class.
+- `summary_out_path` no longer appears on `dispatch_start` or `dispatch_end`
+  rows, and `summary_out` no longer appears in `harnex status --json`,
+  `harnex wait`, or `harnex watch` payloads. The `summary` event no longer
+  carries `mirror_path`.
 
 ### Added
 
@@ -25,6 +75,14 @@
 
 ### Changed
 
+- `TerminalStatus` resolves exclusively from the canonical stream. It
+  previously preferred the mirror file named by a record's `summary_out_path`,
+  which — with the writer removed — would have let a leftover mirror from an
+  older release resolve status from stale data. A pre-existing mirror file on
+  disk now has no effect on any id.
+- `status["source"]` reports `dispatch_end` where it previously reported
+  `summary_out` for rich end rows. `dispatch_history`, `dispatch_start`,
+  `live`, `registry`, and `none` are unchanged.
 - `artifact-report validate --final` preserves the legacy manual-v1 contract
   while recognizing the additive harness-receipt contract. Harness receipts
   validate observed acceptance and zero-delta evidence; failed exploratory
@@ -40,7 +98,7 @@
   gate. Receipt write/validation failure is fail-closed as `report_invalid`.
 - Git observation now baselines the starting worktree so uncommitted product
   edits are included while unchanged pre-existing dirt and harness-owned
-  dispatch/mirror/receipt files are excluded.
+  dispatch/receipt files are excluded.
 
 ## [0.9.0] - 2026-08-03 | 01:11 AM | IST
 

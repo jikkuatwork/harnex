@@ -127,7 +127,6 @@ module Harnex
         "work_state" => "running",
         "exit" => nil,
         "exit_code" => nil,
-        "summary_out" => nil,
         "ended_at" => nil,
         "source" => "dispatch_start",
         "degraded" => true,
@@ -150,7 +149,6 @@ module Harnex
         "work_state" => work_state,
         "exit" => nil,
         "exit_code" => nil,
-        "summary_out" => nil,
         "ended_at" => nil,
         "source" => degraded ? "registry" : "live",
         "degraded" => degraded

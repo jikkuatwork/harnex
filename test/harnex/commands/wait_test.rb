@@ -122,7 +122,6 @@ class WaiterTest < Minitest::Test
         "terminal_event" => "task_complete",
         "started_at" => Time.now.iso8601,
         "ended_at" => Time.now.iso8601,
-        "summary_out_path" => nil,
         "meta" => {
           "id" => "v2-done",
           "repo" => repo,
@@ -146,7 +145,8 @@ class WaiterTest < Minitest::Test
       assert_equal true, payload["task_complete"]
       assert_equal "completed", payload["state"]
       assert_equal "completed_with_proof", payload["outcome_class"]
-      assert_equal dispatch_path, payload["summary_out"]
+      assert_equal "dispatch_end", payload["source"]
+      refute payload.key?("summary_out"), "removed mirror key must not reappear"
     end
   end
 
@@ -178,7 +178,7 @@ class WaiterTest < Minitest::Test
       assert_equal true, payload["terminal"]
       assert_equal "success", payload["exit"]
       assert_equal 0, payload["exit_code"]
-      assert_equal dispatch_path, payload["summary_out"]
+      assert_equal "dispatch_end", payload["source"]
     end
   end
 
@@ -387,12 +387,7 @@ class WaiterTest < Minitest::Test
       assert_equal "timeout", payload["wait_result"]
       assert_equal "running", payload["work_state"]
     ensure
-      begin
-        Process.kill("KILL", child_pid) if child_pid
-        Process.waitpid(child_pid, Process::WNOHANG)
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil
-      end
+      reap_process(child_pid)
       FileUtils.rm_f(exit_path) if exit_path
       FileUtils.rm_f(registry_path) if registry_path
     end
@@ -424,12 +419,7 @@ class WaiterTest < Minitest::Test
       out, = capture_io { assert_equal 124, waiter.run }
       assert_equal "timeout", JSON.parse(out)["wait_result"]
     ensure
-      begin
-        Process.kill("KILL", child_pid) if child_pid
-        Process.waitpid(child_pid, Process::WNOHANG)
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil
-      end
+      reap_process(child_pid)
       FileUtils.rm_f(events_path) if events_path
       FileUtils.rm_f(registry_path) if registry_path
     end
@@ -445,7 +435,7 @@ class WaiterTest < Minitest::Test
         schema_version: 1, record_type: "dispatch_start", id: id,
         session_id: "sess-start", pid: child_pid, host: Harnex.host_info[:host],
         cli: "ruby", description: nil, started_at: Time.now.utc.iso8601,
-        repo_root: repo, tier: nil, meta: {}, summary_out_path: nil,
+        repo_root: repo, tier: nil, meta: {},
         events_log_path: Harnex.events_log_path(repo, id)
       )
 
@@ -456,12 +446,7 @@ class WaiterTest < Minitest::Test
       assert_equal "timeout", payload["wait_result"]
       assert_equal "running", payload["work_state"]
     ensure
-      begin
-        Process.kill("KILL", child_pid) if child_pid
-        Process.waitpid(child_pid, Process::WNOHANG)
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil
-      end
+      reap_process(child_pid)
     end
   end
 
@@ -512,13 +497,8 @@ class WaiterTest < Minitest::Test
     assert_equal id, row.dig("meta", "id")
   ensure
     ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"] = prev_grace
-    killer&.join(2)
-    begin
-      Process.kill("KILL", child_pid) if child_pid
-      Process.waitpid(child_pid, Process::WNOHANG)
-    rescue Errno::ESRCH, Errno::ECHILD
-      nil
-    end
+    reap_thread(killer)
+    reap_process(child_pid)
     FileUtils.rm_f(registry_path) if registry_path
     FileUtils.rm_f(exit_path) if exit_path
     FileUtils.rm_rf(dispatch_dir) if dispatch_dir

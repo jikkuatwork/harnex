@@ -87,11 +87,11 @@ module Harnex
     end
 
     attr_reader :repo_root, :launch_cwd, :child_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
-                :inbox, :description, :meta, :summary_out, :artifact_report_path, :artifact_claims_path,
+                :inbox, :description, :meta, :artifact_report_path, :artifact_claims_path,
                 :output_log_path, :events_log_path, :started_at, :ended_at, :exit_code, :term_signal,
                 :require_artifact_report
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -104,8 +104,6 @@ module Harnex
       @description = description.to_s.strip
       @description = nil if @description.empty?
       @meta = meta
-      @summary_out = summary_out.to_s.strip
-      @summary_out = nil if @summary_out.empty?
       configured_report_path = artifact_report_path.to_s.strip
       @artifact_report_path = if configured_report_path.empty?
                                 Harnex::ArtifactReport.default_path(
@@ -446,7 +444,7 @@ module Harnex
         @state_machine.force_busy!
         @injected_count += 1
         @last_injected_at = Time.now
-        persist_registry
+        refresh_registry
       end
 
       emit_send_event(dispatch.fetch(:prompt, text), force: payload[:force])
@@ -1047,7 +1045,7 @@ module Harnex
       injected_count = @mutex.synchronize do
         @injected_count += 1
         @last_injected_at = Time.now
-        persist_registry
+        refresh_registry
         @injected_count
       end
 
@@ -1071,6 +1069,17 @@ module Harnex
       preserved = load_existing_registry_metadata
       payload = payload.merge(preserved) unless preserved.empty?
       Harnex.write_registry(@registry_path, payload)
+    end
+
+    # Post-injection registry refresh. By the time this runs the prompt has
+    # already reached the agent, so a failed bookkeeping write must not report
+    # the send as failed — that would make an orchestrator retry a turn the
+    # agent is already working on. Startup persistence stays strict: a session
+    # nothing can discover should fail loudly instead of running unreachable.
+    def refresh_registry
+      persist_registry
+    rescue StandardError => e
+      warn("harnex: failed to refresh session registry: #{e.message}")
     end
 
     def persist_exit_status
@@ -1127,19 +1136,38 @@ module Harnex
         rescue EOFError, Errno::EIO, IOError
           break
         end
+      rescue StandardError => e
+        warn("harnex: input forwarder stopped: #{e.class}: #{e.message}")
       end
     end
 
+    # Draining the PTY is the one job this thread must never stop doing: if it
+    # dies, the kernel buffer fills and the wrapped agent blocks forever on
+    # write, which looks like the agent hanging rather than the harness
+    # failing. Echoing to our own stdout is best-effort by comparison —
+    # Errno::EPIPE/EBADF (not IOError subclasses, so they used to escape and
+    # kill the thread) just mean nobody is watching, e.g. `harnex run … | head`.
     def start_output_thread
       Thread.new do
+        echo = true
         loop do
           chunk = @reader.readpartial(4096)
           record_output(chunk)
-          STDOUT.write(chunk)
-          STDOUT.flush
-        rescue EOFError, Errno::EIO, IOError
-          break
+          next unless echo
+
+          begin
+            STDOUT.write(chunk)
+            STDOUT.flush
+          rescue StandardError => e
+            echo = false
+            warn("harnex: stopped mirroring output to stdout: #{e.message}")
+          end
         end
+      rescue EOFError, Errno::EIO, IOError
+        nil
+      rescue StandardError => e
+        # Never disappear quietly; a dead reader must be diagnosable.
+        warn("harnex: output reader stopped: #{e.class}: #{e.message}")
       end
     end
 
@@ -1243,7 +1271,7 @@ module Harnex
 
       root = File.expand_path(git_root)
       prefix = "#{root}#{File::SEPARATOR}"
-      [dispatch_history_path, summary_out, artifact_report_path, artifact_claims_path].filter_map do |path|
+      [dispatch_history_path, artifact_report_path, artifact_claims_path].filter_map do |path|
         absolute = File.expand_path(path.to_s, root)
         absolute.delete_prefix(prefix) if absolute.start_with?(prefix)
       end.uniq
@@ -1274,9 +1302,7 @@ module Harnex
     end
 
     def emit_summary_event
-      payload = { path: dispatch_history_path, exit: @exit_reason }
-      payload[:mirror_path] = summary_out if summary_out
-      emit_event("summary", **payload)
+      emit_event("summary", path: dispatch_history_path, exit: @exit_reason)
     end
 
     def emit_attempt_finished(attempt)
@@ -1316,7 +1342,6 @@ module Harnex
       @exit_reason ||= classify_exit
       record = DispatchHistory.build_record(self)
       append_dispatch_history_record(record)
-      append_summary_record(record)
       emit_summary_event
       emit_attempt_finished(record.fetch(:attempt))
       emit_exit_event
@@ -2256,20 +2281,6 @@ module Harnex
       meta.is_a?(Hash) ? meta : {}
     end
 
-    # Explicit-only mirror: the identical end record lands here in addition
-    # to the tracked stream when --summary-out is configured.
-    def append_summary_record(record)
-      return unless summary_out
-
-      FileUtils.mkdir_p(File.dirname(summary_out))
-      File.open(summary_out, "ab") do |file|
-        file.write(JSON.generate(record))
-        file.write("\n")
-      end
-    rescue StandardError => e
-      warn("harnex: failed to write dispatch summary #{summary_out}: #{e.message}")
-    end
-
     def append_dispatch_start_record
       DispatchHistory.append(dispatch_history_path, DispatchHistory.build_start_record(self))
     rescue StandardError => e
@@ -2282,10 +2293,9 @@ module Harnex
       warn("harnex: failed to write dispatch history: #{e.message}")
     end
 
-    # One canonical stream per session: the start row and the end row must
-    # land in the same file so readers can pair them. repo_root — not the
-    # launch cwd — is the root that registry, events, and default summary
-    # paths already key off.
+    # The only telemetry destination: the start row and the end row must land
+    # in the same file so readers can pair them. repo_root — not the launch
+    # cwd — is the root that registry and events paths already key off.
     def dispatch_history_path
       @dispatch_history_path ||= DispatchHistory.path_for(repo_root)
     end

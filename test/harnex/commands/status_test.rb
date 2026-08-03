@@ -225,7 +225,7 @@ class StatusCommandTest < Minitest::Test
         schema_version: 1, record_type: "dispatch_start", id: "cx-t-96",
         session_id: "sess-96", pid: child_pid, host: Harnex.host_info[:host],
         cli: "codex", description: "mid-run worker", started_at: Time.now.utc.iso8601,
-        repo_root: repo, tier: nil, meta: {}, summary_out_path: nil,
+        repo_root: repo, tier: nil, meta: {},
         events_log_path: Harnex.events_log_path(repo, "cx-t-96")
       )
 
@@ -240,12 +240,7 @@ class StatusCommandTest < Minitest::Test
       assert_equal "dispatch_start", row["source"]
       assert_equal true, row["degraded"]
     ensure
-      begin
-        Process.kill("KILL", child_pid) if child_pid
-        Process.waitpid(child_pid, Process::WNOHANG)
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil
-      end
+      reap_process(child_pid)
     end
   end
 

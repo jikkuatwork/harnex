@@ -157,8 +157,9 @@ class RetentionTest < Minitest::Test
   def test_malformed_live_pid_metadata_does_not_abort_other_pruning
     now = Time.utc(2026, 8, 3, 12, 0, 0)
     stale = state_file("events", "stale.jsonl", bytes: 4, mtime: now - 90 * 86_400)
+    broken_registry = File.join(Harnex::SESSIONS_DIR, "broken.json")
     File.write(
-      File.join(Harnex::SESSIONS_DIR, "broken.json"),
+      broken_registry,
       JSON.generate("id" => "broken", "repo_root" => Dir.pwd, "pid" => "not-a-pid")
     )
     Harnex::DispatchHistory.append(
@@ -176,6 +177,10 @@ class RetentionTest < Minitest::Test
 
     assert_equal true, report.fetch(:ok)
     refute File.exist?(stale)
+  ensure
+    # SESSIONS_DIR is shared by the whole suite; a fixture left behind here
+    # changes what every later session scan sees.
+    FileUtils.rm_f(broken_registry) if broken_registry
   end
 
   def test_dry_run_reports_deletions_without_mutation

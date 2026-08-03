@@ -450,6 +450,12 @@ module Harnex
     false
   rescue Errno::EPERM
     true
+  rescue ArgumentError, TypeError
+    # A non-numeric pid means a truncated, hand-edited, or foreign-written
+    # registry file. Report it dead so active_sessions prunes it, the same
+    # self-healing it already applies to unparseable JSON. Raising here would
+    # take down every command that scans sessions -- status, send, pane.
+    false
   end
 
   def read_registry(repo_root, id = DEFAULT_ID, cli: nil)
@@ -517,10 +523,25 @@ module Harnex
     nil
   end
 
-  def write_registry(path, payload)
-    tmp = "#{path}.tmp.#{Process.pid}"
+  # Atomically replace a JSON state file.
+  #
+  # The temp name must be unique per write, not just per process. Several
+  # threads in one session write the same registry path — the startup persist,
+  # the inbox delivery thread, and one thread per API client — and a shared
+  # temp name lets one thread rename the file another is still writing, which
+  # surfaces as ENOENT on the loser's rename. mkdir_p covers a state directory
+  # that was reaped (tmpfs, operator cleanup) while the process was live.
+  def atomic_write_json(path, payload)
+    FileUtils.mkdir_p(File.dirname(path))
+    tmp = "#{path}.tmp.#{Process.pid}.#{SecureRandom.hex(6)}"
     File.write(tmp, JSON.pretty_generate(payload))
     File.rename(tmp, path)
+  ensure
+    FileUtils.rm_f(tmp) if tmp
+  end
+
+  def write_registry(path, payload)
+    atomic_write_json(path, payload)
   end
 
   def allocate_port(repo_root, id, requested_port = nil, host: DEFAULT_HOST)

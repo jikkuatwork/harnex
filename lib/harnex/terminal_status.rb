@@ -10,28 +10,18 @@ module Harnex
       root = File.expand_path(repo_root.to_s.empty? ? Dir.pwd : repo_root)
 
       latest_summary = nil
-      latest_summary_path = nil
       latest_history = nil
 
+      # The canonical dispatch stream is the only source. Rows a prior
+      # release mirrored elsewhere are never read back, so a leftover mirror
+      # file on disk cannot resolve status from stale data.
       history_paths(root).each do |path|
         summary, history = scan_dispatch_path(path, normalized_id)
-        if newer_summary?(summary, latest_summary)
-          latest_summary = summary
-          latest_summary_path = path
-        end
+        latest_summary = summary if newer_summary?(summary, latest_summary)
         latest_history = history if newer_history?(history, latest_history)
       end
 
-      summary_path = latest_history && latest_history["summary_out_path"].to_s.strip
-      if summary_path && !summary_path.empty? && File.file?(summary_path)
-        summary, = scan_dispatch_path(summary_path, normalized_id)
-        if newer_summary?(summary, latest_summary)
-          latest_summary = summary
-          latest_summary_path = summary_path
-        end
-      end
-
-      return build_from_summary(latest_summary, latest_summary_path, root) if latest_summary
+      return build_from_summary(latest_summary, root) if latest_summary
       return build_from_history(latest_history, root) if latest_history
 
       nil
@@ -52,7 +42,6 @@ module Harnex
         "artifact_report_status" => nil,
         "exit" => nil,
         "exit_code" => nil,
-        "summary_out" => nil,
         "started_at" => nil,
         "ended_at" => nil,
         "source" => "none"
@@ -140,7 +129,7 @@ module Harnex
       nil
     end
 
-    def build_from_summary(record, summary_path, fallback_repo_root)
+    def build_from_summary(record, fallback_repo_root)
       meta = record["meta"] || {}
       actual = record["actual"] || {}
       outcome = record["outcome"] || {}
@@ -162,10 +151,9 @@ module Harnex
         "artifact_report_status" => blank_to_nil(outcome["report_status"]),
         "exit" => blank_to_nil(actual["exit"]),
         "exit_code" => actual["exit_code"],
-        "summary_out" => summary_path,
         "started_at" => meta["started_at"],
         "ended_at" => meta["ended_at"],
-        "source" => "summary_out"
+        "source" => "dispatch_end"
       }
     end
 
@@ -208,7 +196,6 @@ module Harnex
         "artifact_report_status" => nil,
         "exit" => history_exit(status),
         "exit_code" => nil,
-        "summary_out" => blank_to_nil(record["summary_out_path"]),
         "started_at" => record["started_at"],
         "ended_at" => record["ended_at"],
         "source" => "dispatch_history"

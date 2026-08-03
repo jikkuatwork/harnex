@@ -5,6 +5,8 @@ require "json"
 class SessionJsonrpcTest < Minitest::Test
   def setup
     @tmp = Dir.mktmpdir("harnex-jsonrpc-test")
+    # A real repo root so the canonical dispatch stream lands under @tmp.
+    system("git", "init", "-q", @tmp, out: File::NULL, err: File::NULL)
     @adapter = Harnex::Adapters::CodexAppServer.new
     @session = Harnex::Session.new(
       adapter: @adapter,
@@ -108,21 +110,22 @@ class SessionJsonrpcTest < Minitest::Test
     rescue StandardError
       nil
     end
-    runner&.join(2)
-    runner&.kill if runner&.alive?
-    server&.join(1)
-    server&.kill if server&.alive?
+    reap_thread(runner)
+    reap_thread(server)
   end
 
-  def build_jsonrpc_session(adapter, id:, summary_out: nil)
+  def build_jsonrpc_session(adapter, id:)
     Harnex::Session.new(
       adapter: adapter,
       command: adapter.build_command,
       repo_root: @tmp,
       host: "127.0.0.1",
-      id: id,
-      summary_out: summary_out
+      id: id
     )
+  end
+
+  def dispatch_stream_path
+    Harnex::DispatchHistory.path_for(@tmp)
   end
 
   def test_turn_completed_emits_task_complete_event
@@ -401,9 +404,8 @@ class SessionJsonrpcTest < Minitest::Test
   end
 
   def test_jsonrpc_session_writes_token_usage_to_dispatch_row
-    summary_path = File.join(@tmp, "DISPATCH.jsonl")
     adapter = Harnex::Adapters::CodexAppServer.new
-    session = build_jsonrpc_session(adapter, id: "tok-dispatch", summary_out: summary_path)
+    session = build_jsonrpc_session(adapter, id: "tok-dispatch")
     session.send(:prepare_output_log)
     session.send(:prepare_events_log)
     session.send(:emit_started_event)
@@ -436,7 +438,7 @@ class SessionJsonrpcTest < Minitest::Test
     session.instance_variable_set(:@exit_code, 0)
     session.send(:finalize_session!)
 
-    record = JSON.parse(File.read(summary_path).lines.last)
+    record = JSON.parse(File.read(dispatch_stream_path).lines.last)
     assert_equal 197_819, record.dig("actual", "input_tokens")
     assert_equal 25_018, record.dig("actual", "output_tokens")
     assert_equal 12_501, record.dig("actual", "reasoning_tokens")
@@ -458,9 +460,8 @@ class SessionJsonrpcTest < Minitest::Test
   end
 
   def test_jsonrpc_session_with_no_token_usage_keeps_token_fields_null
-    summary_path = File.join(@tmp, "DISPATCH.jsonl")
     adapter = Harnex::Adapters::CodexAppServer.new
-    session = build_jsonrpc_session(adapter, id: "tok-empty", summary_out: summary_path)
+    session = build_jsonrpc_session(adapter, id: "tok-empty")
     session.send(:prepare_output_log)
     session.send(:prepare_events_log)
     session.send(:emit_started_event)
@@ -469,7 +470,7 @@ class SessionJsonrpcTest < Minitest::Test
     session.instance_variable_set(:@exit_code, 0)
     session.send(:finalize_session!)
 
-    record = JSON.parse(File.read(summary_path).lines.last)
+    record = JSON.parse(File.read(dispatch_stream_path).lines.last)
     assert_nil record.dig("actual", "input_tokens")
     assert_nil record.dig("actual", "output_tokens")
     assert_nil record.dig("actual", "reasoning_tokens")
@@ -586,8 +587,7 @@ class SessionJsonrpcTest < Minitest::Test
 
   def test_jsonrpc_run_writes_boot_failure_summary_when_initial_turn_errors
     adapter = Harnex::Adapters::CodexAppServer.new(["[harnex session id=boot-fail] echo OK"])
-    summary_path = File.join(@tmp, "DISPATCH.jsonl")
-    session = build_jsonrpc_session(adapter, id: "boot-fail", summary_out: summary_path)
+    session = build_jsonrpc_session(adapter, id: "boot-fail")
     server_in, client_out = IO.pipe
     client_in, server_out = IO.pipe
     original_start = adapter.method(:start_rpc)
@@ -632,7 +632,7 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal "boot_failure", rows[-3]["exit"]
     assert_equal "boot_failure", rows[-1]["reason"]
 
-    record = JSON.parse(File.read(summary_path).lines.last)
+    record = JSON.parse(File.read(dispatch_stream_path).lines.last)
     assert_equal "boot-fail", record.dig("meta", "id")
     assert_kind_of String, record.dig("meta", "started_at")
     assert_kind_of String, record.dig("meta", "ended_at")

@@ -1,9 +1,10 @@
 ---
-status: open
+status: resolved
 priority: P1
 issue_kind: slice
 created: 2026-08-03
 updated: 2026-08-03
+resolved: 2026-08-03
 tags: telemetry, dispatch-jsonl, summary-out, breaking, cleanup
 ---
 
@@ -101,3 +102,57 @@ Docs:
 - Related: Holm `koder/analysis/720_spring_cleaning_meta_analysis/INDEX.md`
   (root-cause trace), Holm `koder/analysis/719_scratch_lifecycle_pass/INDEX.md`
   (the 213-row import).
+
+## Resolution — 2026-08-03
+
+Implemented as scoped. All acceptance criteria met.
+
+**Writer and flag plumbing.** `Session#append_summary_record`, the
+`summary_out:` ctor kwarg/attr, the `summary_out` exclusion in
+`git_observation_excluded_paths`, and the `summary` event's `mirror_path` are
+deleted. `Runner` drops the flag from `KNOWN_FLAGS`/`VALUE_FLAGS`, usage, option
+defaults, both arg-parsing clauses, the `--flag=value` prefix sets, the tmux
+re-exec passthrough, session construction, and `resolve_summary_out`. With the
+`when` clauses gone the flag falls through to the existing
+`reject_unknown_long_flag!`, so both spellings raise
+`OptionParser::InvalidOption` and the CLI exits `2`.
+`DispatchHistory.build_start_record` / `build_record` no longer emit
+`summary_out_path`.
+
+**Read path — the non-deletion part.** `TerminalStatus.resolve` previously
+preferred the file named by a record's `summary_out_path`. That branch, the
+`latest_summary_path` tracking, and the `summary_out` payload key are removed,
+so a leftover mirror from an older release cannot resolve status. `source` for
+a rich end row is now `dispatch_end` (was `summary_out`); other source values
+are unchanged. `commands/status.rb` and `commands/wait.rb` drop the
+`summary_out` key from their payloads (this also removes it from `watch`).
+
+**Verified.** Full suite green: 647 runs, 2811 assertions, 0 failures/errors,
+2 environment-gated skips — three consecutive runs. Live CLI smoke in a scratch
+repo:
+
+| Criterion | Result |
+| --- | --- |
+| `--summary-out PATH` / `--summary-out=PATH` | both exit `2`, `unknown flag --summary-out`; no mirror file created |
+| Only `.harnex/dispatch.jsonl` receives a record | `find` over the repo after a run returns exactly that one file |
+| `status --json` has no `summary_out`; `source` never `summary_out` | `source=dispatch_end`, key absent |
+| Stale mirror on disk does not influence resolution | planted a mirror row claiming success for `cx-ghost`; `status` returned `state=unknown`, `source=none` |
+| Grep clean | no `\bsummary[-_]out\b` in `lib/`, `docs/`, `guides/`, `README.md`, `TECHNICAL.md` |
+
+Regression tests added: `test_summary_out_flag_is_rejected_as_unknown` and
+`test_summary_out_flag_exits_nonzero_through_the_cli` (`run_test.rb`),
+`test_pre_existing_mirror_file_does_not_influence_resolution`
+(`terminal_status_test.rb`). `test_summary_event_points_at_the_only_telemetry_destination`
+now asserts the canonical stream is the only `.jsonl` written under the repo.
+
+**Note on `lib/` grep.** `build_summary_outcome` and
+`summary_output_measurements` in `session.rb` still contain the substring
+`summary_out`. They are unrelated identifiers (session-summary outcome;
+output-log volume measurements) and were left alone; a word-boundary grep is
+clean.
+
+**Test-suite side effect.** Many tests used `--summary-out` as a convenient way
+to read the end row out of a non-git tmpdir — which meant the canonical stream
+was landing in `/tmp/.harnex/dispatch.jsonl`. Those tmpdirs are now `git
+init`-ed so the stream lands inside the fixture, which also stops the suite
+polluting a shared `/tmp` path.

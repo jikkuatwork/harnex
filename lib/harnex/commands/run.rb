@@ -31,7 +31,7 @@ module Harnex
 
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
-      --stall-after --max-resumes --preset --context --meta --summary-out
+      --stall-after --max-resumes --preset --context --meta
       --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
       --require-artifact-report --require-attribution --auto-stop --fast --legacy-pty
       --allow-live-parent --help
@@ -42,7 +42,7 @@ module Harnex
     LIVE_PARENT_GUARDED_KINDS = %w[retry fix fallback superseding].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --summary-out --artifact-report
+      --max-resumes --preset --context --meta --artifact-report
       --validation-report --cwd --root --timeout --inbox-ttl
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
@@ -67,7 +67,6 @@ module Harnex
           --fast             (codex only) Use Codex service_tier="fast".
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
-          --summary-out PATH Also mirror the dispatch end record JSONL to PATH
           --artifact-report PATH
                              Override the harness-authored observed-state receipt path
           --validation-report PATH
@@ -170,7 +169,6 @@ module Harnex
         meta: nil,
         telemetry: {},
         require_attribution: false,
-        summary_out: nil,
         artifact_report: nil,
         require_artifact_report: false,
         cwd: nil,
@@ -205,7 +203,6 @@ module Harnex
 
       repo_root = resolve_run_root(cli_name, child_args)
       validate_repo_phase_policy!(repo_root)
-      @options[:summary_out] = resolve_summary_out(repo_root)
       @options[:artifact_report] = resolve_artifact_report(repo_root)
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
@@ -274,7 +271,6 @@ module Harnex
       end
       tmux_cmd << "--require-attribution" if @options[:require_attribution]
       tmux_cmd << "--allow-live-parent" if @options[:allow_live_parent]
-      tmux_cmd += ["--summary-out", @options[:summary_out]] if @options[:summary_out]
       tmux_cmd += ["--artifact-report", @options[:artifact_report]] if @options[:artifact_report]
       tmux_cmd << "--require-artifact-report" if @options[:require_artifact_report]
       tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
@@ -440,7 +436,6 @@ module Harnex
         watch: watch,
         description: @options[:description],
         meta: @options[:meta],
-        summary_out: @options[:summary_out],
         artifact_report_path: @options[:artifact_report],
         require_artifact_report: @options[:require_artifact_report],
         inbox_ttl: @options[:inbox_ttl],
@@ -629,11 +624,6 @@ module Harnex
         when telemetry_equals_regex
           flag = "--#{Regexp.last_match(1)}"
           @options[:telemetry][TELEMETRY_FLAGS.fetch(flag)] = required_option_value(flag, Regexp.last_match(2))
-        when "--summary-out"
-          index += 1
-          @options[:summary_out] = required_option_value(arg, argv[index])
-        when /\A--summary-out=(.+)\z/
-          @options[:summary_out] = required_option_value("--summary-out", Regexp.last_match(1))
         when "--artifact-report", "--validation-report"
           index += 1
           @options[:artifact_report] = required_option_value(arg, argv[index])
@@ -725,7 +715,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|summary-out|artifact-report|validation-report|cwd|root|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|cwd|root|timeout|inbox-ttl)=/
           nil
         when telemetry_equals_regex
           nil
@@ -745,7 +735,7 @@ module Harnex
         arg == "-h" ||
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
-          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=", "--summary-out=",
+          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=",
           "--artifact-report=", "--validation-report=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
           *TELEMETRY_EQUALS_PREFIXES
         )
@@ -869,15 +859,6 @@ module Harnex
       raise OptionParser::InvalidOption, "--meta must be a JSON object"
     rescue JSON::ParserError => e
       raise OptionParser::InvalidOption, "--meta must be valid JSON: #{e.message}"
-    end
-
-    # Explicit-only mirror: the tracked dispatch stream is the canonical
-    # destination; --summary-out just duplicates the end record elsewhere.
-    def resolve_summary_out(repo_root)
-      configured = @options[:summary_out]
-      return nil if configured.nil?
-
-      File.expand_path(configured, repo_root)
     end
 
     def resolve_artifact_report(repo_root)

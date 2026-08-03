@@ -260,11 +260,10 @@ and one rich v2 `dispatch_end` row at teardown. Both use the canonical stream:
 history envelope with usage, context, attribution, outcome, attempt,
 reliability, queue/orchestration, and a harness-authored observed-state receipt.
 
-`--summary-out PATH` has no default. It is an explicit compatibility mirror
-that copies the identical `dispatch_end` row to another JSONL file; do not pass
-it merely to preserve rich telemetry. `harnex history`,
-`harnex status --id ID --json`, and `harnex wait` all read the canonical stream
-when the live registry is gone. Mixed legacy v1 and v2 rows remain readable.
+The canonical stream is the only destination; there is no flag to mirror a
+second copy elsewhere. `harnex history`, `harnex status --id ID --json`, and
+`harnex wait` all read the canonical stream when the live registry is gone.
+Mixed legacy v1 and v2 rows remain readable.
 
 Use `harnex history` to inspect it:
 

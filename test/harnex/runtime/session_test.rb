@@ -182,8 +182,7 @@ class SessionTest < Minitest::Test
           "read_budget_lines" => 2_000,
           "output_ceiling_lines" => 800,
           "predicted" => { "input_tokens" => [100, 200] }
-        },
-        summary_out: File.join(repo, "koder", "DISPATCH.jsonl")
+        }
       )
       silence_session_stdout(session)
 
@@ -219,14 +218,13 @@ class SessionTest < Minitest::Test
 
       summary = rows[5]
       assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), summary["path"]
-      assert_equal File.join(repo, "koder", "DISPATCH.jsonl"), summary["mirror_path"]
       assert_equal "success", summary["exit"]
       attempt_finished = rows[6]
       assert_equal "succeeded", attempt_finished["status"]
       assert_equal 0, rows[7]["code"]
       assert_equal "success", rows[7]["reason"]
 
-      record = JSON.parse(File.read(summary["mirror_path"]).lines.last)
+      record = JSON.parse(File.read(summary["path"]).lines.last)
       assert_equal session.id, record.dig("meta", "id")
       assert_equal "dispatch telemetry", record.dig("meta", "description")
       assert_equal "harnex", record.dig("meta", "harness")
@@ -256,11 +254,9 @@ class SessionTest < Minitest::Test
 
   def test_summary_record_uses_null_actuals_and_disconnected_exit_without_summary_marker
     Dir.mktmpdir("harnex-session-summary") do |repo|
-      summary_path = File.join(repo, "DISPATCH.jsonl")
       session = build_session(
         command: [RbConfig.ruby, "-e", "puts 'no usage marker'"],
-        repo_root: repo,
-        summary_out: summary_path
+        repo_root: repo
       )
       silence_session_stdout(session)
 
@@ -271,7 +267,7 @@ class SessionTest < Minitest::Test
       assert_equal "disconnected", rows[-3]["exit"]
       assert_equal "disconnected", rows[-1]["reason"]
 
-      record = JSON.parse(File.read(summary_path).lines.last)
+      record = JSON.parse(File.read(Harnex::DispatchHistory.path_for(repo)).lines.last)
       assert_equal({}, record["predicted"])
       assert_nil record.dig("actual", "input_tokens")
       assert_nil record.dig("actual", "output_tokens")
@@ -282,8 +278,9 @@ class SessionTest < Minitest::Test
     end
   end
 
-  def test_summary_event_points_at_tracked_stream_without_mirror
+  def test_summary_event_points_at_the_only_telemetry_destination
     Dir.mktmpdir("harnex-session-summary") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
       session = build_session(
         command: [RbConfig.ruby, "-e", "exit 0"],
         repo_root: repo
@@ -295,27 +292,33 @@ class SessionTest < Minitest::Test
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
       assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
       assert_equal Harnex::DispatchHistory.path_for(repo), rows[-3]["path"]
-      refute rows[-3].key?("mirror_path")
-      refute File.exist?(File.join(repo, "koder", "DISPATCH.jsonl"))
+      refute rows[-3].key?("mirror_path"), "removed mirror key must not reappear"
+
+      # No file other than the canonical stream receives a dispatch record.
+      written = Dir.glob(File.join(repo, "**", "*.jsonl"), File::FNM_DOTMATCH)
+      assert_equal [Harnex::DispatchHistory.path_for(repo)], written
     end
   end
 
+  # Canonical-stream writes stay best-effort: an unwritable destination warns
+  # and still lets the session report its real exit.
   def test_summary_write_failure_warns_without_crashing_exit
     Dir.mktmpdir("harnex-session-summary") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      # An unwritable canonical destination: .harnex cannot be a directory.
+      File.write(File.join(repo, ".harnex"), "not a directory\n")
       session = build_session(
         command: [RbConfig.ruby, "-e", "exit 0"],
-        repo_root: repo,
-        summary_out: repo
+        repo_root: repo
       )
       silence_session_stdout(session)
 
       _out, err = capture_io { assert_equal 0, session.run(validate_binary: false) }
 
-      assert_match(/failed to write dispatch summary/, err)
+      assert_match(/failed to write dispatch history/, err)
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
       assert_equal "summary", rows[-3]["type"]
       assert_equal Harnex::DispatchHistory.path_for(repo), rows[-3]["path"]
-      assert_equal repo, rows[-3]["mirror_path"]
       assert_equal "exited", rows[-1]["type"]
     end
   end
@@ -381,6 +384,70 @@ class SessionTest < Minitest::Test
     assert_equal 201, row["msg"].length
     assert_equal "…", row["msg"][-1]
     assert_equal true, result[:force]
+  ensure
+    events_log = session.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
+  end
+
+  # The registry refresh runs *after* the bytes have reached the agent. If a
+  # bookkeeping write failure propagated, a delivered turn would be reported
+  # as failed and an orchestrator would retry work already in flight.
+  def test_registry_refresh_failure_does_not_fail_a_delivered_injection
+    session = build_session
+    session.define_singleton_method(:persist_registry) do
+      raise Errno::ENOENT, "sessions dir went away"
+    end
+
+    result = nil
+    _out, err = capture_io do
+      result = session.send(:finish_injection, bytes_written: 12, newline: true)
+    end
+
+    assert_equal true, result[:ok]
+    assert_equal 12, result[:bytes_written]
+    assert_equal 1, result[:injected_count]
+    assert_match(/failed to refresh session registry/, err)
+  end
+
+  # Draining the PTY is the one job the output thread must never abandon. If
+  # it dies, the kernel buffer fills and the wrapped agent blocks on write --
+  # which presents as the agent hanging, not as the harness failing.
+  # Errno::EPIPE is not an IOError, so it used to escape the loop's rescue.
+  def test_output_thread_keeps_draining_the_pty_when_stdout_is_gone
+    session = build_session
+    session.send(:prepare_events_log)
+
+    chunks = ["one", "two", "three", "four"]
+    drained = Queue.new
+    reader = Object.new
+    reader.define_singleton_method(:readpartial) do |_size|
+      raise EOFError if chunks.empty?
+
+      chunks.shift
+    end
+    session.instance_variable_set(:@reader, reader)
+    session.define_singleton_method(:record_output) { |chunk| drained << chunk }
+
+    stdout_writes = 0
+    original_write = STDOUT.method(:write)
+    STDOUT.define_singleton_method(:write) do |*args|
+      stdout_writes += 1
+      raise Errno::EPIPE, "consumer went away" if stdout_writes >= 2
+
+      original_write.call(*args)
+    end
+
+    begin
+      thread = session.send(:start_output_thread)
+      assert thread.join(5), "output thread must terminate on EOF, not hang"
+    ensure
+      STDOUT.singleton_class.send(:remove_method, :write)
+    end
+
+    collected = []
+    collected << drained.pop until drained.empty?
+    assert_equal %w[one two three four], collected,
+                 "every PTY chunk must still be drained after stdout fails"
   ensure
     events_log = session.instance_variable_get(:@events_log)
     events_log&.close unless events_log&.closed?
@@ -932,7 +999,7 @@ class SessionTest < Minitest::Test
 
   private
 
-  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
+  def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)
 
     Harnex::Session.new(
@@ -943,7 +1010,6 @@ class SessionTest < Minitest::Test
       id: "session-#{SecureRandom.hex(4)}",
       description: description,
       meta: meta,
-      summary_out: summary_out,
       artifact_report_path: artifact_report_path,
       require_artifact_report: require_artifact_report,
       inbox_ttl: inbox_ttl,

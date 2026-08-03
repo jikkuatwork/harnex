@@ -4,6 +4,8 @@ require "json"
 class SessionPiRpcTest < Minitest::Test
   def setup
     @tmp = Dir.mktmpdir("harnex-pi-session")
+    # A real repo root so the canonical dispatch stream lands under @tmp.
+    system("git", "init", "-q", @tmp, out: File::NULL, err: File::NULL)
     @adapter = Harnex::Adapters::Pi.new
     @session = Harnex::Session.new(
       adapter: @adapter,
@@ -80,14 +82,12 @@ class SessionPiRpcTest < Minitest::Test
 
   def test_run_with_initial_context_auto_stop_and_stats
     adapter = Harnex::Adapters::Pi.new(["--model", "anthropic/claude-sonnet-4-5", "[harnex session id=cx-i-44] implement feature"])
-    summary_path = File.join(@tmp, "pi-dispatch.jsonl")
     session = Harnex::Session.new(
       adapter: adapter,
       command: adapter.build_command,
       repo_root: @tmp,
       host: "127.0.0.1",
       id: "pi-run",
-      summary_out: summary_path,
       auto_stop: true
     )
 
@@ -174,7 +174,7 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal 0, session.run(validate_binary: false)
     assert_equal "[harnex session id=cx-i-44] implement feature", prompt_messages.pop
 
-    record = JSON.parse(File.read(summary_path).lines.last)
+    record = JSON.parse(File.read(Harnex::DispatchHistory.path_for(@tmp)).lines.last)
     assert_equal "stdio_jsonl_rpc", record.dig("actual", "adapter_transport")
     assert_equal 0.07, record.dig("actual", "cost_usd")
     assert_equal "observed", record.dig("usage", "status")
@@ -198,8 +198,6 @@ class SessionPiRpcTest < Minitest::Test
   end
 
   def test_summary_record_includes_cost_and_usage_tool_calls
-    summary_path = File.join(@tmp, "DISPATCH.jsonl")
-    @session.instance_variable_set(:@summary_out, summary_path)
     @session.send(:emit_started_event)
     @session.send(:emit_git_start_event)
 
@@ -233,7 +231,7 @@ class SessionPiRpcTest < Minitest::Test
     @session.instance_variable_set(:@last_completed_at, Time.now)
     @session.send(:finalize_session!)
 
-    record = JSON.parse(File.read(summary_path).lines.last)
+    record = JSON.parse(File.read(Harnex::DispatchHistory.path_for(@tmp)).lines.last)
     assert_equal 0.33, record.dig("actual", "cost_usd")
     assert_equal "observed", record.dig("usage", "status")
     assert_equal "provider_reported", record.dig("usage", "cost_source")

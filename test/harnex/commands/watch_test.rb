@@ -172,7 +172,7 @@ class RunWatcherTest < Minitest::Test
       assert_equal false, payload["done"]
       assert_equal "failed", payload["work_state"]
       assert_equal true, payload["terminal"]
-      assert_equal dispatch_path, payload["summary_out"]
+      assert_equal "dispatch_end", payload["source"]
     end
   end
 

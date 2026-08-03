@@ -144,10 +144,9 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
 are present.
 
 Every dispatch writes one `dispatch_start` and one rich v2 `dispatch_end` row
-to the canonical repo/global dispatch stream. Do not pass `--summary-out` for
-normal telemetry; it is an explicit-only compatibility mirror of the same end
-row. Repo `.harnex/config.json` can warn on or reject non-canonical phase names
-before spawn.
+to the canonical repo/global dispatch stream, which is the only telemetry
+destination. Repo `.harnex/config.json` can warn on or reject non-canonical
+phase names before spawn.
 
 Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
 (e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).

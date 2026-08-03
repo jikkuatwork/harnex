@@ -312,9 +312,7 @@ module Harnex
           end
         }
       }
-      tmp = "#{METADATA_PATH}.tmp.#{Process.pid}"
-      File.write(tmp, JSON.pretty_generate(payload))
-      File.rename(tmp, METADATA_PATH)
+      Harnex.atomic_write_json(METADATA_PATH, payload)
     rescue StandardError => e
       warn("harnex: failed to persist retention metadata: #{e.message}")
     end

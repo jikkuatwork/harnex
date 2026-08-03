@@ -113,9 +113,8 @@ New event types:
   `sha` and `branch`; `phase: "end"` includes `sha`, `loc_added`,
   `loc_removed`, `files_changed`, and `commits`.
 - `summary`: emitted last before `exited`. `path` is the canonical tracked
-  dispatch stream. `mirror_path` is present only when explicit
-  `--summary-out PATH` was configured. `exit` is `success`, `failure`,
-  `timeout`, or `disconnected`.
+  dispatch stream — the only destination a dispatch record is written to.
+  `exit` is `success`, `failure`, `timeout`, or `disconnected`.
 
 Example telemetry sequence:
 

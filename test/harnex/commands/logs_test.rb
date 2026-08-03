@@ -12,13 +12,7 @@ class LogsCommandTest < Minitest::Test
 
   def teardown
     @paths.each { |path| FileUtils.rm_f(path) }
-    @pids.each do |pid|
-      begin
-        Process.kill("TERM", pid)
-      rescue Errno::ESRCH
-        nil
-      end
-    end
+    @pids.each { |pid| reap_process(pid, signal: "TERM") }
     FileUtils.rm_rf(@repo_root)
   end
 

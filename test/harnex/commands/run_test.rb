@@ -143,11 +143,11 @@ class RunnerTest < Minitest::Test
   def test_ack_only_completion_gate_covers_flex_and_fast_service_tiers
     [[[], "flex"], [["--fast"], "fast"]].each do |wrapper_args, expected_tier|
       Dir.mktmpdir("harnex-ack-only-#{expected_tier}") do |repo|
+        init_test_repo(repo)
         bin_dir = File.join(repo, "bin")
         FileUtils.mkdir_p(bin_dir)
         write_ack_only_codex_stub(File.join(bin_dir, "codex"))
         argv_path = File.join(repo, "argv.json")
-        summary_path = File.join(repo, "DISPATCH.jsonl")
         env = {
           "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
           "HARNEX_STUB_ARGV_PATH" => argv_path
@@ -160,13 +160,12 @@ class RunnerTest < Minitest::Test
           "--id", "ack-only-#{expected_tier}-#{$$}",
           "--context", "execute the task",
           "--auto-stop",
-          "--summary-out", summary_path,
           chdir: repo
         )
 
         assert_equal 1, status.exitstatus, stderr
         assert_equal ["app-server", "-c", "service_tier=\"#{expected_tier}\""], JSON.parse(File.read(argv_path))
-        row = JSON.parse(File.readlines(summary_path).last)
+        row = last_dispatch_row(repo)
         assert_equal expected_tier, row.dig("agent", "service_tier")
         assert_equal "completed_no_activity", row.dig("outcome", "class")
         assert_equal "rejected", row.dig("outcome", "status")
@@ -260,12 +259,12 @@ class RunnerTest < Minitest::Test
 
   def test_auto_stop_ack_only_turn_exits_nonzero_when_interrupt_never_answers
     Dir.mktmpdir("harnex-autostop-run") do |repo|
+      init_test_repo(repo)
       bin_dir = File.join(repo, "bin")
       FileUtils.mkdir_p(bin_dir)
       write_hanging_interrupt_codex_stub(File.join(bin_dir, "codex"))
 
       id = "autostop-hang-#{$$}"
-      summary_path = File.join(repo, "DISPATCH.jsonl")
       stdout_path = File.join(repo, "stdout.log")
       stderr_path = File.join(repo, "stderr.log")
       env = {
@@ -280,7 +279,6 @@ class RunnerTest < Minitest::Test
         "--id", id,
         "--context", "finish quickly",
         "--auto-stop",
-        "--summary-out", summary_path,
         chdir: repo,
         pgroup: true,
         out: stdout_path,
@@ -290,9 +288,9 @@ class RunnerTest < Minitest::Test
       status = wait_for_child(pid, timeout: 10.0)
       assert status, "harnex run did not exit; stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
       assert_equal 1, status.exitstatus, "stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
-      assert File.exist?(summary_path), "summary row was not written"
+      assert File.exist?(dispatch_stream_path(repo)), "dispatch end row was not written"
 
-      row = JSON.parse(File.readlines(summary_path).last)
+      row = last_dispatch_row(repo)
       assert_equal id, row.dig("meta", "id")
       assert_equal false, row.dig("actual", "task_complete")
       assert_equal "completed_no_activity", row.dig("outcome", "class")
@@ -309,8 +307,34 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_usage_documents_summary_out
-    assert_includes Harnex::Runner.usage, "--summary-out PATH"
+  # #65: the mirror flag is removed, not silently ignored, so a stale caller
+  # fails loudly instead of believing it has a second copy of its telemetry.
+  def test_summary_out_flag_is_rejected_as_unknown
+    refute_includes Harnex::Runner.usage, "--summary-out"
+
+    ["--summary-out", "--summary-out=tmp/dispatch.jsonl"].each do |flag|
+      argv = ["codex", flag]
+      argv << "tmp/dispatch.jsonl" unless flag.include?("=")
+
+      error = assert_raises(OptionParser::InvalidOption, flag) do
+        Harnex::Runner.new(argv).send(:extract_wrapper_options, argv)
+      end
+      assert_match(/unknown flag --summary-out/, error.message)
+    end
+  end
+
+  def test_summary_out_flag_exits_nonzero_through_the_cli
+    Dir.mktmpdir("harnex-summary-out-removed") do |repo|
+      stdout, stderr, status = Open3.capture3(
+        Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
+        "run", RbConfig.ruby, "--summary-out", File.join(repo, "mirror.jsonl"), "--", "-e", "exit 0",
+        chdir: repo
+      )
+
+      refute_equal 0, status.exitstatus, stdout
+      assert_match(/--summary-out/, stderr)
+      refute_path_exists File.join(repo, "mirror.jsonl")
+    end
   end
 
   def test_usage_documents_artifact_report
@@ -616,16 +640,6 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_extract_wrapper_options_parses_summary_out
-    runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])
-    opts = runner.instance_variable_get(:@options)
-
-    assert_equal "codex", cli_name
-    assert_equal [], forwarded
-    assert_equal "tmp/dispatch.jsonl", opts[:summary_out]
-  end
-
   def test_extract_wrapper_options_parses_artifact_report
     runner = Harnex::Runner.new(["codex", "--artifact-report", "tmp/report.json"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--artifact-report", "tmp/report.json"])
@@ -775,23 +789,6 @@ class RunnerTest < Minitest::Test
     assert_match(/--allow-live-parent/, Harnex::Runner.usage)
   end
 
-  def test_resolve_summary_out_returns_nil_when_unset
-    Dir.mktmpdir("harnex-summary-repo") do |repo|
-      runner = Harnex::Runner.new(["codex"])
-
-      assert_nil runner.send(:resolve_summary_out, repo)
-    end
-  end
-
-  def test_resolve_summary_out_expands_explicit_path
-    Dir.mktmpdir("harnex-summary-repo") do |repo|
-      runner = Harnex::Runner.new(["codex", "--summary-out", "tmp/dispatch.jsonl"])
-      runner.send(:extract_wrapper_options, ["codex", "--summary-out", "tmp/dispatch.jsonl"])
-
-      assert_equal File.join(repo, "tmp", "dispatch.jsonl"), runner.send(:resolve_summary_out, repo)
-    end
-  end
-
   def test_resolve_artifact_report_expands_path_and_creates_parent
     Dir.mktmpdir("harnex-artifact-report-repo") do |repo|
       runner = Harnex::Runner.new(["codex", "--artifact-report", "reports/worker.json"])
@@ -927,11 +924,12 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_run_cwd_resolves_explicit_summary_out_relative_to_selected_root
+  def test_run_cwd_writes_the_dispatch_stream_under_the_selected_root
     Dir.mktmpdir("harnex-run-summary-cwd") do |root|
       launch = File.join(root, "orchestrator")
       bundle = File.join(root, "bundle")
-      FileUtils.mkdir_p([launch, bundle])
+      FileUtils.mkdir_p(launch)
+      init_test_repo(bundle)
       result_path = File.join(root, "cwd.json")
       id = "cwd-summary-#{$$}"
 
@@ -941,17 +939,14 @@ class RunnerTest < Minitest::Test
             RbConfig.ruby,
             "--id", id,
             "--cwd", bundle,
-            "--summary-out", "reports/dispatch.jsonl",
             "--", "-e", cwd_probe_script, result_path
           ]).run
         end
       end
 
-      summary_path = File.join(bundle, "reports", "dispatch.jsonl")
-      assert_path_exists summary_path
-      refute_path_exists File.join(launch, "reports", "dispatch.jsonl")
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal bundle, row.dig("meta", "repo")
+      assert_path_exists dispatch_stream_path(bundle)
+      refute_path_exists dispatch_stream_path(launch)
+      assert_equal bundle, last_dispatch_row(bundle).dig("meta", "repo")
     end
   end
 
@@ -987,7 +982,7 @@ class RunnerTest < Minitest::Test
 
   def test_run_artifact_report_exposes_harness_receipt_and_claims_paths
     Dir.mktmpdir("harnex-run-artifact-report") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       env_path = File.join(repo, "env.json")
       id = "artifact-valid-#{$$}"
 
@@ -997,7 +992,6 @@ class RunnerTest < Minitest::Test
             RbConfig.ruby,
             "--id", id,
             "--artifact-report", ".harnex/reports/#{id}.json",
-            "--summary-out", summary_path,
             "--", "-e", artifact_report_writer_script, env_path
           ]).run
         end
@@ -1011,7 +1005,7 @@ class RunnerTest < Minitest::Test
       assert_equal "observed_state", env_payload.fetch("mode")
       assert_equal Harnex::ArtifactReport::SCHEMA, env_payload.fetch("schema")
 
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal "ok", row.dig("artifact_report", "ingest_status")
       assert_equal "harnex", row.dig("artifact_report", "author")
       assert_equal Harnex::ArtifactReport::SCHEMA, row.dig("artifact_report", "schema")
@@ -1030,7 +1024,7 @@ class RunnerTest < Minitest::Test
 
   def test_run_without_worker_json_generates_default_final_receipt
     Dir.mktmpdir("harnex-run-artifact-default") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       id = "artifact-default-#{$$}"
 
       Dir.chdir(repo) do
@@ -1038,13 +1032,12 @@ class RunnerTest < Minitest::Test
           assert_equal 0, Harnex::Runner.new([
             RbConfig.ruby,
             "--id", id,
-            "--summary-out", summary_path,
             "--", "-e", "exit 0"
           ]).run
         end
       end
 
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       report_path = row.dig("artifact_report", "path")
       assert report_path.start_with?(File.join(Harnex::STATE_DIR, "receipts"))
       assert_path_exists report_path
@@ -1066,7 +1059,6 @@ class RunnerTest < Minitest::Test
         "commit", "-q", "-m", "initial",
         out: File::NULL, err: File::NULL
       )
-      summary_path = File.join(repo, "summary.jsonl")
       id = "artifact-worktree-#{$$}"
 
       Dir.chdir(repo) do
@@ -1075,13 +1067,12 @@ class RunnerTest < Minitest::Test
             RbConfig.ruby,
             "--id", id,
             "--require-artifact-report",
-            "--summary-out", summary_path,
             "--", "-e", "File.write('PRODUCT.md', \"one\\ntwo\\n\")"
           ]).run
         end
       end
 
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal ["PRODUCT.md"], row.dig("outcome", "changed_paths")
       assert_equal 2, row.dig("outcome", "loc_added")
       assert_equal 0, row.dig("outcome", "commits")
@@ -1089,14 +1080,13 @@ class RunnerTest < Minitest::Test
       assert_equal false, row.dig("observed", "git", "start_dirty")
       assert_equal true, row.dig("observed", "git", "end_dirty")
       refute_includes row.dig("outcome", "changed_paths"), ".harnex/dispatch.jsonl"
-      refute_includes row.dig("outcome", "changed_paths"), "summary.jsonl"
       assert Harnex::ArtifactReport.validate(row.dig("artifact_report", "path"), final: true).ok
     end
   end
 
   def test_required_artifact_report_needs_no_explicit_path_or_worker_json
     Dir.mktmpdir("harnex-run-artifact-required-default") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       id = "artifact-required-default-#{$$}"
 
       exit_code = nil
@@ -1106,14 +1096,13 @@ class RunnerTest < Minitest::Test
             RbConfig.ruby,
             "--id", id,
             "--require-artifact-report",
-            "--summary-out", summary_path,
             "--", "-e", "exit 0"
           ]).run
         end
       end
 
       assert_equal 0, exit_code
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal "completed_with_proof", row.dig("outcome", "class")
       assert_equal "accepted", row.dig("outcome", "report_status")
       assert_equal "success", row.dig("actual", "exit")
@@ -1123,7 +1112,7 @@ class RunnerTest < Minitest::Test
 
   def test_preexisting_final_report_is_replaced_not_used_as_acceptance_gate
     Dir.mktmpdir("harnex-run-artifact-stale") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       report_path = File.join(repo, "report.json")
       id = "artifact-stale-#{$$}"
       File.write(report_path, JSON.generate(
@@ -1142,7 +1131,6 @@ class RunnerTest < Minitest::Test
             "--id", id,
             "--artifact-report", report_path,
             "--require-artifact-report",
-            "--summary-out", summary_path,
             "--", "-e", "exit 0"
           ]).run
         end
@@ -1153,14 +1141,14 @@ class RunnerTest < Minitest::Test
       assert result.ok
       assert_equal "harnex", result.report.dig("receipt", "author")
       refute result.report.key?("claims"), "unchanged prior proof must not become current claims"
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal "accepted", row.dig("outcome", "report_status")
     end
   end
 
   def test_worker_authored_invalid_report_is_overwritten_by_harness_receipt
     Dir.mktmpdir("harnex-run-artifact-invalid-input") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       report_path = File.join(repo, ".harnex", "reports", "invalid.json")
       id = "artifact-invalid-input-#{$$}"
 
@@ -1172,7 +1160,6 @@ class RunnerTest < Minitest::Test
             "--id", id,
             "--artifact-report", report_path,
             "--require-artifact-report",
-            "--summary-out", summary_path,
             "--", "-e", invalid_artifact_report_writer_script
           ]).run
         end
@@ -1183,7 +1170,7 @@ class RunnerTest < Minitest::Test
       assert result.ok
       assert_equal "harnex", result.report.dig("receipt", "author")
       refute result.report.key?("claims")
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal "ok", row.dig("artifact_report", "ingest_status")
       assert_equal "accepted", row.dig("outcome", "report_status")
     end
@@ -1191,7 +1178,7 @@ class RunnerTest < Minitest::Test
 
   def test_required_artifact_report_accepts_harness_receipt_with_worker_claims
     Dir.mktmpdir("harnex-run-artifact-required-valid") do |repo|
-      summary_path = File.join(repo, "summary.jsonl")
+      init_test_repo(repo)
       env_path = File.join(repo, "env.json")
       id = "artifact-required-valid-#{$$}"
 
@@ -1203,7 +1190,6 @@ class RunnerTest < Minitest::Test
             "--id", id,
             "--artifact-report", ".harnex/reports/#{id}.json",
             "--require-artifact-report",
-            "--summary-out", summary_path,
             "--", "-e", artifact_report_writer_script, env_path
           ]).run
         end
@@ -1211,7 +1197,7 @@ class RunnerTest < Minitest::Test
 
       assert_equal 0, exit_code
       assert_equal "1", JSON.parse(File.read(env_path)).fetch("required")
-      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      row = last_dispatch_row(repo)
       assert_equal "completed_with_proof", row.dig("outcome", "class")
       assert_equal "accepted", row.dig("outcome", "report_status")
       assert_equal "success", row.dig("actual", "exit")
@@ -1455,6 +1441,20 @@ class RunnerTest < Minitest::Test
     FileUtils.rm_f(path) if path
   end
 
+  def init_test_repo(repo)
+    FileUtils.mkdir_p(repo)
+    system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+    repo
+  end
+
+  def dispatch_stream_path(repo)
+    File.join(repo, ".harnex", "dispatch.jsonl")
+  end
+
+  def last_dispatch_row(repo)
+    JSON.parse(File.readlines(dispatch_stream_path(repo), chomp: true).last)
+  end
+
   def cwd_probe_script
     <<~'RUBY'
       require "json"
@@ -1584,7 +1584,6 @@ class RunnerTest < Minitest::Test
       write_service_tier_codex_stub(File.join(bin_dir, "codex"))
 
       argv_path = File.join(repo, "argv.json")
-      summary_path = File.join(repo, "DISPATCH.jsonl")
       env = {
         "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
         "HARNEX_STUB_ARGV_PATH" => argv_path,
@@ -1598,7 +1597,6 @@ class RunnerTest < Minitest::Test
         "--id", "service-tier-#{expected_tier}-#{$$}",
         "--context", "finish quickly",
         "--auto-stop",
-        "--summary-out", summary_path,
         chdir: repo
       )
 
@@ -1728,16 +1726,15 @@ class RunnerTest < Minitest::Test
   end
 
   def terminate_process_group(pid)
-    Process.kill("TERM", -pid)
-    sleep 0.2
-    Process.kill("KILL", -pid)
-  rescue Errno::ESRCH, Errno::ECHILD
-    nil
-  ensure
     begin
-      Process.waitpid(pid, Process::WNOHANG)
-    rescue Errno::ECHILD
+      Process.kill("TERM", -pid)
+      sleep 0.2
+      Process.kill("KILL", -pid)
+    rescue Errno::ESRCH, Errno::ECHILD
       nil
     end
+    # Block until the leader is really gone: a still-dying harnex run keeps
+    # writing registries and dispatch rows into shared state directories.
+    reap_process(pid)
   end
 end

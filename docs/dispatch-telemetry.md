@@ -15,7 +15,6 @@ pre-v2 envelope-less summaries may coexist and remain readable/skippable.
 
 ```text
 harnex run codex --meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
-harnex run codex --summary-out tmp/dispatch-summary.jsonl
 harnex run pi --context 'Implement the task; Harnex writes the final receipt'
 harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
@@ -25,8 +24,6 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 
 - `--meta JSON` must be a JSON object. The parsed object is echoed verbatim on
   the `started.meta` event.
-- `--summary-out PATH` is an explicit-only compatibility mirror. It appends
-  the identical v2 `dispatch_end` row to `PATH`; it has no default.
 - Every run allocates a harness-owned `harnex.artifact_report.v1` receipt path.
   The default is a repo-keyed file under `~/.local/state/harnex/receipts/`; live status
   and the end row expose it as `artifact_report_path` / `artifact_report.path`.
@@ -59,8 +56,9 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 - `--require-attribution` fails before launch unless `project_id`, `phase`,
   `intent`, and at least one of `queue_id` / `entry_id` / `issue` / `plan` are
   present through first-class flags or `--meta`.
-- Omitting `--summary-out` is the normal path: the canonical stream still gets
-  its start/end pair and no mirror is written.
+- The canonical stream is the only destination a dispatch writes telemetry to.
+  There is no second copy and no flag to request one; a flag asking for a
+  mirror file is rejected as unknown. See CHANGELOG for the removal note.
 - The v2 `dispatch_end` combines the history envelope (`schema_version`,
   `record_type`, id/status/timing fields) with all rich telemetry sections.
   A default dispatch therefore adds exactly two rows, not separate thin and
@@ -451,7 +449,7 @@ substituted with cumulative usage when active occupancy is unavailable.
 Git actuals capture the start/end SHA plus committed, staged, unstaged, and
 untracked changes relative to the worktree state observed at session start.
 Unchanged pre-existing dirt is not credited to the worker, and harness-owned
-dispatch/mirror/receipt paths are excluded. Git failures leave the corresponding
+dispatch/receipt paths are excluded. Git failures leave the corresponding
 consolidated fields `null` and omit `git` events.
 
 The `actual` block includes model/effort hints from `--meta`, duration, token
@@ -498,7 +496,7 @@ jq -s 'map(select(.actual.attempts_total > 0))
   turn was observed.
 - `disconnected`: wrapped process exited `0` but no session summary was parsed.
 
-Canonical dispatch-stream and explicit mirror writes remain best-effort. Receipt
+Canonical dispatch-stream writes remain best-effort. Receipt
 writes are different: proof-generation failure is fail-closed and changes the
 work verdict. Repo phase allowlists and runtime-log retention are documented in
 [configuration.md](configuration.md).

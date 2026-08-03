@@ -112,11 +112,7 @@ class LiveRunObservabilityTest < Minitest::Test
       assert status.success?, "retry must be allowed once the parent has exited: #{err}"
     ensure
       File.write(release_path, "go\n") if release_path && !File.exist?(release_path)
-      begin
-        Process.kill("KILL", worker_pid) if worker_pid
-      rescue Errno::ESRCH, ArgumentError, TypeError
-        nil
-      end
+      reap_process(worker_pid)
     end
   end
 

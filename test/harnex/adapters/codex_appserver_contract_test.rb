@@ -41,8 +41,7 @@ class CodexAppServerContractTest < Minitest::Test
     rescue StandardError
       nil
     end
-    @server_thread&.join(0.5)
-    @server_thread&.kill if @server_thread&.alive?
+    reap_thread(@server_thread)
   end
 
   # Server-side script: a queue of [method, response] pairs for
@@ -298,10 +297,11 @@ class CodexAppServerContractTest < Minitest::Test
         rescue StandardError
           nil
         end
-        runner&.join(2)
-        runner&.kill if runner&.alive?
-        server&.join(1)
-        server&.kill if server&.alive?
+        # This thread runs a real Harnex::Session; it must be fully dead
+        # before the test returns, or it can still be persisting a registry
+        # when a later suite wipes SESSIONS_DIR.
+        reap_thread(runner)
+        reap_thread(server)
       end
     end
   end

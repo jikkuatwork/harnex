@@ -30,7 +30,6 @@ harnex run codex -- --cd ~/other/repo
 | `--context TXT`     | Give the agent a task on startup                                    |
 | `--auto-stop`       | With `--context`, stop after accepted task completion               |
 | `--meta JSON`       | Attach bounded caller metadata                                      |
-| `--summary-out PATH` | Mirror the canonical v2 dispatch end row to another JSONL file     |
 | `--phase TEXT`      | First-class phase attribution (optionally repo-allowlisted)          |
 | `--artifact-report PATH` | Override the harness-authored v1 receipt destination            |
 | `--require-artifact-report` | Compatibility strict flag; default receipt path is sufficient |
@@ -137,8 +136,8 @@ harnex history --json | jq .
 
 Reads the canonical v2 stream at `<git-root>/.harnex/dispatch.jsonl`; use
 `--global` for `~/.local/state/harnex/dispatch.jsonl` outside a repo. Each run
-has one `dispatch_start` plus one rich `dispatch_end`. `--summary-out` is an
-explicit-only end-row mirror, not a second default stream.
+has one `dispatch_start` plus one rich `dispatch_end`. That stream is the only
+destination; no flag mirrors the end row into a second file.
 
 ### `harnex logs` — Read session transcripts
 

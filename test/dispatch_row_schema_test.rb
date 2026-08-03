@@ -205,7 +205,6 @@ class DispatchRowSchemaTest < Minitest::Test
     schema_version
     session_id
     started_at
-    summary_out_path
     tier
   ].freeze
 
@@ -222,7 +221,6 @@ class DispatchRowSchemaTest < Minitest::Test
     session_id
     started_at
     status
-    summary_out_path
     terminal_event
     tier
     tmux_state
@@ -250,7 +248,6 @@ class DispatchRowSchemaTest < Minitest::Test
       init_git_repo(repo)
 
       id = "schema-worker"
-      summary_path = File.join(repo, "koder", "DISPATCH.jsonl")
       adapter = build_stubbed_codex_adapter("codex-test-1.0.0")
       session = Harnex::Session.new(
         adapter: adapter,
@@ -276,15 +273,21 @@ class DispatchRowSchemaTest < Minitest::Test
           "entry_id" => "SP-4",
           "entry_title" => "Dispatch telemetry hygiene",
           "intent" => "telemetry-contract"
-        },
-        summary_out: summary_path
+        }
       )
       write_tmux_registry(repo, id, tmux_session: "schema-tmux")
       silence_session_stdout(session)
 
       assert_equal 0, session.run(validate_binary: false)
 
-      record = JSON.parse(File.read(summary_path).lines.last)
+      # The canonical stream holds exactly one start and one end row, and it
+      # is the only file a dispatch writes telemetry to.
+      stream_path = File.join(repo, ".harnex", "dispatch.jsonl")
+      stream_rows = File.readlines(stream_path, chomp: true).map { |line| JSON.parse(line) }
+      assert_equal %w[dispatch_start dispatch_end], stream_rows.map { |row| row.fetch("record_type") }
+      assert_equal [stream_path], Dir.glob(File.join(repo, "**", "*.jsonl"), File::FNM_DOTMATCH)
+
+      record = stream_rows.last
       assert_equal (DISPATCH_END_ENVELOPE_KEYS + DISPATCH_END_SECTION_KEYS + %w[queue]).sort, record.keys.sort
 
       assert_equal 2, record.fetch("schema_version")
@@ -296,16 +299,8 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal "completed", record.fetch("status")
       assert_kind_of Integer, record.fetch("duration_s")
       assert_equal "1", record.fetch("tier")
-      assert_equal summary_path, record.fetch("summary_out_path")
       assert_equal Harnex.events_log_path(repo, id), record.fetch("events_log_path")
       assert_kind_of String, record.fetch("tmux_state")
-
-      # The mirror carries the identical record that landed in the tracked
-      # stream; the stream holds exactly one start and one end row.
-      stream_rows = File.readlines(File.join(repo, ".harnex", "dispatch.jsonl"), chomp: true)
-                        .map { |line| JSON.parse(line) }
-      assert_equal %w[dispatch_start dispatch_end], stream_rows.map { |row| row.fetch("record_type") }
-      assert_equal record, stream_rows.last
 
       assert_equal META_KEYS, record.fetch("meta").keys.sort
       assert_equal ACTUAL_KEYS, record.fetch("actual").keys.sort
@@ -472,21 +467,21 @@ class DispatchRowSchemaTest < Minitest::Test
 
   def test_dispatch_row_tmux_session_is_null_for_headless_sessions
     Dir.mktmpdir("harnex-dispatch-headless") do |repo|
+      init_git_repo(repo)
+
       id = "schema-headless"
-      summary_path = File.join(repo, "DISPATCH.jsonl")
       session = Harnex::Session.new(
         adapter: build_stubbed_codex_adapter("codex-test-1.0.0"),
         command: [RbConfig.ruby, "-e", codex_summary_script],
         repo_root: repo,
         host: "127.0.0.1",
-        id: id,
-        summary_out: summary_path
+        id: id
       )
       silence_session_stdout(session)
 
       assert_equal 0, session.run(validate_binary: false)
 
-      record = JSON.parse(File.read(summary_path).lines.last)
+      record = last_dispatch_end_row(repo)
       assert_nil record.fetch("meta").fetch("tmux_session")
       assert record.key?("agent")
       assert record.key?("reliability")
@@ -496,7 +491,8 @@ class DispatchRowSchemaTest < Minitest::Test
 
   def test_dispatch_row_includes_orchestration_block_when_opted_in
     Dir.mktmpdir("harnex-dispatch-orchestration") do |repo|
-      summary_path = File.join(repo, "DISPATCH.jsonl")
+      init_git_repo(repo)
+
       session = Harnex::Session.new(
         adapter: Harnex::Adapters::Generic.new(RbConfig.ruby),
         command: [RbConfig.ruby, "-e", "exit 0"],
@@ -510,15 +506,13 @@ class DispatchRowSchemaTest < Minitest::Test
           "orchestration_generation_id" => "gen-1",
           "orchestration_role" => "primary",
           "orchestration_rotation_reason" => "clean_rotation"
-        },
-        summary_out: summary_path
+        }
       )
       silence_session_stdout(session)
 
       assert_equal 0, session.run(validate_binary: false)
 
-      record = JSON.parse(File.read(summary_path).lines.last)
-      orchestration = record.fetch("orchestration")
+      orchestration = last_dispatch_end_row(repo).fetch("orchestration")
       assert_equal ORCHESTRATION_KEYS, orchestration.keys.sort
       assert_equal "orch-run-1", orchestration.fetch("run_id")
       assert_equal "gen-1", orchestration.fetch("generation_id")
@@ -532,20 +526,20 @@ class DispatchRowSchemaTest < Minitest::Test
 
   def test_reliability_does_not_count_generic_no_summary_exit_as_real_disconnection
     Dir.mktmpdir("harnex-dispatch-reliability") do |repo|
-      summary_path = File.join(repo, "DISPATCH.jsonl")
+      init_git_repo(repo)
+
       session = Harnex::Session.new(
         adapter: Harnex::Adapters::Generic.new(RbConfig.ruby),
         command: [RbConfig.ruby, "-e", "exit 0"],
         repo_root: repo,
         host: "127.0.0.1",
-        id: "schema-reliability",
-        summary_out: summary_path
+        id: "schema-reliability"
       )
       silence_session_stdout(session)
 
       assert_equal 0, session.run(validate_binary: false)
 
-      record = JSON.parse(File.read(summary_path).lines.last)
+      record = last_dispatch_end_row(repo)
       assert_equal "disconnected", record.dig("actual", "exit")
       assert_equal 1, record.dig("actual", "disconnections")
       assert_equal "normal", record.dig("reliability", "adapter_close")
@@ -604,7 +598,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal 2, end_row.fetch("schema_version")
       assert_equal (DISPATCH_END_ENVELOPE_KEYS + DISPATCH_END_SECTION_KEYS + %w[queue]).sort, end_row.keys.sort
       assert_equal id, end_row.dig("meta", "id")
-      assert_nil end_row.fetch("summary_out_path"), "no default mirror path"
+      refute end_row.key?("summary_out_path"), "removed mirror key must not reappear"
     end
   end
 
@@ -623,6 +617,10 @@ class DispatchRowSchemaTest < Minitest::Test
   end
 
   private
+
+  def last_dispatch_end_row(repo)
+    JSON.parse(File.read(File.join(repo, ".harnex", "dispatch.jsonl")).lines.last)
+  end
 
   def build_stubbed_codex_adapter(version)
     adapter = Harnex::Adapters::Codex.new

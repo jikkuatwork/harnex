@@ -7,7 +7,7 @@ class DispatchHistoryTest < Minitest::Test
   FakeAdapter = Struct.new(:key, keyword_init: true)
   FakeSession = Struct.new(
     :id, :session_id, :pid, :repo_root, :description, :adapter, :started_at, :ended_at,
-    :exit_code, :term_signal, :summary_out, :events_log_path, :artifact_report_path,
+    :exit_code, :term_signal, :events_log_path, :artifact_report_path,
     :artifact_claims_path, :git_start, :git_end,
     :task_complete, :task_failed,
     keyword_init: true
@@ -74,7 +74,6 @@ class DispatchHistoryTest < Minitest::Test
       "terminal_event" => "task_complete",
       "commit_sha" => "b" * 40,
       "tier" => "B",
-      "summary_out_path" => "tmp/summary.jsonl",
       "events_log_path" => "/tmp/events.log",
       "tmux_state" => "torn-down"
     }.each { |key, value| assert_equal value, record.fetch(key) }
@@ -94,7 +93,7 @@ class DispatchHistoryTest < Minitest::Test
     assert_equal %w[
       artifact_claims_path artifact_report_path cli description events_log_path
       host id meta pid record_type repo_root schema_version session_id started_at
-      summary_out_path tier
+      tier
     ], record.keys.sort
 
     assert_equal 2, record.fetch("schema_version")
@@ -358,7 +357,7 @@ class DispatchHistoryTest < Minitest::Test
       assert_equal Harnex.events_log_path(repo, "cx-run-history"), record.fetch("events_log_path")
       assert_equal 2, record.fetch("schema_version")
       SECTION_KEYS.each { |key| assert record.key?(key), "expected section #{key}" }
-      assert_nil record.fetch("summary_out_path")
+      refute record.key?("summary_out_path"), "removed mirror key must not reappear"
     end
   end
 
@@ -410,7 +409,6 @@ class DispatchHistoryTest < Minitest::Test
       ended_at: Time.utc(2026, 5, 8, 6, 32, 12),
       exit_code: 0,
       term_signal: nil,
-      summary_out: "tmp/summary.jsonl",
       events_log_path: "/tmp/events.log",
       artifact_report_path: "/tmp/receipt.json",
       artifact_claims_path: "/tmp/receipt.json.claims.json",
@@ -427,7 +425,7 @@ class DispatchHistoryTest < Minitest::Test
       schema_version: 1, id: id, description: nil, cli: "codex",
       started_at: started_at, ended_at: started_at, duration_s: 0,
       status: "completed", terminal_event: "task_complete", commit_sha: nil,
-      tier: nil, meta: {}, summary_out_path: nil, events_log_path: "/tmp/events.log",
+      tier: nil, meta: {}, events_log_path: "/tmp/events.log",
       tmux_state: "torn-down"
     }
   end

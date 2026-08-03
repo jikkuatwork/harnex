@@ -19,8 +19,39 @@ class TerminalStatusTest < Minitest::Test
       assert_equal "completed_with_proof", status["outcome_class"]
       assert_equal "success", status["exit"]
       assert_equal 0, status["exit_code"]
-      assert_equal "summary_out", status["source"]
-      assert_equal path, status["summary_out"]
+      assert_equal "dispatch_end", status["source"]
+      refute status.key?("summary_out"), "removed mirror key must not reappear"
+    end
+  end
+
+  # The mirror writer is gone, but consumers still have mirror files from
+  # older releases on disk. A stale one must not resolve status for any id.
+  def test_pre_existing_mirror_file_does_not_influence_resolution
+    Dir.mktmpdir("harnex-terminal-stale-mirror") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      mirror = File.join(repo, "tmp", "dispatch-summary.jsonl")
+      FileUtils.mkdir_p(File.dirname(mirror))
+
+      # A leftover mirror row claiming success for an id the canonical
+      # stream has never seen.
+      File.write(mirror, "#{JSON.generate(v2_end_row(id: 'cx-stale', repo: repo))}\n")
+      assert_nil Harnex::TerminalStatus.resolve(id: "cx-stale", repo_root: repo)
+
+      # And a leftover mirror row that contradicts the canonical outcome,
+      # reachable the old way via summary_out_path on the tracked record.
+      canonical = v2_end_row(id: "cx-live", repo: repo, ended_at: "2026-08-01T10:15:00Z")
+      canonical["status"] = "failed"
+      canonical["actual"] = { "task_complete" => false, "exit" => "failure", "exit_code" => 1 }
+      canonical["summary_out_path"] = mirror
+      Harnex::DispatchHistory.append(path, canonical)
+
+      newer = v2_end_row(id: "cx-live", repo: repo, ended_at: "2026-08-01T11:00:00Z")
+      File.write(mirror, "#{JSON.generate(newer)}\n", mode: "a")
+
+      status = Harnex::TerminalStatus.resolve(id: "cx-live", repo_root: repo)
+      assert_equal "failed", status["state"]
+      assert_equal "failure", status["exit"]
     end
   end
 
@@ -80,7 +111,7 @@ class TerminalStatusTest < Minitest::Test
       legacy = Harnex::TerminalStatus.resolve(id: "cx-legacy", repo_root: repo)
       assert_equal "completed", legacy["state"]
       assert_equal true, legacy["task_complete"]
-      assert_equal "summary_out", legacy["source"]
+      assert_equal "dispatch_end", legacy["source"]
 
       thin = Harnex::TerminalStatus.resolve(id: "cx-thin", repo_root: repo)
       assert_equal "failed", thin["state"]
@@ -89,7 +120,7 @@ class TerminalStatusTest < Minitest::Test
 
       v2 = Harnex::TerminalStatus.resolve(id: "cx-v2", repo_root: repo)
       assert_equal "completed", v2["state"]
-      assert_equal "summary_out", v2["source"]
+      assert_equal "dispatch_end", v2["source"]
     end
   end
 
@@ -123,7 +154,6 @@ class TerminalStatusTest < Minitest::Test
       "terminal_event" => "task_complete",
       "commit_sha" => nil,
       "tier" => "B",
-      "summary_out_path" => nil,
       "events_log_path" => "/tmp/events.log",
       "tmux_state" => "torn-down",
       "meta" => {
