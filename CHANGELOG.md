@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] - 2026-08-03 | 10:47 AM | IST
+
+### Added
+
+- **Harness-authored observed-state receipts** (#64): every dispatch now writes
+  a canonical `harnex.artifact_report.v1` receipt without worker-authored JSON.
+  Receipts carry explicit `receipt.author=harnex` provenance, start/end Git
+  state (committed plus staged/unstaged/untracked paths and LOC), bounded Codex
+  command exits, turn acceptance, and usage. The receipt is written before a
+  structured `task_complete` event and refreshed with final teardown telemetry.
+- Every session receives a default repo-keyed receipt under
+  `~/.local/state/harnex/receipts/`; `--artifact-report` now overrides that
+  destination. Live status, detached/tmux launch payloads, dispatch-start rows,
+  and dispatch-end metadata expose the receipt and claims paths.
+- Review workers may write a bounded optional block to
+  `HARNEX_ARTIFACT_CLAIMS_PATH` (`summary`, `verdict`, and P1/P2/P3 counts).
+  Claims are sanitized and copied into the receipt but never participate in
+  completion acceptance or final-receipt validity.
+- Receipt files and claims inputs join the existing 45-day / 1-GiB retention
+  policy as a third independently configurable directory, including
+  `HARNEX_RECEIPTS_MAX_AGE_DAYS` / `HARNEX_RECEIPTS_MAX_BYTES` and live/current
+  path protection.
+
+### Changed
+
+- `artifact-report validate --final` preserves the legacy manual-v1 contract
+  while recognizing the additive harness-receipt contract. Harness receipts
+  validate observed acceptance and zero-delta evidence; failed exploratory
+  command exits remain factual telemetry for queue policy rather than allowing
+  worker claims to decide receipt validity.
+- Artifact fingerprints are now internal claims-freshness bookkeeping only.
+  Pre-existing, stale, malformed, or missing worker reports are overwritten by
+  fresh harness proof instead of becoming work-acceptance failures. The legacy
+  `init` command and `--require-artifact-report` flag remain compatible, but
+  neither an explicit path nor model-authored proof is required.
+- Codex autonomous completion still rejects acknowledgment-only turns as
+  `completed_no_activity`; optional claims cannot satisfy the observed-activity
+  gate. Receipt write/validation failure is fail-closed as `report_invalid`.
+- Git observation now baselines the starting worktree so uncommitted product
+  edits are included while unchanged pre-existing dirt and harness-owned
+  dispatch/mirror/receipt files are excluded.
+
 ## [0.9.0] - 2026-08-03 | 01:11 AM | IST
 
 Minor bump: the durable dispatch row family is now v2, `--summary-out` changes

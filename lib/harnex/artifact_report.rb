@@ -1,6 +1,7 @@
 require "digest"
 require "fileutils"
 require "json"
+require "time"
 
 module Harnex
   module ArtifactReport
@@ -12,6 +13,12 @@ module Harnex
     MAX_EVIDENCE_ITEMS = 20
     MAX_STRING_LENGTH = 2_000
     MAX_DIAGNOSTICS = 100
+    MAX_CHANGED_PATHS = 200
+    RECEIPT_VERSION = 1
+    CLAIM_SEVERITIES = %w[P1 P2 P3].freeze
+    COMMAND_OBSERVATION_STATUSES = %w[observed unsupported].freeze
+    GIT_OBSERVATION_STATUSES = %w[observed unavailable].freeze
+    USAGE_STATUSES = %w[observed estimated unsupported missing zero].freeze
 
     REPORT_STATUSES = %w[in_progress pass fail blocked unknown].freeze
     VALIDATION_STATUSES = %w[in_progress pass fail not_run unknown].freeze
@@ -198,6 +205,159 @@ module Harnex
       }
     end
 
+    # Default receipts live outside the checkout so proof generation cannot
+    # become part of the Git delta it is recording. An explicit
+    # --artifact-report path still wins for callers that need a stable path.
+    def default_path(repo_root:, id:, session_id:)
+      slug = Harnex.id_key(id)
+      slug = Digest::SHA256.hexdigest(id.to_s)[0, 12] if slug.empty?
+      File.join(
+        Harnex::STATE_DIR,
+        "receipts",
+        "#{Harnex.repo_key(repo_root)}-#{slug}-#{session_id}.json"
+      )
+    end
+
+    def claims_path(report_path)
+      "#{File.expand_path(report_path.to_s)}.claims.json"
+    end
+
+    # Claims are deliberately advisory. Malformed, stale, or oversized claims
+    # are ignored by Session and can never invalidate observed proof.
+    def extract_claims(path)
+      claims_path = File.expand_path(path.to_s)
+      return {} unless File.file?(claims_path)
+      return {} if File.size(claims_path) > MAX_BYTES
+
+      document = JSON.parse(File.read(claims_path, mode: "rb"))
+      return {} unless document.is_a?(Hash)
+
+      source = document["claims"].is_a?(Hash) ? document["claims"] : document
+      claims = compact_claims(source)
+
+      # Compatibility bridge for old worker-authored v1 reports. Their
+      # outcome is retained only as an untrusted verdict/summary claim; it no
+      # longer participates in completion acceptance.
+      if claims.empty? && document["schema"] == SCHEMA
+        outcome = document["outcome"]
+        if outcome.is_a?(Hash)
+          claims = compact_claims(
+            "summary" => outcome["summary"],
+            "verdict" => outcome["status"]
+          )
+        end
+      end
+      claims
+    rescue StandardError
+      {}
+    end
+
+    def build_observed(
+      id:, session_id:, generated_at:, successful:, outcome_status:,
+      outcome_summary:, git:, commands:, turn:, usage:, claims:,
+      command_observation:
+    )
+      observed_commands = compact_commands(commands).select do |entry|
+        non_empty_string?(entry["cmd"]) && entry["exit_code"].is_a?(Integer)
+      end
+      git_payload = compact_observed_git(git)
+      turn_payload = compact_observed_turn(turn)
+      usage_payload = compact_observed_usage(usage)
+      claims_payload = compact_claims(claims)
+      validation_status = if observed_commands.empty?
+                            "not_run"
+                          elsif observed_commands.all? { |entry| entry["exit_code"].zero? }
+                            "pass"
+                          else
+                            "fail"
+                          end
+      start_sha = git_payload["start_sha"].to_s
+      end_sha = git_payload["end_sha"].to_s
+      commit_sha = end_sha unless start_sha.empty? || end_sha.empty? || start_sha == end_sha
+
+      report = {
+        "schema" => SCHEMA,
+        "status" => successful ? "pass" : "fail",
+        "canonical_artifacts" => [],
+        "outcome" => {
+          "status" => outcome_status,
+          "summary" => bounded_string(outcome_summary),
+          "commit_sha" => commit_sha
+        }.compact,
+        "validation" => {
+          "status" => validation_status,
+          "commands" => observed_commands,
+          "final_reported" => true
+        },
+        "artifacts" => [],
+        "receipt" => {
+          "version" => RECEIPT_VERSION,
+          "author" => "harnex",
+          "generated_at" => generated_at.respond_to?(:iso8601) ? generated_at.iso8601 : generated_at.to_s,
+          "id" => bounded_string(id),
+          "session_id" => bounded_string(session_id)
+        },
+        "observed" => {
+          "git" => git_payload,
+          "commands" => observed_commands,
+          "command_observation" => command_observation.to_s,
+          "turn" => turn_payload,
+          "usage" => usage_payload
+        }
+      }
+      report["claims"] = claims_payload unless claims_payload.empty?
+      fit_observed_report!(report)
+    end
+
+    def fit_observed_report!(report)
+      loop do
+        return report if JSON.pretty_generate(report).bytesize + 1 <= MAX_BYTES
+
+        commands = report.dig("observed", "commands")
+        if commands.is_a?(Array) && !commands.empty?
+          commands.pop
+          report.dig("observed")["commands_truncated"] = true
+          next
+        end
+
+        paths = report.dig("observed", "git", "changed_paths")
+        if paths.is_a?(Array) && !paths.empty?
+          paths.pop
+          report.dig("observed", "git")["changed_paths_truncated"] = true
+          next
+        end
+
+        raise ArgumentError, "generated artifact receipt exceeds the #{MAX_BYTES}-byte limit"
+      end
+    end
+
+    def write_observed(path, **attributes)
+      report_path = File.expand_path(path.to_s)
+      report = build_observed(**attributes)
+      diagnostics = validate_document(report)
+      unless diagnostics.empty?
+        raise ArgumentError, "generated artifact receipt is invalid: #{diagnostics.first.fetch('path')}"
+      end
+
+      FileUtils.mkdir_p(File.dirname(report_path))
+      temporary_path = "#{report_path}.tmp.#{Process.pid}.#{Thread.current.object_id}"
+      File.open(temporary_path, "wb", 0o644) do |file|
+        file.write(JSON.pretty_generate(report))
+        file.write("\n")
+        file.flush
+        file.fsync
+      end
+      File.rename(temporary_path, report_path)
+
+      result = validate(report_path, final: !!attributes[:successful])
+      if attributes[:successful] && !accepted_final?(result)
+        raise ArgumentError, "generated artifact receipt did not satisfy final validation"
+      end
+      result
+    ensure
+      FileUtils.rm_f(temporary_path) if defined?(temporary_path) && temporary_path
+    end
+
     def accepted_final?(result)
       result.ok && ACCEPTED_OUTCOME_STATUSES.include?(outcome_status(result))
     end
@@ -239,6 +399,10 @@ module Harnex
       validate_outcome(report["outcome"], diagnostics) if report.key?("outcome")
       validate_validation(report["validation"], diagnostics) if report.key?("validation")
       validate_artifacts(report["artifacts"], diagnostics) if report.key?("artifacts")
+      validate_receipt(report["receipt"], diagnostics) if report.key?("receipt")
+      validate_observed(report["observed"], diagnostics) if report.key?("observed")
+      # `claims` is intentionally not part of validity. Session emits only a
+      # bounded sanitized subset, while malformed worker claims are ignored.
       validate_final_contract(report, diagnostics) if final
       diagnostics.first(MAX_DIAGNOSTICS)
     end
@@ -306,21 +470,21 @@ module Harnex
       end
     end
 
-    def validate_commands(value, diagnostics)
+    def validate_commands(value, diagnostics, base_path: "$.validation.commands")
       unless value.is_a?(Array)
-        diagnostics << diagnostic("array_required", "$.validation.commands", "validation.commands must be an array")
+        diagnostics << diagnostic("array_required", base_path, "#{base_path.delete_prefix('$.')} must be an array")
         return
       end
       if value.length > MAX_COMMANDS
         diagnostics << diagnostic(
           "too_many_items",
-          "$.validation.commands",
-          "validation.commands may contain at most #{MAX_COMMANDS} entries"
+          base_path,
+          "#{base_path.delete_prefix('$.')} may contain at most #{MAX_COMMANDS} entries"
         )
       end
 
       value.first(MAX_COMMANDS).each_with_index do |entry, index|
-        path = "$.validation.commands[#{index}]"
+        path = "#{base_path}[#{index}]"
         unless entry.is_a?(Hash)
           diagnostics << diagnostic("object_required", path, "validation command must be an object")
           next
@@ -386,7 +550,119 @@ module Harnex
       end
     end
 
+    def validate_receipt(value, diagnostics)
+      unless value.is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.receipt", "receipt must be an object")
+        return
+      end
+
+      unless value["version"] == RECEIPT_VERSION
+        diagnostics << diagnostic("receipt_version", "$.receipt.version", "receipt.version must equal #{RECEIPT_VERSION}")
+      end
+      unless value["author"] == "harnex"
+        diagnostics << diagnostic("receipt_author", "$.receipt.author", "receipt.author must equal harnex")
+      end
+      validate_required_string(value, "generated_at", "$.receipt.generated_at", diagnostics)
+      begin
+        Time.iso8601(value["generated_at"].to_s)
+      rescue ArgumentError
+        diagnostics << diagnostic("timestamp_required", "$.receipt.generated_at", "receipt.generated_at must be ISO 8601")
+      end
+      validate_required_string(value, "id", "$.receipt.id", diagnostics)
+      validate_required_string(value, "session_id", "$.receipt.session_id", diagnostics)
+    end
+
+    def validate_observed(value, diagnostics)
+      unless value.is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.observed", "observed must be an object")
+        return
+      end
+
+      git = value["git"]
+      unless git.is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.observed.git", "observed.git must be an object")
+      else
+        unless GIT_OBSERVATION_STATUSES.include?(git["status"])
+          diagnostics << diagnostic("enum", "$.observed.git.status", "observed.git.status must be observed or unavailable")
+        end
+        %w[start_sha end_sha branch].each do |key|
+          validate_optional_string(git, key, "$.observed.git.#{key}", diagnostics)
+        end
+        if git["status"] == "observed"
+          %w[start_sha end_sha].each do |key|
+            unless git[key].is_a?(String) && git[key].match?(/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/)
+              diagnostics << diagnostic("git_sha", "$.observed.git.#{key}", "observed.git.#{key} must be a full hexadecimal Git SHA")
+            end
+          end
+        end
+        validate_string_array_value(
+          git["changed_paths"],
+          "$.observed.git.changed_paths",
+          max_items: MAX_CHANGED_PATHS,
+          diagnostics: diagnostics,
+          required: true
+        ) if git["status"] == "observed" || git.key?("changed_paths")
+        %w[loc_added loc_removed files_changed commits].each do |key|
+          if git["status"] == "observed" && !git.key?(key)
+            diagnostics << diagnostic("required", "$.observed.git.#{key}", "observed.git.#{key} is required when Git is observed")
+            next
+          end
+          next unless git.key?(key)
+          next if git[key].is_a?(Integer) && git[key] >= 0
+
+          diagnostics << diagnostic("integer_required", "$.observed.git.#{key}", "observed.git.#{key} must be a non-negative integer")
+        end
+        %w[start_dirty end_dirty worktree_changed changed_paths_truncated].each do |key|
+          next unless git.key?(key)
+          next if boolean?(git[key])
+
+          diagnostics << diagnostic("boolean_required", "$.observed.git.#{key}", "observed.git.#{key} must be true or false")
+        end
+      end
+
+      validate_commands(value["commands"], diagnostics, base_path: "$.observed.commands")
+      if value.key?("commands_truncated") && !boolean?(value["commands_truncated"])
+        diagnostics << diagnostic("boolean_required", "$.observed.commands_truncated", "observed.commands_truncated must be true or false")
+      end
+      unless COMMAND_OBSERVATION_STATUSES.include?(value["command_observation"])
+        diagnostics << diagnostic(
+          "enum",
+          "$.observed.command_observation",
+          "observed.command_observation must be observed or unsupported"
+        )
+      end
+
+      turn = value["turn"]
+      unless turn.is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.observed.turn", "observed.turn must be an object")
+      else
+        validate_required_string(turn, "status", "$.observed.turn.status", diagnostics)
+        %w[task_complete task_failed accepted].each do |key|
+          next if boolean?(turn[key])
+
+          diagnostics << diagnostic("boolean_required", "$.observed.turn.#{key}", "observed.turn.#{key} must be true or false")
+        end
+        validate_optional_string(turn, "outcome_class", "$.observed.turn.outcome_class", diagnostics)
+        if turn.key?("exit_code") && !turn["exit_code"].is_a?(Integer)
+          diagnostics << diagnostic("integer_required", "$.observed.turn.exit_code", "observed.turn.exit_code must be an integer")
+        end
+      end
+
+      unless value["usage"].is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.observed.usage", "observed.usage must be an object")
+      else
+        unless USAGE_STATUSES.include?(value.dig("usage", "status"))
+          diagnostics << diagnostic("enum", "$.observed.usage.status", "observed.usage.status must be observed, estimated, unsupported, missing, or zero")
+        end
+      end
+    end
+
     def validate_final_contract(report, diagnostics)
+      if harness_receipt?(report)
+        validate_observed_final_contract(report, diagnostics)
+        return
+      end
+
       unless report["status"] == "pass"
         diagnostics << diagnostic("final_status", "$.status", "final report status must be pass")
       end
@@ -452,6 +728,55 @@ module Harnex
       end
     end
 
+    def harness_receipt?(report)
+      report.dig("receipt", "author") == "harnex"
+    end
+
+    # Harness receipts prove that the receipt itself is complete and that
+    # Harnex accepted the observed terminal state. Individual command failures
+    # remain factual telemetry: they are not treated as worker-authored gates,
+    # because exploratory failures can precede a successful final turn.
+    def validate_observed_final_contract(report, diagnostics)
+      unless report["status"] == "pass"
+        diagnostics << diagnostic("final_status", "$.status", "final receipt status must be pass")
+      end
+
+      outcome = report["outcome"]
+      unless outcome.is_a?(Hash) && ACCEPTED_OUTCOME_STATUSES.include?(outcome["status"])
+        diagnostics << diagnostic("outcome_not_accepted", "$.outcome.status", "final receipt outcome must be accepted or no_change")
+      end
+      unless outcome.is_a?(Hash) && non_empty_string?(outcome["summary"])
+        diagnostics << diagnostic("required", "$.outcome.summary", "final receipt requires a non-empty summary")
+      end
+
+      validation = report["validation"]
+      unless validation.is_a?(Hash) && validation["final_reported"] == true
+        diagnostics << diagnostic("final_reported", "$.validation.final_reported", "final receipt requires validation.final_reported=true")
+      end
+
+      turn = report.dig("observed", "turn")
+      unless turn.is_a?(Hash) && turn["accepted"] == true
+        diagnostics << diagnostic("observed_not_accepted", "$.observed.turn.accepted", "final receipt requires an accepted observed turn")
+      end
+
+      return unless outcome.is_a?(Hash) && outcome["status"] == "no_change"
+
+      git = report.dig("observed", "git")
+      no_change = git.is_a?(Hash) &&
+        git["status"] == "observed" &&
+        git["commits"].to_i.zero? &&
+        Array(git["changed_paths"]).empty? &&
+        !git["start_sha"].to_s.empty? &&
+        git["start_sha"].to_s == git["end_sha"].to_s
+      unless no_change
+        diagnostics << diagnostic(
+          "no_change_unobserved",
+          "$.observed.git",
+          "no_change requires an observed zero-delta Git state"
+        )
+      end
+    end
+
     def validate_string_array_field(report, key, max_items:, diagnostics:)
       return unless report.key?(key)
 
@@ -508,6 +833,9 @@ module Harnex
       artifacts = compact_artifacts(report["artifacts"])
       validation = compact_validation(report["validation"])
       outcome = compact_outcome(report["outcome"])
+      receipt = compact_receipt(report["receipt"])
+      observed = compact_observed(report["observed"])
+      claims = compact_claims(report["claims"])
       payload = {
         "artifact_report" => metadata(
           path,
@@ -518,12 +846,16 @@ module Harnex
         ).merge(
           "report_status" => bounded_string_or_nil(report["status"]),
           "canonical_artifacts" => string_array(report["canonical_artifacts"], max_items: MAX_CANONICAL_ARTIFACTS),
-          "artifact_count" => artifacts.length
+          "artifact_count" => artifacts.length,
+          "author" => receipt&.dig("author")
         )
       }
       payload["validation"] = validation if validation
       payload["artifacts"] = artifacts unless artifacts.empty?
       payload["outcome"] = outcome if outcome
+      payload["receipt"] = receipt if receipt
+      payload["observed"] = observed if observed
+      payload["claims"] = claims unless claims.empty?
       payload
     end
 
@@ -553,6 +885,107 @@ module Harnex
         "ingest_status" => ingest_status,
         "schema" => schema
       }
+    end
+
+    def compact_receipt(value)
+      return nil unless value.is_a?(Hash)
+
+      payload = {
+        "version" => integer_or_nil(value["version"]),
+        "author" => bounded_string_or_nil(value["author"]),
+        "generated_at" => bounded_string_or_nil(value["generated_at"]),
+        "id" => bounded_string_or_nil(value["id"]),
+        "session_id" => bounded_string_or_nil(value["session_id"])
+      }
+      payload.delete_if { |_key, item| item.nil? }
+      payload.empty? ? nil : payload
+    end
+
+    def compact_observed(value)
+      return nil unless value.is_a?(Hash)
+
+      payload = {
+        "git" => compact_observed_git(value["git"]),
+        "commands" => compact_commands(value["commands"]),
+        "commands_truncated" => boolean_or_nil(value["commands_truncated"]),
+        "command_observation" => bounded_string_or_nil(value["command_observation"]),
+        "turn" => compact_observed_turn(value["turn"]),
+        "usage" => compact_observed_usage(value["usage"])
+      }
+      payload.delete_if { |_key, item| item.nil? }
+      payload.empty? ? nil : payload
+    end
+
+    def compact_observed_git(value)
+      value = {} unless value.is_a?(Hash)
+      status = hash_value(value, "status").to_s
+      status = "observed" if status.empty? && !hash_value(value, "start_sha").to_s.empty?
+      status = "unavailable" unless GIT_OBSERVATION_STATUSES.include?(status)
+      payload = {
+        "status" => status,
+        "start_sha" => bounded_string_or_nil(hash_value(value, "start_sha")),
+        "end_sha" => bounded_string_or_nil(hash_value(value, "end_sha")),
+        "branch" => bounded_string_or_nil(hash_value(value, "branch")),
+        "changed_paths" => string_array(hash_value(value, "changed_paths"), max_items: MAX_CHANGED_PATHS),
+        "loc_added" => non_negative_integer_or_nil(hash_value(value, "loc_added")),
+        "loc_removed" => non_negative_integer_or_nil(hash_value(value, "loc_removed")),
+        "files_changed" => non_negative_integer_or_nil(hash_value(value, "files_changed")),
+        "commits" => non_negative_integer_or_nil(hash_value(value, "commits")),
+        "start_dirty" => boolean_or_nil(hash_value(value, "start_dirty")),
+        "end_dirty" => boolean_or_nil(hash_value(value, "end_dirty")),
+        "worktree_changed" => boolean_or_nil(hash_value(value, "worktree_changed")),
+        "changed_paths_truncated" => boolean_or_nil(hash_value(value, "changed_paths_truncated"))
+      }
+      payload.delete_if { |key, item| item.nil? || (key == "changed_paths" && status == "unavailable") }
+      payload
+    end
+
+    def compact_observed_turn(value)
+      value = {} unless value.is_a?(Hash)
+      payload = {
+        "status" => bounded_string_or_nil(hash_value(value, "status")),
+        "outcome_class" => bounded_string_or_nil(hash_value(value, "outcome_class")),
+        "task_complete" => !!hash_value(value, "task_complete"),
+        "task_failed" => !!hash_value(value, "task_failed"),
+        "accepted" => !!hash_value(value, "accepted"),
+        "exit_code" => integer_or_nil(hash_value(value, "exit_code")),
+        "signal" => integer_or_nil(hash_value(value, "signal"))
+      }
+      payload.delete_if { |_key, item| item.nil? }
+      payload
+    end
+
+    def compact_observed_usage(value)
+      value = {} unless value.is_a?(Hash)
+      payload = {}
+      %w[status cost_source cost_price_as_of].each do |key|
+        payload[key] = bounded_string_or_nil(hash_value(value, key))
+      end
+      payload["cost_usd"] = finite_float_or_nil(hash_value(value, "cost_usd"))
+      %w[input_tokens output_tokens cached_input_tokens reasoning_tokens total_tokens].each do |key|
+        payload[key] = non_negative_integer_or_nil(hash_value(value, key))
+      end
+      payload.delete_if { |_key, item| item.nil? }
+      payload
+    end
+
+    def compact_claims(value)
+      return {} unless value.is_a?(Hash)
+
+      payload = {
+        "summary" => bounded_string_or_nil(hash_value(value, "summary")),
+        "verdict" => bounded_string_or_nil(hash_value(value, "verdict"))
+      }
+      findings = hash_value(value, "findings")
+      if findings.is_a?(Hash)
+        counts = CLAIM_SEVERITIES.each_with_object({}) do |severity, result|
+          count = non_negative_integer_or_nil(hash_value(findings, severity))
+          result[severity] = count unless count.nil?
+        end
+        payload["findings"] = counts unless counts.empty?
+      end
+      payload.delete_if { |_key, item| item.nil? || item == "" }
+      payload
     end
 
     def compact_validation(value)
@@ -661,6 +1094,18 @@ module Harnex
       nil
     end
 
+    def non_negative_integer_or_nil(value)
+      integer = integer_or_nil(value)
+      integer if integer && integer >= 0
+    end
+
+    def hash_value(hash, key)
+      return nil unless hash.is_a?(Hash)
+      return hash[key] if hash.key?(key)
+
+      hash[key.to_sym]
+    end
+
     def finite_float_or_nil(value)
       return nil if value.nil?
 
@@ -680,6 +1125,10 @@ module Harnex
 
     def non_empty_string?(value)
       value.is_a?(String) && !value.empty? && value.length <= MAX_STRING_LENGTH
+    end
+
+    def boolean_or_nil(value)
+      value if boolean?(value)
     end
 
     def boolean?(value)

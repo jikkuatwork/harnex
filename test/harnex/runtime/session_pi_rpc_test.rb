@@ -181,6 +181,8 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal "provider_reported", record.dig("usage", "cost_source")
     assert_equal 0.07, record.dig("usage", "cost_usd")
     assert_equal 3, record.dig("actual", "tool_calls")
+    assert_equal "unsupported", record.dig("observed", "command_observation")
+    assert_equal "harnex", record.dig("receipt", "author")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")
     assert_equal "observed", record.dig("context", "status")

@@ -22,9 +22,11 @@ Inside a harnex-managed session, these environment variables are available:
 | `HARNEX_SESSION_REPO_ROOT` | Repo root for the session |
 | `HARNEX_SESSION_ID` | Internal harnex instance ID |
 | `HARNEX_SPAWNER_PANE` | Tmux pane ID of the invoker |
-| `HARNEX_ARTIFACT_REPORT_PATH` | Absolute configured proof-sidecar path |
-| `HARNEX_ARTIFACT_REPORT_SCHEMA` | Required sidecar schema identifier |
-| `HARNEX_ARTIFACT_REPORT_REQUIRED` | `1` when report proof is fail-closed |
+| `HARNEX_ARTIFACT_REPORT_PATH` | Absolute harness-owned final receipt path |
+| `HARNEX_ARTIFACT_CLAIMS_PATH` | Optional bounded worker-claims input path |
+| `HARNEX_ARTIFACT_REPORT_SCHEMA` | Receipt schema identifier |
+| `HARNEX_ARTIFACT_REPORT_MODE` | `observed_state` for harness-authored receipts |
+| `HARNEX_ARTIFACT_REPORT_REQUIRED` | `1` when the compatibility strict flag was passed |
 
 Use `harnex send`, `harnex status`, `harnex wait`, `harnex pane`, and
 `harnex logs` to coordinate with peers. If you are not inside harnex,
@@ -69,8 +71,8 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
 For one-shot context dispatches that should clean themselves up, add
 `--auto-stop`. It requires `--context` and does not keep the session alive for
 later reuse. On Codex app-server, a turn launched from `--context` is accepted
-only after structured command/tool activity, Git delta, or fresh
-accepted/no-change sidecar proof. A prose-only acknowledgment emits
+only after structured command/tool activity or a Git delta. Optional claims and
+final prose cannot satisfy that observed-activity gate. A prose-only acknowledgment emits
 `completed_no_activity`, is
 visible as `task_failed` before teardown, and exits non-zero. This keeps
 parallel orchestration compact without converting agent turn completion into
@@ -103,33 +105,29 @@ harnex run codex --cwd /tmp/leximaze_eval_run_001 \
 `--root DIR` only overrides harnex's root attribution; it does not change the
 child process cwd. Neither flag is a sandbox.
 
-For queue closeout, ask workers to write a compact sidecar in addition to their
-plain-text `koder/` artifact. For blind/unattended work, initialize and require
-the report so a normal final answer cannot bypass proof acceptance:
+For queue closeout, do not ask workers to author proof JSON. Harnex writes a
+canonical receipt for every dispatch from the Git delta, structured command
+exits, turn outcome, and usage it observed. The default receipt lives outside
+the checkout under the Harnex state directory; pass `--artifact-report PATH`
+only when a queue needs a fixed destination. Consumers can run:
 
 ```bash
-harnex artifact-report init .harnex/reports/pi-i-NN.json
-harnex run pi --id pi-i-NN --tmux pi-i-NN \
-  --artifact-report .harnex/reports/pi-i-NN.json \
-  --require-artifact-report \
-  --context 'Update the canonical koder file, finalize $HARNEX_ARTIFACT_REPORT_PATH, then run harnex artifact-report validate "$HARNEX_ARTIFACT_REPORT_PATH" --final' \
-  --auto-stop
+harnex artifact-report validate /path/from/the-dispatch-row.json --final
 ```
 
-The worker should keep the full explanation in `koder/` and put only compact
-machine-readable proof in the sidecar: an `accepted` or `no_change` outcome,
-validation command/status/exit codes, typed artifact summaries (`finding`,
-`review`, `gate`, `blocker`, etc.), evidence, confidence, and canonical refs.
-`harnex artifact-report validate PATH` checks the schema without echoing report
-payloads; `--final` additionally requires accepted final proof and
-`validation.final_reported=true`.
+A worker may add review context by writing only a small block to
+`$HARNEX_ARTIFACT_CLAIMS_PATH` before it completes:
 
-Without `--require-artifact-report`, missing/malformed reports remain warning
-telemetry. Strict mode fails closed for missing, malformed, unsupported,
-oversized, schema-incomplete, rejected, or unchanged stale reports. JSON in the
-agent's final prose does not count: only the configured sidecar path is read.
-A fresh valid `no_change` report is the explicit proof path for intentional
-no-delta work.
+```json
+{"claims":{"summary":"Review complete","verdict":"changes_requested","findings":{"P1":0,"P2":1,"P3":0}}}
+```
+
+Claims are bounded and advisory. They never determine receipt validity, and
+malformed/stale claims are ignored. `HARNEX_ARTIFACT_REPORT_PATH` is owned and
+overwritten by Harnex; JSON printed in final prose is not scraped. The legacy
+`artifact-report init` command and `--require-artifact-report` flag remain for
+compatibility, but normal dispatches need neither worker JSON nor an explicit
+receipt path.
 
 Queue runners should pass first-class attribution so dispatch rows can be grouped
 without path/id heuristics:

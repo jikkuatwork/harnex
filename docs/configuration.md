@@ -46,14 +46,15 @@ The effective value is the first-class `harnex run --phase TEXT` value, or
 The allowlist must be an array of non-empty strings. Policy must be `warn` or
 `reject`.
 
-## Events and output retention
+## Events, output, and receipt retention
 
-Per-session event JSONL and output transcripts live under Harnex's local state
-directory and are not the durable dispatch stream:
+Per-session event JSONL, output transcripts, and generated proof receipts live
+under Harnex's local state directory and are not the durable dispatch stream:
 
 ```text
 ~/.local/state/harnex/events/
 ~/.local/state/harnex/output/
+~/.local/state/harnex/receipts/
 ```
 
 Defaults apply independently to each directory:
@@ -73,6 +74,10 @@ Override them in repo configuration:
     "output": {
       "max_age_days": 45,
       "max_bytes": 1073741824
+    },
+    "receipts": {
+      "max_age_days": 45,
+      "max_bytes": 1073741824
     }
   }
 }
@@ -85,10 +90,12 @@ HARNEX_EVENTS_MAX_AGE_DAYS
 HARNEX_EVENTS_MAX_BYTES
 HARNEX_OUTPUT_MAX_AGE_DAYS
 HARNEX_OUTPUT_MAX_BYTES
+HARNEX_RECEIPTS_MAX_AGE_DAYS
+HARNEX_RECEIPTS_MAX_BYTES
 ```
 
 Limits must be positive integers. Harnex deletes only regular files directly
-owned by the `events` and `output` directories: expired files first, then the
+owned by the `events`, `output`, and `receipts` directories: expired files first, then the
 oldest unprotected files until the size cap is met. It never follows paths
 outside those directories. Files for the current session, live registry PIDs,
 and alive uncompleted dispatch-start rows are protected. If protected files

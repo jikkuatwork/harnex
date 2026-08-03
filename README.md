@@ -206,8 +206,8 @@ bare `--watch` means babysitter mode.
 
 For one-shot startup prompts, add `--auto-stop`. It requires `--context`.
 A Codex app-server turn launched from `--context` only counts as accepted
-autonomous work when structured command/tool activity, a Git delta, or a fresh
-accepted/no-change artifact report proves activity. An acknowledgment-only turn emits
+autonomous work when structured command/tool activity or a Git delta proves
+activity. Optional receipt claims cannot satisfy this gate. An acknowledgment-only turn emits
 `outcome.class=completed_no_activity`, makes `watch --until done` return
 non-zero, and auto-stops with a non-zero verdict instead of reporting success.
 PTY adapters still stop on prompt return because they do not expose equivalent
@@ -258,7 +258,7 @@ and one rich v2 `dispatch_end` row at teardown. Both use the canonical stream:
 `<git-root>/.harnex/dispatch.jsonl` inside a git repo, or
 `~/.local/state/harnex/dispatch.jsonl` otherwise. The end row combines the
 history envelope with usage, context, attribution, outcome, attempt,
-reliability, queue/orchestration, and optional artifact-report sections.
+reliability, queue/orchestration, and a harness-authored observed-state receipt.
 
 `--summary-out PATH` has no default. It is an explicit compatibility mirror
 that copies the identical `dispatch_end` row to another JSONL file; do not pass
@@ -279,36 +279,37 @@ Dispatch briefs can declare soft budget metadata through `--meta`:
 harnex run pi --meta '{"read_budget_lines":2000,"output_ceiling_lines":800}' ...
 ```
 
-Workers can also write a small machine-readable proof sidecar while keeping the
-canonical explanation in plain-text `koder/` files. Initialize the real schema
-instead of asking a model to reproduce it from prose:
+Every dispatch gets a canonical `harnex.artifact_report.v1` receipt generated
+by Harnex from observed state: start/end Git SHA and delta, changed paths and
+LOC, structured command exits when the transport exposes them, turn outcome,
+and usage. No model-authored proof JSON or `--artifact-report` flag is needed.
+The default file lives under `~/.local/state/harnex/receipts/`; the live status
+payload and final dispatch row expose its absolute path.
 
-```bash
-harnex artifact-report init .harnex/reports/pi-i-61.json
-harnex run pi --id pi-i-61 \
-  --artifact-report .harnex/reports/pi-i-61.json \
-  --require-artifact-report \
-  --context 'Run validation, update the canonical koder artifact, finalize $HARNEX_ARTIFACT_REPORT_PATH, and validate it with harnex artifact-report validate "$HARNEX_ARTIFACT_REPORT_PATH" --final' \
-  --auto-stop
+Use `--artifact-report PATH` only to override that destination. During the run,
+`HARNEX_ARTIFACT_REPORT_PATH` names the harness-owned final file and
+`HARNEX_ARTIFACT_CLAIMS_PATH` names a separate optional worker input. A review
+worker may attach bounded context without controlling acceptance:
+
+```json
+{
+  "claims": {
+    "summary": "Review complete; one P2 remains.",
+    "verdict": "changes_requested",
+    "findings": { "P1": 0, "P2": 1, "P3": 0 }
+  }
+}
 ```
 
-The sidecar schema is `harnex.artifact_report.v1`; harnex exposes the path as
-`HARNEX_ARTIFACT_REPORT_PATH` / `HARNEX_VALIDATION_REPORT_PATH`, the schema as
-`HARNEX_ARTIFACT_REPORT_SCHEMA`, and strict mode as
-`HARNEX_ARTIFACT_REPORT_REQUIRED=1`. `harnex artifact-report validate PATH`
-checks field shapes; add `--final` to require `status=pass`, an
-`accepted`/`no_change` outcome with a summary, valid command exit codes, and
-`validation.final_reported=true`. Diagnostics contain bounded field paths and
-shape errors, not report payloads or transcripts.
-
-Without `--require-artifact-report`, report defects remain fail-soft warning
-telemetry. With it, a missing, malformed, unsupported, oversized,
-contract-incomplete, rejected, or unchanged stale report makes the work verdict
-non-zero. A fresh explicit `no_change` report can prove an intentional no-delta
-task without fake edits. Harnex records compact `artifact_report`, `validation`,
-and `artifacts` blocks plus `outcome.class` / `outcome.report_status`; Git
-changes alone never imply semantic acceptance, and JSON printed in final prose
-is never scraped as a sidecar.
+Harnex sanitizes that block and writes it into the receipt; malformed, stale,
+or missing claims are ignored. Claims and final prose can never turn an
+otherwise rejected completion into accepted proof. `harnex artifact-report
+validate PATH --final` validates the harness receipt for consumers, while the
+older `init` command and legacy worker-authored v1 validation remain available
+for compatibility. `--require-artifact-report` is also retained for existing
+scripts but no longer requires an explicit path. A receipt write failure fails
+closed as `report_invalid`; ordinary workers no longer fail because they forgot
+or malformed proof JSON.
 
 Queue runners can pass first-class attribution without hiding it in prose:
 
@@ -427,7 +428,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex events --id <id>` | Stream structured session events (`--snapshot` for non-blocking dump) |
 | `harnex history` | List completed dispatches from `.harnex/dispatch.jsonl` |
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
-| `harnex artifact-report init\|validate PATH` | Create or validate bounded `harnex.artifact_report.v1` proof; use `validate --final` before strict completion |
+| `harnex artifact-report init\|validate PATH` | Validate harness-authored `harnex.artifact_report.v1` receipts; `init` remains for legacy/manual documents |
 | `harnex doctor` | Run dependency and retention diagnostics; `--sweep` reports session drift, `--prune --dry-run` previews retention, and `--prune` applies it |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
@@ -448,7 +449,7 @@ longer used. Remove stale `~/.claude/skills/harnex-*` or
 - [GUIDE.md](GUIDE.md) — getting started walkthrough with examples
 - [TECHNICAL.md](TECHNICAL.md) — full command reference, flags, HTTP API, architecture
 - [docs/dispatch-telemetry.md](docs/dispatch-telemetry.md) — v2 dispatch stream and field contract
-- [docs/configuration.md](docs/configuration.md) — phase allowlists and events/output retention
+- [docs/configuration.md](docs/configuration.md) — phase allowlists and events/output/receipt retention
 
 ## License
 

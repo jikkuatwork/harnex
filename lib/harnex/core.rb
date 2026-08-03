@@ -1,5 +1,6 @@
 require "digest"
 require "fileutils"
+require "open3"
 require "optparse"
 require "securerandom"
 require "set"
@@ -19,6 +20,8 @@ module Harnex
   DEFAULT_PORT_SPAN = Integer(env_value("HARNEX_PORT_SPAN", default: "4000"))
   DEFAULT_ID = "default"
   WATCH_DEBOUNCE_SECONDS = 1.0
+  GIT_FINGERPRINT_FULL_BYTES = 4 * 1024 * 1024
+  GIT_FINGERPRINT_SAMPLE_BYTES = 64 * 1024
   STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", default: "~/.local/state/harnex"))
   SESSIONS_DIR = File.join(STATE_DIR, "sessions")
   WatchConfig = Struct.new(:absolute_path, :display_path, :hook_message, :debounce_seconds, keyword_init: true)
@@ -114,40 +117,202 @@ module Harnex
     text.to_s.gsub(/\e\[[0-9;]*[a-zA-Z]/, "")
   end
 
-  def git_capture_start(repo_root)
+  def git_capture_start(repo_root, exclude_paths: [])
     sha = git_output(repo_root, "rev-parse", "HEAD")
     branch = git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     return {} if sha.empty? || branch.empty?
 
+    excluded_paths = normalize_git_excluded_paths(exclude_paths)
+    worktree = git_worktree_snapshot(repo_root, exclude_paths: excluded_paths)
     {
       sha: sha,
-      branch: branch
+      branch: branch,
+      worktree: worktree,
+      excluded_paths: excluded_paths
     }
   rescue StandardError
     {}
   end
 
-  def git_capture_end(repo_root, start_sha)
-    start_sha = start_sha.to_s.strip
+  # Captures committed and in-progress work relative to the state observed at
+  # session start. Passing the full git_capture_start hash avoids treating an
+  # unchanged pre-existing dirty tree as worker activity; a SHA string remains
+  # supported for older callers.
+  def git_capture_end(repo_root, start, exclude_paths: nil)
+    start_capture = start.is_a?(Hash) ? start : {}
+    start_sha = (start_capture[:sha] || start_capture["sha"] || start).to_s.strip
     return {} if start_sha.empty?
 
+    excluded_paths ||= start_capture[:excluded_paths] || start_capture["excluded_paths"] || []
+    excluded_paths = normalize_git_excluded_paths(excluded_paths)
     end_sha = git_output(repo_root, "rev-parse", "HEAD")
     range = "#{start_sha}..#{end_sha}"
-    shortstat = git_output(repo_root, "diff", "--shortstat", range)
-    changed_paths = git_output(repo_root, "diff", "--name-only", range).lines.map(&:strip).reject(&:empty?).first(200)
     commits = Integer(git_output(repo_root, "rev-list", "--count", range))
-    stats = parse_git_shortstat(shortstat)
+    committed_paths = git_null_paths(repo_root, "diff", "--name-only", "-z", range)
+      .reject { |path| excluded_paths.include?(path) }
+    committed_stats = if committed_paths.empty?
+                        { loc_added: 0, loc_removed: 0 }
+                      else
+                        parse_git_numstat(
+                          git_output(repo_root, "diff", "--numstat", range, "--", *committed_paths.first(200))
+                        )
+                      end
+
+    start_worktree = start_capture[:worktree] || start_capture["worktree"]
+    end_worktree = git_worktree_snapshot(repo_root, exclude_paths: excluded_paths)
+    worktree_paths = changed_worktree_paths(start_worktree, end_worktree)
+    tracked_worktree_paths = worktree_paths.select do |path|
+      entry = end_worktree.fetch(:entries).fetch(path, nil)
+      entry && entry.fetch(:tracked)
+    end
+    worktree_stats = if tracked_worktree_paths.empty?
+                       { loc_added: 0, loc_removed: 0 }
+                     else
+                       parse_git_numstat(
+                         git_output(repo_root, "diff", "--numstat", end_sha, "--", *tracked_worktree_paths.first(200))
+                       )
+                     end
+    untracked_stats = untracked_worktree_stats(start_worktree, end_worktree, worktree_paths)
+    all_paths = (committed_paths + worktree_paths).uniq
 
     {
       sha: end_sha,
-      loc_added: stats.fetch(:loc_added),
-      loc_removed: stats.fetch(:loc_removed),
-      files_changed: stats.fetch(:files_changed),
-      changed_paths: changed_paths,
-      commits: commits
+      loc_added: committed_stats.fetch(:loc_added) + worktree_stats.fetch(:loc_added) + untracked_stats.fetch(:loc_added),
+      loc_removed: committed_stats.fetch(:loc_removed) + worktree_stats.fetch(:loc_removed) + untracked_stats.fetch(:loc_removed),
+      files_changed: all_paths.length,
+      changed_paths: all_paths.first(200),
+      commits: commits,
+      start_dirty: start_worktree ? !start_worktree.fetch(:entries).empty? : nil,
+      end_dirty: !end_worktree.fetch(:entries).empty?,
+      worktree_changed: !worktree_paths.empty?
     }
   rescue StandardError
     {}
+  end
+
+  def git_worktree_snapshot(repo_root, exclude_paths: [])
+    excluded_paths = normalize_git_excluded_paths(exclude_paths)
+    tracked_paths = (
+      git_null_paths(repo_root, "diff", "--name-only", "-z") +
+      git_null_paths(repo_root, "diff", "--cached", "--name-only", "-z")
+    ).uniq.reject { |path| excluded_paths.include?(path) }
+    untracked_paths = git_null_paths(repo_root, "ls-files", "--others", "--exclude-standard", "-z")
+      .reject { |path| excluded_paths.include?(path) }
+    entries = {}
+    tracked_paths.each do |path|
+      entries[path] = git_worktree_entry(repo_root, path, tracked: true)
+    end
+    untracked_paths.each do |path|
+      entries[path] = git_worktree_entry(repo_root, path, tracked: false)
+    end
+    { entries: entries }
+  end
+
+  def normalize_git_excluded_paths(paths)
+    Array(paths).filter_map do |path|
+      text = path.to_s.sub(%r{\A\./}, "")
+      text unless text.empty?
+    end.uniq
+  end
+
+  def git_worktree_entry(repo_root, relative_path, tracked:)
+    path = File.join(repo_root.to_s, relative_path)
+    stat = File.lstat(path)
+    if stat.symlink?
+      content = File.readlink(path)
+      return {
+        tracked: tracked,
+        fingerprint: "symlink:#{Digest::SHA256.hexdigest(content)}",
+        lines: 0,
+        binary: false
+      }
+    end
+
+    return { tracked: tracked, fingerprint: "missing", lines: 0, binary: false } unless stat.file?
+
+    if stat.size > GIT_FINGERPRINT_FULL_BYTES
+      first = File.binread(path, GIT_FINGERPRINT_SAMPLE_BYTES)
+      last = File.open(path, "rb") do |file|
+        file.seek(-[stat.size, GIT_FINGERPRINT_SAMPLE_BYTES].min, IO::SEEK_END)
+        file.read(GIT_FINGERPRINT_SAMPLE_BYTES).to_s
+      end
+      digest = Digest::SHA256.new
+      digest.update("#{stat.mode}:#{stat.size}:#{(stat.mtime.to_r * 1_000_000_000).to_i}")
+      digest.update(first)
+      digest.update(last)
+      return {
+        tracked: tracked,
+        fingerprint: "large:#{digest.hexdigest}",
+        lines: 0,
+        binary: first.include?("\0") || last.include?("\0")
+      }
+    end
+
+    digest = Digest::SHA256.new
+    lines = 0
+    binary = false
+    last_byte = nil
+    File.open(path, "rb") do |file|
+      buffer = +""
+      while file.read(16 * 1024, buffer)
+        digest.update(buffer)
+        binary ||= buffer.include?("\0")
+        lines += buffer.count("\n")
+        last_byte = buffer.byteslice(-1)
+      end
+    end
+    lines += 1 if stat.size.positive? && last_byte != "\n"
+    {
+      tracked: tracked,
+      fingerprint: "file:#{stat.mode}:#{digest.hexdigest}",
+      lines: binary ? 0 : lines,
+      binary: binary
+    }
+  rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
+    { tracked: tracked, fingerprint: "missing", lines: 0, binary: false }
+  end
+
+  def changed_worktree_paths(start_worktree, end_worktree)
+    end_entries = end_worktree.fetch(:entries)
+    return end_entries.keys.sort unless start_worktree.is_a?(Hash)
+
+    start_entries = start_worktree[:entries] || start_worktree["entries"] || {}
+    (start_entries.keys + end_entries.keys).uniq.select do |path|
+      start_entries[path] != end_entries[path]
+    end.sort
+  end
+
+  def untracked_worktree_stats(start_worktree, end_worktree, changed_paths)
+    start_entries = if start_worktree.is_a?(Hash)
+                      start_worktree[:entries] || start_worktree["entries"] || {}
+                    else
+                      {}
+                    end
+    end_entries = end_worktree.fetch(:entries)
+    changed_paths.each_with_object({ loc_added: 0, loc_removed: 0 }) do |path, stats|
+      before = start_entries[path]
+      after = end_entries[path]
+      next if after && after.fetch(:tracked)
+      next if before && before.fetch(:tracked)
+
+      stats[:loc_removed] += before.fetch(:lines) if before
+      stats[:loc_added] += after.fetch(:lines) if after
+    end
+  end
+
+  def git_null_paths(repo_root, *args)
+    output, _stderr, status = Open3.capture3("git", "-C", repo_root.to_s, *args)
+    raise "git #{args.join(' ')} failed" unless status.success?
+
+    output.split("\0").reject(&:empty?)
+  end
+
+  def parse_git_numstat(text)
+    text.to_s.lines.each_with_object({ loc_added: 0, loc_removed: 0 }) do |line, stats|
+      added, removed, = line.split("\t", 3)
+      stats[:loc_added] += Integer(added, exception: false).to_i
+      stats[:loc_removed] += Integer(removed, exception: false).to_i
+    end
   end
 
   # Canonical path resolution shared by every registry/exit/events writer and

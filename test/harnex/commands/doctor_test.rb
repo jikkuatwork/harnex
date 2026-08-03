@@ -112,7 +112,7 @@ class DoctorTest < Minitest::Test
   end
 
   def reset_retention_dirs
-    %w[events output].each do |name|
+    %w[events output receipts].each do |name|
       FileUtils.rm_rf(File.join(Harnex::STATE_DIR, name))
       FileUtils.mkdir_p(File.join(Harnex::STATE_DIR, name))
     end

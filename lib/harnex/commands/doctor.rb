@@ -16,7 +16,7 @@ module Harnex
 
         Options:
           --sweep      Include a read-only report of harnex/tmux session drift
-          --prune      Apply bounded harnex events/output retention pruning
+          --prune      Apply bounded harnex events/output/receipt retention pruning
           --dry-run    Preview --prune candidates without deleting
           -h, --help   Show this help
 

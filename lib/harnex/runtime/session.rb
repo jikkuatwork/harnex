@@ -1,6 +1,7 @@
 require "io/console"
 require "json"
 require "pty"
+require "shellwords"
 
 module Harnex
   class Session
@@ -86,8 +87,9 @@ module Harnex
     end
 
     attr_reader :repo_root, :launch_cwd, :child_cwd, :host, :port, :session_id, :token, :command, :pid, :id, :adapter, :watch,
-                :inbox, :description, :meta, :summary_out, :artifact_report_path, :output_log_path, :events_log_path,
-                :started_at, :ended_at, :exit_code, :term_signal, :require_artifact_report
+                :inbox, :description, :meta, :summary_out, :artifact_report_path, :artifact_claims_path,
+                :output_log_path, :events_log_path, :started_at, :ended_at, :exit_code, :term_signal,
+                :require_artifact_report
 
     def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, summary_out: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
       @adapter = adapter
@@ -97,22 +99,31 @@ module Harnex
       @child_cwd = child_cwd.to_s.empty? ? nil : File.expand_path(child_cwd)
       @host = host
       @id = Harnex.normalize_id(id)
+      @session_id = SecureRandom.hex(8)
       @watch = watch
       @description = description.to_s.strip
       @description = nil if @description.empty?
       @meta = meta
       @summary_out = summary_out.to_s.strip
       @summary_out = nil if @summary_out.empty?
-      @artifact_report_path = artifact_report_path.to_s.strip
-      @artifact_report_path = nil if @artifact_report_path.empty?
-      @artifact_report_path = File.expand_path(@artifact_report_path, repo_root) if @artifact_report_path
+      configured_report_path = artifact_report_path.to_s.strip
+      @artifact_report_path = if configured_report_path.empty?
+                                Harnex::ArtifactReport.default_path(
+                                  repo_root: repo_root,
+                                  id: @id,
+                                  session_id: @session_id
+                                )
+                              else
+                                File.expand_path(configured_report_path, repo_root)
+                              end
+      @artifact_claims_path = Harnex::ArtifactReport.claims_path(@artifact_report_path)
+      FileUtils.mkdir_p(File.dirname(@artifact_report_path))
       @require_artifact_report = !!require_artifact_report
-      raise ArgumentError, "require_artifact_report requires artifact_report_path" if @require_artifact_report && !@artifact_report_path
-      @artifact_report_start_fingerprint = Harnex::ArtifactReport.fingerprint(@artifact_report_path) if @artifact_report_path
+      @artifact_report_start_fingerprint = Harnex::ArtifactReport.fingerprint(@artifact_report_path)
+      @artifact_claims_start_fingerprint = Harnex::ArtifactReport.fingerprint(@artifact_claims_path)
       @registry_path = Harnex.registry_path(repo_root, @id)
       @output_log_path = Harnex.output_log_path(repo_root, @id)
       @events_log_path = Harnex.events_log_path(repo_root, @id)
-      @session_id = SecureRandom.hex(8)
       @token = SecureRandom.hex(16)
       @port = Harnex.allocate_port(repo_root, @id, port, host: host)
       @mutex = Mutex.new
@@ -129,6 +140,12 @@ module Harnex
       @events_log = nil
       @events_log_seq = 0
       @event_counters = EventCounters.new
+      @observed_commands_mutex = Mutex.new
+      @observed_commands = []
+      @artifact_claims = {}
+      @artifact_claims_loaded = false
+      @artifact_report_generated = false
+      @artifact_report_write_error = nil
       @git_start = {}
       @git_end = {}
       @usage_summary = {}
@@ -257,7 +274,9 @@ module Harnex
         last_injected_at: @last_injected_at&.iso8601,
         injected_count: @injected_count,
         output_log_path: output_log_path,
-        events_log_path: events_log_path
+        events_log_path: events_log_path,
+        artifact_report_path: artifact_report_path,
+        artifact_claims_path: artifact_claims_path
       }
       payload.merge!(log_activity_snapshot)
       payload[:description] = description if description
@@ -571,6 +590,7 @@ module Harnex
       when "item/completed"
         emit_event("item_completed", item: params["item"])
         @event_counters.record_item(params["item"])
+        record_observed_command(params["item"])
         text = render_item_text(params["item"])
         record_synthesized(text) if text
       when "thread/compacted"
@@ -628,6 +648,7 @@ module Harnex
           artifact_report_status: assessment[:report_status],
           diagnostics: assessment[:diagnostics]
         )
+        enforce_required_artifact_report!
         return false
       end
 
@@ -641,9 +662,15 @@ module Harnex
         @completion_diagnostics = []
       end
 
+      # Persist proof before publishing task_complete. A coordinator that sees
+      # the completion event can immediately validate the harness-authored file.
+      enforce_required_artifact_report!
+      return false if task_failed?
+
       event_payload = payload.dup
       event_payload[:outcome_class] = @completion_outcome_class if @completion_outcome_class
       event_payload[:artifact_report_status] = @completion_report_status if @completion_report_status
+      event_payload[:artifact_report_path] = artifact_report_path
       emit_event("task_complete", **event_payload)
       true
     end
@@ -656,85 +683,30 @@ module Harnex
     end
 
     def assess_completion_proof
-      report_result = artifact_report_path ? Harnex::ArtifactReport.validate(artifact_report_path, final: true) : nil
-      report_fresh = report_result && report_result.status != "missing" && artifact_report_fresh?
-      report_stale = report_result && Harnex::ArtifactReport.accepted_final?(report_result) && !report_fresh
-      report_status = report_stale ? "stale" : report_result&.status
-      report_diagnostics = if report_stale
-                             [artifact_report_stale_diagnostic]
-                           else
-                             report_result&.diagnostics || []
-                           end
-
-      if report_result
-        if report_fresh && Harnex::ArtifactReport.accepted_final?(report_result)
-          return {
-            accepted: true,
-            outcome_class: "completed_with_proof",
-            report_status: "accepted",
-            diagnostics: []
-          }
-        end
-
-        report_outcome = Harnex::ArtifactReport.outcome_status(report_result)
-        if report_fresh && report_outcome == "rejected"
-          return {
-            accepted: false,
-            outcome_class: "report_rejected",
-            report_status: "rejected",
-            diagnostics: report_result.diagnostics
-          }
-        end
-
-        if require_artifact_report
-          outcome_class = report_result.status == "missing" ? "report_missing" : "report_invalid"
-          return {
-            accepted: false,
-            outcome_class: outcome_class,
-            report_status: report_status,
-            diagnostics: report_diagnostics
-          }
-        end
-      elsif require_artifact_report
-        return {
-          accepted: false,
-          outcome_class: "report_missing",
-          report_status: "missing",
-          diagnostics: []
-        }
-      end
-
-      if structured_activity_observed? || git_activity_observed?
+      refresh_git_end_snapshot
+      if structured_activity_observed? || git_activity_observed?(@git_end)
         {
           accepted: true,
           outcome_class: "completed_with_activity",
-          report_status: report_status,
+          report_status: nil,
           diagnostics: []
         }
       else
         {
           accepted: false,
           outcome_class: "completed_no_activity",
-          report_status: report_status,
-          diagnostics: report_diagnostics
+          report_status: "rejected",
+          diagnostics: []
         }
       end
     end
 
-    def artifact_report_fresh?
-      current = Harnex::ArtifactReport.fingerprint(artifact_report_path)
-      return false unless current
-      return true unless @artifact_report_start_fingerprint
-
-      current != @artifact_report_start_fingerprint
-    end
-
-    def artifact_report_stale_diagnostic
-      {
-        "code" => "report_stale",
-        "path" => "$",
-        "message" => "artifact report was not created or updated during this session"
-      }
+    # Fingerprints now protect only optional claims ingestion. They are never
+    # an acceptance gate: Harnex always replaces the receipt with fresh
+    # observed state for this session.
+    def artifact_input_fresh?(path, start_fingerprint)
+      current = Harnex::ArtifactReport.fingerprint(path)
+      current && (!start_fingerprint || current != start_fingerprint)
     end
 
     def structured_activity_observed?
@@ -742,10 +714,10 @@ module Harnex
       counters[:commands_executed].to_i.positive? || counters[:tool_calls].to_i.positive?
     end
 
-    def git_activity_observed?
+    def git_activity_observed?(snapshot = nil)
       return false if @git_start[:sha].to_s.empty?
 
-      snapshot = Harnex.git_capture_end(repo_root, @git_start[:sha])
+      snapshot ||= Harnex.git_capture_end(repo_root, @git_start)
       snapshot[:commits].to_i.positive? || Array(snapshot[:changed_paths]).any? ||
         (!snapshot[:sha].to_s.empty? && snapshot[:sha].to_s != @git_start[:sha].to_s)
     end
@@ -753,7 +725,7 @@ module Harnex
     def completion_failure_message(outcome_class)
       case outcome_class
       when "completed_no_activity"
-        "turn completed without command/tool execution, Git delta, or accepted artifact report"
+        "turn completed without command/tool execution or Git delta"
       when "report_missing"
         "required artifact report is missing"
       when "report_rejected"
@@ -942,6 +914,33 @@ module Harnex
       end
     end
 
+    def record_observed_command(item)
+      return unless item.is_a?(Hash) && item["type"] == "commandExecution"
+
+      command = item["command"]
+      command = Shellwords.join(command.map(&:to_s)) if command.is_a?(Array)
+      command = command.to_s
+      exit_code = item["exitCode"]
+      exit_code = item["exit_code"] if exit_code.nil?
+      exit_code = Integer(exit_code)
+      return if command.empty?
+
+      duration = item["duration_s"]
+      duration = item["durationMs"].to_f / 1000.0 if duration.nil? && item["durationMs"]
+      observed = {
+        "cmd" => command,
+        "exit_code" => exit_code,
+        "status" => item["status"],
+        "duration_s" => duration
+      }.compact
+      @observed_commands_mutex.synchronize do
+        @observed_commands << observed
+        @observed_commands = @observed_commands.last(Harnex::ArtifactReport::MAX_COMMANDS)
+      end
+    rescue ArgumentError, TypeError
+      nil
+    end
+
     def summarize(value)
       str = value.is_a?(String) ? value : JSON.generate(value)
       str.length > 120 ? "#{str[0, 117]}..." : str
@@ -1006,7 +1005,9 @@ module Harnex
       if artifact_report_path
         env["HARNEX_ARTIFACT_REPORT_PATH"] = artifact_report_path
         env["HARNEX_VALIDATION_REPORT_PATH"] = artifact_report_path
+        env["HARNEX_ARTIFACT_CLAIMS_PATH"] = artifact_claims_path
         env["HARNEX_ARTIFACT_REPORT_SCHEMA"] = Harnex::ArtifactReport::SCHEMA
+        env["HARNEX_ARTIFACT_REPORT_MODE"] = "observed_state"
         env["HARNEX_ARTIFACT_REPORT_REQUIRED"] = "1" if require_artifact_report
       end
       env["HARNEX_SPAWNER_PANE"] = ENV["TMUX_PANE"] if ENV["TMUX_PANE"]
@@ -1158,7 +1159,7 @@ module Harnex
     def prune_retained_logs
       Harnex::Retention.auto_prune(
         repo_root: repo_root,
-        current_paths: [output_log_path, events_log_path]
+        current_paths: [output_log_path, events_log_path, artifact_report_path, artifact_claims_path]
       )
     end
 
@@ -1227,10 +1228,25 @@ module Harnex
     end
 
     def emit_git_start_event
-      @git_start = Harnex.git_capture_start(repo_root)
+      @git_start = Harnex.git_capture_start(
+        repo_root,
+        exclude_paths: git_observation_excluded_paths
+      )
       return if @git_start.empty?
 
       emit_event("git", phase: "start", sha: @git_start[:sha], branch: @git_start[:branch])
+    end
+
+    def git_observation_excluded_paths
+      git_root = DispatchHistory.find_git_root(repo_root)
+      return [] unless git_root
+
+      root = File.expand_path(git_root)
+      prefix = "#{root}#{File::SEPARATOR}"
+      [dispatch_history_path, summary_out, artifact_report_path, artifact_claims_path].filter_map do |path|
+        absolute = File.expand_path(path.to_s, root)
+        absolute.delete_prefix(prefix) if absolute.start_with?(prefix)
+      end.uniq
     end
 
     def emit_session_end_telemetry
@@ -1239,7 +1255,7 @@ module Harnex
       @context_summary = normalized_context_summary(summary)
       emit_event("usage", **@usage_summary)
 
-      @git_end = Harnex.git_capture_end(repo_root, @git_start[:sha])
+      @git_end = Harnex.git_capture_end(repo_root, @git_start)
       return if @git_end.empty?
 
       emit_event(
@@ -1250,7 +1266,10 @@ module Harnex
         loc_removed: @git_end[:loc_removed],
         files_changed: @git_end[:files_changed],
         changed_paths: @git_end[:changed_paths],
-        commits: @git_end[:commits]
+        commits: @git_end[:commits],
+        start_dirty: @git_end[:start_dirty],
+        end_dirty: @git_end[:end_dirty],
+        worktree_changed: @git_end[:worktree_changed]
       )
     end
 
@@ -1293,6 +1312,7 @@ module Harnex
         @context_summary = normalized_context_summary(nil)
         warn("harnex: failed to collect session-end telemetry: #{e.message}")
       end
+      enforce_required_artifact_report!
       @exit_reason ||= classify_exit
       record = DispatchHistory.build_record(self)
       append_dispatch_history_record(record)
@@ -1391,46 +1411,172 @@ module Harnex
       AUTOSTOP_TEARDOWN_GRACE_SECONDS_DEFAULT
     end
 
+    # Kept under the existing method name for call-site compatibility. The
+    # worker no longer has to author or validate proof: Harnex overwrites the
+    # configured/default path with a receipt derived from observed state.
     def enforce_required_artifact_report!
-      return unless require_artifact_report
-      return if task_failed? && %w[report_missing report_invalid report_rejected].include?(@completion_outcome_class)
+      persist_observed_receipt!
+    rescue StandardError => e
+      @artifact_report_write_error = e.message
+      warn("harnex: failed to write observed-state receipt #{artifact_report_path}: #{e.message}")
+      return if task_failed?
 
-      result = Harnex::ArtifactReport.validate(artifact_report_path, final: true)
-      report_fresh = result.status != "missing" && artifact_report_fresh?
-      report_accepted = Harnex::ArtifactReport.accepted_final?(result)
-      report_stale = report_accepted && !report_fresh
-      if report_fresh && report_accepted
-        @completion_outcome_class = "completed_with_proof"
-        @completion_report_status = "accepted"
-        @completion_diagnostics = []
-        return
-      end
-
-      report_outcome = Harnex::ArtifactReport.outcome_status(result)
-      outcome_class = if report_fresh && report_outcome == "rejected"
-                        "report_rejected"
-                      elsif result.status == "missing"
-                        "report_missing"
-                      else
-                        "report_invalid"
-                      end
-      report_status = if report_stale
-                        "stale"
-                      elsif report_fresh && report_outcome == "rejected"
-                        "rejected"
-                      else
-                        result.status
-                      end
-      diagnostics = report_stale ? [artifact_report_stale_diagnostic] : result.diagnostics
+      @last_completed_at = nil
       mark_task_failed(
-        status: outcome_class,
-        error: completion_failure_message(outcome_class),
-        outcome_class: outcome_class,
-        artifact_report_status: report_status,
-        diagnostics: diagnostics
+        status: "report_invalid",
+        error: "harness could not generate the observed-state receipt",
+        outcome_class: "report_invalid",
+        artifact_report_status: "write_error",
+        diagnostics: [{
+          "code" => "receipt_write_error",
+          "path" => "$",
+          "message" => "harness could not write the observed-state receipt"
+        }]
       )
       @exit_code = 1 if @exit_code.nil? || @exit_code.zero? || @term_signal
       @term_signal = nil if @exit_code == 1
+    end
+
+    def persist_observed_receipt!
+      refresh_git_end_snapshot
+      load_artifact_claims
+      successful = receipt_successful?
+      if successful
+        @completion_outcome_class = "completed_with_proof" if task_complete? || require_artifact_report
+        @completion_report_status = "accepted"
+        @completion_diagnostics = []
+      else
+        @completion_report_status ||= "rejected"
+      end
+
+      result = Harnex::ArtifactReport.write_observed(
+        artifact_report_path,
+        id: id,
+        session_id: session_id,
+        generated_at: Time.now.utc,
+        successful: successful,
+        outcome_status: receipt_outcome_status(successful),
+        outcome_summary: receipt_outcome_summary(successful),
+        git: receipt_git_payload,
+        commands: observed_commands_snapshot,
+        turn: receipt_turn_payload(successful),
+        usage: build_summary_usage,
+        claims: @artifact_claims,
+        command_observation: command_observation_status
+      )
+      @artifact_report_generated = true
+      @artifact_report_write_error = nil
+      result
+    end
+
+    def refresh_git_end_snapshot
+      return @git_end = {} if @git_start[:sha].to_s.empty?
+
+      snapshot = Harnex.git_capture_end(repo_root, @git_start)
+      @git_end = snapshot unless snapshot.empty?
+      @git_end
+    end
+
+    def load_artifact_claims
+      return @artifact_claims if @artifact_claims_loaded
+
+      @artifact_claims_loaded = true
+      candidates = [
+        [artifact_claims_path, @artifact_claims_start_fingerprint],
+        [artifact_report_path, @artifact_report_start_fingerprint]
+      ]
+      candidates.each do |path, start_fingerprint|
+        next unless artifact_input_fresh?(path, start_fingerprint)
+
+        claims = Harnex::ArtifactReport.extract_claims(path)
+        next if claims.empty?
+
+        @artifact_claims = claims
+        break
+      end
+      @artifact_claims
+    end
+
+    def observed_commands_snapshot
+      @observed_commands_mutex.synchronize { @observed_commands.map(&:dup) }
+    end
+
+    def command_observation_status
+      adapter.transport == :stdio_jsonrpc ? "observed" : "unsupported"
+    end
+
+    def receipt_successful?
+      return false if task_failed?
+      return @exit_code.to_i.zero? unless @exit_code.nil?
+
+      task_complete?
+    end
+
+    def receipt_outcome_status(successful)
+      return "rejected" unless successful
+
+      git = receipt_git_payload
+      if git[:status] == "observed" &&
+         git[:commits].to_i.zero? &&
+         Array(git[:changed_paths]).empty? &&
+         !git[:start_sha].to_s.empty? &&
+         git[:start_sha].to_s == git[:end_sha].to_s
+        "no_change"
+      else
+        "accepted"
+      end
+    end
+
+    def receipt_outcome_summary(successful)
+      return "Harnex observed an unsuccessful completion." unless successful
+
+      if receipt_outcome_status(true) == "no_change"
+        "Harnex observed successful completion with no Git delta."
+      else
+        "Harnex observed successful completion with repository or structured activity."
+      end
+    end
+
+    def receipt_git_payload
+      start_sha = @git_start[:sha].to_s
+      end_sha = @git_end[:sha].to_s
+      return { status: "unavailable" } if start_sha.empty? || end_sha.empty?
+
+      {
+        status: "observed",
+        start_sha: start_sha,
+        end_sha: end_sha,
+        branch: @git_start[:branch],
+        changed_paths: Array(@git_end[:changed_paths]),
+        loc_added: @git_end[:loc_added],
+        loc_removed: @git_end[:loc_removed],
+        files_changed: @git_end[:files_changed],
+        commits: @git_end[:commits],
+        start_dirty: @git_end[:start_dirty],
+        end_dirty: @git_end[:end_dirty],
+        worktree_changed: @git_end[:worktree_changed]
+      }
+    end
+
+    def receipt_turn_payload(successful)
+      status = if task_failed?
+                 "failed"
+               elsif task_complete?
+                 "completed"
+               elsif !@exit_code.nil?
+                 "process_exit"
+               else
+                 "completed"
+               end
+      {
+        status: status,
+        outcome_class: @completion_outcome_class,
+        task_complete: task_complete?,
+        task_failed: task_failed?,
+        accepted: successful,
+        exit_code: @exit_code,
+        signal: @term_signal
+      }
     end
 
     def normalize_work_acceptance_exit_code!
@@ -1482,7 +1628,7 @@ module Harnex
     end
 
     def build_summary_record
-      artifact_payload = artifact_report_path ? artifact_report_summary : nil
+      artifact_payload = @artifact_report_generated ? artifact_report_summary : nil
       attribution = build_summary_attribution
       outcome = build_summary_outcome(artifact_payload)
       record = {
@@ -1691,16 +1837,20 @@ module Harnex
     end
 
     def build_summary_outcome(artifact_payload)
-      sidecar_outcome = artifact_payload&.dig("outcome") || {}
+      receipt_outcome = artifact_payload&.dig("outcome") || {}
       outcome_class, report_status = summary_proof_classification
-      proof_failure = %w[completed_no_activity report_missing report_invalid task_failed].include?(outcome_class)
-      status = proof_failure ? nil : sidecar_outcome["status"]
+      proof_failure = %w[completed_no_activity report_missing report_invalid report_rejected task_failed].include?(outcome_class)
+      harness_receipt = artifact_payload&.dig("receipt", "author") == "harnex"
+      status = receipt_outcome["status"]
+      status = nil if status == "accepted" && proof_failure
       status = "no_change" if status.nil? && !proof_failure && @git_end.key?(:changed_paths) && @git_end[:changed_paths].empty?
       status ||= "unknown"
       status = "unknown" unless Harnex::ArtifactReport::OUTCOME_STATUSES.include?(status)
-      source = if proof_failure
+      source = if harness_receipt
+                 "harnex_observed_state"
+               elsif proof_failure
                  "harnex_completion_gate"
-               elsif sidecar_outcome["status"]
+               elsif receipt_outcome["status"]
                  "artifact_report"
                else
                  "harnex_git_observation"
@@ -1711,7 +1861,7 @@ module Harnex
         "class" => outcome_class,
         "source" => source,
         "report_status" => report_status,
-        "commit_sha" => sidecar_outcome["commit_sha"] || summary_commit_sha,
+        "commit_sha" => receipt_outcome["commit_sha"] || summary_commit_sha,
         "changed_paths" => @git_end.key?(:changed_paths) ? @git_end[:changed_paths] : nil,
         "loc_added" => @git_end[:loc_added],
         "loc_removed" => @git_end[:loc_removed],
@@ -1725,13 +1875,10 @@ module Harnex
       return [@completion_outcome_class, @completion_report_status] if @completion_outcome_class
       return ["task_failed", @completion_report_status] if task_failed?
 
-      if artifact_report_path
+      if @artifact_report_generated
         result = Harnex::ArtifactReport.validate(artifact_report_path, final: true)
-        report_fresh = result.status != "missing" && artifact_report_fresh?
-        report_accepted = Harnex::ArtifactReport.accepted_final?(result)
-        return ["completed_with_proof", "accepted"] if report_fresh && report_accepted
-        return ["report_rejected", "rejected"] if report_fresh && Harnex::ArtifactReport.outcome_status(result) == "rejected"
-        return ["unknown", "stale"] if report_accepted && !report_fresh
+        return ["completed_with_proof", "accepted"] if Harnex::ArtifactReport.accepted_final?(result)
+        return ["report_rejected", "rejected"] if Harnex::ArtifactReport.outcome_status(result) == "rejected"
         return ["unknown", result.status]
       end
 

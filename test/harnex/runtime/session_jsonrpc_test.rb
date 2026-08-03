@@ -214,32 +214,54 @@ class SessionJsonrpcTest < Minitest::Test
       Fixtures::Codex.turn_completed_notification(thread_id: "thr-work", turn_id: "trn-work"))
 
     completed = events.find { |event| event["type"] == "task_complete" }
-    assert_equal "completed_with_activity", completed.fetch("outcome_class")
+    assert_equal "completed_with_proof", completed.fetch("outcome_class")
+    assert_equal "accepted", completed.fetch("artifact_report_status")
+    assert_equal @session.artifact_report_path, completed.fetch("artifact_report_path")
+    receipt = Harnex::ArtifactReport.validate(@session.artifact_report_path, final: true)
+    assert receipt.ok
+    assert_equal "ruby -c lib/harnex/runtime/session.rb", receipt.report.dig("observed", "commands", 0, "cmd")
+    assert_equal 0, receipt.report.dig("observed", "commands", 0, "exit_code")
     assert @session.task_complete?
     refute @session.task_failed?
   end
 
-  def test_required_no_change_report_accepts_zero_activity_turn
-    report_path = File.join(@tmp, "no-change.json")
+  def test_harness_generates_no_change_receipt_and_attaches_review_claims
+    system("git", "init", "-q", @tmp, out: File::NULL, err: File::NULL)
+    File.write(File.join(@tmp, "README.md"), "receipt test\n")
+    system("git", "-C", @tmp, "add", "README.md", out: File::NULL, err: File::NULL)
+    system(
+      "git", "-C", @tmp,
+      "-c", "user.email=test@example.com", "-c", "user.name=Test",
+      "commit", "-q", "-m", "initial",
+      out: File::NULL, err: File::NULL
+    )
     session = Harnex::Session.new(
       adapter: Harnex::Adapters::CodexAppServer.new,
       command: ["codex", "app-server"],
       repo_root: @tmp,
       host: "127.0.0.1",
-      id: "strict-no-change",
-      artifact_report_path: report_path,
+      id: "observed-no-change",
       require_artifact_report: true
     )
     session.send(:prepare_output_log)
     session.send(:prepare_events_log)
-    File.write(report_path, JSON.generate(
-      schema: Harnex::ArtifactReport::SCHEMA,
-      status: "pass",
-      outcome: { status: "no_change", summary: "No change is required." },
-      validation: { status: "not_run", commands: [], final_reported: true },
-      artifacts: []
+    session.send(:emit_git_start_event)
+    File.write(session.artifact_claims_path, JSON.generate(
+      claims: {
+        summary: "Review completed without repository changes.",
+        verdict: "changes_requested",
+        findings: { P1: 0, P2: 1, P3: 0 }
+      }
     ))
-
+    session.send(:handle_rpc_notification, {
+      "method" => "item/completed",
+      "params" => {
+        "item" => {
+          "type" => "commandExecution", "command" => "git diff --check",
+          "status" => "completed", "exitCode" => 0
+        }
+      }
+    })
     session.send(:handle_rpc_notification, {
       "method" => "turn/completed",
       "params" => Fixtures::Codex.turn_completed_notification(thread_id: "thr-proof", turn_id: "trn-proof")
@@ -249,6 +271,12 @@ class SessionJsonrpcTest < Minitest::Test
     completed = rows.find { |event| event["type"] == "task_complete" }
     assert_equal "completed_with_proof", completed.fetch("outcome_class")
     assert_equal "accepted", completed.fetch("artifact_report_status")
+    result = Harnex::ArtifactReport.validate(session.artifact_report_path, final: true)
+    assert result.ok
+    assert_equal "no_change", result.report.dig("outcome", "status")
+    assert_equal "harnex", result.report.dig("receipt", "author")
+    assert_equal "changes_requested", result.report.dig("claims", "verdict")
+    assert_equal 1, result.report.dig("claims", "findings", "P2")
     assert session.task_complete?
   ensure
     events_log = session&.instance_variable_get(:@events_log)
@@ -287,8 +315,12 @@ class SessionJsonrpcTest < Minitest::Test
 
     rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
     failed = rows.find { |event| event["type"] == "task_failed" }
-    assert_equal "report_missing", failed.fetch("outcome_class")
-    assert_equal "missing", failed.fetch("artifact_report_status")
+    assert_equal "completed_no_activity", failed.fetch("outcome_class")
+    assert_equal "rejected", failed.fetch("artifact_report_status")
+    receipt = Harnex::ArtifactReport.validate(session.artifact_report_path, final: true)
+    refute receipt.ok
+    assert_equal "rejected", receipt.report.dig("outcome", "status")
+    refute receipt.report.key?("claims")
     refute session.task_complete?
   ensure
     events_log = session&.instance_variable_get(:@events_log)

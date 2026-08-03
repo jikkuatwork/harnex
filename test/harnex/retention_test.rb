@@ -46,6 +46,24 @@ class RetentionTest < Minitest::Test
     assert_equal 6, report.fetch(:directories).fetch(:output).fetch(:after_bytes)
   end
 
+  def test_prune_bounds_generated_receipts_and_preserves_current_receipt
+    now = Time.utc(2026, 8, 3, 12, 0, 0)
+    old = state_file("receipts", "old.json", bytes: 5, mtime: now - 90 * 86_400)
+    current = state_file("receipts", "current.json", bytes: 5, mtime: now - 90 * 86_400)
+
+    report = Harnex::Retention.prune(
+      repo_root: Dir.pwd,
+      current_paths: [current],
+      env: env("HARNEX_RECEIPTS_MAX_AGE_DAYS" => "45"),
+      force: true,
+      now: now
+    )
+
+    refute File.exist?(old)
+    assert File.exist?(current)
+    assert_equal 1, report.fetch(:directories).fetch(:receipts).fetch(:deleted_count)
+  end
+
   def test_protected_bytes_may_leave_directory_over_cap
     now = Time.utc(2026, 8, 3, 12, 0, 0)
     protected = state_file("events", "protected.jsonl", bytes: 20, mtime: now - 90)
@@ -75,9 +93,13 @@ class RetentionTest < Minitest::Test
       registry_output = Harnex.output_log_path(repo, "cx-registry")
       started_events = Harnex.events_log_path(repo, "cx-started")
       started_output = Harnex.output_log_path(repo, "cx-started")
+      registry_receipt = Harnex::ArtifactReport.default_path(repo_root: repo, id: "cx-registry", session_id: "s-reg")
+      started_receipt = Harnex::ArtifactReport.default_path(repo_root: repo, id: "cx-started", session_id: "s1")
       stale_events = state_file("events", "stale.jsonl", bytes: 4, mtime: now - 90 * 86_400)
+      stale_receipt = state_file("receipts", "stale.json", bytes: 4, mtime: now - 90 * 86_400)
 
-      [registry_events, registry_output, started_events, started_output].each do |path|
+      [registry_events, registry_output, started_events, started_output, registry_receipt, started_receipt].each do |path|
+        FileUtils.mkdir_p(File.dirname(path))
         File.write(path, "old")
         File.utime(now - 90 * 86_400, now - 90 * 86_400, path)
       end
@@ -87,9 +109,11 @@ class RetentionTest < Minitest::Test
         JSON.generate(
           "id" => "cx-registry",
           "repo_root" => repo,
+          "session_id" => "s-reg",
           "pid" => Process.pid,
           "events_log_path" => registry_events,
-          "output_log_path" => registry_output
+          "output_log_path" => registry_output,
+          "artifact_report_path" => registry_receipt
         )
       )
       Harnex::DispatchHistory.append(
@@ -102,7 +126,8 @@ class RetentionTest < Minitest::Test
           "pid" => Process.pid,
           "host" => Harnex.host_info.fetch(:host),
           "repo_root" => repo,
-          "events_log_path" => started_events
+          "events_log_path" => started_events,
+          "artifact_report_path" => started_receipt
         }
       )
       File.open(Harnex::DispatchHistory.path_for(repo), "a") { |file| file.write("not json\n") }
@@ -111,7 +136,8 @@ class RetentionTest < Minitest::Test
         repo_root: repo,
         env: env(
           "HARNEX_EVENTS_MAX_AGE_DAYS" => "45",
-          "HARNEX_OUTPUT_MAX_AGE_DAYS" => "45"
+          "HARNEX_OUTPUT_MAX_AGE_DAYS" => "45",
+          "HARNEX_RECEIPTS_MAX_AGE_DAYS" => "45"
         ),
         force: true,
         now: now
@@ -121,7 +147,10 @@ class RetentionTest < Minitest::Test
       assert File.exist?(registry_output)
       assert File.exist?(started_events)
       assert File.exist?(started_output)
+      assert File.exist?(registry_receipt)
+      assert File.exist?(started_receipt)
       refute File.exist?(stale_events)
+      refute File.exist?(stale_receipt)
     end
   end
 
@@ -197,6 +226,8 @@ class RetentionTest < Minitest::Test
     session.instance_variable_set(:@repo_root, Dir.pwd)
     session.instance_variable_set(:@output_log_path, File.join(Harnex::STATE_DIR, "output", "current.log"))
     session.instance_variable_set(:@events_log_path, File.join(Harnex::STATE_DIR, "events", "current.jsonl"))
+    session.instance_variable_set(:@artifact_report_path, File.join(Harnex::STATE_DIR, "receipts", "current.json"))
+    session.instance_variable_set(:@artifact_claims_path, File.join(Harnex::STATE_DIR, "receipts", "current.json.claims.json"))
 
     Harnex::Retention.stub(:auto_prune, ->(**kwargs) { calls << kwargs; { skipped: false } }) do
       session.__send__(:prune_retained_logs)
@@ -205,12 +236,14 @@ class RetentionTest < Minitest::Test
     assert_equal 1, calls.length
     assert_includes calls.first.fetch(:current_paths), session.output_log_path
     assert_includes calls.first.fetch(:current_paths), session.events_log_path
+    assert_includes calls.first.fetch(:current_paths), session.artifact_report_path
+    assert_includes calls.first.fetch(:current_paths), session.artifact_claims_path
   end
 
   private
 
   def reset_state_dirs
-    %w[events output sessions].each do |name|
+    %w[events output receipts sessions].each do |name|
       FileUtils.rm_rf(File.join(Harnex::STATE_DIR, name))
       FileUtils.mkdir_p(File.join(Harnex::STATE_DIR, name))
     end

@@ -169,8 +169,8 @@ class RunnerTest < Minitest::Test
         row = JSON.parse(File.readlines(summary_path).last)
         assert_equal expected_tier, row.dig("agent", "service_tier")
         assert_equal "completed_no_activity", row.dig("outcome", "class")
-        assert_equal "unknown", row.dig("outcome", "status")
-        assert_equal "harnex_completion_gate", row.dig("outcome", "source")
+        assert_equal "rejected", row.dig("outcome", "status")
+        assert_equal "harnex_observed_state", row.dig("outcome", "source")
         assert_equal 0, row.dig("actual", "commands_executed")
         assert_equal false, row.dig("actual", "task_complete")
       end
@@ -643,14 +643,12 @@ class RunnerTest < Minitest::Test
     assert_equal "tmp/validation.json", runner.instance_variable_get(:@options)[:artifact_report]
   end
 
-  def test_require_artifact_report_requires_a_configured_path
+  def test_require_artifact_report_uses_the_default_receipt_path
     runner = Harnex::Runner.new(["codex", "--require-artifact-report"])
     runner.send(:extract_wrapper_options, ["codex", "--require-artifact-report"])
 
-    error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:validate_required_artifact_report!)
-    end
-    assert_match(/requires --artifact-report PATH/, error.message)
+    assert_equal true, runner.send(:validate_required_artifact_report!)
+    assert_nil runner.instance_variable_get(:@options)[:artifact_report]
   end
 
   def test_extract_wrapper_options_parses_required_artifact_report
@@ -987,7 +985,7 @@ class RunnerTest < Minitest::Test
     end
   end
 
-  def test_run_artifact_report_exposes_env_and_writes_summary_blocks
+  def test_run_artifact_report_exposes_harness_receipt_and_claims_paths
     Dir.mktmpdir("harnex-run-artifact-report") do |repo|
       summary_path = File.join(repo, "summary.jsonl")
       env_path = File.join(repo, "env.json")
@@ -1009,36 +1007,37 @@ class RunnerTest < Minitest::Test
       env_payload = JSON.parse(File.read(env_path))
       assert_equal report_path, env_payload.fetch("artifact_report_path")
       assert_equal report_path, env_payload.fetch("validation_report_path")
+      assert_equal "#{report_path}.claims.json", env_payload.fetch("artifact_claims_path")
+      assert_equal "observed_state", env_payload.fetch("mode")
       assert_equal Harnex::ArtifactReport::SCHEMA, env_payload.fetch("schema")
 
       row = JSON.parse(File.readlines(summary_path, chomp: true).last)
       assert_equal "ok", row.dig("artifact_report", "ingest_status")
+      assert_equal "harnex", row.dig("artifact_report", "author")
       assert_equal Harnex::ArtifactReport::SCHEMA, row.dig("artifact_report", "schema")
       assert_equal "pass", row.dig("artifact_report", "report_status")
       assert_equal report_path, row.dig("artifact_report", "path")
       assert_equal File.size(report_path), row.dig("artifact_report", "bytes")
       assert_match(/\A[0-9a-f]{64}\z/, row.dig("artifact_report", "sha256"))
-      assert_equal ["koder/issues/52_typed_artifact_validation_sidecars.md"], row.dig("artifact_report", "canonical_artifacts")
-      assert_equal "pass", row.dig("validation", "status")
+      assert_equal "harnex", row.dig("receipt", "author")
       assert_equal true, row.dig("validation", "final_reported")
-      assert_equal "ruby -c lib/harnex/artifact_report.rb", row.dig("validation", "commands", 0, "cmd")
-      assert_equal 0, row.dig("validation", "commands", 0, "exit_code")
-      assert_equal "gate", row.dig("artifacts", 0, "type")
-      assert_equal "Sidecar report emitted.", row.dig("artifacts", 0, "summary")
+      assert_equal "unsupported", row.dig("observed", "command_observation")
+      assert_equal "changes_requested", row.dig("claims", "verdict")
+      assert_equal 1, row.dig("claims", "findings", "P2")
+      assert Harnex::ArtifactReport.validate(report_path, final: true).ok
     end
   end
 
-  def test_run_artifact_report_missing_file_records_warning_without_crashing
-    Dir.mktmpdir("harnex-run-artifact-missing") do |repo|
+  def test_run_without_worker_json_generates_default_final_receipt
+    Dir.mktmpdir("harnex-run-artifact-default") do |repo|
       summary_path = File.join(repo, "summary.jsonl")
-      id = "artifact-missing-#{$$}"
+      id = "artifact-default-#{$$}"
 
       Dir.chdir(repo) do
         capture_io do
           assert_equal 0, Harnex::Runner.new([
             RbConfig.ruby,
             "--id", id,
-            "--artifact-report", ".harnex/reports/#{id}.json",
             "--summary-out", summary_path,
             "--", "-e", "exit 0"
           ]).run
@@ -1046,17 +1045,59 @@ class RunnerTest < Minitest::Test
       end
 
       row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal "missing", row.dig("artifact_report", "ingest_status")
-      assert_match(/not found/, row.dig("artifact_report", "warning"))
-      refute row.key?("validation")
-      refute row.key?("artifacts")
+      report_path = row.dig("artifact_report", "path")
+      assert report_path.start_with?(File.join(Harnex::STATE_DIR, "receipts"))
+      assert_path_exists report_path
+      assert_equal "harnex", row.dig("receipt", "author")
+      assert_equal "accepted", row.dig("outcome", "status")
+      assert_equal "harnex_observed_state", row.dig("outcome", "source")
+      assert Harnex::ArtifactReport.validate(report_path, final: true).ok
     end
   end
 
-  def test_required_artifact_report_fails_closed_when_sidecar_is_missing
-    Dir.mktmpdir("harnex-run-artifact-required-missing") do |repo|
+  def test_observed_receipt_captures_uncommitted_product_delta_not_harness_files
+    Dir.mktmpdir("harnex-run-observed-worktree") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "README.md"), "initial\n")
+      system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
+      system(
+        "git", "-C", repo,
+        "-c", "user.email=test@example.com", "-c", "user.name=Test",
+        "commit", "-q", "-m", "initial",
+        out: File::NULL, err: File::NULL
+      )
       summary_path = File.join(repo, "summary.jsonl")
-      id = "artifact-required-missing-#{$$}"
+      id = "artifact-worktree-#{$$}"
+
+      Dir.chdir(repo) do
+        capture_io do
+          assert_equal 0, Harnex::Runner.new([
+            RbConfig.ruby,
+            "--id", id,
+            "--require-artifact-report",
+            "--summary-out", summary_path,
+            "--", "-e", "File.write('PRODUCT.md', \"one\\ntwo\\n\")"
+          ]).run
+        end
+      end
+
+      row = JSON.parse(File.readlines(summary_path, chomp: true).last)
+      assert_equal ["PRODUCT.md"], row.dig("outcome", "changed_paths")
+      assert_equal 2, row.dig("outcome", "loc_added")
+      assert_equal 0, row.dig("outcome", "commits")
+      assert_equal true, row.dig("observed", "git", "worktree_changed")
+      assert_equal false, row.dig("observed", "git", "start_dirty")
+      assert_equal true, row.dig("observed", "git", "end_dirty")
+      refute_includes row.dig("outcome", "changed_paths"), ".harnex/dispatch.jsonl"
+      refute_includes row.dig("outcome", "changed_paths"), "summary.jsonl"
+      assert Harnex::ArtifactReport.validate(row.dig("artifact_report", "path"), final: true).ok
+    end
+  end
+
+  def test_required_artifact_report_needs_no_explicit_path_or_worker_json
+    Dir.mktmpdir("harnex-run-artifact-required-default") do |repo|
+      summary_path = File.join(repo, "summary.jsonl")
+      id = "artifact-required-default-#{$$}"
 
       exit_code = nil
       Dir.chdir(repo) do
@@ -1064,28 +1105,27 @@ class RunnerTest < Minitest::Test
           exit_code = Harnex::Runner.new([
             RbConfig.ruby,
             "--id", id,
-            "--artifact-report", ".harnex/reports/#{id}.json",
             "--require-artifact-report",
             "--summary-out", summary_path,
-            "--", "-e", "puts '{\\\"schema\\\":\\\"harnex.artifact_report.v1\\\"}'"
+            "--", "-e", "exit 0"
           ]).run
         end
       end
 
-      assert_equal 1, exit_code
+      assert_equal 0, exit_code
       row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal "report_missing", row.dig("outcome", "class")
-      assert_equal "missing", row.dig("outcome", "report_status")
-      assert_equal "failure", row.dig("actual", "exit")
-      assert_equal false, row.dig("actual", "task_complete")
+      assert_equal "completed_with_proof", row.dig("outcome", "class")
+      assert_equal "accepted", row.dig("outcome", "report_status")
+      assert_equal "success", row.dig("actual", "exit")
+      assert Harnex::ArtifactReport.validate(row.dig("artifact_report", "path"), final: true).ok
     end
   end
 
-  def test_required_artifact_report_rejects_unchanged_preexisting_final_report
-    Dir.mktmpdir("harnex-run-artifact-required-stale") do |repo|
+  def test_preexisting_final_report_is_replaced_not_used_as_acceptance_gate
+    Dir.mktmpdir("harnex-run-artifact-stale") do |repo|
       summary_path = File.join(repo, "summary.jsonl")
       report_path = File.join(repo, "report.json")
-      id = "artifact-required-stale-#{$$}"
+      id = "artifact-stale-#{$$}"
       File.write(report_path, JSON.generate(
         schema: Harnex::ArtifactReport::SCHEMA,
         status: "pass",
@@ -1108,20 +1148,21 @@ class RunnerTest < Minitest::Test
         end
       end
 
-      assert_equal 1, exit_code
+      assert_equal 0, exit_code
+      result = Harnex::ArtifactReport.validate(report_path, final: true)
+      assert result.ok
+      assert_equal "harnex", result.report.dig("receipt", "author")
+      refute result.report.key?("claims"), "unchanged prior proof must not become current claims"
       row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal "report_invalid", row.dig("outcome", "class")
-      assert_equal "stale", row.dig("outcome", "report_status")
-      failed = File.readlines(row.dig("actual", "events_log_path")).map { |line| JSON.parse(line) }
-        .find { |event| event["type"] == "task_failed" }
-      assert_equal "report_stale", failed.dig("diagnostics", 0, "code")
+      assert_equal "accepted", row.dig("outcome", "report_status")
     end
   end
 
-  def test_required_artifact_report_rejects_schema_invalid_json
-    Dir.mktmpdir("harnex-run-artifact-required-invalid") do |repo|
+  def test_worker_authored_invalid_report_is_overwritten_by_harness_receipt
+    Dir.mktmpdir("harnex-run-artifact-invalid-input") do |repo|
       summary_path = File.join(repo, "summary.jsonl")
-      id = "artifact-required-invalid-#{$$}"
+      report_path = File.join(repo, ".harnex", "reports", "invalid.json")
+      id = "artifact-invalid-input-#{$$}"
 
       exit_code = nil
       Dir.chdir(repo) do
@@ -1129,7 +1170,7 @@ class RunnerTest < Minitest::Test
           exit_code = Harnex::Runner.new([
             RbConfig.ruby,
             "--id", id,
-            "--artifact-report", ".harnex/reports/#{id}.json",
+            "--artifact-report", report_path,
             "--require-artifact-report",
             "--summary-out", summary_path,
             "--", "-e", invalid_artifact_report_writer_script
@@ -1137,21 +1178,18 @@ class RunnerTest < Minitest::Test
         end
       end
 
-      assert_equal 1, exit_code
+      assert_equal 0, exit_code
+      result = Harnex::ArtifactReport.validate(report_path, final: true)
+      assert result.ok
+      assert_equal "harnex", result.report.dig("receipt", "author")
+      refute result.report.key?("claims")
       row = JSON.parse(File.readlines(summary_path, chomp: true).last)
-      assert_equal "report_invalid", row.dig("outcome", "class")
-      assert_equal "unknown", row.dig("outcome", "status")
-      assert_equal "harnex_completion_gate", row.dig("outcome", "source")
-      assert_equal "invalid", row.dig("outcome", "report_status")
-      assert_nil row.dig("actual", "throughput_tokens_per_s")
-      assert_equal "invalid", row.dig("artifact_report", "ingest_status")
-      paths = row.dig("artifact_report", "diagnostics").map { |item| item.fetch("path") }
-      assert_includes paths, "$.outcome"
-      assert_includes paths, "$.validation.commands[0].exit_code"
+      assert_equal "ok", row.dig("artifact_report", "ingest_status")
+      assert_equal "accepted", row.dig("outcome", "report_status")
     end
   end
 
-  def test_required_artifact_report_accepts_valid_final_proof
+  def test_required_artifact_report_accepts_harness_receipt_with_worker_claims
     Dir.mktmpdir("harnex-run-artifact-required-valid") do |repo|
       summary_path = File.join(repo, "summary.jsonl")
       env_path = File.join(repo, "env.json")
@@ -1178,6 +1216,7 @@ class RunnerTest < Minitest::Test
       assert_equal "accepted", row.dig("outcome", "report_status")
       assert_equal "success", row.dig("actual", "exit")
       assert_equal 0, row.dig("actual", "exit_code")
+      assert_equal "changes_requested", row.dig("claims", "verdict")
     end
   end
 
@@ -1433,36 +1472,21 @@ class RunnerTest < Minitest::Test
       require "json"
 
       report_path = ENV.fetch("HARNEX_ARTIFACT_REPORT_PATH")
+      claims_path = ENV.fetch("HARNEX_ARTIFACT_CLAIMS_PATH")
       File.write(ARGV.fetch(0), JSON.generate(
         "artifact_report_path" => report_path,
         "validation_report_path" => ENV["HARNEX_VALIDATION_REPORT_PATH"],
+        "artifact_claims_path" => claims_path,
         "schema" => ENV["HARNEX_ARTIFACT_REPORT_SCHEMA"],
+        "mode" => ENV["HARNEX_ARTIFACT_REPORT_MODE"],
         "required" => ENV["HARNEX_ARTIFACT_REPORT_REQUIRED"]
       ))
-      File.write(report_path, JSON.generate(
-        "schema" => ENV.fetch("HARNEX_ARTIFACT_REPORT_SCHEMA"),
-        "status" => "pass",
-        "canonical_artifacts" => ["koder/issues/52_typed_artifact_validation_sidecars.md"],
-        "outcome" => {
-          "status" => "accepted",
-          "summary" => "Sidecar report accepted the completed work."
-        },
-        "validation" => {
-          "status" => "pass",
-          "final_reported" => true,
-          "commands" => [
-            { "cmd" => "ruby -c lib/harnex/artifact_report.rb", "exit_code" => 0 }
-          ]
-        },
-        "artifacts" => [
-          {
-            "type" => "gate",
-            "summary" => "Sidecar report emitted.",
-            "evidence" => ["HARNEX_ARTIFACT_REPORT_PATH"],
-            "confidence" => 1.0,
-            "canonical_ref" => "koder/issues/52_typed_artifact_validation_sidecars.md"
-          }
-        ]
+      File.write(claims_path, JSON.generate(
+        "claims" => {
+          "summary" => "Review completed; one P2 finding remains.",
+          "verdict" => "changes_requested",
+          "findings" => { "P1" => 0, "P2" => 1, "P3" => 0 }
+        }
       ))
     RUBY
   end

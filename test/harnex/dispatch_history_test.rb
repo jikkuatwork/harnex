@@ -7,7 +7,8 @@ class DispatchHistoryTest < Minitest::Test
   FakeAdapter = Struct.new(:key, keyword_init: true)
   FakeSession = Struct.new(
     :id, :session_id, :pid, :repo_root, :description, :adapter, :started_at, :ended_at,
-    :exit_code, :term_signal, :summary_out, :events_log_path, :git_start, :git_end,
+    :exit_code, :term_signal, :summary_out, :events_log_path, :artifact_report_path,
+    :artifact_claims_path, :git_start, :git_end,
     :task_complete, :task_failed,
     keyword_init: true
   ) do
@@ -91,8 +92,9 @@ class DispatchHistoryTest < Minitest::Test
     record = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_start_record(session)))
 
     assert_equal %w[
-      cli description events_log_path host id meta pid record_type
-      repo_root schema_version session_id started_at summary_out_path tier
+      artifact_claims_path artifact_report_path cli description events_log_path
+      host id meta pid record_type repo_root schema_version session_id started_at
+      summary_out_path tier
     ], record.keys.sort
 
     assert_equal 2, record.fetch("schema_version")
@@ -410,6 +412,8 @@ class DispatchHistoryTest < Minitest::Test
       term_signal: nil,
       summary_out: "tmp/summary.jsonl",
       events_log_path: "/tmp/events.log",
+      artifact_report_path: "/tmp/receipt.json",
+      artifact_claims_path: "/tmp/receipt.json.claims.json",
       git_start: {},
       git_end: {},
       task_complete: false,

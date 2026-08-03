@@ -71,10 +71,10 @@ worktrees). `--attempt-kind review` is exempt: a completed parent may still
 sit at a live prompt while its work is reviewed. For structured sessions (Pi RPC and Codex app-server),
 `harnex wait --until task_complete` remains the exact accepted-turn fence.
 Codex acknowledgment-only auto-stop turns are typed
-`completed_no_activity` and fail this fence without transcript parsing.
-`--require-artifact-report` can additionally make sidecar shape/final-proof
-acceptance part of the verdict. Harnex still does not judge semantic quality;
-verify the expected artifact or tests afterward.
+`completed_no_activity` and fail this fence without transcript parsing. Harnex
+writes the observed-state receipt before publishing `task_complete`; optional
+worker claims never make an inactive turn pass. Harnex still does not judge
+semantic quality, so verify the expected artifact or tests afterward.
 
 ## Completion Test
 

@@ -4,7 +4,7 @@ module Harnex
   module Config
     CONFIG_RELATIVE_PATH = File.join(".harnex", "config.json").freeze
     PHASE_POLICIES = %w[warn reject].freeze
-    RETENTION_DIRS = %w[events output].freeze
+    RETENTION_DIRS = %w[events output receipts].freeze
     RETENTION_FIELDS = %w[max_age_days max_bytes].freeze
     RETENTION_ENV = {
       "events" => {
@@ -14,6 +14,10 @@ module Harnex
       "output" => {
         "max_age_days" => "HARNEX_OUTPUT_MAX_AGE_DAYS",
         "max_bytes" => "HARNEX_OUTPUT_MAX_BYTES"
+      },
+      "receipts" => {
+        "max_age_days" => "HARNEX_RECEIPTS_MAX_AGE_DAYS",
+        "max_bytes" => "HARNEX_RECEIPTS_MAX_BYTES"
       }
     }.freeze
     DEFAULT_RETENTION_LIMITS = RETENTION_DIRS.to_h do |dir|
@@ -127,7 +131,7 @@ module Harnex
       retention.each do |dir, value|
         unless RETENTION_DIRS.include?(dir)
           raise ConfigError,
-            "#{path}: $.retention.#{dir} is not supported (expected events or output)"
+            "#{path}: $.retention.#{dir} is not supported (expected events, output, or receipts)"
         end
         unless value.is_a?(Hash)
           raise ConfigError, "#{path}: $.retention.#{dir} must be an object"

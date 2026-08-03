@@ -134,7 +134,7 @@ module Harnex
           orchestration
                   Emit external primary samples and report orchestration tax
           artifact-report
-                  Initialize or validate harnex.artifact_report.v1 sidecars
+                  Validate harness-authored receipts or initialize legacy v1 documents
           help    Show command help
 
         New to harnex? Start with: harnex guide
@@ -157,8 +157,8 @@ module Harnex
           harnex agents-guide dispatch
           harnex doctor
           harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
-          harnex artifact-report init .harnex/reports/cx-i-60.json
-          harnex artifact-report validate .harnex/reports/cx-i-60.json --final
+          harnex artifact-report validate /path/from-dispatch-row.json --final
+          harnex artifact-report init .harnex/reports/legacy-v1.json
           harnex send --id main --message "Summarize current progress."
       TEXT
     end

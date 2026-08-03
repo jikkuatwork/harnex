@@ -157,7 +157,9 @@ module Harnex
         tier: session.__send__(:meta_hash)["tier"],
         meta: session.__send__(:meta_hash),
         summary_out_path: session.summary_out,
-        events_log_path: session.events_log_path
+        events_log_path: session.events_log_path,
+        artifact_report_path: session.artifact_report_path,
+        artifact_claims_path: session.artifact_claims_path
       }
     end
 

@@ -191,6 +191,8 @@ class DispatchRowSchemaTest < Minitest::Test
   ].freeze
 
   DISPATCH_START_KEYS = %w[
+    artifact_claims_path
+    artifact_report_path
     cli
     description
     events_log_path
@@ -229,14 +231,18 @@ class DispatchRowSchemaTest < Minitest::Test
   DISPATCH_END_SECTION_KEYS = %w[
     actual
     agent
+    artifact_report
     attempt
     attribution
     context
     meta
+    observed
     outcome
     predicted
+    receipt
     reliability
     usage
+    validation
   ].freeze
 
   def test_dispatch_row_schema_includes_tier1_fields_and_stable_types
@@ -374,10 +380,17 @@ class DispatchRowSchemaTest < Minitest::Test
 
       outcome = record.fetch("outcome")
       assert_equal "no_change", outcome.fetch("status")
-      assert_equal "unknown", outcome.fetch("class")
-      assert_nil outcome.fetch("report_status")
+      assert_equal "completed_with_proof", outcome.fetch("class")
+      assert_equal "accepted", outcome.fetch("report_status")
+      assert_equal "harnex_observed_state", outcome.fetch("source")
       assert_equal [], outcome.fetch("changed_paths")
       assert_nil outcome.fetch("commit_sha")
+      assert_equal "harnex", record.dig("receipt", "author")
+      assert_equal 1, record.dig("receipt", "version")
+      assert_equal "observed", record.dig("observed", "git", "status")
+      assert_equal [], record.dig("observed", "commands")
+      assert_equal "unsupported", record.dig("observed", "command_observation")
+      assert_equal true, record.dig("validation", "final_reported")
 
       usage = record.fetch("usage")
       assert_equal "observed", usage.fetch("status")

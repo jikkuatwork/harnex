@@ -130,7 +130,7 @@ class CoreTest < Minitest::Test
       system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
       system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "two", out: File::NULL, err: File::NULL)
 
-      finish = Harnex.git_capture_end(repo, start[:sha])
+      finish = Harnex.git_capture_end(repo, start)
 
       assert_match(/\A[0-9a-f]{40}\z/, start[:sha])
       refute_empty start[:branch]
@@ -140,6 +140,73 @@ class CoreTest < Minitest::Test
       assert_equal 1, finish[:files_changed]
       assert_equal ["README.md"], finish[:changed_paths]
       assert_equal 1, finish[:commits]
+      assert_equal false, finish[:start_dirty]
+      assert_equal false, finish[:end_dirty]
+      assert_equal false, finish[:worktree_changed]
+    end
+  end
+
+  def test_git_capture_includes_uncommitted_tracked_and_untracked_changes
+    Dir.mktmpdir("harnex-git-worktree") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "README.md"), "one\n")
+      system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
+      system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "one", out: File::NULL, err: File::NULL)
+
+      start = Harnex.git_capture_start(repo)
+      File.write(File.join(repo, "README.md"), "one\ntwo\n")
+      File.write(File.join(repo, "NOTES.md"), "alpha\nbeta\n")
+      finish = Harnex.git_capture_end(repo, start)
+
+      assert_equal 0, finish[:commits]
+      assert_equal ["NOTES.md", "README.md"], finish[:changed_paths].sort
+      assert_equal 2, finish[:files_changed]
+      assert_equal 3, finish[:loc_added]
+      assert_equal 0, finish[:loc_removed]
+      assert_equal false, finish[:start_dirty]
+      assert_equal true, finish[:end_dirty]
+      assert_equal true, finish[:worktree_changed]
+    end
+  end
+
+  def test_git_capture_excludes_harness_owned_paths
+    Dir.mktmpdir("harnex-git-exclusions") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "product.txt"), "one\n")
+      File.write(File.join(repo, "telemetry.jsonl"), "start\n")
+      system("git", "-C", repo, "add", "product.txt", "telemetry.jsonl", out: File::NULL, err: File::NULL)
+      system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "one", out: File::NULL, err: File::NULL)
+
+      start = Harnex.git_capture_start(repo, exclude_paths: ["telemetry.jsonl"])
+      File.write(File.join(repo, "product.txt"), "one\ntwo\n")
+      File.write(File.join(repo, "telemetry.jsonl"), "start\nend\n")
+      finish = Harnex.git_capture_end(repo, start)
+
+      assert_equal ["product.txt"], finish[:changed_paths]
+      assert_equal 1, finish[:files_changed]
+      assert_equal 1, finish[:loc_added]
+    end
+  end
+
+  def test_git_capture_does_not_treat_unchanged_preexisting_dirt_as_session_activity
+    Dir.mktmpdir("harnex-git-dirty-baseline") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "README.md"), "one\n")
+      system("git", "-C", repo, "add", "README.md", out: File::NULL, err: File::NULL)
+      system("git", "-C", repo, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "one", out: File::NULL, err: File::NULL)
+      File.write(File.join(repo, "README.md"), "one\npreexisting\n")
+
+      start = Harnex.git_capture_start(repo)
+      unchanged = Harnex.git_capture_end(repo, start)
+      assert_equal true, unchanged[:start_dirty]
+      assert_equal true, unchanged[:end_dirty]
+      assert_equal false, unchanged[:worktree_changed]
+      assert_equal [], unchanged[:changed_paths]
+
+      File.write(File.join(repo, "README.md"), "one\npreexisting\nworker\n")
+      changed = Harnex.git_capture_end(repo, start)
+      assert_equal true, changed[:worktree_changed]
+      assert_equal ["README.md"], changed[:changed_paths]
     end
   end
 

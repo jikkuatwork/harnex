@@ -7,7 +7,8 @@ module Harnex
   module Retention
     DIRS = {
       "events" => "events",
-      "output" => "output"
+      "output" => "output",
+      "receipts" => "receipts"
     }.freeze
     THROTTLE_SECONDS = 3600
     MAX_REPORTED_PATHS = 100
@@ -184,6 +185,8 @@ module Harnex
 
         protect(paths, data["events_log_path"])
         protect(paths, data["output_log_path"])
+        protect(paths, data["artifact_report_path"])
+        protect(paths, data["artifact_claims_path"])
         protect_derived_session_paths(paths, data)
       rescue JSON::ParserError, ArgumentError, TypeError, Errno::ENOENT, Errno::EACCES
         next
@@ -200,6 +203,8 @@ module Harnex
         live_start_records(path).each do |record|
           protect(paths, record["events_log_path"])
           protect(paths, record["output_log_path"])
+          protect(paths, record["artifact_report_path"])
+          protect(paths, record["artifact_claims_path"])
           protect_derived_session_paths(paths, record)
         end
       end
@@ -243,6 +248,12 @@ module Harnex
 
       protect(paths, Harnex.events_log_path(repo, id))
       protect(paths, Harnex.output_log_path(repo, id))
+      session_id = data["session_id"].to_s
+      unless session_id.empty?
+        receipt = Harnex::ArtifactReport.default_path(repo_root: repo, id: id, session_id: session_id)
+        protect(paths, receipt)
+        protect(paths, Harnex::ArtifactReport.claims_path(receipt))
+      end
     rescue StandardError
       nil
     end

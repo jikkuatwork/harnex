@@ -69,12 +69,12 @@ module Harnex
           --meta JSON        Attach parsed JSON metadata to the started event
           --summary-out PATH Also mirror the dispatch end record JSONL to PATH
           --artifact-report PATH
-                             Worker-written harnex.artifact_report.v1 JSON sidecar to ingest at exit
+                             Override the harness-authored observed-state receipt path
           --validation-report PATH
-                             Alias for --artifact-report; also exposed as HARNEX_VALIDATION_REPORT_PATH
+                             Compatibility alias for --artifact-report
           --require-artifact-report
-                             Fail closed unless PATH contains accepted final proof;
-                             requires --artifact-report or --validation-report
+                             Compatibility strict-proof flag; a default harness receipt
+                             path is used when no explicit path is provided
           --project-id ID    Queue telemetry project id (first-class flags override --meta)
           --queue-id ID      Queue telemetry queue id
           --entry-id ID      Queue telemetry entry id
@@ -124,8 +124,9 @@ module Harnex
           Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
           Bare `--watch` enables the babysitter.
           --auto-stop requires --context. Structured Codex turns only count as
-          accepted completion after activity, Git delta, or accepted sidecar proof.
-          --require-artifact-report makes sidecar validation part of the run verdict.
+          accepted completion after command/tool activity or a Git delta.
+          Every dispatch gets a harness-authored receipt. Workers may write only
+          optional claims to HARNEX_ARTIFACT_CLAIMS_PATH; claims never accept work.
           Explicit --stall-after/--max-resumes values override --preset defaults.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
@@ -136,7 +137,7 @@ module Harnex
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
           #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
           #{program_name} codex --cwd /tmp/public-bundle --id eval-001 --context "Read README.md and write OUTPUT.md" --auto-stop
-          #{program_name} pi --id pi-i-52 --artifact-report .harnex/reports/pi-i-52.json --context "Write proof to $HARNEX_ARTIFACT_REPORT_PATH" --auto-stop
+          #{program_name} pi --id pi-r-64 --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH' --auto-stop
           #{program_name} pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution --context "Implement SP-4"
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
 
@@ -308,7 +309,9 @@ module Harnex
         port: registry["port"],
         mode: "tmux",
         window: window_name,
-        output_log_path: Harnex.output_log_path(repo_root, @options[:id])
+        output_log_path: Harnex.output_log_path(repo_root, @options[:id]),
+        artifact_report_path: registry["artifact_report_path"],
+        artifact_claims_path: registry["artifact_claims_path"]
       }
       payload[:description] = @options[:description] if @options[:description]
       puts JSON.generate(payload)
@@ -347,7 +350,9 @@ module Harnex
         port: registry["port"],
         mode: "headless",
         log: log_path,
-        output_log_path: Harnex.output_log_path(repo_root, @options[:id])
+        output_log_path: Harnex.output_log_path(repo_root, @options[:id]),
+        artifact_report_path: registry["artifact_report_path"],
+        artifact_claims_path: registry["artifact_claims_path"]
       }
       payload[:description] = @options[:description] if @options[:description]
       puts JSON.generate(payload) if emit_payload
@@ -771,12 +776,11 @@ module Harnex
       raise OptionParser::InvalidOption, "harnex run: --auto-stop requires --context"
     end
 
+    # Retained for compatibility with callers that still pass the strict flag.
+    # Session now allocates a harness-owned default receipt path, so an explicit
+    # --artifact-report path is no longer required.
     def validate_required_artifact_report!
-      return unless @options[:require_artifact_report]
-      return unless @options[:artifact_report].to_s.strip.empty?
-
-      raise OptionParser::InvalidOption,
-            "harnex run: --require-artifact-report requires --artifact-report PATH"
+      true
     end
 
     def apply_telemetry_options!

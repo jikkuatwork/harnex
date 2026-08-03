@@ -708,65 +708,83 @@ class SessionTest < Minitest::Test
     assert_nil outcome.fetch("commit_sha")
   end
 
-  def test_summary_outcome_merges_sidecar_acceptance_with_git_evidence
+  def test_summary_outcome_uses_harness_receipt_and_keeps_claims_advisory
     Dir.mktmpdir("harnex-outcome") do |dir|
       report_path = File.join(dir, "report.json")
-      File.write(report_path, JSON.generate(
-        schema: Harnex::ArtifactReport::SCHEMA,
-        outcome: { status: "accepted", summary: "Queue accepted." }
-      ))
       session = build_session(repo_root: dir, artifact_report_path: report_path)
+      File.write(session.artifact_claims_path, JSON.generate(
+        claims: { summary: "Review complete.", verdict: "changes_requested", findings: { P2: 1 } }
+      ))
       session.instance_variable_set(:@ended_at, Time.now)
       session.instance_variable_set(:@exit_reason, "success")
-      session.instance_variable_set(:@git_start, { sha: "start" })
+      session.instance_variable_set(:@exit_code, 0)
+      session.instance_variable_set(:@last_completed_at, Time.now)
+      session.instance_variable_set(:@git_start, { sha: "a" * 40, branch: "main" })
       session.instance_variable_set(:@git_end, {
-        sha: "finish", changed_paths: ["lib/harnex/runtime/session.rb"],
+        sha: "b" * 40, changed_paths: ["lib/harnex/runtime/session.rb"],
         loc_added: 3, loc_removed: 1, files_changed: 1, commits: 1
       })
+      session.send(:persist_observed_receipt!)
 
-      outcome = session.send(:build_summary_record).fetch(:outcome)
+      summary = session.send(:build_summary_record)
+      outcome = summary.fetch(:outcome)
       assert_equal "accepted", outcome.fetch("status")
-      assert_equal "artifact_report", outcome.fetch("source")
-      assert_equal "finish", outcome.fetch("commit_sha")
+      assert_equal "harnex_observed_state", outcome.fetch("source")
+      assert_equal "b" * 40, outcome.fetch("commit_sha")
       assert_equal ["lib/harnex/runtime/session.rb"], outcome.fetch("changed_paths")
       assert_equal 4, outcome.fetch("lines_changed")
+      assert_equal "changes_requested", summary.dig("claims", "verdict")
+      assert_equal 1, summary.dig("claims", "findings", "P2")
     end
   end
 
-  def test_required_report_terminal_enforcement_types_invalid_ingest_states
-    cases = {
-      "malformed" => "{",
-      "unsupported_schema" => JSON.generate(schema: "example.v0"),
-      "missing_schema" => JSON.generate(status: "pass", outcome: "accepted"),
-      "oversized" => "x" * (Harnex::ArtifactReport::MAX_BYTES + 1)
-    }
+  def test_worker_report_shape_cannot_invalidate_harness_receipt
+    Dir.mktmpdir("harnex-observed-receipt") do |dir|
+      path = File.join(dir, "report.json")
+      session = build_session(
+        repo_root: dir,
+        artifact_report_path: path,
+        require_artifact_report: true
+      )
+      session.send(:prepare_events_log)
+      File.binwrite(path, "{")
+      File.binwrite(session.artifact_claims_path, "not-json")
+      session.instance_variable_set(:@exit_code, 0)
 
-    cases.each do |name, contents|
-      Dir.mktmpdir("harnex-strict-#{name}") do |dir|
-        path = File.join(dir, "report.json")
-        session = build_session(
-          repo_root: dir,
-          artifact_report_path: path,
-          require_artifact_report: true
-        )
-        session.send(:prepare_events_log)
-        File.binwrite(path, contents)
-        session.instance_variable_set(:@exit_code, 0)
+      session.send(:enforce_required_artifact_report!)
 
-        session.send(:enforce_required_artifact_report!)
-
-        assert session.task_failed?, name
-        assert_equal 1, session.exit_code, name
-        event = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }.last
-        assert_equal "task_failed", event.fetch("type"), name
-        assert_equal "report_invalid", event.fetch("outcome_class"), name
-        expected_status = name == "missing_schema" ? "unsupported_schema" : name
-        assert_equal expected_status, event.fetch("artifact_report_status"), name
-      ensure
-        events_log = session&.instance_variable_get(:@events_log)
-        events_log&.close unless events_log&.closed?
-      end
+      refute session.task_failed?
+      assert_equal 0, session.exit_code
+      assert_equal "completed_with_proof", session.instance_variable_get(:@completion_outcome_class)
+      result = Harnex::ArtifactReport.validate(path, final: true)
+      assert result.ok
+      assert_equal "harnex", result.report.dig("receipt", "author")
+      refute result.report.key?("claims")
+    ensure
+      events_log = session&.instance_variable_get(:@events_log)
+      events_log&.close unless events_log&.closed?
     end
+  end
+
+  def test_observed_receipt_write_failure_fails_closed
+    session = build_session(require_artifact_report: true)
+    session.send(:prepare_events_log)
+    session.instance_variable_set(:@exit_code, 0)
+
+    Harnex::ArtifactReport.stub(:write_observed, ->(*_args, **_kwargs) { raise IOError, "disk full" }) do
+      _out, err = capture_io { session.send(:enforce_required_artifact_report!) }
+      assert_match(/failed to write observed-state receipt/, err)
+    end
+
+    assert session.task_failed?
+    assert_equal 1, session.exit_code
+    assert_equal "report_invalid", session.instance_variable_get(:@completion_outcome_class)
+    assert_equal "write_error", session.instance_variable_get(:@completion_report_status)
+    event = JSON.parse(File.readlines(session.events_log_path).last)
+    assert_equal "receipt_write_error", event.dig("diagnostics", 0, "code")
+  ensure
+    events_log = session&.instance_variable_get(:@events_log)
+    events_log&.close unless events_log&.closed?
   end
 
   def test_attempt_transition_emits_linked_lifecycle_event

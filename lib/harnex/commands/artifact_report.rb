@@ -10,18 +10,19 @@ module Harnex
           #{program_name} validate PATH [--final]
 
         Commands:
-          init       Write a bounded harnex.artifact_report.v1 skeleton
-          validate   Validate schema and field shapes without printing report data
+          init       Write a legacy/manual harnex.artifact_report.v1 skeleton
+          validate   Validate a harness receipt or legacy document without printing data
 
         Options:
-          --final    Require an accepted/no_change final outcome, passing proof,
-                     and validation.final_reported=true
+          --final    Require an accepted/no_change final harness receipt, or the
+                     legacy passing-proof contract
           --force    Replace an existing file during init
           -h, --help Show this help
 
-        Both commands print machine-readable JSON. `validate` exits 0 only when
-        the requested contract is satisfied; diagnostics contain field paths and
-        shape errors, never report payloads or transcripts.
+        Normal `harnex run` sessions generate their own receipt; workers do not
+        need `init`. Both commands print machine-readable JSON. `validate` exits
+        0 only when the requested contract is satisfied; diagnostics contain
+        field paths and shape errors, never report payloads or transcripts.
       TEXT
     end
 

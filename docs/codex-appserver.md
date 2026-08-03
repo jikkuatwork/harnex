@@ -42,7 +42,7 @@ After the handshake the client is ready to issue `thread/start` and
 |-----------------------------|--------------------|-------|
 | `thread/started`            | (metadata)         | Stashes `threadId` |
 | `turn/started`              | `turn_started`     | Carries `turnId` |
-| `turn/completed`            | `task_complete` or `task_failed` | Failed/interrupted statuses emit `task_failed` with the Codex error. A completed `--context` turn emits `task_complete` only with structured command/tool activity, Git delta, or fresh accepted/no-change report proof; otherwise it emits typed `completed_no_activity`. |
+| `turn/completed`            | `task_complete` or `task_failed` | Failed/interrupted statuses emit `task_failed` with the Codex error. A completed `--context` turn emits `task_complete` only with structured command/tool activity or a Git delta; otherwise it emits typed `completed_no_activity`. Harnex writes the observed-state receipt before the successful event. |
 | `item/started`              | (silent)           | Streaming deltas opted out |
 | `item/completed`            | `item_completed` + synthesized transcript | See "tmux/STDOUT" below |
 | `error`                     | `error`            | Turn-level Codex error notification; preserves nested `error.message` and does not count as a transport disconnect. |
@@ -102,19 +102,21 @@ harnex wait --id cx-i-242 --until task_complete --timeout 300
 
 `--until done` returns non-zero when it sees `task_failed` or failed terminal
 telemetry. This includes acknowledgment-only autonomous `--context` turns
-(`outcome_class=completed_no_activity`) and strict sidecar failures
-(`report_missing`, `report_invalid`, or `report_rejected`). Harnex classifies
-these from app-server item counters, Git state, and the configured report path;
-it does not inspect final-answer prose. The task-complete/task-failed waiters
+(`outcome_class=completed_no_activity`) and the rare receipt-write failure
+(`report_invalid`). Harnex classifies completion from app-server item counters
+and Git state; it does not inspect final-answer prose or trust worker claims.
+The task-complete/task-failed waiters
 tail the events JSONL — not the API socket — so they keep working across
 restarts and are adapter-agnostic.
 
-For blind dispatches that require report proof, combine
-`--artifact-report PATH --require-artifact-report`. Only a fresh valid sidecar
-at `PATH` can satisfy the contract; report-shaped JSON printed in an
-`agentMessage` is ordinary transcript text and is ignored. Use
-`harnex artifact-report init PATH` and `harnex artifact-report validate PATH
---final` to avoid hand-authoring the schema.
+Every blind dispatch receives a harness-authored receipt. No worker report is
+required: Harnex captures command exits, Git state, completion, and usage, then
+writes `HARNEX_ARTIFACT_REPORT_PATH` before emitting `task_complete`. Use
+`--artifact-report PATH` only to choose a fixed destination; otherwise the
+status/end row points to the default state-directory path. Review workers may
+write advisory summary/verdict/P1-P3 counts to `HARNEX_ARTIFACT_CLAIMS_PATH`.
+Claims and report-shaped `agentMessage` text cannot satisfy the activity gate.
+Consumers can run `harnex artifact-report validate PATH --final` afterward.
 
 ## `harnex doctor`
 
@@ -152,8 +154,9 @@ for autonomous worker dispatches; legacy-pty is for interactive/TUI use.
 - **`task_failed` immediately after dispatch.** Check
   `harnex events --id <session>`. Provider/model failures retain their Codex
   error message. `completed_no_activity` means the turn ended with no
-  command/tool or Git/report proof; `report_missing` / `report_invalid` /
-  `report_rejected` identify strict sidecar defects. Common provider failures
+  command/tool or Git activity. `report_invalid` now primarily identifies a
+  harness receipt-write failure; old rows may still contain the legacy
+  `report_missing` / `report_rejected` classes. Common provider failures
   include auth environment variables (for example `OPENAI_API_KEY` /
   `AZURE_OPENAI_API_KEY`) and model unavailability.
 

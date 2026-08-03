@@ -32,15 +32,15 @@ harnex run codex -- --cd ~/other/repo
 | `--meta JSON`       | Attach bounded caller metadata                                      |
 | `--summary-out PATH` | Mirror the canonical v2 dispatch end row to another JSONL file     |
 | `--phase TEXT`      | First-class phase attribution (optionally repo-allowlisted)          |
-| `--artifact-report PATH` | Expose and ingest a bounded v1 proof sidecar                   |
-| `--require-artifact-report` | Fail closed unless the sidecar is accepted final proof      |
+| `--artifact-report PATH` | Override the harness-authored v1 receipt destination            |
+| `--require-artifact-report` | Compatibility strict flag; default receipt path is sufficient |
 | `--fast`            | For Codex, use `service_tier="fast"` instead of default `flex`      |
 | `--timeout SEC`     | Wait budget for detached registration                               |
 
 Codex app-server auto-stop rejects completion with no structured command/tool
-activity, Git delta, or fresh accepted/no-change report as
-`completed_no_activity`. Strict artifact-report mode works across transports
-and returns non-zero for missing, invalid, rejected, or stale proof.
+activity or Git delta as `completed_no_activity`. Every transport gets a
+harness-authored observed-state receipt; optional worker claims never determine
+acceptance, and receipt-write failure is fail-closed.
 
 ### `harnex doctor` — Preflight, drift, and retention
 
@@ -51,22 +51,23 @@ harnex doctor --prune --dry-run
 harnex doctor --prune
 ```
 
-Plain output includes adapter prerequisites and events/output retention status.
+Plain output includes adapter prerequisites and events/output/receipt retention status.
 `--sweep` adds read-only live-session/tmux drift diagnostics. `--prune --dry-run`
 previews age/size-cap deletions; `--prune` applies them while preserving current
 and live-session files. See [docs/configuration.md](docs/configuration.md).
 
-### `harnex artifact-report` — Initialize and validate proof
+### `harnex artifact-report` — Validate receipts and legacy proof
 
 ```bash
 harnex artifact-report init .harnex/reports/worker.json
 harnex artifact-report validate .harnex/reports/worker.json --final
 ```
 
-`init` writes a schema-valid in-progress skeleton (`--force` replaces an
-existing file). `validate` emits bounded machine-readable field diagnostics;
-`--final` additionally requires accepted/no-change final proof and successful
-validation records.
+Normal runs write their own final receipt, so workers do not call `init`.
+`validate` emits bounded machine-readable field diagnostics; `--final` accepts
+a complete harness receipt whose observed terminal state was accepted. `init`
+remains for legacy/manual v1 documents, whose older successful-validation
+contract is still supported.
 
 ### `harnex send` — Talk to a running agent
 
@@ -115,6 +116,8 @@ Use `--json` for full payloads. JSON includes:
 
 - `log_mtime` (ISO8601 or `null`) — transcript file mtime
 - `log_idle_s` (Integer or `null`) — seconds since last transcript write
+- `artifact_report_path` — harness-owned final observed-state receipt
+- `artifact_claims_path` — optional bounded worker-claims input
 
 Use `--all` for all repos.
 
@@ -320,7 +323,7 @@ When you run `harnex run codex --id worker`:
       hash(repo_root + id) % port_span + base_port
       walk forward until a free port is found
  6. Start HTTP server on 127.0.0.1:<port>
- 7. Opportunistically enforce configured age/size retention for events/output,
+ 7. Opportunistically enforce configured age/size retention for events/output/receipts,
       preserving current and live-session files; then write registry file:
       ~/.local/state/harnex/sessions/<repo_hash>--<id>.json
       and open transcript file:

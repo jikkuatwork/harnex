@@ -1,9 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P2
 issue_kind: slice
 created: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-03
 tags: artifact-report, receipts, proof, completion, queue
 ---
 
@@ -52,3 +52,31 @@ usage, turn outcome (`actual`/`outcome` builders,
   completion.
 - Receipt content is sufficient for a queue runner (#59) to gate
   commit-proof and no-change outcomes without reading transcripts.
+
+## Resolution
+
+Implemented on 2026-08-03 for the post-0.9.0 worktree:
+
+- Every dispatch now atomically writes a harness-authored
+  `harnex.artifact_report.v1` receipt to a default retained state-directory
+  path (or an explicit `--artifact-report` override). Structured completion
+  writes proof before publishing `task_complete`, then teardown refreshes usage
+  and Git evidence.
+- Receipts include harness provenance, start/end SHA, committed and
+  uncommitted changed paths/LOC, commit count, bounded Codex command exits,
+  turn acceptance, and usage. Starting worktree state prevents unchanged
+  pre-existing dirt from appearing as worker activity; Harnex-owned telemetry
+  and receipt paths are excluded.
+- `HARNEX_ARTIFACT_CLAIMS_PATH` accepts only bounded advisory summary, verdict,
+  and P1/P2/P3 counts. Claims and legacy worker reports cannot determine
+  acceptance; malformed/stale input is ignored and the final file is replaced.
+- `artifact-report validate --final` recognizes harness receipts while retaining
+  legacy v1 validation. `--require-artifact-report` and `init` remain compatible
+  but are no longer required for ordinary dispatch proof.
+- Receipt/claims files are covered by 45-day / 1-GiB configurable retention and
+  protected while their session is live.
+
+Verification: focused artifact/session/runner/Git/retention tests plus the full
+suite pass at 648 runs, 2,808 assertions, 0 failures/errors, and 2
+environment-gated skips. A disposable CLI smoke also generated a default
+receipt for an uncommitted product change and passed `validate --final`.

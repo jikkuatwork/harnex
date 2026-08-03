@@ -16,8 +16,8 @@ pre-v2 envelope-less summaries may coexist and remain readable/skippable.
 ```text
 harnex run codex --meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
 harnex run codex --summary-out tmp/dispatch-summary.jsonl
-harnex artifact-report init .harnex/reports/pi-i-61.json
-harnex run pi --artifact-report .harnex/reports/pi-i-61.json --require-artifact-report --context 'Finalize $HARNEX_ARTIFACT_REPORT_PATH and validate it with --final'
+harnex run pi --context 'Implement the task; Harnex writes the final receipt'
+harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
 harnex run pi --orchestration-run-id queue-005 --orchestration-generation-id gen-1 --orchestration-role worker
 harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
@@ -27,21 +27,22 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
   the `started.meta` event.
 - `--summary-out PATH` is an explicit-only compatibility mirror. It appends
   the identical v2 `dispatch_end` row to `PATH`; it has no default.
-- `--artifact-report PATH` asks the worker to write a bounded
-  `harnex.artifact_report.v1` JSON sidecar. Harnex exposes the absolute path as
-  `HARNEX_ARTIFACT_REPORT_PATH` and ingests it at finalization.
-- `--validation-report PATH` is an alias for `--artifact-report` and also makes
-  the same path available as `HARNEX_VALIDATION_REPORT_PATH` for worker prompts
-  that only need validation proof.
-- `--require-artifact-report` requires one of those paths and turns report
-  acceptance into the run verdict. The worker also receives
-  `HARNEX_ARTIFACT_REPORT_REQUIRED=1`. Missing, malformed, unsupported,
-  oversized, schema-incomplete, rejected, or unchanged stale proof returns
-  non-zero; optional mode remains fail-soft.
-- `harnex artifact-report init PATH` writes a schema-valid in-progress skeleton.
-  `harnex artifact-report validate PATH` checks field shapes, while `--final`
-  additionally requires accepted/no-change final proof. Both commands return
-  machine-readable diagnostics without echoing report payloads or transcripts.
+- Every run allocates a harness-owned `harnex.artifact_report.v1` receipt path.
+  The default is a repo-keyed file under `~/.local/state/harnex/receipts/`; live status
+  and the end row expose it as `artifact_report_path` / `artifact_report.path`.
+- `--artifact-report PATH` overrides that output destination.
+  `--validation-report PATH` remains a compatibility alias. The worker receives
+  the final path as `HARNEX_ARTIFACT_REPORT_PATH` /
+  `HARNEX_VALIDATION_REPORT_PATH`, but Harnex owns and overwrites that file.
+- `HARNEX_ARTIFACT_CLAIMS_PATH` is a separate optional input for bounded
+  `summary`, `verdict`, and `P1`/`P2`/`P3` counts. Claims are never acceptance
+  evidence. Stale, malformed, or oversized claims are ignored.
+- `--require-artifact-report` is retained for script compatibility and exports
+  `HARNEX_ARTIFACT_REPORT_REQUIRED=1`, but it no longer needs an explicit path
+  or model-authored report. Receipt write failure is fail-closed for every run.
+- `harnex artifact-report validate PATH --final` validates the generated
+  receipt without echoing its contents. `init` and the old final-validation
+  contract remain available for legacy/manual v1 documents.
 - `--project-id`, `--queue-id`, `--entry-id`, `--entry-title`, `--phase`,
   `--tier`, `--issue`, `--plan`, `--intent`, `--model`, `--effort`,
   `--parent-dispatch-id`, `--parent-attempt-id`, and `--attempt-kind` are
@@ -70,12 +71,12 @@ Use `harnex history --json | jq .` for pipelines over the repo-local log.
 ## Metadata and prediction contract
 
 The v2 `dispatch_end` always has `meta`, `predicted`, `actual`, `agent`,
-`usage`, `context`, `attribution`, `outcome`, `attempt`, and `reliability`
-blocks. When queue attribution fields are provided, harnex also adds a
-top-level `queue` block. When orchestration fields are provided, harnex adds a
-top-level `orchestration` block. When `--artifact-report` /
-`--validation-report` is configured, harnex may also add `artifact_report`,
-`validation`, and `artifacts` top-level blocks.
+`usage`, `context`, `attribution`, `outcome`, `attempt`, `reliability`,
+`artifact_report`, `receipt`, `observed`, and `validation` blocks. When queue
+attribution fields are provided, harnex also adds a top-level `queue` block.
+When orchestration fields are provided, harnex adds a top-level
+`orchestration` block. A sanitized `claims` block is additive only when the
+worker supplied one.
 
 Harnex-owned `meta` fields are always populated when derivable: `id`,
 `tmux_session`, `description`, `started_at`, `ended_at`, `harness`,
@@ -240,16 +241,14 @@ into this block.
 
 `attribution.status` is `complete` when `project_id`, `phase`, `intent`, and a
 work id are present; `partial` when any attribution is known but that contract
-is incomplete; otherwise `missing`. `outcome` keeps git observations separate
-from semantic acceptance: its `status` is `accepted`, `rejected`, `no_change`,
-or `unknown`; only a worker sidecar can assert accepted/rejected. Its additive
-`class` records the proof verdict (`completed_with_proof`,
-`completed_with_activity`, `completed_no_activity`, `report_missing`,
-`report_invalid`, `report_rejected`, `task_failed`, or `unknown` in this slice),
-and `report_status` records `accepted`, `missing`, `invalid`, `stale`,
-`rejected`, or the underlying validator status when applicable. The block also
-contains final commit/path/LOC observations and does **not** claim those changes
-prove authorship or semantic quality.
+is incomplete; otherwise `missing`. `outcome.status` is derived from the
+harness receipt: `accepted`, `rejected`, `no_change`, or `unknown`. Optional
+worker claims cannot set it. Its additive `class` records the work verdict
+(`completed_with_proof`, `completed_no_activity`, `report_invalid`,
+`task_failed`, plus legacy classes retained in old rows), and `report_status`
+is normally `accepted` or `rejected`. `source=harnex_observed_state` identifies
+new receipts. The block also contains final commit/path/LOC observations; those
+facts prove the delta, not semantic quality or human authorship.
 
 Every end row has one Harnex-session `attempt`. Its random `id` is distinct
 from operator-visible `run_id`; `parent_attempt_id` and `parent_dispatch_id`
@@ -307,95 +306,137 @@ accepted/rejected/blocked/unknown child outcomes deduplicated by work id,
 primary usage/tool calls per accepted entry, and explicit `missing` /
 `unsupported` statuses instead of treating absent telemetry as zero.
 
-## Artifact and validation sidecars
+## Observed-state receipts and optional claims
 
-The artifact report sidecar is deliberately small and links machine-readable
-proof to canonical human-readable artifacts (usually files under `koder/`). A
-valid v1 report looks like:
+Every dispatch receives a bounded receipt authored by Harnex, not by the
+worker. The schema identifier remains `harnex.artifact_report.v1` so existing
+`artifact-report validate --final` consumers keep one command and one result
+contract. The additive `receipt.author=harnex` marker selects the observed-state
+final contract.
+
+A generated receipt contains:
 
 ```json
 {
   "schema": "harnex.artifact_report.v1",
   "status": "pass",
-  "outcome": {
-    "status": "accepted",
-    "summary": "Queue gate accepted the implementation."
+  "receipt": {
+    "version": 1,
+    "author": "harnex",
+    "generated_at": "2026-08-03T05:00:00Z",
+    "id": "cx-r-64",
+    "session_id": "8d8f3f07c8fc343d"
   },
-  "canonical_artifacts": ["koder/issues/52_typed_artifact_validation_sidecars.md"],
+  "outcome": {
+    "status": "no_change",
+    "summary": "Harnex observed successful completion with no Git delta."
+  },
   "validation": {
     "status": "pass",
     "final_reported": true,
     "commands": [
-      { "cmd": "ruby -Ilib -Itest -e 'Dir[\"test/**/*_test.rb\"].each { |f| require_relative f }'", "exit_code": 0 }
+      { "cmd": "git diff --check", "exit_code": 0, "status": "completed" }
     ]
   },
-  "artifacts": [
-    {
-      "type": "gate",
-      "summary": "Full suite passed.",
-      "evidence": ["495 runs, 1708 assertions, 0 failures"],
-      "confidence": 1.0,
-      "canonical_ref": "koder/issues/52_typed_artifact_validation_sidecars.md"
-    }
-  ]
+  "observed": {
+    "git": {
+      "status": "observed",
+      "start_sha": "0123456789abcdef0123456789abcdef01234567",
+      "end_sha": "0123456789abcdef0123456789abcdef01234567",
+      "branch": "main",
+      "changed_paths": [],
+      "loc_added": 0,
+      "loc_removed": 0,
+      "files_changed": 0,
+      "commits": 0
+    },
+    "commands": [
+      { "cmd": "git diff --check", "exit_code": 0, "status": "completed" }
+    ],
+    "command_observation": "observed",
+    "turn": {
+      "status": "completed",
+      "outcome_class": "completed_with_proof",
+      "task_complete": true,
+      "task_failed": false,
+      "accepted": true,
+      "exit_code": 0
+    },
+    "usage": { "status": "observed", "input_tokens": 100, "output_tokens": 20, "total_tokens": 120 }
+  }
 }
 ```
 
-Create the bounded skeleton and validate it directly rather than reproducing
-schema prose in a worker prompt:
+`observed.git` is sufficient for a queue to distinguish commit proof
+(`start_sha != end_sha`, commit count/path/LOC evidence) from an observed
+`no_change` result. `start_dirty`, `end_dirty`, and `worktree_changed` expose
+worktree caveats while unchanged pre-session dirt is excluded from the delta.
+Codex app-server `commandExecution` items contribute
+bounded command text, integer exit code, status, and optional duration. Other
+transports currently report `command_observation: "unsupported"` rather than
+guessing from prose or generic tool events. If the 256-KiB receipt cap requires
+trimming, `commands_truncated` / `changed_paths_truncated` make that explicit;
+full aggregate counts remain in the dispatch row. Usage carries the same
+measured/missing/unsupported semantics as the dispatch
+row and is refreshed at teardown when final adapter usage becomes available.
 
-```bash
-harnex artifact-report init .harnex/reports/cx-i-61.json
-harnex artifact-report validate .harnex/reports/cx-i-61.json
-# After the worker sets status/outcome/validation and final_reported=true:
-harnex artifact-report validate .harnex/reports/cx-i-61.json --final
+`validation.commands` mirrors all bounded observed command exits for legacy
+readers. Its aggregate status is `not_run`, `pass`, or `fail`; a failed
+exploratory command may precede a successful turn. For harness receipts,
+`validate --final` therefore validates receipt authorship/shape, accepted turn,
+and accepted/no-change outcome instead of letting an intermediate command exit
+rewrite the harness verdict. Queue policy may impose a stricter command gate by
+inspecting `observed.commands`.
+
+Reviewers can write one optional input file at
+`HARNEX_ARTIFACT_CLAIMS_PATH`:
+
+```json
+{
+  "claims": {
+    "summary": "Review complete; one P2 remains.",
+    "verdict": "changes_requested",
+    "findings": { "P1": 0, "P2": 1, "P3": 0 }
+  }
+}
 ```
 
-Normal validation requires the real schema and typed field shapes. In
-particular, `outcome` is an object (not the string `"accepted"`) and every
-listed validation command has a non-empty `cmd` plus integer `exit_code`.
-Final validation additionally requires top-level `status: "pass"`, an
-`accepted` or `no_change` outcome with a non-empty summary,
-`validation.final_reported: true`, and successful command exit codes. A
-`no_change` outcome may use `validation.status: "not_run"` and an empty command
-list when no command is appropriate.
+Only those bounded fields are copied. Claims are informational and never affect
+receipt validity, `outcome.status`, or the completion gate. The fingerprint of
+a configured pre-existing file is used only to avoid ingesting stale claims;
+Harnex always atomically replaces the final receipt, eliminating the old
+missing/stale-proof acceptance race. Legacy workers that still write a full v1
+file may contribute its outcome summary/status as advisory claims, but Harnex
+replaces the document and ignores it for acceptance.
 
-At finalization, harnex reads at most 256 KiB from the configured file. Valid
-reports add compact `validation` and `artifacts` blocks to the dispatch row. A
-valid optional `outcome.status` (`accepted`, `rejected`, `no_change`, or
-`unknown`) is copied into top-level outcome evidence; it is the only source that
-can assert semantic acceptance or rejection. The `artifact_report` block always
-records sidecar `path`, `bytes`, `sha256`, `schema`, and `ingest_status` when a
-path was configured.
+`artifact_report` in the dispatch row records final path, bytes, SHA-256,
+schema, ingest status, report status, and author. `receipt`, `observed`, and
+`validation` are compact top-level copies; `claims` appears only when present.
+The default receipt path is outside the checkout so proof generation cannot
+pollute the Git delta. An explicit path is supported when a queue requires one.
+Receipt write/validation failure is typed `report_invalid` and fails closed.
+Harnex never scrapes report-shaped final prose or copies full transcripts.
 
-Without `--require-artifact-report`, missing, malformed, unsupported-schema,
-oversized, and shape-invalid reports remain fail-soft warning telemetry and do
-not change the wrapped process exit code. Strict mode evaluates final validation
-before successful auto-stop/terminal acceptance and returns non-zero for those
-defects, rejected outcomes, or a valid final report that was already present
-and unchanged when the session started. Only the configured path is read;
-report-shaped JSON in final prose is not scraped. The typed failure is exposed
-before auto-stop through `task_failed`, `outcome.class`, and
-`outcome.report_status` so `harnex watch --until done` returns non-zero.
-
-Harnex does not copy large transcripts or replace plain-text `koder/` docs. The
-sidecar is an evidence index for queue tooling; the canonical explanation should
-remain in the referenced files.
+`harnex artifact-report init` still creates the older manual skeleton, and the
+validator still accepts that legacy final contract. It is compatibility tooling,
+not a required worker step for new dispatches.
 
 ## Autonomous completion gate
 
 For Codex app-server runs launched with `--context`, provider turn completion
-is not by itself accepted work completion. Harnex emits `task_complete` only when
-it has at least one structured command/tool/file-change item, a Git delta, or a
-fresh final report accepted by the contract above. If all are absent, it emits
-`task_failed` with `outcome_class=completed_no_activity` before teardown and
-normalizes the auto-stop verdict to non-zero. This applies equally to Codex
+is not by itself accepted work completion. Harnex emits `task_complete` only
+when it has at least one structured command/tool/file-change item or a Git
+delta. If both are absent, it emits `task_failed` with
+`outcome_class=completed_no_activity`, writes a rejected observed receipt, and
+normalizes auto-stop to non-zero. This applies equally to
 `service_tier=flex` and `service_tier=fast` and deliberately ignores final
-answer text. Intentional no-op work should use a valid fresh `no_change` report.
+answer text and claims. Intentional no-op work must still perform observable
+inspection/validation; a model assertion of `no_change` cannot self-approve.
 
-PTY transports do not expose equivalent item metadata, so their existing
-prompt-return auto-stop behavior remains. `--require-artifact-report` is the
-transport-independent way to require explicit proof on PTY or structured runs.
+PTY transports do not expose equivalent completion-item metadata, so their
+existing prompt-return auto-stop behavior remains. Non-Codex transports label
+command observation `unsupported`; Git and terminal state are still recorded
+without guessing.
 
 ## Actuals
 
@@ -407,9 +448,11 @@ fields. Separately, Pi aggregates bounded `contextUsage` samples and Codex
 aggregates `tokenUsage.last` plus `modelContextWindow`; neither source is
 substituted with cumulative usage when active occupancy is unavailable.
 
-Git actuals are captured with `git rev-parse`, `git diff --shortstat`, and
-`git rev-list --count` between the start and end SHAs. Git failures leave the
-corresponding consolidated fields `null` and omit `git` events.
+Git actuals capture the start/end SHA plus committed, staged, unstaged, and
+untracked changes relative to the worktree state observed at session start.
+Unchanged pre-existing dirt is not credited to the worker, and harness-owned
+dispatch/mirror/receipt paths are excluded. Git failures leave the corresponding
+consolidated fields `null` and omit `git` events.
 
 The `actual` block includes model/effort hints from `--meta`, duration, token
 counts, `agent_session_id`, compatibility `cost_usd`, adapter transport, git
@@ -420,7 +463,7 @@ payloads, output/event volume measurements, and output/events log paths. New
 additive attempt counters are `attempts_total`, `attempts_succeeded`,
 `attempts_failed`, `retry_count`, `throttle_429_count`, `disconnect_count`, and
 `fallback_triggered`. Throughput values are populated only for a
-sidecar-accepted outcome: `throughput_tokens_per_s` and
+harness-accepted outcome: `throughput_tokens_per_s` and
 `throughput_successes_per_h`; `retry_tax_pct` is `0.0` when no retry occurred
 and `null` until a retry source can measure attributable wasted tokens.
 
@@ -446,16 +489,16 @@ jq -s 'map(select(.actual.attempts_total > 0))
 
 ## Exit taxonomy
 
-- `success`: wrapped process exited `0` with task completion, accepted strict
-  report proof, or an adapter session summary.
-- `failure`: wrapped process exited non-zero or a completion/report proof gate
-  emitted `task_failed`.
+- `success`: wrapped process exited `0` with task completion, accepted observed
+  receipt proof, or an adapter session summary.
+- `failure`: wrapped process exited non-zero, the observed-activity gate emitted
+  `task_failed`, or Harnex could not write/validate the receipt.
 - `timeout`: wrapped process exited with code `124`.
 - `boot_failure`: JSON-RPC app-server exited within the startup window before a
   turn was observed.
 - `disconnected`: wrapped process exited `0` but no session summary was parsed.
 
-Canonical dispatch-stream and explicit mirror writes are best-effort. Write
-failures are printed as warnings and do not change the wrapped process exit
-code. Repo phase allowlists and runtime-log retention are documented in
+Canonical dispatch-stream and explicit mirror writes remain best-effort. Receipt
+writes are different: proof-generation failure is fail-closed and changes the
+work verdict. Repo phase allowlists and runtime-log retention are documented in
 [configuration.md](configuration.md).

@@ -59,7 +59,8 @@ class ConfigTest < Minitest::Test
         config: config,
         env: {
           "HARNEX_EVENTS_MAX_BYTES" => "4321",
-          "HARNEX_OUTPUT_MAX_AGE_DAYS" => "7"
+          "HARNEX_OUTPUT_MAX_AGE_DAYS" => "7",
+          "HARNEX_RECEIPTS_MAX_BYTES" => "9876"
         }
       )
 
@@ -67,6 +68,8 @@ class ConfigTest < Minitest::Test
       assert_equal 4321, limits.fetch("events").fetch("max_bytes")
       assert_equal 7, limits.fetch("output").fetch("max_age_days")
       assert_equal 1_073_741_824, limits.fetch("output").fetch("max_bytes")
+      assert_equal 45, limits.fetch("receipts").fetch("max_age_days")
+      assert_equal 9876, limits.fetch("receipts").fetch("max_bytes")
     end
   end
 
