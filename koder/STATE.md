@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-03 | 11:45 AM | IST
+Updated: 2026-08-03 | 11:48 AM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -31,6 +31,12 @@ issue/plan files.
   normal dispatches need no model-authored JSON or explicit receipt path.
 - #58 remains open: interactive Claude usage is explicit `unsupported`; no
   cache-write mapping or price is guessed.
+- **#65 filed** (2026-08-03, from Holm): remove `--summary-out` outright. #63
+  demoted it to an explicit-only mirror but left the flag, and it is the source
+  of a three-times-hand-reconciled stranded-telemetry class (1,156 rows, then
+  213). Holm stopped passing it the same day, so no consumer is currently
+  bleeding. Not pure deletion — `TerminalStatus` still resolves status from
+  `summary_out_path` and must fall back to canonical-only.
 
 ## Future
 
@@ -40,3 +46,5 @@ issue/plan files.
    queue runner required by Holm Plan 708.S04.
 3. #45 Pi PTY stable markers, then #42 / Plan 30 recovery/fallback phases and
    #41 Slice C public API docs.
+4. #65 remove `--summary-out` (breaking, pre-1.0). Small and self-contained;
+   good candidate to fold into the next release alongside #64.
