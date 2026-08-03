@@ -83,13 +83,38 @@ class TelemetryReconcilerTest < Minitest::Test
         v2_end(id: "cx-pair", session_id: "sess-b", started_at: "2026-08-03T01:00:00Z")
       )
 
+      same_session_canonical = File.join(dir, "same-session.jsonl")
+      write_jsonl(
+        same_session_canonical,
+        v2_start(id: "cx-same-a", session_id: "sess-shared", started_at: "2026-08-03T01:00:00Z"),
+        v2_end(id: "cx-same-a", session_id: "sess-shared", started_at: "2026-08-03T01:00:00Z"),
+        v2_start(id: "cx-same-b", session_id: "sess-shared", started_at: "2026-08-03T01:15:00+00:00"),
+        v2_end(id: "cx-same-b", session_id: "sess-shared", started_at: "2026-08-03T06:45:00+05:30")
+      )
+
       open_result = telemetry(dir, "assert-canonical", "--canonical", open_canonical, "--json")
       duplicate_result = telemetry(dir, "assert-canonical", "--canonical", duplicate_canonical, "--json")
       mismatch_result = telemetry(dir, "assert-canonical", "--canonical", mismatch_canonical, "--json")
+      same_session_result = telemetry(dir, "assert-canonical", "--canonical", same_session_canonical, "--json")
 
       assert_report(open_result, exitstatus: 0, command: "assert-canonical", status: "clean", open_starts: 1)
       assert_report(duplicate_result, exitstatus: 1, command: "assert-canonical", status: "corrupt", diagnostic: "duplicate v2 identity")
       assert_report(mismatch_result, exitstatus: 1, command: "assert-canonical", status: "corrupt", diagnostic: "unpaired v2 end")
+      assert_report(
+        same_session_result,
+        exitstatus: 0,
+        command: "assert-canonical",
+        status: "clean",
+        open_starts: 0,
+        canonical_rows: 4,
+        families: {
+          "v2_start" => 2,
+          "v2_end" => 2,
+          "v1_end" => 0,
+          "legacy_rich" => 0,
+          "legacy_unknown" => 0
+        }
+      )
     end
   end
 
@@ -177,11 +202,22 @@ class TelemetryReconcilerTest < Minitest::Test
       write_jsonl(File.join(source_dir, "missing.jsonl"), legacy_rich(id: "cx-dir-missing", started_at: "2026-08-03T09:10:00Z"))
       write_jsonl(File.join(source_dir, ".git", "ignored.jsonl"), legacy_rich(id: "cx-git-ignored", started_at: "2026-08-03T09:20:00Z"))
       write_jsonl(File.join(source_dir, "generic.json"), { "meta" => { "id" => "not-telemetry", "started_at" => "2026-08-03T09:25:00Z" }, "actual" => {} })
-      File.symlink(File.join(source_dir, "missing.jsonl"), File.join(source_dir, "linked.jsonl"))
+      linked_target = File.join(dir, "linked-target.jsonl")
+      write_jsonl(linked_target, legacy_rich(id: "cx-linked-ignored", started_at: "2026-08-03T09:30:00Z"))
+      File.symlink(linked_target, File.join(source_dir, "linked.jsonl"))
 
       result = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source_dir, "--json")
 
-      assert_report(result, exitstatus: 1, command: "reconcile", status: "drift", missing: 1, diagnostic: "cx-dir-missing")
+      assert_report(
+        result,
+        exitstatus: 1,
+        command: "reconcile",
+        status: "drift",
+        present: 0,
+        missing: 1,
+        diagnostic: "cx-dir-missing",
+        sources: { "paths" => 1, "files_scanned" => 2, "candidates" => 1 }
+      )
     end
   end
 
@@ -190,19 +226,27 @@ class TelemetryReconcilerTest < Minitest::Test
     Dir.mktmpdir("harnex-telemetry-classifier") do |dir|
       canonical = File.join(dir, "dispatch.jsonl")
       source_dir = File.join(dir, "sources")
+      clean_source_dir = File.join(dir, "clean-sources")
       malformed = File.join(dir, "malformed.jsonl")
       FileUtils.mkdir_p(source_dir)
+      FileUtils.mkdir_p(clean_source_dir)
       write_jsonl(canonical, legacy_rich(id: "cx-present", started_at: "2026-08-03T10:00:00Z"))
-      write_jsonl(File.join(source_dir, "generic.json"), {
+      write_jsonl(File.join(clean_source_dir, "generic.json"), {
         "meta" => { "id" => "summary", "started_at" => "2026-08-03T10:05:00Z" },
         "actual" => { "exit" => "success" }
       })
+      File.write(
+        File.join(source_dir, "mixed.jsonl"),
+        "#{JSON.generate(legacy_rich(id: "cx-dir-malformed", started_at: "2026-08-03T10:15:00Z"))}\n{\"broken\"\n"
+      )
       File.write(malformed, "#{JSON.generate(legacy_rich(id: "cx-malformed", started_at: "2026-08-03T10:10:00Z"))}\n{\"broken\"\n")
 
-      ignored = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source_dir, "--json")
+      ignored = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", clean_source_dir, "--json")
+      directory_fatal = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source_dir, "--json")
       fatal = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", malformed, "--json")
 
       assert_report(ignored, exitstatus: 0, command: "assert-canonical", status: "clean", missing: 0, conflicts: 0)
+      assert_report(directory_fatal, exitstatus: 1, command: "assert-canonical", status: "corrupt", diagnostic: "malformed source telemetry")
       assert_report(fatal, exitstatus: 1, command: "assert-canonical", status: "corrupt", diagnostic: "malformed source telemetry")
     end
   end
@@ -214,13 +258,29 @@ class TelemetryReconcilerTest < Minitest::Test
       canonical = File.join(dir, "dispatch.jsonl")
       source = File.join(dir, "source.jsonl")
       write_jsonl(canonical, legacy_thin(id: "cx-old", started_at: "2026-08-03T11:00:00Z"))
-      write_jsonl(source, legacy_rich(id: "cx-secret", started_at: "2026-08-03T11:10:00Z", secret: marker))
+      missing = 55.times.map do |index|
+        legacy_rich(
+          id: format("cx-secret-%02d", index),
+          started_at: "2026-08-03T11:%02d:00Z" % index,
+          secret: "#{marker}-#{index}"
+        )
+      end
+      write_jsonl(source, *missing)
 
       result = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--json")
 
       refute_includes result.stdout, marker
       refute_includes result.stderr, marker
-      assert_report(result, exitstatus: 1, command: "reconcile", status: "drift", diagnostic: "cx-secret", max_diagnostics: 50)
+      assert_report(
+        result,
+        exitstatus: 1,
+        command: "reconcile",
+        status: "drift",
+        missing: 55,
+        diagnostic: "cx-secret-00",
+        max_diagnostics: 50,
+        min_diagnostics_truncated: 1
+      )
     end
   end
 
@@ -232,11 +292,13 @@ class TelemetryReconcilerTest < Minitest::Test
 
       help = telemetry(dir, "--help")
       unknown = telemetry(dir, "not-a-command")
+      unknown_option = telemetry(dir, "assert-canonical", "--canonical", canonical, "--definitely-unknown")
       conflict = telemetry(dir, "assert-canonical", "--canonical", canonical, "--global")
       missing_source = telemetry(dir, "reconcile", "--canonical", canonical, "--json")
 
       assert_cli(help, exitstatus: 0, stdout: ["assert-canonical", "reconcile"])
       assert_cli(unknown, exitstatus: 2, stderr: ["unknown telemetry subcommand"])
+      assert_cli(unknown_option, exitstatus: 2, stderr: ["invalid option", "--definitely-unknown"])
       assert_cli(conflict, exitstatus: 2, stderr: ["--canonical", "--global", "mutually exclusive"])
       assert_cli(missing_source, exitstatus: 2, stderr: ["reconcile", "--source", "required"])
     end
@@ -251,7 +313,7 @@ class TelemetryReconcilerTest < Minitest::Test
     Result.new(stdout: out, stderr: err, status: status)
   end
 
-  def assert_report(result, exitstatus:, command:, status:, diagnostic: nil, max_diagnostics: nil, **fields)
+  def assert_report(result, exitstatus:, command:, status:, diagnostic: nil, max_diagnostics: nil, min_diagnostics_truncated: nil, **fields)
     failures = []
     failures << "expected exit #{exitstatus}, got #{result.status.exitstatus}; stderr=#{result.stderr.inspect}" unless result.status.exitstatus == exitstatus
     report = parse_report(result.stdout, failures)
@@ -271,6 +333,10 @@ class TelemetryReconcilerTest < Minitest::Test
       if max_diagnostics
         diagnostics = report.fetch("diagnostics", [])
         failures << "expected diagnostics to be bounded at #{max_diagnostics}, got #{diagnostics.size}" unless diagnostics.size <= max_diagnostics
+      end
+      if min_diagnostics_truncated
+        truncated = report.fetch("diagnostics_truncated", nil)
+        failures << "expected diagnostics_truncated >= #{min_diagnostics_truncated}, got #{truncated.inspect}" unless truncated.is_a?(Integer) && truncated >= min_diagnostics_truncated
       end
     end
 
