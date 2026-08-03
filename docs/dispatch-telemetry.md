@@ -66,6 +66,42 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 
 Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
+## Canonical assertion and reconciliation
+
+`harnex telemetry assert-canonical` is the read-only drift gate for the
+canonical dispatch stream. Without sources it performs structural validation;
+with explicit `--source PATH` inputs it also reports missing or conflicting rich
+end rows and exits non-zero until the canonical stream is clean.
+
+`harnex telemetry reconcile` runs the same analysis. It is a dry-run by default;
+only `--apply` appends missing rich end rows, and then only after the canonical
+stream and all source candidates have been parsed and conflict-checked. Apply
+uses one append lock, rechecks under that lock, and is idempotent.
+
+```text
+harnex telemetry assert-canonical [--canonical PATH | --global] [--source PATH ...] [--json]
+harnex telemetry reconcile [--canonical PATH | --global] --source PATH [--source PATH ...] [--apply] [--json]
+```
+
+The default canonical path is the repo-local `.harnex/dispatch.jsonl`, or the
+global dispatch stream outside a git repo. `--canonical` and `--global` are
+mutually exclusive. Sources are never discovered automatically: each `--source`
+must be a file or directory. Directory scans consider regular `.json` and
+`.jsonl` files, skip `.git`, symlinks, and the resolved canonical path, and
+ignore unrelated JSON that does not match a rich Harnex dispatch end shape.
+
+Mixed-era history is valid input. Legacy v1 thin rows, pre-v2 envelope-less rich
+summaries, and v2 start/end rows may coexist. Open v2 starts are tolerated
+because a running or interrupted dispatch may not have an end row yet. Identity
+checks normalize equivalent timestamp offsets, and conflicts fail closed rather
+than choosing a winner.
+
+Reports are bounded and redacted: they contain counts, statuses, identities, and
+path:line diagnostics, not raw telemetry payloads, prompts, claims, command
+text, or rich sections. The commands never rewrite, delete, sort, migrate,
+clean source files, reintroduce mirrors, or perform source discovery on their
+own.
+
 ## Metadata and prediction contract
 
 The v2 `dispatch_end` always has `meta`, `predicted`, `actual`, `agent`,

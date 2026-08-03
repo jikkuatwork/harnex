@@ -1,5 +1,5 @@
 ---
-status: ready
+status: release_pending
 issue: 67
 plan: 34
 tier: A
@@ -381,3 +381,10 @@ Issue 67 is done when `0.10.1` is installed, its command pair passes the real
 recovery/idempotency smoke, Holm close invokes the read-only assertion before
 session-ledger mutation, both repositories are clean/pushed, and no source
 mirror or historical migration path has been reintroduced.
+
+## Release-prep note
+
+2026-08-04: `0.10.1` candidate metadata, changelog, and operator docs are
+prepared after the Plan 34 code-rereview pass. Release remains pending because
+tag, RubyGems publish, local gem install, installed-binary smoke, and
+`koder/releases/0.10.1.md` are still owner-gated.

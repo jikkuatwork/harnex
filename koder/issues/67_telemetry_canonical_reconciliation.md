@@ -3,7 +3,7 @@ status: open
 priority: P2
 issue_kind: slice
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 plan: 34
 tags: telemetry, recovery, invariant, jsonl, cli
 ---
@@ -118,4 +118,7 @@ harnex telemetry reconcile [options]
 
 ## Resolution
 
-Open. Execute Plan 34.
+Release pending. Plan 34 implementation and independent code rereview passed;
+`0.10.1` candidate metadata/docs are prepared with the release gate still
+owner-held. Do not mark resolved until tag, RubyGems publish, local install,
+installed-binary smoke, and release record are complete.

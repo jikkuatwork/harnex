@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.1] - 2026-08-04 | 12:20 AM | IST
+
+Patch release candidate: closes the recovery and regression-checking gap left
+after `0.10.0` removed the upstream telemetry mirror. The canonical
+`.harnex/dispatch.jsonl` stream remains the only writer; this release adds
+operator tooling to prove and repair that stream without schema migration.
+
+### Added
+
+- `harnex telemetry assert-canonical` validates the canonical dispatch stream
+  and, when explicit `--source` paths are supplied, fails closed on missing or
+  conflicting rich end rows. It is read-only, tolerates mixed-era history
+  including open v2 starts and legacy rows, and emits bounded redacted reports.
+- `harnex telemetry reconcile` uses the same analysis, defaults to dry-run, and
+  only appends missing rich end rows when `--apply` is passed. It never rewrites,
+  deletes, sorts, migrates, cleans source files, or discovers sources
+  automatically.
+- Source paths may be files or directories. Directory scans are bounded to
+  `.json`/`.jsonl`, skip `.git`, symlinks, and the resolved canonical stream,
+  ignore unrelated generic JSON, and treat identity or payload conflicts as
+  zero-write failures.
+
 ## [0.10.0] - 2026-08-03 | 01:44 PM | IST
 
 Minor bump, **breaking**: `--summary-out` is removed outright, so the canonical
