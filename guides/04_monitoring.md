@@ -100,6 +100,17 @@ terminal work signal.
 Adjust the artifact path to the task. The point is to avoid declaring done while
 a worker is between edits or between commits.
 
+In repos that track the dispatch stream (`.harnex/dispatch.jsonl`), exclude it
+from the clean-tree check — harnex appends to it during every run, so it is
+legitimately dirty mid-run:
+
+```bash
+test -z "$(git status --short -- . ':!.harnex')"
+```
+
+Never treat harness-owned telemetry as foreign dirt, and never instruct a
+worker to revert or "clean up" the stream to satisfy a fence.
+
 ## Why Pane State Alone Is Not Enough
 
 Avoid using `state=prompt` or a quiet pane as the only completion signal:
@@ -199,3 +210,8 @@ interpretation.
 - Reading raw tmux panes instead of `harnex pane`.
 - Using `--wait-for-idle` as acceptance proof.
 - Reusing a worker after a failure changes the task scope.
+- Claiming "no live sessions" from memory. Finished agents park at prompts
+  indefinitely; sweep proven-done sessions, then prove the claim with
+  `harnex status`.
+- Failing a clean-tree fence on `.harnex/dispatch.jsonl` growth in repos that
+  track the dispatch stream.

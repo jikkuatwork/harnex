@@ -11,6 +11,16 @@ git repo it is `~/.local/state/harnex/dispatch.jsonl`. `harnex history`,
 `status --id`, and `wait` consume the same rows. Legacy v1 thin rows and
 pre-v2 envelope-less summaries may coexist and remain readable/skippable.
 
+## Clean-Tree Checks And The Tracked Stream
+
+Some repos deliberately track `.harnex/dispatch.jsonl` as project telemetry.
+There the stream grows while sessions run, so worker briefs, completion
+fences, and orchestration clean-tree checks must treat the path as
+harness-owned: expected to be dirty mid-run, never foreign dirt to abort on,
+and never a file a worker should revert or "clean up". Exclude it explicitly,
+for example `git status --porcelain -- . ':!.harnex'`, and commit its growth
+alongside the work it describes.
+
 ## CLI flags
 
 ```text
