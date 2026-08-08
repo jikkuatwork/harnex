@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.10.2] - 2026-08-08 | 06:49 PM | IST
+
+Docs-only patch: no library or CLI behavior changes. Released so the
+packaged `agents-guide` surfaces serve the corrected guidance instead of the
+stale 0.10.1 copies.
+
+### Changed
+
+- `guides/04_monitoring.md`: the Completion Test's clean-tree check now
+  documents excluding the harness-owned dispatch stream
+  (`git status --short -- . ':!.harnex'`) in repos that track
+  `.harnex/dispatch.jsonl`. New anti-patterns: claiming "no live sessions"
+  from memory (finished agents park at prompts — sweep proven-done sessions,
+  then prove with `harnex status`) and failing clean-tree fences on
+  dispatch-stream growth.
+- `docs/dispatch-telemetry.md`: new "Clean-Tree Checks And The Tracked
+  Stream" section — the tracked stream grows mid-run and is harness-owned;
+  fences and worker briefs must exclude it and never revert it.
+
+Context: holm Analysis 803 (queue-process failure meta-analysis). During
+Q107 g2 a worker aborted after misreading dispatch-stream growth as foreign
+dirt, and a coordinator claimed "no live sessions" while 12 completed
+workers sat parked at prompts.
+
 ## [0.10.1] - 2026-08-04 | 12:20 AM | IST
 
 Patch release: closes the recovery and regression-checking gap left
