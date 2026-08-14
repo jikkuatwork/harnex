@@ -11,6 +11,19 @@ class PiAdapterTest < Minitest::Test
     assert_equal :stdio_jsonl_rpc, @adapter.transport
   end
 
+  def test_startup_controls_become_pi_cli_flags
+    @adapter.configure_startup(
+      model: "anthropic/claude-sonnet-4-5",
+      effort: "high"
+    )
+
+    assert_equal [
+      "pi", "--mode", "rpc",
+      "--model", "anthropic/claude-sonnet-4-5",
+      "--thinking", "high"
+    ], @adapter.build_command
+  end
+
   def test_build_returns_pi_adapter
     adapter = Harnex::Adapters.build("pi", ["--model", "anthropic/claude-sonnet-4-5"])
     assert_instance_of Harnex::Adapters::Pi, adapter
@@ -19,6 +32,24 @@ class PiAdapterTest < Minitest::Test
 
   def test_known_adapters_include_pi
     assert_includes Harnex::Adapters.known, "pi"
+  end
+
+  def test_runtime_requires_agent_settled_capable_pi
+    @adapter.stub(:agent_version, "0.80.3") do
+      error = assert_raises(RuntimeError) { @adapter.validate_runtime! }
+      assert_includes error.message, "requires Pi >= 0.80.4"
+    end
+
+    @adapter.stub(:agent_version, "0.84.1") do
+      assert_equal true, @adapter.validate_runtime!
+    end
+  end
+
+  def test_describe_declares_current_settlement_contract
+    description = @adapter.describe
+    assert_equal "0.80.4", description.fetch(:minimum_version)
+    assert_includes description.fetch(:events), "agent_settled"
+    assert_includes description.fetch(:events), "summarization_retry_scheduled"
   end
 
   def test_build_command_strips_harnex_context_marker
@@ -66,6 +97,129 @@ class PiAdapterTest < Minitest::Test
   ensure
     @adapter.close rescue nil
     server&.join(1)
+    [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
+  end
+
+  def test_dispatch_applies_model_and_effort_through_rpc_commands
+    server_in, client_out = IO.pipe
+    client_in, server_out = IO.pipe
+    commands = []
+
+    server = Thread.new do
+      loop do
+        line = server_in.gets
+        break unless line
+
+        command = JSON.parse(line)
+        commands << command
+        response = case command["type"]
+                   when "get_state"
+                     {
+                       "type" => "response", "command" => "get_state", "success" => true,
+                       "data" => {
+                         "isStreaming" => false,
+                         "thinkingLevel" => "high",
+                         "model" => { "provider" => "anthropic", "id" => "claude-sonnet-4-5" },
+                         "sessionId" => "pi-model-test"
+                       }
+                     }
+                   when "set_model"
+                     {
+                       "type" => "response", "command" => "set_model", "success" => true,
+                       "data" => { "provider" => command["provider"], "id" => command["modelId"] }
+                     }
+                   when "set_thinking_level"
+                     { "type" => "response", "command" => "set_thinking_level", "success" => true }
+                   when "prompt"
+                     { "type" => "response", "command" => "prompt", "success" => true }
+                   end
+        next unless response
+
+        response["id"] = command["id"] if command.key?("id")
+        server_out.write(JSON.generate(response) + "\n")
+        server_out.flush
+        break if command["type"] == "prompt"
+      end
+    rescue IOError, Errno::EPIPE
+      nil
+    end
+
+    @adapter.start_rpc(read_io: client_in, write_io: client_out, pid: nil)
+    @adapter.dispatch(
+      prompt: "hello",
+      model: "anthropic/claude-sonnet-4-5",
+      effort: "high"
+    )
+
+    types = commands.map { |command| command["type"] }
+    assert_operator types.index("set_model"), :<, types.index("set_thinking_level")
+    assert_operator types.index("set_thinking_level"), :<, types.index("prompt")
+    model_command = commands.find { |command| command["type"] == "set_model" }
+    assert_equal "anthropic", model_command["provider"]
+    assert_equal "claude-sonnet-4-5", model_command["modelId"]
+    prompt = commands.find { |command| command["type"] == "prompt" }
+    assert_equal %w[id message type], prompt.keys.sort
+  ensure
+    @adapter.close rescue nil
+    server&.join(1)
+    [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
+  end
+
+  def test_dispatch_rejects_clamped_thinking_level
+    @adapter.define_singleton_method(:request) do |payload, timeout: Harnex::Adapters::Pi::REQUEST_TIMEOUT_SECONDS|
+      payload["type"] == "get_state" ? { "thinkingLevel" => "low" } : {}
+    end
+
+    error = assert_raises(ArgumentError) do
+      @adapter.send(:apply_dispatch_overrides, model: nil, effort: "high")
+    end
+    assert_includes error.message, "effective level is \"low\""
+  end
+
+  def test_force_while_busy_maps_to_pi_steering_prompt
+    @adapter.send(:handle_event, { "type" => "agent_start" })
+
+    payload = @adapter.build_send_payload(
+      text: "change direction",
+      submit: true,
+      enter_only: false,
+      screen_text: nil,
+      force: true
+    )
+
+    assert_equal "change direction", payload.dig(:dispatch, :prompt)
+    assert_equal "steer", payload.dig(:dispatch, :streaming_behavior)
+  end
+
+  def test_stale_idle_state_response_does_not_override_event_proven_busy
+    @adapter.send(:handle_event, { "type" => "agent_start" })
+    @adapter.send(:absorb_state_data, { "isStreaming" => false, "isCompacting" => false })
+
+    assert_equal "busy", @adapter.input_state.fetch(:state)
+  end
+
+  def test_agent_end_stays_busy_until_agent_settled
+    @adapter.send(:handle_event, { "type" => "agent_start" })
+    @adapter.send(:handle_event, { "type" => "agent_end", "willRetry" => false })
+    assert_equal "busy", @adapter.input_state.fetch(:state)
+    assert_nil @adapter.last_completed_at
+
+    @adapter.send(:handle_event, { "type" => "agent_settled" })
+    assert_equal "prompt", @adapter.input_state.fetch(:state)
+    refute_nil @adapter.last_completed_at
+  end
+
+  def test_request_timeout_is_bounded
+    server_in, client_out = IO.pipe
+    client_in, server_out = IO.pipe
+    @adapter.start_rpc(read_io: client_in, write_io: client_out, pid: nil)
+
+    error = assert_raises(RuntimeError) do
+      @adapter.send(:request, { "type" => "get_state" }, timeout: 0.02)
+    end
+    assert_includes error.message, "timed out"
+  ensure
+    @adapter.close rescue nil
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
   end
 

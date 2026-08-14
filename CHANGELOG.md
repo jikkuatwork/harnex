@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] - 2026-08-14 | 11:30 AM | IST
+
+### Fixed
+
+- Pi RPC completion now fences on Pi 0.80.4+'s `agent_settled` event instead of
+  the lower-level `agent_end`. Provider retries, compaction recovery, and queued
+  continuations can no longer publish premature `task_complete` or open the
+  inbox early. Final `error`, `aborted`, and `length` stop reasons fail closed;
+  a settled run without an authoritative final assistant reason also fails.
+- Pi 0.84's breaking delta-only `message_update` shape is correlated from
+  `message_start` through authoritative `message_end`, preserving streamed
+  output without duplicating the final message.
+- Harnex `--model` and `--effort` now become supported Pi `--model` /
+  `--thinking` startup controls and are verified through RPC `get_state`,
+  instead of adding ignored fields to `prompt` or persisting RPC setters into
+  the user's Pi defaults. Model mismatches and clamped effort requests fail
+  before prompting, telemetry distinguishes requested from observed effective
+  model values, and forced busy sends use Pi's `steer` streaming behavior.
+- Pi RPC request waits are bounded, subprocess stderr is continuously drained
+  into a bounded diagnostic tail, and process status is read from Open3's wait
+  thread instead of racing it with a second `waitpid` and potentially losing a
+  nonzero exit status.
+
+### Changed
+
+- **Compatibility:** structured Pi dispatch now requires Pi >= 0.80.4. Both
+  foreground and detached/tmux launches validate the installed version before
+  spawn. This is the first Pi release with the final `agent_settled` fence.
+- Pi retry/compaction events retain settlement state and expose current
+  summarization-retry lifecycle events in Harnex's event stream.
+
+### Added
+
+- `harnex doctor --adapter pi` statically verifies the Pi RPC version;
+  `--adapter all` checks both Pi and Codex while the no-argument default remains
+  Codex-compatible.
+- `docs/pi-rpc.md` documents transport semantics, project trust, lifecycle,
+  model controls, telemetry, and known boundaries. An opt-in live contract test
+  (`PI_INTEGRATION=1`) verifies the installed Pi event shape without adding
+  provider cost to the normal suite.
+
 ## [0.10.2] - 2026-08-08 | 06:49 PM | IST
 
 Docs-only patch: no library or CLI behavior changes. Released so the

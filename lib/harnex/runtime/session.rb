@@ -161,6 +161,10 @@ module Harnex
       @completion_report_status = nil
       @completion_diagnostics = []
       @pi_streamed_text_by_message = {}
+      @pi_active_message_key = nil
+      @pi_last_assistant_stop_reason = nil
+      @pi_last_assistant_error = nil
+      @pi_last_retry_error = nil
       @auto_stop = !!auto_stop
       @auto_stop_fired = false
       @auto_stop_seen_busy = false
@@ -197,6 +201,7 @@ module Harnex
     end
 
     def run(validate_binary: true)
+      configure_adapter_startup!
       validate_binary! if validate_binary
       prune_retained_logs
       prepare_output_log
@@ -471,9 +476,17 @@ module Harnex
 
     def validate_binary!
       self.class.validate_binary!(command)
+      adapter.validate_runtime! if adapter.respond_to?(:validate_runtime!)
     end
 
     private
+
+    def configure_adapter_startup!
+      return unless adapter.respond_to?(:configure_startup)
+
+      adapter.configure_startup(model: meta_hash["model"], effort: meta_hash["effort"])
+      @command = adapter.build_command
+    end
 
     def structured_transport?
       %i[stdio_jsonrpc stdio_jsonl_rpc].include?(adapter.transport)
@@ -501,9 +514,18 @@ module Harnex
 
       if @pid
         begin
-          _, status = Process.wait2(@pid)
-          @term_signal = status.signaled? ? status.termsig : nil
-          @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
+          status = if adapter.respond_to?(:wait_for_exit)
+                     adapter.wait_for_exit
+                   else
+                     _waited_pid, process_status = Process.wait2(@pid)
+                     process_status
+                   end
+          if status
+            @term_signal = status.signaled? ? status.termsig : nil
+            @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
+          else
+            @exit_code = 0
+          end
         rescue Errno::ECHILD
           @exit_code = 0
         end
@@ -792,29 +814,43 @@ module Harnex
       event_type = message["type"].to_s
 
       case event_type
-      when "agent_start", "turn_start"
-        @turn_started_seen = true if event_type == "turn_start"
+      when "agent_start"
+        reset_pi_run_outcome!
         @state_machine.force_busy!
-        emit_event("turn_started") if event_type == "turn_start"
+      when "turn_start"
+        @turn_started_seen = true
+        @state_machine.force_busy!
+        emit_event("turn_started")
       when "agent_end"
-        @state_machine.force_prompt!
-        record_successful_completion({})
+        capture_pi_agent_end(message)
+        @state_machine.force_busy!
+        emit_event("agent_end", will_retry: message["willRetry"] == true)
         adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
-        schedule_auto_stop("task_complete", interrupt: false)
+      when "agent_settled"
+        @state_machine.force_prompt!
+        emit_event("agent_settled", stop_reason: @pi_last_assistant_stop_reason)
+        settle_pi_task!
+        adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
+        schedule_auto_stop("agent_settled", interrupt: false) if task_complete? || task_failed?
       when "message_start"
-        @pi_streamed_text_by_message[pi_message_key(message["message"])] = false
+        @pi_active_message_key = pi_message_key(message["message"])
+        @pi_streamed_text_by_message[@pi_active_message_key] = false
       when "message_update"
         event = message["assistantMessageEvent"] || {}
         delta = event["delta"]
-        key = pi_message_key(message["message"])
+        key = @pi_active_message_key || pi_message_key(message["message"])
         if event["type"] == "text_delta" && delta && !delta.empty?
           @pi_streamed_text_by_message[key] = true
           record_synthesized(delta, newline: false)
         end
       when "message_end"
-        key = pi_message_key(message["message"])
+        key = @pi_active_message_key || pi_message_key(message["message"])
         streamed = @pi_streamed_text_by_message.delete(key)
-        unless streamed
+        @pi_active_message_key = nil
+        capture_pi_assistant_message(message["message"])
+        if streamed
+          record_synthesized("\n", newline: false)
+        else
           text = pi_extract_message_text(message["message"])
           record_synthesized(text) if text
         end
@@ -828,13 +864,25 @@ module Harnex
         status = message["isError"] ? "error" : "ok"
         record_synthesized("tool-result: #{tool_name} (#{status})")
       when "compaction_start", "compaction_end"
-        emit_event("compaction", reason: message["reason"], phase: event_type)
+        emit_event(
+          "compaction",
+          reason: message["reason"],
+          phase: event_type,
+          will_retry: message["willRetry"],
+          aborted: message["aborted"],
+          error_message: message["errorMessage"]
+        )
       when "queue_update"
         nil
       when "auto_retry_start", "auto_retry_end"
         payload = message.reject { |k, _| k == "type" }
+        @pi_last_retry_error = message["finalError"].to_s if event_type == "auto_retry_end" && message["success"] == false
         emit_event(event_type, **payload)
         record_attempt_transition(type: "attempt_retry_scheduled", trigger: "adapter_auto_retry") if event_type == "auto_retry_start"
+      when "summarization_retry_scheduled", "summarization_retry_attempt_start", "summarization_retry_finished"
+        emit_event(event_type, **message.reject { |k, _| k == "type" })
+      when "bash_execution_update"
+        emit_event(event_type, id: message["id"], bytes: message["delta"].to_s.bytesize)
       when "extension_ui_request"
         handle_extension_ui_request(message)
       when "extension_error"
@@ -876,9 +924,19 @@ module Harnex
         return
       end
 
+      if msg.to_s.empty? && adapter.respond_to?(:disconnect_diagnostic)
+        msg = adapter.disconnect_diagnostic
+      end
       @last_error = msg.to_s unless msg.to_s.empty?
       @state_machine.force_busy!
       emit_event("disconnected", source: "transport", message: msg) rescue nil
+      if adapter.respond_to?(:terminate_subprocess)
+        Thread.new do
+          adapter.terminate_subprocess
+        rescue StandardError
+          nil
+        end
+      end
       signal_rpc_done!
     end
 
@@ -944,6 +1002,52 @@ module Harnex
       str.length > 120 ? "#{str[0, 117]}..." : str
     rescue StandardError
       ""
+    end
+
+    def reset_pi_run_outcome!
+      @pi_last_assistant_stop_reason = nil
+      @pi_last_assistant_error = nil
+      @pi_last_retry_error = nil
+    end
+
+    def capture_pi_agent_end(message)
+      assistant = Array(message["messages"]).reverse.find do |candidate|
+        candidate.is_a?(Hash) && candidate["role"] == "assistant"
+      end
+      capture_pi_assistant_message(assistant) if assistant
+    end
+
+    def capture_pi_assistant_message(message)
+      return unless message.is_a?(Hash) && message["role"] == "assistant"
+
+      reason = message["stopReason"].to_s
+      @pi_last_assistant_stop_reason = reason unless reason.empty?
+      error = message["errorMessage"].to_s
+      @pi_last_assistant_error = error unless error.empty?
+    end
+
+    def settle_pi_task!
+      return if @stop_requested && !task_complete? && !task_failed?
+
+      reason = @pi_last_assistant_stop_reason
+      case reason
+      when "stop"
+        record_successful_completion({})
+      when "error", "aborted", "length"
+        error = @pi_last_assistant_error || @pi_last_retry_error
+        error = "Pi agent settled with stopReason=#{reason}" if error.to_s.empty?
+        mark_task_failed(status: reason, error: error)
+      when nil, ""
+        mark_task_failed(
+          status: "missing_final_message",
+          error: "Pi agent settled without an authoritative final assistant stop reason"
+        )
+      else
+        mark_task_failed(
+          status: "unsupported_stop_reason",
+          error: "Pi agent settled with unsupported stopReason=#{reason}"
+        )
+      end
     end
 
     def pi_extract_message_text(message)
@@ -2193,8 +2297,9 @@ module Harnex
     end
 
     def summary_model
-      meta_hash["model"] || @usage_summary[:model] ||
-        (adapter.current_model if adapter.respond_to?(:current_model))
+      @usage_summary[:model] ||
+        (adapter.current_model if adapter.respond_to?(:current_model)) ||
+        meta_hash["model"]
     end
 
     def summary_service_tier

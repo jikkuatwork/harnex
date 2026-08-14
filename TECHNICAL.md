@@ -363,6 +363,8 @@ Each adapter in `lib/harnex/adapters/` implements:
 | `inject_exit(writer)`     | Send adapter-specific stop text |
 | `infer_repo_path(argv)`   | Extract repo path from CLI args |
 | `wait_for_sendable(...)`  | Wait strategy before sending    |
+| `transport`                | PTY, JSON-RPC, or JSONL RPC     |
+| `validate_runtime!`        | Optional version/capability gate |
 
 ### Input States
 
@@ -403,6 +405,29 @@ The adapter reads the screen and returns a state hash:
   work without a real PTY.
 - See `docs/codex-appserver.md` for the full mapping table and
   troubleshooting.
+
+### Pi Adapter (JSONL RPC)
+
+- `transport :stdio_jsonl_rpc` launches `pi --mode rpc` and speaks Pi's
+  strict LF-delimited JSONL protocol. It is not JSON-RPC 2.0.
+- Requires Pi >= 0.80.4 and fails before spawn when the installed version
+  cannot provide the final `agent_settled` fence. Verify with
+  `harnex doctor --adapter pi`.
+- `agent_end` remains busy because retry, compaction recovery, or a queued
+  continuation may follow. `agent_settled` inspects the authoritative final
+  assistant `stopReason`: `stop` completes; `error`, `aborted`, `length`, a
+  missing reason, or an unknown reason fails closed.
+- Pi >= 0.84 emits delta-only `message_update` events. Harnex correlates those
+  deltas with `message_start` / `message_end` and does not depend on the removed
+  cumulative message snapshot.
+- Harnex `--model` and `--effort` become Pi `--model` / `--thinking`
+  startup flags and are verified with `get_state`; a model mismatch or clamped
+  effort is rejected before prompting without persisting an RPC model switch
+  into Pi's user defaults. Forced busy sends use `streamingBehavior=steer`.
+- RPC requests have a 30-second response bound. Stderr is continuously drained
+  into a bounded diagnostic tail, and subprocess status comes from Open3's wait
+  thread instead of racing it with another `waitpid`.
+- See `docs/pi-rpc.md` for trust policy, telemetry, and compatibility details.
 
 #### Codex Adapter (legacy PTY — `--legacy-pty`, long-term fallback)
 

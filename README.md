@@ -12,8 +12,8 @@ gem install harnex
 
 Harnex itself requires **Ruby 3.x** and uses only the Ruby standard
 library. Install the CLIs you want to wrap separately; Codex JSON-RPC
-support requires Codex CLI **0.128.0 or newer**, and tmux-backed
-workflows require `tmux`.
+support requires Codex CLI **0.128.0 or newer**, Pi structured RPC requires
+Pi **0.80.4 or newer**, and tmux-backed workflows require `tmux`.
 
 Then ask the CLI what to do next:
 
@@ -23,8 +23,15 @@ harnex --help
 harnex agents-guide
 ```
 
-If you use Codex, run `harnex doctor` after installing or upgrading the
-Codex CLI. It verifies the local `codex app-server` prerequisite.
+Run the matching static check after installing or upgrading an agent CLI:
+
+```bash
+harnex doctor --adapter codex
+harnex doctor --adapter pi
+```
+
+These verify the local structured-transport version prerequisites without
+starting a model turn.
 
 `harnex agents-guide` is the agent-facing reference for dispatch, chain,
 buddy, monitoring, and naming patterns. It is packaged in the gem; no skills
@@ -106,7 +113,7 @@ an explicit working-directory/root selector for automation.
 |-------|---------|
 | Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
 | OpenAI Codex | JSON-RPC `codex app-server` adapter by default; PTY mode remains supported for TUI/interactive use via `--legacy-pty` |
-| Pi | JSONL RPC adapter (`pi --mode rpc`) with structured completion, tool events, extension-UI auto-cancel, and session stats telemetry |
+| Pi | JSONL RPC adapter (`pi --mode rpc`, Pi >= 0.80.4) with settled completion, typed failures, tool/retry events, extension-UI auto-cancel, and session stats telemetry |
 | OpenCode | PTY adapter with native Ctrl+C stop handling and OpenCode-specific prompt/readiness heuristics |
 | Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
 
@@ -121,9 +128,15 @@ terminal UI or PTY-only Codex flags. The flag name is historical; the PTY path
 is still supported.
 
 `harnex run pi` launches `pi --mode rpc` and sends `--context` as a structured
-`prompt` command (not a CLI positional argument). Pass Pi child flags after the
-separator, for example:
+`prompt` command (not a CLI positional argument). Harnex `--model` / `--effort`
+flags become Pi `--model` / `--thinking` startup controls and are verified over
+RPC before the prompt; use a deterministic `provider/model` value. Pass other
+Pi startup flags after the separator, for example:
 `harnex run pi --context "Implement X" -- --model anthropic/claude-sonnet-4-5 --thinking high`.
+For unattended runs, explicitly choose Pi project trust with child
+`--approve` or `--no-approve`; Harnex never auto-trusts repository code.
+See [docs/pi-rpc.md](docs/pi-rpc.md) for lifecycle, compatibility, and failure
+semantics.
 
 ## Multi-agent workflows
 
@@ -231,6 +244,8 @@ Choose the wait/watch predicate that matches how you launched the worker:
   `harnex wait --id ID --until task_complete --timeout SECS` when you need the
   exact successful-turn event instead of terminal-exit fallback. Use
   `--until task_failed` to wait specifically for a failed structured turn.
+  Pi completion is fenced on `agent_settled`, not the earlier `agent_end`, so
+  retries, compaction recovery, and queued continuations finish first.
 - `harnex send --wait-for-idle` is an atomic send fence for PTY-style
   interactions. It proves the turn returned to an idle/prompt state, not that
   your acceptance criteria passed.

@@ -145,6 +145,9 @@ module Harnex
           Passing --tmux without --id creates a random harnex session ID.
           --watch is foreground-only; do not combine it with --tmux or --detach.
           Use -- before child CLI flags when a flag could be parsed by harnex.
+          Pi RPC requires Pi >= 0.80.4 (`harnex doctor --adapter pi`). Prefer
+            provider/model for Harnex --model, and explicitly pass child
+            --approve or --no-approve for deterministic project trust.
           Codex JSON-RPC: pass model as `-c model=NAME`, not `-m NAME`. The
             legacy PTY adapter (--legacy-pty) accepts `-m`.
       TEXT
@@ -230,7 +233,7 @@ module Harnex
     end
 
     def run_detached(adapter, cli_name, child_args, repo_root)
-      Session.validate_binary!(adapter.build_command)
+      validate_adapter!(adapter)
 
       if @options[:tmux]
         run_in_tmux(cli_name, child_args, repo_root)
@@ -241,7 +244,7 @@ module Harnex
     end
 
     def run_watch_mode(adapter, repo_root)
-      Session.validate_binary!(adapter.build_command)
+      validate_adapter!(adapter)
 
       result = run_headless(adapter, repo_root, emit_payload: false)
       return result[:exit_code] unless result[:ok]
@@ -424,7 +427,21 @@ module Harnex
       raise OptionParser::InvalidOption, "harnex run: invalid config #{e.message}"
     end
 
+    def validate_adapter!(adapter)
+      configure_adapter_startup!(adapter)
+      Session.validate_binary!(adapter.build_command)
+      adapter.validate_runtime! if adapter.respond_to?(:validate_runtime!)
+    end
+
+    def configure_adapter_startup!(adapter)
+      return unless adapter.respond_to?(:configure_startup)
+
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      adapter.configure_startup(model: metadata["model"], effort: metadata["effort"])
+    end
+
     def build_session(adapter, repo_root)
+      configure_adapter_startup!(adapter)
       watch = Harnex.build_watch_config(@options[:watch], repo_root)
       Session.new(
         adapter: adapter,

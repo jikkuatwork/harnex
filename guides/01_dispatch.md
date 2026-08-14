@@ -148,8 +148,13 @@ to the canonical repo/global dispatch stream, which is the only telemetry
 destination. Repo `.harnex/config.json` can warn on or reject non-canonical
 phase names before spawn.
 
-Pi runs use structured RPC (`pi --mode rpc`). Pass Pi child flags after `--`
-(e.g. `harnex run pi --context "..." -- --model anthropic/claude-sonnet-4-5 --thinking high`).
+Pi runs use structured RPC (`pi --mode rpc`) and require Pi >= 0.80.4; gate
+unattended work with `harnex doctor --adapter pi`. Harnex `--model` / `--effort`
+apply verified Pi startup controls before the prompt. Pass other Pi startup
+flags after `--` (e.g. `harnex run pi --context "..." -- --model
+anthropic/claude-sonnet-4-5 --thinking high`).
+Since RPC cannot display Pi's trust prompt, explicitly pass child `--approve`
+for reviewed project-local resources or `--no-approve` to ignore them.
 
 Codex flag forms differ between transports. The default JSON-RPC adapter
 (`codex app-server`) does not accept `-m`/`--model`; pass the model as

@@ -68,8 +68,11 @@ named parent is still running in the same repo is refused. Wait for the parent
 (`harnex wait --id <parent> --until done`) or stop it first. Pass
 `--allow-live-parent` only for intentional parallelism (e.g. isolated
 worktrees). `--attempt-kind review` is exempt: a completed parent may still
-sit at a live prompt while its work is reviewed. For structured sessions (Pi RPC and Codex app-server),
-`harnex wait --until task_complete` remains the exact accepted-turn fence.
+sit at a live prompt while its work is reviewed. For structured sessions (Pi
+RPC and Codex app-server), `harnex wait --until task_complete` remains the exact
+accepted-turn fence. Pi reaches that fence only at `agent_settled`; an earlier
+`agent_end` can still be followed by retry, compaction recovery, or queued work.
+Final Pi `error`, `aborted`, and `length` stop reasons emit `task_failed`.
 Codex acknowledgment-only auto-stop turns are typed
 `completed_no_activity` and fail this fence without transcript parsing. Harnex
 writes the observed-state receipt before publishing `task_complete`; optional

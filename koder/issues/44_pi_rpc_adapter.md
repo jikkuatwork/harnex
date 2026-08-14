@@ -1,11 +1,11 @@
 ---
-status: open
+status: closed
 priority: P1
 ---
 
 # Issue 44 — First-class Pi RPC adapter
 
-**Status**: open
+**Status**: closed (shipped in 0.7.4; compatibility hardened after Pi 0.84 audit)
 **Priority**: P1
 **Filed**: 2026-05-23
 **Tier**: B (plan -> impl -> verification)
@@ -102,8 +102,10 @@ Do not pass harnex `--context` as a Pi positional message in RPC mode. Strip the
 ### State mapping
 
 - `agent_start` / `turn_start` => busy
-- idle `get_state.isStreaming == false` after prompt completion => prompt
-- `agent_end` with no pending retry => task complete
+- `agent_end` => remain busy; retries, compaction, or queued continuation may
+  follow
+- `agent_settled` + final assistant `stopReason=stop` => prompt / task complete
+- terminal error/aborted/length or missing final outcome => task failed
 - `compaction_*` => compaction telemetry
 - `auto_retry_*` => retry telemetry, not final completion/failure
 - process EOF / parse failure / transport death => disconnected/failure
@@ -150,19 +152,45 @@ For harnex stop / auto-stop:
 
 1. if Pi is busy, send `abort`
 2. close stdin or terminate the subprocess
-3. persist final telemetry and classify clean task completion as success when `agent_end` was seen
+3. persist final telemetry and classify clean task completion only after `agent_settled`
 
 ## Acceptance criteria
 
 - `harnex run pi --context ... --auto-stop` starts `pi --mode rpc`, sends the context as a `prompt`, observes structured completion, and exits cleanly.
 - `harnex send --id <pi-session> --message ...` sends a prompt when Pi is idle.
 - Sending while busy without an explicit force/queue policy is rejected with a clear error.
-- Pi `agent_end` maps to harnex `task_complete` and supports auto-stop.
+- Pi `agent_settled` maps successful final outcomes to harnex `task_complete`
+  and supports auto-stop; `agent_end` alone never completes work.
 - Pi `get_session_stats` populates token counters, tool-call counters, dynamic model/provider, session identity, and restored cost telemetry when available.
 - Extension UI requests do not hang the worker; dialog requests are auto-cancelled and logged.
 - RPC parse/transport disconnects emit failure/disconnection telemetry instead of hanging.
 - Tests cover the adapter with a stub Pi RPC subprocess: prompt acceptance, text deltas, tool events, stats collection, extension UI auto-cancel, abort/stop, and EOF/disconnect.
 - README / agent guide docs show Pi RPC usage and the `--` child-flag pattern.
+
+## Resolution
+
+Shipped in Harnex 0.7.4 (`08f5a9e`) with release evidence in
+`koder/releases/0.7.4.md`.
+
+A 2026-08-14 audit against installed Pi 0.84.1 found and hardened later
+protocol drift:
+
+- Harnex now requires Pi >= 0.80.4 and completes only on `agent_settled`, not
+  the lower-level `agent_end` that can precede retries, compaction, or queued
+  continuations.
+- Pi 0.84's delta-only `message_update` shape is correlated through
+  `message_start` / authoritative `message_end` without duplicate output.
+- final assistant `error`, `aborted`, `length`, missing, and unknown stop reasons
+  fail closed;
+- Harnex `--model` / `--effort` use supported Pi startup controls verified by
+  RPC `get_state`, rather than unsupported fields on `prompt` or persistent RPC
+  setters, and forced busy sends use Pi steering;
+- request waits, stderr capture, and subprocess status collection are bounded
+  and deterministic;
+- `harnex doctor --adapter pi` reports the compatibility gate.
+
+Current transport behavior and project-trust requirements are documented in
+`docs/pi-rpc.md`.
 
 ## Out of scope
 

@@ -1,5 +1,7 @@
 require "json"
 require "open3"
+require "rubygems/version"
+require "timeout"
 
 module Harnex
   module Adapters
@@ -9,7 +11,11 @@ module Harnex
     class Pi < Base
       STOP_TERM_GRACE_SECONDS = 0.5
       STOP_KILL_GRACE_SECONDS = 1.0
+      REQUEST_TIMEOUT_SECONDS = 30.0
+      STDERR_TAIL_BYTES = 16 * 1024
+      MIN_RPC_VERSION = Gem::Version.new("0.80.4")
       DIALOG_UI_METHODS = %w[select confirm input editor].freeze
+      THINKING_LEVELS = %w[off minimal low medium high xhigh max].freeze
 
       attr_reader :initial_prompt, :last_completed_at
 
@@ -20,8 +26,14 @@ module Harnex
         @disconnect_handler = nil
         @read_io = nil
         @write_io = nil
+        @stderr_io = nil
         @pid = nil
+        @wait_thr = nil
         @reader_thread = nil
+        @stderr_thread = nil
+        @stderr_mutex = Mutex.new
+        @stderr_tail = +""
+        @stderr_tail.force_encoding(Encoding::BINARY)
         @closed = false
         @disconnect_signaled = false
         @state = :disconnected
@@ -37,6 +49,8 @@ module Harnex
         )
         @model = nil
         @provider = nil
+        @startup_model = nil
+        @startup_effort = nil
         @session_stats_requested = false
         @last_completed_at = nil
       end
@@ -70,18 +84,53 @@ module Harnex
       end
 
       def build_command
-        base_command + cli_extra_args
+        args = cli_extra_args
+        args += ["--model", @startup_model] if @startup_model
+        args += ["--thinking", @startup_effort] if @startup_effort
+        base_command + args
+      end
+
+      def configure_startup(model: nil, effort: nil)
+        requested_model = model.to_s.strip
+        requested_effort = effort.to_s.strip
+        unless requested_effort.empty? || THINKING_LEVELS.include?(requested_effort)
+          raise ArgumentError,
+                "unsupported Pi thinking level #{requested_effort.inspect}; expected one of #{THINKING_LEVELS.join(', ')}"
+        end
+
+        @startup_model = requested_model.empty? ? nil : requested_model
+        @startup_effort = requested_effort.empty? ? nil : requested_effort
+        self
+      end
+
+      def validate_runtime!
+        version = parsed_agent_version
+        if version.nil?
+          raise "could not determine Pi version from `pi --version`; Pi RPC requires >= #{MIN_RPC_VERSION}"
+        end
+        return true if version >= MIN_RPC_VERSION
+
+        raise "Pi #{version} is too old for reliable RPC settlement; harnex requires Pi >= #{MIN_RPC_VERSION} (run `pi update`)"
+      end
+
+      def parsed_agent_version
+        match = agent_version.to_s.match(/(\d+\.\d+\.\d+)/)
+        match ? Gem::Version.new(match[1]) : nil
+      rescue ArgumentError
+        nil
       end
 
       def describe
         {
           transport: transport,
           protocol: "jsonl",
+          minimum_version: MIN_RPC_VERSION.to_s,
           events: %w[
-            agent_start agent_end turn_start turn_end message_start message_update message_end
+            agent_start agent_end agent_settled turn_start turn_end message_start message_update message_end
             tool_execution_start tool_execution_update tool_execution_end queue_update
-            compaction_start compaction_end auto_retry_start auto_retry_end extension_error
-            extension_ui_request
+            compaction_start compaction_end auto_retry_start auto_retry_end
+            summarization_retry_scheduled summarization_retry_attempt_start summarization_retry_finished
+            bash_execution_update extension_error extension_ui_request
           ]
         }
       end
@@ -106,8 +155,10 @@ module Harnex
         raise ArgumentError, "Pi RPC cannot stage input without submitting it" unless submit || enter_only
         raise ArgumentError, "Pi RPC does not support submit-only input" if enter_only
 
+        dispatch = { prompt: text.to_s }
+        dispatch[:streaming_behavior] = "steer" if force && state[:state] == "busy"
         {
-          dispatch: { prompt: text.to_s },
+          dispatch: dispatch,
           input_state: state,
           force: force
         }
@@ -131,24 +182,24 @@ module Harnex
           @write_io = write_io
           @pid = pid
         else
-          @pid, @write_io, @read_io = spawn_subprocess(env, cwd)
+          validate_runtime!
+          @pid, @write_io, @read_io, @stderr_io, @wait_thr = spawn_subprocess(env, cwd)
         end
 
         @closed = false
         @disconnect_signaled = false
         @state = :prompt
+        @stderr_thread = Thread.new { drain_stderr } if @stderr_io
         @reader_thread = Thread.new { read_loop }
         request_state_async
         self
       end
 
-      def dispatch(prompt:, model: nil, effort: nil)
+      def dispatch(prompt:, model: nil, effort: nil, streaming_behavior: nil)
         ensure_open!
-
+        apply_dispatch_overrides(model: model, effort: effort) unless @state == :busy
         payload = { "type" => "prompt", "message" => prompt.to_s }
-        payload["model"] = model if model
-        payload["thinkingLevel"] = effort if effort
-
+        payload["streamingBehavior"] = streaming_behavior if streaming_behavior
         request(payload)
         @state = :busy
         nil
@@ -156,7 +207,7 @@ module Harnex
 
       def interrupt(turn_id: nil)
         ensure_open!
-        request("type" => "abort")
+        request({ "type" => "abort" })
       rescue StandardError
         nil
       end
@@ -219,6 +270,7 @@ module Harnex
 
         begin
           @write_io.close unless @write_io&.closed?
+          @read_io.close if !@pid && !@wait_thr && @read_io && !@read_io.closed?
         rescue IOError
           nil
         end
@@ -229,6 +281,13 @@ module Harnex
           term_grace_seconds: STOP_TERM_GRACE_SECONDS,
           kill_grace_seconds: STOP_KILL_GRACE_SECONDS
         )
+        @reader_thread&.join(1)
+        @stderr_thread&.join(1)
+        [@read_io, @stderr_io].compact.each do |io|
+          io.close unless io.closed?
+        rescue IOError
+          nil
+        end
       end
 
       def terminate_subprocess(term_grace_seconds: STOP_TERM_GRACE_SECONDS, kill_grace_seconds: STOP_KILL_GRACE_SECONDS)
@@ -255,9 +314,36 @@ module Harnex
         @pid
       end
 
+      def wait_for_exit
+        return nil unless @wait_thr || @pid
+
+        status = if @wait_thr
+                   @wait_thr.value
+                 else
+                   _waited_pid, process_status = Process.wait2(@pid)
+                   process_status
+                 end
+        @pid = nil
+        status
+      rescue Errno::ECHILD
+        @pid = nil
+        nil
+      end
+
+      def stderr_tail
+        @stderr_mutex.synchronize { @stderr_tail.dup.force_encoding(Encoding::UTF_8).scrub("") }
+      end
+
+      def disconnect_diagnostic
+        tail = stderr_tail.strip
+        return "pi rpc disconnected" if tail.empty?
+
+        "pi rpc disconnected; stderr: #{tail}"
+      end
+
       private
 
-      def request(payload)
+      def request(payload, timeout: REQUEST_TIMEOUT_SECONDS)
         raise "pi rpc client is closed" if @closed
 
         queue = Queue.new
@@ -269,7 +355,7 @@ module Harnex
         end
 
         write_line(payload.merge("id" => id))
-        response = queue.pop
+        response = Timeout.timeout(timeout.to_f) { queue.pop }
         raise response if response.is_a?(Exception)
 
         unless response["success"]
@@ -278,6 +364,93 @@ module Harnex
 
         handle_response_data(response)
         response["data"] || {}
+      rescue Timeout::Error
+        @id_mutex.synchronize { @pending.delete(id) if defined?(id) && id }
+        error = Timeout::Error.new("pi rpc #{payload["type"]} timed out after #{timeout}s")
+        signal_disconnect(error)
+        raise error
+      end
+
+      def apply_dispatch_overrides(model:, effort:)
+        requested_model = model.to_s.strip
+        requested_effort = effort.to_s.strip
+        if startup_controls_match?(requested_model, requested_effort)
+          validate_startup_controls!(
+            request({ "type" => "get_state" }),
+            model: requested_model,
+            effort: requested_effort
+          )
+          return
+        end
+
+        unless requested_model.empty?
+          provider, model_id = resolve_model_reference(requested_model)
+          selected = request({
+            "type" => "set_model",
+            "provider" => provider,
+            "modelId" => model_id
+          })
+          absorb_model(selected)
+        end
+
+        return if requested_effort.empty?
+
+        unless THINKING_LEVELS.include?(requested_effort)
+          raise ArgumentError,
+                "unsupported Pi thinking level #{requested_effort.inspect}; expected one of #{THINKING_LEVELS.join(', ')}"
+        end
+
+        request({ "type" => "set_thinking_level", "level" => requested_effort })
+        state = request({ "type" => "get_state" })
+        effective = state["thinkingLevel"].to_s
+        return if effective == requested_effort
+
+        raise ArgumentError,
+              "Pi could not apply thinking level #{requested_effort.inspect}; effective level is #{effective.empty? ? 'unknown' : effective.inspect}"
+      end
+
+      def startup_controls_match?(model, effort)
+        has_startup_control = @startup_model || @startup_effort
+        has_startup_control && model == @startup_model.to_s && effort == @startup_effort.to_s
+      end
+
+      def validate_startup_controls!(state, model:, effort:)
+        effective_model = state["model"]
+        if !model.empty? && effective_model.is_a?(Hash)
+          expected_provider, expected_id = model.include?("/") ? model.split("/", 2) : [nil, model]
+          actual_provider = effective_model["provider"].to_s
+          actual_id = effective_model["id"].to_s
+          model_matches = actual_id == expected_id && (expected_provider.nil? || actual_provider == expected_provider)
+          unless model_matches
+            raise ArgumentError,
+                  "Pi could not apply model #{model.inspect}; effective model is #{actual_provider}/#{actual_id}"
+          end
+        elsif !model.empty?
+          raise ArgumentError, "Pi could not report the effective model for requested #{model.inspect}"
+        end
+
+        return if effort.empty? || state["thinkingLevel"].to_s == effort
+
+        effective = state["thinkingLevel"].to_s
+        raise ArgumentError,
+              "Pi could not apply thinking level #{effort.inspect}; effective level is #{effective.empty? ? 'unknown' : effective.inspect}"
+      end
+
+      def resolve_model_reference(model)
+        requested = model.to_s.strip
+        if requested.include?("/")
+          provider, model_id = requested.split("/", 2)
+          return [provider, model_id] unless provider.empty? || model_id.empty?
+        end
+
+        data = request({ "type" => "get_available_models" })
+        matches = Array(data["models"]).select do |candidate|
+          candidate.is_a?(Hash) && candidate["id"].to_s == requested
+        end
+        return [matches.first["provider"], matches.first["id"]] if matches.length == 1
+
+        detail = matches.empty? ? "was not found" : "is ambiguous across #{matches.map { |m| m["provider"] }.uniq.join(', ')}"
+        raise ArgumentError, "Pi model #{requested.inspect} #{detail}; use provider/model"
       end
 
       def request_state_async
@@ -287,7 +460,7 @@ module Harnex
       end
 
       def attempt_live_summary_refresh
-        request("type" => "get_session_stats")
+        request({ "type" => "get_session_stats" })
       rescue StandardError
         nil
       end
@@ -350,6 +523,8 @@ module Harnex
           absorb_state_data(message["data"])
         when "get_session_stats"
           absorb_session_stats(message["data"])
+        when "set_model"
+          absorb_model(message["data"])
         end
       end
 
@@ -358,6 +533,11 @@ module Harnex
         when "agent_start", "turn_start"
           @state = :busy
         when "agent_end"
+          # agent_end is a low-level run boundary. Pi may still retry, compact,
+          # or process queued continuations, so only agent_settled is idle.
+          @state = :busy
+          request_session_stats_async
+        when "agent_settled"
           @state = :prompt
           @last_completed_at = Time.now
           request_session_stats_async
@@ -375,8 +555,14 @@ module Harnex
       def absorb_state_data(data)
         return unless data.is_a?(Hash)
 
-        @state = data["isStreaming"] ? :busy : :prompt
-        @state = :busy if data["isCompacting"]
+        observed_busy = data["isStreaming"] || data["isCompacting"]
+        if observed_busy
+          @state = :busy
+        elsif @state != :busy
+          # An earlier get_state response may arrive after a prompt was accepted.
+          # Never let that stale idle snapshot downgrade an event-proven busy state.
+          @state = :prompt
+        end
         @summary_mutex.synchronize do
           @session_summary[:agent_session_id] = data["sessionId"] if data["sessionId"]
         end
@@ -474,7 +660,7 @@ module Harnex
 
       def ensure_open!
         raise "pi rpc client not started" unless @read_io && @write_io
-        raise "pi rpc disconnected" if @state == :disconnected
+        raise disconnect_diagnostic if @state == :disconnected
       end
 
       def connected?
@@ -494,7 +680,7 @@ module Harnex
         @disconnect_signaled = true
         @state = :disconnected
         fail_pending_requests(
-          error.is_a?(Exception) ? error : StandardError.new("pi rpc disconnected")
+          error.is_a?(Exception) ? error : StandardError.new(disconnect_diagnostic)
         )
         @disconnect_handler&.call(error)
       end
@@ -535,12 +721,25 @@ module Harnex
         @extra_args.reject { |a| a.is_a?(String) && a.start_with?("[harnex session id=") }
       end
 
+      def drain_stderr
+        loop do
+          chunk = @stderr_io.readpartial(4096)
+          @stderr_mutex.synchronize do
+            @stderr_tail << chunk
+            overflow = @stderr_tail.bytesize - STDERR_TAIL_BYTES
+            @stderr_tail = @stderr_tail.byteslice(overflow, STDERR_TAIL_BYTES) if overflow.positive?
+          end
+        end
+      rescue EOFError, IOError, Errno::EIO
+        nil
+      end
+
       def spawn_subprocess(env, cwd)
         spawn_env = env || {}
         opts = {}
         opts[:chdir] = cwd if cwd
-        stdin_io, stdout_io, _stderr_io, wait_thr = Open3.popen3(spawn_env, *build_command, **opts)
-        [wait_thr.pid, stdin_io, stdout_io]
+        stdin_io, stdout_io, stderr_io, wait_thr = Open3.popen3(spawn_env, *build_command, **opts)
+        [wait_thr.pid, stdin_io, stdout_io, stderr_io, wait_thr]
       end
 
       def blocked_message(state, enter_only:)

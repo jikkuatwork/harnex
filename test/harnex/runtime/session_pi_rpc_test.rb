@@ -30,20 +30,104 @@ class SessionPiRpcTest < Minitest::Test
     File.binread(@session.output_log_path)
   end
 
-  def test_message_delta_and_agent_end_emit_task_complete
+  def test_current_message_delta_shape_does_not_duplicate_and_settled_completes
+    assistant = {
+      "role" => "assistant",
+      "content" => [{ "type" => "text", "text" => "Hello from pi" }],
+      "stopReason" => "stop",
+      "timestamp" => 1
+    }
     @session.send(:handle_jsonl_notification, {
       "type" => "message_start",
-      "message" => { "id" => "msg-1", "content" => [] }
+      "message" => assistant.merge("content" => [])
     })
     @session.send(:handle_jsonl_notification, {
       "type" => "message_update",
-      "message" => { "id" => "msg-1", "content" => [] },
-      "assistantMessageEvent" => { "type" => "text_delta", "delta" => "Hello from pi" }
+      "assistantMessageEvent" => { "type" => "text_delta", "contentIndex" => 0, "delta" => "Hello from pi" }
     })
-    @session.send(:handle_jsonl_notification, { "type" => "agent_end" })
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => assistant })
+    @session.send(:handle_jsonl_notification, {
+      "type" => "agent_end", "messages" => [assistant], "willRetry" => false
+    })
 
-    assert_includes output, "Hello from pi"
+    refute events.any? { |row| row["type"] == "task_complete" }, "agent_end is not a final completion fence"
+
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    assert_equal 1, output.scan("Hello from pi").length
+    assert events.any? { |row| row["type"] == "agent_settled" }
     assert events.any? { |row| row["type"] == "task_complete" }
+  end
+
+  def test_agent_error_fails_only_after_settlement
+    assistant = {
+      "role" => "assistant",
+      "content" => [],
+      "stopReason" => "error",
+      "errorMessage" => "provider unavailable",
+      "timestamp" => 2
+    }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => assistant })
+    @session.send(:handle_jsonl_notification, {
+      "type" => "agent_end", "messages" => [assistant], "willRetry" => false
+    })
+
+    refute events.any? { |row| row["type"] == "task_failed" }
+
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_equal "error", failure.fetch("status")
+    assert_equal "provider unavailable", failure.fetch("message")
+    refute events.any? { |row| row["type"] == "task_complete" }
+  end
+
+  def test_aborted_and_length_stop_reasons_fail_closed
+    %w[aborted length].each_with_index do |reason, index|
+      assistant = {
+        "role" => "assistant",
+        "content" => [],
+        "stopReason" => reason,
+        "timestamp" => 10 + index
+      }
+      failures_before = events.count { |row| row["type"] == "task_failed" }
+      @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+      @session.send(:handle_jsonl_notification, {
+        "type" => "agent_end", "messages" => [assistant], "willRetry" => false
+      })
+      assert_equal failures_before, events.count { |row| row["type"] == "task_failed" }
+
+      @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+      failure = events.reverse.find { |row| row["type"] == "task_failed" }
+      assert_equal reason, failure.fetch("status")
+    end
+  end
+
+  def test_missing_final_stop_reason_fails_closed
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, {
+      "type" => "agent_end", "messages" => [], "willRetry" => false
+    })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_equal "missing_final_message", failure.fetch("status")
+    assert_includes failure.fetch("message"), "authoritative final assistant"
+  end
+
+  def test_retrying_agent_end_stays_busy_until_agent_settled
+    assistant = {
+      "role" => "assistant", "content" => [], "stopReason" => "error",
+      "errorMessage" => "temporary overload", "timestamp" => 3
+    }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, {
+      "type" => "agent_end", "messages" => [assistant], "willRetry" => true
+    })
+
+    assert_equal "busy", @session.status_payload.fetch(:agent_state)
+    refute events.any? { |row| %w[task_complete task_failed].include?(row["type"]) }
   end
 
   def test_auto_retry_emits_attempt_retry_scheduled_without_creating_a_new_attempt
@@ -88,12 +172,17 @@ class SessionPiRpcTest < Minitest::Test
       repo_root: @tmp,
       host: "127.0.0.1",
       id: "pi-run",
-      auto_stop: true
+      auto_stop: true,
+      meta: {
+        "model" => "anthropic/claude-sonnet-4-5",
+        "effort" => "high"
+      }
     )
 
     server_in, client_out = IO.pipe
     client_in, server_out = IO.pipe
     prompt_messages = Queue.new
+    rpc_commands = Queue.new
 
     original_start = adapter.method(:start_rpc)
     adapter.define_singleton_method(:start_rpc) do |env: nil, cwd: nil|
@@ -106,6 +195,7 @@ class SessionPiRpcTest < Minitest::Test
         break unless line
 
         command = JSON.parse(line)
+        rpc_commands << command["type"]
         case command["type"]
         when "get_state"
           response = {
@@ -114,12 +204,28 @@ class SessionPiRpcTest < Minitest::Test
             "success" => true,
             "data" => {
               "isStreaming" => false,
+              "thinkingLevel" => "high",
               "model" => { "provider" => "anthropic", "id" => "claude-sonnet-4-5" },
               "sessionId" => "pi-session-44"
             }
           }
           response["id"] = command["id"] if command.key?("id")
           server_out.write(JSON.generate(response) + "\n")
+        when "set_model"
+          server_out.write(JSON.generate({
+            "type" => "response",
+            "id" => command["id"],
+            "command" => "set_model",
+            "success" => true,
+            "data" => { "provider" => command["provider"], "id" => command["modelId"] }
+          }) + "\n")
+        when "set_thinking_level"
+          server_out.write(JSON.generate({
+            "type" => "response",
+            "id" => command["id"],
+            "command" => "set_thinking_level",
+            "success" => true
+          }) + "\n")
         when "prompt"
           prompt_messages << command["message"]
           server_out.write(JSON.generate({
@@ -128,13 +234,28 @@ class SessionPiRpcTest < Minitest::Test
             "command" => "prompt",
             "success" => true
           }) + "\n")
+          assistant = {
+            "role" => "assistant",
+            "content" => [{ "type" => "text", "text" => "done" }],
+            "stopReason" => "stop",
+            "provider" => "anthropic",
+            "model" => "claude-sonnet-4-5",
+            "timestamp" => 1
+          }
           server_out.write(JSON.generate({ "type" => "agent_start" }) + "\n")
           server_out.write(JSON.generate({
-            "type" => "message_update",
-            "message" => { "id" => "m1", "content" => [] },
-            "assistantMessageEvent" => { "type" => "text_delta", "delta" => "done" }
+            "type" => "message_start",
+            "message" => assistant.merge("content" => [])
           }) + "\n")
-          server_out.write(JSON.generate({ "type" => "agent_end" }) + "\n")
+          server_out.write(JSON.generate({
+            "type" => "message_update",
+            "assistantMessageEvent" => { "type" => "text_delta", "contentIndex" => 0, "delta" => "done" }
+          }) + "\n")
+          server_out.write(JSON.generate({ "type" => "message_end", "message" => assistant }) + "\n")
+          server_out.write(JSON.generate({
+            "type" => "agent_end", "messages" => [assistant], "willRetry" => false
+          }) + "\n")
+          server_out.write(JSON.generate({ "type" => "agent_settled" }) + "\n")
         when "get_session_stats"
           response = {
             "type" => "response",
@@ -173,6 +294,13 @@ class SessionPiRpcTest < Minitest::Test
 
     assert_equal 0, session.run(validate_binary: false)
     assert_equal "[harnex session id=cx-i-44] implement feature", prompt_messages.pop
+    assert_equal [
+      "--model", "anthropic/claude-sonnet-4-5", "--thinking", "high"
+    ], session.command.last(4)
+    observed_commands = []
+    observed_commands << rpc_commands.pop until rpc_commands.empty?
+    refute_includes observed_commands, "set_model"
+    refute_includes observed_commands, "set_thinking_level"
 
     record = JSON.parse(File.read(Harnex::DispatchHistory.path_for(@tmp)).lines.last)
     assert_equal "stdio_jsonl_rpc", record.dig("actual", "adapter_transport")
@@ -184,6 +312,9 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal "unsupported", record.dig("observed", "command_observation")
     assert_equal "harnex", record.dig("receipt", "author")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
+    assert_equal "anthropic/claude-sonnet-4-5", record.dig("agent", "model_requested")
+    assert_equal "claude-sonnet-4-5", record.dig("agent", "model_effective")
+    assert_equal "high", record.dig("agent", "reasoning_effort")
     assert_equal "claude-sonnet-4-5", record.dig("actual", "model")
     assert_equal "observed", record.dig("context", "status")
     assert_equal "pi_get_session_stats", record.dig("context", "source")

@@ -17,8 +17,45 @@ class DoctorTest < Minitest::Test
     assert_nil doctor.send(:parse_version, "no version here")
   end
 
-  def test_min_version_constant
+  def test_min_version_constants
     assert_equal Gem::Version.new("0.128.0"), Harnex::Doctor::MIN_CODEX_VERSION
+    assert_equal Gem::Version.new("0.80.4"), Harnex::Doctor::MIN_PI_VERSION
+  end
+
+  def test_pi_adapter_selection_runs_pi_check_only
+    doctor = Harnex::Doctor.new(["--adapter", "pi"])
+    doctor.stub(:check_pi, { name: "pi", ok: true, found: "0.84.1" }) do
+      doctor.stub(:check_codex, -> { flunk("codex check should not run") }) do
+        out, = capture_io { assert_equal 0, doctor.run }
+        payload = JSON.parse(out)
+        assert_equal ["pi"], payload.fetch("checks").map { |check| check.fetch("name") }
+      end
+    end
+  end
+
+  def test_pi_version_check_rejects_pre_settlement_release
+    doctor = Harnex::Doctor.new
+    doctor.stub(:capture, ["0.80.3\n", success_status]) do
+      result = doctor.send(:check_pi)
+      assert_equal false, result.fetch(:ok)
+      assert_includes result.fetch(:error), "0.80.4"
+    end
+  end
+
+  def test_pi_version_check_accepts_current_release
+    doctor = Harnex::Doctor.new
+    doctor.stub(:capture, ["0.84.1\n", success_status]) do
+      result = doctor.send(:check_pi)
+      assert_equal true, result.fetch(:ok)
+      assert_equal "0.84.1", result.fetch(:found)
+    end
+  end
+
+  def test_doctor_rejects_unknown_adapter
+    error = assert_raises(OptionParser::InvalidArgument) do
+      Harnex::Doctor.new(["--adapter", "unknown"]).run
+    end
+    assert_includes error.message, "codex, pi, all"
   end
 
   def test_sweep_payload_reports_active_orphan_and_stale_entries
@@ -108,7 +145,7 @@ class DoctorTest < Minitest::Test
   end
 
   def success_status
-    Minitest::Mock.new.expect(:success?, true)
+    Object.new.tap { |status| status.define_singleton_method(:success?) { true } }
   end
 
   def reset_retention_dirs
