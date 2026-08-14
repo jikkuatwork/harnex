@@ -20,7 +20,7 @@ module Fixtures
 
     def thread(
       id:,
-      cli_version: "0.128.0",
+      cli_version: "0.147.0",
       cwd: "/tmp",
       model_provider: "openai",
       preview: "",

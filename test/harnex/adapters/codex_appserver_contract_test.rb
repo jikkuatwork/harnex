@@ -9,7 +9,7 @@ require "json"
 # every JSON line the app-server client emits, parses each one,
 # and validates `params` (for outgoing client requests) or the result
 # body (for auto-approval responses) against the matching schema
-# fixture in test/fixtures/codex_schema/. Codex CLI fixture pin: 0.128.0.
+# fixture in test/fixtures/codex_schema/. Codex CLI fixture pin: 0.147.0.
 class CodexAppServerContractTest < Minitest::Test
   Adapter = Harnex::Adapters::CodexAppServer
   Validator = JsonSchemaValidator
