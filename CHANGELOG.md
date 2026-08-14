@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-08-14 | 11:30 AM | IST
+## [0.11.0] - 2026-08-14 | 01:03 PM | IST
 
 ### Fixed
 
@@ -30,6 +30,11 @@
   spawn. This is the first Pi release with the final `agent_settled` fence.
 - Pi retry/compaction events retain settlement state and expose current
   summarization-retry lifecycle events in Harnex's event stream.
+- Codex schema fixtures are refreshed against CLI 0.147.0 after a bounded
+  semantic review. The drift is limited to a string path-alias replacement and
+  additive optional thread/item fields that Harnex does not consume; existing
+  minimal response fixtures still validate, so no Codex adapter behavior
+  changes.
 
 ### Added
 
