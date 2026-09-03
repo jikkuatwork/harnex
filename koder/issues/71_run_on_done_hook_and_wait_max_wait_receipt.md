@@ -6,10 +6,11 @@ updated: 2026-09-03
 tags: pi, watch, wait, lifecycle, notification, orchestration, unattended
 type: feature
 issue_kind: slice
+plan: 35
 context: On 2026-09-02/03 a Holm Pi worker (pi-b-862s2) finished with a stop-rule report at 00:18 IST and sat at a prompt for 7 hours; the orchestrator's single `harnex watch --until done --max-wait 24m` call never returned to the orchestrator until 07:12. No harnex surface pushed the completion or the stop-rule to a human.
 ---
 
-# Issue 71 — `harnex run --on-done <cmd>` + `wait/watch` heartbeat: a finished worker must be able to page someone
+# Issue 71 — session-owned completion push signals: `--on-done` hook + default marker + loud rejected state
 
 ## Problem
 
@@ -34,9 +35,9 @@ finally ran `harnex stop`); events log
 
 ## Required Direction
 
-1. **`harnex run … --on-done <cmd>`** (and `--on-fail <cmd>`, or one hook
-   with `$HARNEX_OUTCOME`). Fires once, from the harnex runner process — not
-   from the orchestrator — when the session reaches `done` (accepted or
+1. **`harnex run … --on-done <cmd>`** (one hook with a typed `$HARNEX_OUTCOME`;
+   no separate `--on-fail` surface). Fires once, from the harnex runner process —
+   not from the orchestrator — when the session reaches `done` (accepted or
    rejected), `task_failed`, or `dispatch_error`. Env passed to the hook:
    `HARNEX_ID`, `HARNEX_OUTCOME` (`completed|rejected|failed|error`),
    `HARNEX_WORK_STATE`, `HARNEX_RECEIPT_PATH`, `HARNEX_END_SHA`,
@@ -46,36 +47,52 @@ finally ran `harnex stop`); events log
 2. **`--on-done` default marker**: even without a hook, write
    `<state>/done/<repo-hash>--<id>.<outcome>` so a dumb `ls`/inotify can see
    completion without parsing events.
-3. **`wait`/`watch --heartbeat <dur>`**: while blocked, print one
-   line per interval (`waited=… state=… last_event=… seq=…`) so a caller
-   whose stdout is streamed can distinguish "still waiting" from "hung".
-   Default off for JSON consumers; `--heartbeat 60s` recommended in the
+3. **[deferred — not in Plan 35]** `wait`/`watch --heartbeat <dur>`: while
+   blocked, print one line per interval (`waited=… state=… last_event=… seq=…`)
+   so a caller whose stdout is streamed can distinguish "still waiting" from
+   "hung". Default off for JSON consumers; `--heartbeat 60s` recommended in the
    agents-guide for LLM callers.
-4. **`--max-wait` must be a hard promise**: `wait_until_done` already has a
-   deadline; add a test that the process exits within `max-wait + poll` even
-   when `live_session`/`scan_events` are slow (stat/parse of a 140 KB events
-   file every tick). Consider `--exit-on-prompt`: return when the agent state
-   goes to `prompt` after `task_complete`, since for Pi RPC "done + prompt" is
-   the terminal shape (`docs/pi-rpc.md`).
-5. **Rejected receipts are loud**: when `outcome.status == rejected`, `watch`
-   summary and the `dispatch_end` row should carry `outcome_class: rejected`
-   (the Holm row shows only `status: completed`), and `harnex status` should
-   flag the session (`STATE` column `done!`/`rejected`), so a glance at the
-   table tells an operator this worker needs a decision, not more waiting.
+4. **[deferred — not in Plan 35]** `--max-wait` must be a hard promise:
+   `wait_until_done` already has a deadline; add a test that the process exits
+   within `max-wait + poll` even when `live_session`/`scan_events` are slow
+   (stat/parse of a 140 KB events file every tick). `--exit-on-prompt` is
+   **rejected** as a solution: prompt state is not completion proof, and the
+   source incident already emitted `task_complete`.
+5. **Rejected receipts are loud in the live table**: the incident's
+   `dispatch_end` row already carries the rejection in its nested
+   `outcome.status: rejected` block (top-level `status` stays `completed` —
+   the session did complete; no schema fork). The gap is that `harnex status`
+   rendered the live worker as `prompt` instead of `rejected`. Fix: the status
+   table must render `rejected` (proof rejection or observed unsuccessful
+   completion) / `failed` (other typed task failure) over the adapter's
+   `prompt` input state, so a glance tells an operator this worker needs a
+   decision, not more waiting.
 
-## Acceptance
+## Acceptance (Plan 35 scope)
 
 - `harnex run pi --context … --on-done 'echo $HARNEX_OUTCOME >> /tmp/x'` with a
   fixture Pi that emits `task_complete` → `/tmp/x` gets exactly one line;
-  same for `task_failed` and `dispatch_error` (`--on-fail` or unified hook).
+  same for `task_failed` and `dispatch_error` (one unified hook).
 - Hook fires when no `wait`/`watch` client is attached.
-- `harnex wait --until done --max-wait 5s --heartbeat 1s` against a session
-  that never completes prints ≥4 heartbeat lines and exits `timeout` within
-  6s.
-- `dispatch_end` row for a rejected receipt carries a machine-readable
-  rejected outcome; `harnex status` marks it.
+- A live rejected worker renders `rejected` (not `prompt`) in the `harnex
+  status` table.
 - `harnex agents-guide monitoring` documents: unattended dispatch =
   `--on-done` hook + bounded `watch` calls; never a single long blocking call.
+
+Deferred to later plan IDs: `wait`/`watch --heartbeat`, hard `--max-wait`
+enforcement, and any prompt-based exit.
+
+## Plan sequencing
+
+Plan 35 (`koder/plans/35_completion_push_signals.md`) is the first bounded
+slice: session-owned default markers, one unified `--on-done` hook, and loud
+rejected-work visibility. It deliberately leaves heartbeat streaming and hard
+`--max-wait` enforcement for later monotonic plan IDs. `--exit-on-prompt` is
+not planned because prompt state is not completion proof and would not address
+the source incident, which already emitted `task_complete`.
+
+Issue #71 remains open after Plan 35 until those monitor-hardening slices are
+planned and delivered.
 
 ## Non-Goals
 

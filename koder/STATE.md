@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-08-14 | 06:48 PM | IST
+Updated: 2026-09-03 | 08:04 AM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -25,20 +25,27 @@ issue/plan files.
 
 ## Present
 
-- Nothing is in flight. RubyGems and the local executable report `0.11.0`;
-  `main` and `v0.11.0` are pushed and synchronized.
-- Holm Q121 filed external findings #69 and #70: idle explicit stop can rewrite
-  accepted Pi proof as failure, and Pi receipts lack bash command/exit
-  observation. Fresh `--auto-stop` Pi workers remain proven safe.
-- #58 remains explicitly unsupported. The known cross-process registry
-  lost-update race remains: writes are atomic, but stale fields are possible.
+- `koder/plans/35_completion_push_signals.md` is drafted for the first bounded
+  #71 slice: session-owned completion markers, one unified `--on-done` hook,
+  and loud rejected-work visibility. **Reviewed 2026-09-03 and approved with
+  corrections** (observed-unsuccessful-completion classification row; top-level
+  `status` stays `completed` for rejected work; orchestrator-wake file-trigger
+  note). No implementation has started; heartbeat and hard-deadline work remain
+  deferred within #71.
+- RubyGems and the local executable report `0.11.0`. `main` has the unpushed
+  #71 issue commit (`74b69a9`); the plan/issue/handoff edits land with this
+  close.
+- #69 still blocks persistent Pi reuse; fresh `--auto-stop` workers remain the
+  safe lifecycle. #58 remains explicitly unsupported, and the registry
+  lost-update race remains known.
 
 ## Future
 
-1. Triage #69 before persistent Pi worker reuse; keep `--auto-stop` as the safe
-   lifecycle. Then scope #70 for adapter-neutral receipt/final-gate proof.
-2. Implement #56 adapter preflight, then converge #57/#59 into the deterministic
-   conveyor runner required by Holm Plan 708.S04.
-3. #45 Pi PTY stable markers, then #42 / Plan 30 recovery/fallback phases.
-4. Broader Codex 0.147 runtime review can remain separate; #41 API docs and #58
-   Claude usage follow when prioritized and bounded.
+1. Implement Plan 35's core push-signal slice (plan reviewed 2026-09-03,
+   approved with corrections); stop after focused/full tests, the no-watcher
+   smoke, and independent review.
+2. Fix #69 before persistent Pi worker reuse.
+3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
+   preflight and #70 Pi command-exit evidence.
+4. Converge #57/#59 into the deterministic conveyor; #45, #42 / Plan 30, #41,
+   and #58 remain later bounded work.
