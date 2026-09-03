@@ -17,12 +17,30 @@ Prefer signals in this order:
 | `harnex pane` | Live UI interpretation and prompt/error diagnosis |
 | `harnex status` | Session liveness and coarse state |
 
-For unattended monitors on existing visible/detached sessions, prefer
-`harnex watch --until done`: it returns on the work-level `task_complete` or
+For unattended sessions, combine bounded watcher calls with the runner-owned
+push path. Every session writes
+`$HARNEX_STATE_DIR/done/<repo-key>--<id>.<outcome>` at its first work-terminal
+result. `harnex run --on-done CMD` can also launch one non-blocking local hook,
+even without a watcher and while the agent remains alive at a prompt:
+
+```bash
+harnex run pi --id pi-i-NN --tmux pi-i-NN --context "Read the task brief" \
+  --auto-stop \
+  --on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> koder/scratch/HARNEX_WAKE.txt'
+harnex watch --id pi-i-NN --until done --max-wait 30m
+```
+
+Use a gitignored wake destination. `CMD` is trusted shell input; never embed
+secrets. It receives `HARNEX_ID`, `HARNEX_OUTCOME`, `HARNEX_WORK_STATE`,
+`HARNEX_RECEIPT_PATH`, `HARNEX_END_SHA`, and `HARNEX_ELAPSED_S`. `completed`
+wakes the consumer but does not certify the prose; verify the receipt and
+artifact before acting.
+
+`harnex watch --until done` returns on the work-level `task_complete` or
 `task_failed` signal, or terminal exit, whichever comes first. Successful work
 exits `0`, failed work exits non-zero, and wall-clock caps exit `124`. For
 callers that need the lower-level primitive, `harnex wait --until done` exposes
-the same work fence.
+the same work fence. Do not park an orchestrator in one unbounded watcher call.
 
 ## Live-Run Visibility
 
@@ -31,8 +49,10 @@ Every dispatch appends a `dispatch_start` row to the repo's dispatch stream
 completes it. Between those two rows the run is visible to every documented
 signal, from any cwd in the same repo:
 
-- `harnex status --id X` reports `state=running` for a live session. When the
-  live HTTP status API is unreachable it still reports running from the
+- `harnex status --id X` reports settled work as `done`, `rejected`, or
+  `failed` even while the adapter is back at `prompt`. When work is unsettled,
+  it reports the adapter input state. If the live HTTP status API is
+  unreachable it still reports running from the
   registry (or, failing that, from the uncompleted start row) and labels the
   row `degraded: true` with `source` set to `registry` or `dispatch_start`.
 - `harnex history` shows uncompleted dispatches as `running` (pid alive) or
@@ -208,7 +228,8 @@ interpretation.
 - Polling `state=completed` alone and missing live sessions with `task_complete=true`.
 - Polling `state=prompt` alone and calling it done.
 - Wrapping `harnex wait` in loops that swallow non-zero `task_failed` results.
-- Blocking orchestrators on `/tmp/*-done.txt` as the only completion signal.
+- Blocking orchestrators on caller-owned `/tmp/*-done.txt` as the only completion signal.
+- Using one long watcher call without the runner-owned marker or `--on-done` push path.
 - Letting an unattended loop run with no wall-clock cap.
 - Reading raw tmux panes instead of `harnex pane`.
 - Using `--wait-for-idle` as acceptance proof.

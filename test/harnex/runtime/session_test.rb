@@ -189,7 +189,7 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started attempt_started git usage git summary attempt_finished exited], rows.map { |row| row["type"] }
+      assert_equal %w[started attempt_started git usage git completion_notification summary attempt_finished exited], rows.map { |row| row["type"] }
 
       attempt_started = rows[1]
       assert_equal session.id, attempt_started["run_id"]
@@ -216,13 +216,13 @@ class SessionTest < Minitest::Test
       assert_equal 1, git_end["files_changed"]
       assert_equal 1, git_end["commits"]
 
-      summary = rows[5]
+      summary = rows[6]
       assert_equal File.join(repo, ".harnex", "dispatch.jsonl"), summary["path"]
       assert_equal "success", summary["exit"]
-      attempt_finished = rows[6]
+      attempt_finished = rows[7]
       assert_equal "succeeded", attempt_finished["status"]
-      assert_equal 0, rows[7]["code"]
-      assert_equal "success", rows[7]["reason"]
+      assert_equal 0, rows[8]["code"]
+      assert_equal "success", rows[8]["reason"]
 
       record = JSON.parse(File.read(summary["path"]).lines.last)
       assert_equal session.id, record.dig("meta", "id")
@@ -263,7 +263,7 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
+      assert_equal %w[started attempt_started usage completion_notification summary attempt_finished exited], rows.map { |row| row["type"] }
       assert_equal "disconnected", rows[-3]["exit"]
       assert_equal "disconnected", rows[-1]["reason"]
 
@@ -290,7 +290,7 @@ class SessionTest < Minitest::Test
       assert_equal 0, session.run(validate_binary: false)
 
       rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-      assert_equal %w[started attempt_started usage summary attempt_finished exited], rows.map { |row| row["type"] }
+      assert_equal %w[started attempt_started usage completion_notification summary attempt_finished exited], rows.map { |row| row["type"] }
       assert_equal Harnex::DispatchHistory.path_for(repo), rows[-3]["path"]
       refute rows[-3].key?("mirror_path"), "removed mirror key must not reappear"
 

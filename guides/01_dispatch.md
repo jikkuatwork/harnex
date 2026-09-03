@@ -87,6 +87,25 @@ for i in 1 2 3; do harnex watch --id w-$i --until done --max-wait 90m & done
 wait
 ```
 
+For unattended work, add a session-owned push signal rather than depending on
+one long blocking watcher call:
+
+```bash
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
+  --context "Read and execute /tmp/task-NN.md" --auto-stop \
+  --on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> koder/scratch/HARNEX_WAKE.txt'
+```
+
+Every registered session writes
+`$HARNEX_STATE_DIR/done/<repo-key>--<normalized-id>.<outcome>`, even without a
+hook. `--on-done CMD` receives `HARNEX_ID`, `HARNEX_OUTCOME`,
+`HARNEX_WORK_STATE`, `HARNEX_RECEIPT_PATH`, `HARNEX_END_SHA`, and
+`HARNEX_ELAPSED_S`. Use a gitignored wake file. `CMD` is trusted `/bin/sh -c`
+input; never embed secrets in the command line.
+
+A push only wakes the consumer. Even `completed` requires report, artifact,
+test, and Git verification plus bounded `harnex watch --until done` calls.
+
 Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer
 matches `harnex status` or `harnex pane --id`.

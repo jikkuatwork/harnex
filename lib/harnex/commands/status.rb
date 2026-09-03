@@ -8,6 +8,7 @@ module Harnex
   class Status
     DESCRIPTION_WIDTH = 30
     REPO_WIDTH = 20
+    REJECTED_OUTCOME_CLASSES = Session::PROOF_REJECTION_CLASSES
 
     def self.usage(program_name = "harnex status")
       <<~TEXT
@@ -30,8 +31,8 @@ module Harnex
           Use --all when supervising workers launched from sibling worktrees.
           With --id, terminal summaries can report completed/failed/unknown
           even after the live session registry is gone.
-          `state` is process/session state; use JSON `done`/`work_state`
-          or `harnex wait --until done` for work-level completion.
+          Settled work outranks prompt state in the table: done, rejected, or failed.
+          JSON `done`/`work_state` retains the structured work-level fields.
           A prompt-like state is not a completion signal by itself.
       TEXT
     end
@@ -217,11 +218,24 @@ module Harnex
     end
 
     def table_state(session)
+      failed = task_failed?(session) || session["work_state"].to_s == "failed"
+      completed = task_complete?(session) || session["work_state"].to_s == "completed"
+      if failed || completed
+        return "rejected" if rejected_work?(session)
+        return failed ? "failed" : "done"
+      end
+
       input_state = session.dig("input_state", "state").to_s
       return input_state unless input_state.empty?
 
       state = session["state"].to_s
       state.empty? ? "-" : state
+    end
+
+    def rejected_work?(session)
+      return true if REJECTED_OUTCOME_CLASSES.include?(session["outcome_class"].to_s)
+
+      !task_failed?(session) && session["artifact_report_status"].to_s == "rejected"
     end
 
     def timeago(timestamp)

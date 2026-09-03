@@ -86,6 +86,20 @@ class DispatchHistoryTest < Minitest::Test
     assert_equal "success", record.dig("actual", "exit")
   end
 
+  def test_rejected_outcome_keeps_completed_task_complete_envelope
+    session = fake_session(task_complete: true)
+    summary = session.build_summary_record.merge(outcome: {
+      "status" => "rejected", "class" => "completed_with_proof",
+      "report_status" => "accepted", "source" => "harnex_observed_state"
+    })
+    session.define_singleton_method(:build_summary_record) { summary }
+    record = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_record(session)))
+
+    assert_equal ["completed", "task_complete", "rejected", "completed_with_proof", "accepted"],
+      [record["status"], record["terminal_event"], record.dig("outcome", "status"),
+       record.dig("outcome", "class"), record.dig("outcome", "report_status")]
+  end
+
   def test_start_record_schema
     session = fake_session
     record = JSON.parse(JSON.generate(Harnex::DispatchHistory.build_start_record(session)))

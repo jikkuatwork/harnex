@@ -1,5 +1,5 @@
 ---
-status: draft
+status: completed
 issue: 71
 plan: 35
 tier: B
@@ -8,6 +8,7 @@ created: 2026-09-03
 updated: 2026-09-03
 phases: 5
 review: approved-with-corrections (2026-09-03, 1fa07c1) + amendment 2 (2026-09-03, consumer verification from holm)
+implementation_review: approved (2026-09-03, three-pass independent review; all P2 findings fixed)
 ---
 
 # Plan 35 — Session-owned completion push signals (#71)
@@ -446,26 +447,26 @@ queue, callback framework, or changes to `wait`/`watch` polling.
 
 ## Acceptance criteria
 
-- [ ] Every registered session clears stale same-id markers at registration and
+- [x] Every registered session clears stale same-id markers at registration and
       atomically writes one typed marker at its first work-terminal result.
-- [ ] The marker appears before process exit and without an attached
+- [x] The marker appears before process exit and without an attached
       `wait`/`watch` client.
-- [ ] `--on-done` works in foreground, detached, and tmux modes and launches at
+- [x] `--on-done` works in foreground, detached, and tmux modes and launches at
       most once.
-- [ ] The hook receives all six documented environment values and runs from the
+- [x] The hook receives all six documented environment values and runs from the
       resolved repository root.
-- [ ] Hook latency/failure cannot block or reclassify the worker result.
-- [ ] Accepted, rejected, failed, and error outcomes are distinguished without
+- [x] Hook latency/failure cannot block or reclassify the worker result.
+- [x] Accepted, rejected, failed, and error outcomes are distinguished without
       parsing prose or adding a competing dispatch schema.
-- [ ] Receipt persistence is attempted before marker/hook publication; normal
+- [x] Receipt persistence is attempted before marker/hook publication; normal
       successful paths expose an immediately readable receipt.
-- [ ] A live rejected worker is visibly `rejected`, and a live completed worker
+- [x] A live rejected worker is visibly `rejected`, and a live completed worker
       visibly `done`, in the status table even if its adapter reports `prompt`.
-- [ ] Rejected `dispatch_end` and `wait/watch` behavior retain their canonical
+- [x] Rejected `dispatch_end` and `wait/watch` behavior retain their canonical
       nested outcome and exit-code contracts.
-- [ ] No durable marker/event/dispatch row contains the hook command or test
+- [x] No durable marker/event/dispatch row contains the hook command or test
       secret.
-- [ ] Focused tests, full suite, process smoke, and `git diff --check` pass.
+- [x] Focused tests, full suite, process smoke, and `git diff --check` pass.
 
 ## Deferred / non-goals
 

@@ -1,5 +1,6 @@
 require "io/console"
 require "json"
+require "monitor"
 require "pty"
 require "shellwords"
 
@@ -39,6 +40,9 @@ module Harnex
       adapter_close real_disconnections stream_interruptions stalls force_resumes compactions recovered
     ].freeze
     SUCCESSFUL_TURN_STATUSES = %w[completed success succeeded].freeze
+    PROOF_REJECTION_CLASSES = %w[
+      completed_no_activity report_missing report_invalid report_rejected
+    ].freeze
     class EventCounters
       def initialize
         @counts = {
@@ -91,7 +95,7 @@ module Harnex
                 :output_log_path, :events_log_path, :started_at, :ended_at, :exit_code, :term_signal,
                 :require_artifact_report
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, launch_cwd: nil, child_cwd: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, on_done: nil, launch_cwd: nil, child_cwd: nil, completion_notifier: nil)
       @adapter = adapter
       @command = command
       @repo_root = repo_root
@@ -132,6 +136,20 @@ module Harnex
       @injected_count = 0
       @last_injected_at = nil
       @started_at = Time.now
+      @completion_transition_lock = Monitor.new
+      @completion_notification_mutex = Mutex.new
+      @completion_notification_registered = false
+      @completion_notification_sent = false
+      @pending_completion_notification = nil
+      @completion_notifier = completion_notifier || CompletionNotifier.new(
+        repo_root: repo_root,
+        id: @id,
+        session_id: @session_id,
+        receipt_path: @artifact_report_path,
+        hook_command: on_done,
+        started_at: @started_at,
+        event_sink: ->(type, payload) { emit_event(type, **payload) }
+      )
       @server = nil
       @reader = nil
       @output_log = nil
@@ -226,6 +244,7 @@ module Harnex
       @server = ApiServer.new(self)
       @server.start
       persist_registry
+      register_completion_notifier!
       append_dispatch_start_record
 
       stdin_state = STDIN.tty? ? STDIN.raw! : nil
@@ -506,6 +525,7 @@ module Harnex
       @server = ApiServer.new(self)
       @server.start
       persist_registry
+      register_completion_notifier!
       append_dispatch_start_record
 
       watch_thread = start_watch_thread
@@ -658,6 +678,10 @@ module Harnex
     end
 
     def record_successful_completion(payload)
+      @completion_transition_lock.synchronize { record_successful_completion_locked(payload) }
+    end
+
+    def record_successful_completion_locked(payload)
       assessment = completion_gate_required? ? assess_completion_proof : { accepted: true }
       unless assessment[:accepted]
         mark_task_failed(
@@ -668,7 +692,6 @@ module Harnex
           artifact_report_status: assessment[:report_status],
           diagnostics: assessment[:diagnostics]
         )
-        enforce_required_artifact_report!
         return false
       end
 
@@ -685,13 +708,17 @@ module Harnex
       # Persist proof before publishing task_complete. A coordinator that sees
       # the completion event can immediately validate the harness-authored file.
       enforce_required_artifact_report!
-      return false if task_failed?
+      if task_failed?
+        publish_completion_notification("task_failed")
+        return false
+      end
 
       event_payload = payload.dup
       event_payload[:outcome_class] = @completion_outcome_class if @completion_outcome_class
       event_payload[:artifact_report_status] = @completion_report_status if @completion_report_status
       event_payload[:artifact_report_path] = artifact_report_path
       emit_event("task_complete", **event_payload)
+      publish_completion_notification("task_complete")
       true
     end
 
@@ -757,7 +784,11 @@ module Harnex
       end
     end
 
-    def mark_task_failed(turn_id: nil, status: nil, error: nil, codex_error_info: nil, outcome_class: nil, artifact_report_status: nil, diagnostics: nil)
+    def mark_task_failed(**attributes)
+      @completion_transition_lock.synchronize { mark_task_failed_locked(**attributes) }
+    end
+
+    def mark_task_failed_locked(turn_id: nil, status: nil, error: nil, codex_error_info: nil, outcome_class: nil, artifact_report_status: nil, diagnostics: nil, publish: true)
       @last_completed_at = nil if outcome_class
       @last_failed_at = Time.now
       @last_failed_status = status.to_s.empty? ? "failed" : status.to_s
@@ -774,6 +805,11 @@ module Harnex
       payload[:artifact_report_status] = artifact_report_status if artifact_report_status
       payload[:diagnostics] = @completion_diagnostics unless @completion_diagnostics.empty?
       emit_event("task_failed", **payload)
+      if publish
+        enforce_required_artifact_report!
+        terminal_signal = @last_failed_status == "dispatch_error" ? "dispatch_error" : "task_failed"
+        publish_completion_notification(terminal_signal)
+      end
     end
 
     def extract_error_notification_message(params)
@@ -1175,6 +1211,71 @@ module Harnex
       Harnex.write_registry(@registry_path, payload)
     end
 
+    def register_completion_notifier!
+      @completion_notification_mutex.synchronize do
+        @completion_notifier.register!
+        @completion_notification_registered = true
+        deliver_completion_notification(@pending_completion_notification) if @pending_completion_notification
+      end
+    rescue StandardError => e
+      warn("harnex: completion marker cleanup failed (#{e.class})")
+      emit_event("completion_notification_error", component: "cleanup", error_class: e.class.name)
+    end
+
+    def publish_completion_notification(terminal_signal)
+      snapshot = completion_notification_snapshot(terminal_signal)
+      @completion_notification_mutex.synchronize do
+        return false if @completion_notification_sent || @pending_completion_notification
+        return !(@pending_completion_notification = snapshot).nil? unless @completion_notification_registered
+
+        deliver_completion_notification(snapshot)
+      end
+    rescue StandardError => e
+      warn("harnex: completion notification failed (#{e.class})")
+      emit_event("completion_notification_error", component: "session", error_class: e.class.name)
+      false
+    end
+
+    def deliver_completion_notification(snapshot)
+      @completion_notification_sent = true
+      @pending_completion_notification = nil
+      @completion_notifier.notify(**snapshot)
+    end
+
+    def completion_notification_snapshot(terminal_signal)
+      outcome = completion_notification_outcome(terminal_signal)
+      {
+        outcome: outcome, work_state: outcome == "completed" ? "completed" : "failed",
+        outcome_class: @completion_outcome_class, artifact_report_status: @completion_report_status,
+        end_sha: summary_string(@git_end[:sha]), terminal_signal: terminal_signal
+      }
+    end
+
+    def completion_notification_outcome(terminal_signal)
+      signal = terminal_signal.to_s
+      return "error" if %w[dispatch_error finalization].include?(signal)
+      return "rejected" if PROOF_REJECTION_CLASSES.include?(@completion_outcome_class.to_s)
+      return "rejected" if signal == "task_complete" && observed_receipt_outcome_status == "rejected"
+      return "completed" if signal == "task_complete"
+      return "failed" if signal == "task_failed"
+
+      "error"
+    end
+
+    def observed_receipt_outcome_status
+      JSON.parse(File.read(artifact_report_path)).dig("outcome", "status")
+    rescue StandardError
+      nil
+    end
+
+    def current_terminal_signal
+      return "dispatch_error" if task_failed? && @last_failed_status == "dispatch_error"
+      return "task_failed" if task_failed?
+      return "task_complete" if task_complete?
+
+      nil
+    end
+
     # Post-injection registry refresh. By the time this runs the prompt has
     # already reached the agent, so a failed bookkeeping write must not report
     # the send as failed — that would make an orchestrator retry a turn the
@@ -1442,7 +1543,11 @@ module Harnex
         @context_summary = normalized_context_summary(nil)
         warn("harnex: failed to collect session-end telemetry: #{e.message}")
       end
-      enforce_required_artifact_report!
+      @completion_transition_lock.synchronize do
+        terminal_signal = current_terminal_signal
+        enforce_required_artifact_report!
+        publish_completion_notification(terminal_signal || "finalization")
+      end
       @exit_reason ||= classify_exit
       record = DispatchHistory.build_record(self)
       append_dispatch_history_record(record)
@@ -1560,7 +1665,8 @@ module Harnex
           "code" => "receipt_write_error",
           "path" => "$",
           "message" => "harness could not write the observed-state receipt"
-        }]
+        }],
+        publish: false
       )
       @exit_code = 1 if @exit_code.nil? || @exit_code.zero? || @term_signal
       @term_signal = nil if @exit_code == 1

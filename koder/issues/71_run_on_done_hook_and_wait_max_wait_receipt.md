@@ -93,6 +93,14 @@ finally ran `harnex stop`); events log
 Deferred to later plan IDs: `wait`/`watch --heartbeat`, hard `--max-wait`
 enforcement, and any prompt-based exit.
 
+## Implementation status — 2026-09-03
+
+Plan 35's core push-signal slice is implemented and independently approved:
+session-owned typed markers, `--on-done`, first-terminal race protection, and
+settled-state table precedence all pass the full suite and no-watcher smoke.
+This issue remains open for the separately planned heartbeat and hard-deadline
+slices.
+
 ## Plan sequencing
 
 Plan 35 (`koder/plans/35_completion_push_signals.md`) is the first bounded

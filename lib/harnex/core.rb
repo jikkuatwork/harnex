@@ -24,6 +24,8 @@ module Harnex
   GIT_FINGERPRINT_SAMPLE_BYTES = 64 * 1024
   STATE_DIR = File.expand_path(env_value("HARNEX_STATE_DIR", default: "~/.local/state/harnex"))
   SESSIONS_DIR = File.join(STATE_DIR, "sessions")
+  COMPLETION_OUTCOMES = %w[completed rejected failed error].freeze
+  COMPLETION_MARKERS_DIR = File.join(STATE_DIR, "done")
   WatchConfig = Struct.new(:absolute_path, :display_path, :hook_message, :debounce_seconds, keyword_init: true)
   ID_ADJECTIVES = %w[
     bold blue calm cool dark dry fast gold gray green
@@ -393,6 +395,19 @@ module Harnex
     exit_dir = File.join(STATE_DIR, "exits")
     FileUtils.mkdir_p(exit_dir)
     File.join(exit_dir, "#{session_file_slug(repo_root, id)}.json")
+  end
+
+  def completion_marker_path(repo_root, id, outcome)
+    normalized_outcome = outcome.to_s
+    unless COMPLETION_OUTCOMES.include?(normalized_outcome)
+      raise ArgumentError, "unsupported completion outcome #{outcome.inspect}"
+    end
+
+    File.join(COMPLETION_MARKERS_DIR, "#{session_file_slug(repo_root, id)}.#{normalized_outcome}")
+  end
+
+  def completion_marker_paths(repo_root, id)
+    COMPLETION_OUTCOMES.map { |outcome| completion_marker_path(repo_root, id, outcome) }
   end
 
   def output_log_path(repo_root, id)

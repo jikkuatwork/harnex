@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] - 2026-09-03 | 09:04 AM | IST
+
+### Added
+
+- Registered sessions now atomically publish a typed completion marker under
+  `$HARNEX_STATE_DIR/done/` at the first accepted, rejected, failed, or error
+  work result, without requiring a `wait` or `watch` client.
+- `harnex run --on-done CMD` launches one non-blocking trusted local shell hook
+  with typed completion, receipt, commit, and elapsed-time environment values.
+  The option works in foreground, detached, and tmux launches.
+
+### Changed
+
+- `harnex status` now renders settled live work (`done`, `rejected`, or
+  `failed`) ahead of an adapter's prompt/busy state. Existing JSON fields and
+  the v2 dispatch envelope remain unchanged.
+
 ## [0.11.0] - 2026-08-14 | 01:03 PM | IST
 
 ### Fixed

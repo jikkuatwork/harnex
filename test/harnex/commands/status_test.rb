@@ -172,6 +172,18 @@ class StatusCommandTest < Minitest::Test
     assert_equal "unknown", data.first["work_state"]
   end
 
+  def test_status_table_prefers_settled_work_over_prompt_input_state
+    base = { "input_state" => { "state" => "prompt" }, "state" => "running" }
+    cases = [
+      ["done", { "task_complete" => true, "work_state" => "completed", "artifact_report_status" => "accepted" }],
+      ["rejected", { "task_failed" => true, "work_state" => "failed", "outcome_class" => "completed_no_activity" }],
+      ["failed", { "task_failed" => true, "work_state" => "failed", "artifact_report_status" => "rejected" }],
+      ["rejected", { "task_complete" => true, "work_state" => "completed", "artifact_report_status" => "rejected" }]
+    ]
+    status = Harnex::Status.new([])
+    cases.each { |expected, fields| assert_equal expected, status.send(:table_state, base.merge(fields)) }
+  end
+
   def test_status_table_includes_idle_column_and_nil_fallback
     write_registry("gamma", include_log_keys: true, log_mtime: nil, log_idle_s: nil)
 

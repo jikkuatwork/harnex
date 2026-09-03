@@ -55,6 +55,19 @@ class RunnerTest < Minitest::Test
     assert opts[:auto_stop]
   end
 
+  def test_extract_wrapper_options_parses_on_done_forms_and_preserves_child_boundary
+    command = "printf '%s' \"$HARNEX_OUTCOME\""
+    argv = ["codex", "--on-done", command, "--", "--on-done", "child"]
+    runner = Harnex::Runner.new(argv)
+    cli_name, forwarded = runner.send(:extract_wrapper_options, argv)
+    assert_equal ["codex", ["--on-done", "child"], command],
+      [cli_name, forwarded, runner.instance_variable_get(:@options)[:on_done]]
+
+    equals = Harnex::Runner.new(["codex", "--on-done=#{command}"])
+    equals.send(:extract_wrapper_options, equals.instance_variable_get(:@argv))
+    assert_equal command, equals.instance_variable_get(:@options)[:on_done]
+  end
+
   def test_extract_wrapper_options_parses_fast
     runner = Harnex::Runner.new(["codex", "--fast"])
     cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--fast"])
@@ -251,6 +264,8 @@ class RunnerTest < Minitest::Test
 
   def test_usage_documents_auto_stop
     assert_includes Harnex::Runner.usage, "--auto-stop"
+    assert_includes Harnex::Runner.usage, "--on-done CMD"
+    assert_includes Harnex::Runner.usage, "trusted local shell"
   end
 
   def test_usage_documents_fast
@@ -1355,7 +1370,60 @@ class RunnerTest < Minitest::Test
     runner.send(:validate_unique_id!, repo_root)
   end
 
+  def test_detached_completion_writes_marker_and_runs_hook_without_watcher_before_worker_exit
+    Dir.mktmpdir("harnex-on-done-smoke") do |repo|
+      init_test_repo(repo)
+      bin_dir = File.join(repo, "bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_live_completion_codex_stub(File.join(bin_dir, "codex"))
+      id = "on-done-live-#{$$}-#{rand(1_000_000)}"
+      sentinel = File.join(repo, "hook-sentinel.txt")
+      hook = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" > #{Shellwords.shellescape(sentinel)}"
+      env = { "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}" }
+
+      stdout, stderr, status = Open3.capture3(
+        env, Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}",
+        File.expand_path("../../../bin/harnex", __dir__), "run", "codex", "--detach",
+        "--id", id, "--context", "complete and remain alive", "--on-done", hook, chdir: repo
+      )
+      assert status.success?, stderr
+      assert_equal "headless", JSON.parse(stdout).fetch("mode")
+      marker = Harnex.completion_marker_path(repo, id, "completed")
+      assert wait_until(10) { File.file?(marker) && File.file?(sentinel) }, stderr
+      registry = Harnex.read_registry(repo, id)
+      refute_nil registry, "session should remain registered after task completion"
+      assert Harnex.alive_pid?(registry.fetch("pid")), "wrapped worker should still be alive"
+      assert_equal "#{id} completed\n", File.read(sentinel)
+      assert_equal "completed", JSON.parse(File.read(marker)).fetch("outcome")
+    ensure
+      capture_io { Harnex::Stopper.new(["--id", id, "--repo", repo]).run } rescue nil if id
+      wait_until(5) { Harnex.read_registry(repo, id).nil? } rescue nil if id
+    end
+  end
+
   # --tmux flag parsing (issue #20)
+
+  def test_tmux_forwards_on_done_as_one_exact_argument
+    command = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" >> /tmp/harnex wake"
+    argv = ["codex", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command]
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    captured = nil
+    registry = { "pid" => Process.pid, "port" => 43_999,
+                 "artifact_report_path" => "/tmp/receipt.json",
+                 "artifact_claims_path" => "/tmp/receipt.claims.json" }
+    runner.define_singleton_method(:wait_for_registration) { |_repo| registry }
+    runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
+
+    runner.stub(:system, lambda { |*args| captured = args; true }) do
+      capture_io { assert_equal 0, runner.send(:run_in_tmux, "codex", [], Dir.pwd) }
+    end
+
+    inner_argv = Shellwords.split(captured.last)
+    index = inner_argv.index("--on-done")
+    refute_nil index
+    assert_equal command, inner_argv.fetch(index + 1)
+  end
 
   def test_tmux_does_not_consume_following_flag_as_window_name
     runner = Harnex::Runner.new(["codex", "--tmux", "--id", "cx-123"])
@@ -1540,6 +1608,35 @@ class RunnerTest < Minitest::Test
     [out, err, result_path, id]
   end
 
+  def write_live_completion_codex_stub(path)
+    File.write(path, <<~'RUBY')
+      #!/usr/bin/env ruby
+      require "json"
+      if ARGV == ["--version"]; puts "codex 0.128.0"; exit 0; end
+      abort "expected app-server" unless ARGV.first == "app-server"
+      STDOUT.sync = true
+      STDIN.each_line do |line|
+        msg = JSON.parse(line)
+        case msg["method"]
+        when "initialize" then puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
+        when "thread/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-live" } })
+        when "turn/start"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-live" } })
+          puts JSON.generate(jsonrpc: "2.0", method: "item/completed", params: { item: {
+            id: "cmd-live", type: "commandExecution", command: "ruby -e true", status: "completed", exitCode: 0
+          } })
+          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
+            thread: { id: "thr-live" }, turn: { id: "trn-live", status: "completed" }
+          })
+        when "turn/interrupt"
+          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {}); exit 0
+        end
+      end
+    RUBY
+    File.chmod(0o755, path)
+  end
+
   def write_hanging_interrupt_codex_stub(path)
     File.write(path, <<~'RUBY')
       #!/usr/bin/env ruby
@@ -1710,6 +1807,12 @@ class RunnerTest < Minitest::Test
       end
     RUBY
     File.chmod(0o755, path)
+  end
+
+  def wait_until(timeout)
+    deadline = Time.now + timeout
+    sleep 0.05 until yield || Time.now >= deadline
+    yield
   end
 
   def wait_for_child(pid, timeout:)

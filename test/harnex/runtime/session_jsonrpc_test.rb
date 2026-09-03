@@ -3,6 +3,22 @@ require_relative "../../support/codex_response_fixtures"
 require "json"
 
 class SessionJsonrpcTest < Minitest::Test
+  class RecordingCompletionNotifier
+    attr_reader :calls
+
+    def initialize(receipt_path)
+      @receipt_path = receipt_path
+      @calls = []
+    end
+
+    def register! = true
+
+    def notify(**snapshot)
+      @calls << snapshot.merge(receipt_present: File.file?(@receipt_path))
+      true
+    end
+  end
+
   def setup
     @tmp = Dir.mktmpdir("harnex-jsonrpc-test")
     # A real repo root so the canonical dispatch stream lands under @tmp.
@@ -122,6 +138,27 @@ class SessionJsonrpcTest < Minitest::Test
       host: "127.0.0.1",
       id: id
     )
+  end
+
+  def with_completion_notifier_session(name)
+    adapter = Harnex::Adapters::CodexAppServer.new
+    receipt_path = File.join(@tmp, "#{name}-receipt.json")
+    notifier = RecordingCompletionNotifier.new(receipt_path)
+    session = Harnex::Session.new(
+      adapter: adapter, command: adapter.build_command, repo_root: @tmp,
+      host: "127.0.0.1", id: "notify-#{name}",
+      artifact_report_path: receipt_path, completion_notifier: notifier
+    )
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    session.send(:emit_git_start_event)
+    session.send(:register_completion_notifier!)
+    yield session, notifier
+  ensure
+    [:@events_log, :@output_log].each do |ivar|
+      io = session&.instance_variable_get(ivar)
+      io&.close unless io&.closed?
+    end
   end
 
   def dispatch_stream_path
@@ -523,6 +560,92 @@ class SessionJsonrpcTest < Minitest::Test
     assert_equal "failure", @session.send(:classify_exit)
   end
 
+  def test_completion_notifier_receives_each_typed_outcome_once_after_receipt
+    cases = {
+      "accepted" => ["completed", "task_complete", "completed_with_proof"],
+      "rejected" => ["rejected", "task_failed", "completed_no_activity"],
+      "failed" => ["failed", "task_failed", nil],
+      "dispatch-error" => ["error", "dispatch_error", nil]
+    }
+
+    cases.each do |name, (outcome, signal, outcome_class)|
+      with_completion_notifier_session(name) do |session, notifier|
+        case name
+        when "accepted" then session.send(:record_successful_completion, {})
+        when "rejected" then session.send(:mark_task_failed, status: outcome_class, outcome_class: outcome_class)
+        when "failed" then session.send(:mark_task_failed, status: "failed")
+        else session.send(:mark_task_failed, status: "dispatch_error", error: "send failed")
+        end
+
+        snapshot = notifier.calls.fetch(0)
+        assert_equal [outcome, outcome == "completed" ? "completed" : "failed", signal, outcome_class, true],
+          snapshot.values_at(:outcome, :work_state, :terminal_signal, :outcome_class, :receipt_present), name
+        session.instance_variable_set(:@exit_code, 0)
+        session.send(:finalize_session!)
+        assert_equal 1, notifier.calls.length, name
+      end
+    end
+  end
+
+  def test_first_terminal_callback_owns_notification_while_receipt_is_written
+    with_completion_notifier_session("terminal-race") do |session, notifier|
+      entered = Queue.new
+      release = Queue.new
+      original = session.method(:persist_observed_receipt!)
+      session.define_singleton_method(:persist_observed_receipt!) do
+        entered << true
+        release.pop
+        original.call
+      end
+
+      accepted = Thread.new { session.send(:record_successful_completion, {}) }
+      entered.pop
+      session.define_singleton_method(:persist_observed_receipt!) { original.call }
+      failed = Thread.new { session.send(:mark_task_failed, status: "failed") }
+      release << true
+      [accepted, failed].each(&:join)
+
+      assert_equal ["completed", "task_complete"],
+        notifier.calls.fetch(0).values_at(:outcome, :terminal_signal)
+      assert_equal 1, notifier.calls.length
+    end
+  end
+
+  def test_terminal_callback_waits_for_registration_cleanup_then_notifies
+    with_completion_notifier_session("registration-race") do |session, notifier|
+      cleanup_started, release, publish_started = 3.times.map { Queue.new }
+      notifier.define_singleton_method(:register!) { cleanup_started << true; release.pop; true }
+      original = session.method(:completion_notification_snapshot)
+      session.define_singleton_method(:completion_notification_snapshot) do |signal|
+        publish_started << true
+        original.call(signal)
+      end
+      session.instance_variable_set(:@completion_notification_registered, false)
+
+      registration = Thread.new { session.send(:register_completion_notifier!) }
+      cleanup_started.pop
+      terminal = Thread.new { session.send(:mark_task_failed, status: "failed") }
+      Timeout.timeout(2) { publish_started.pop }
+      release << true
+      [registration, terminal].each(&:join)
+
+      assert_equal ["failed", "task_failed"], notifier.calls.fetch(0).values_at(:outcome, :terminal_signal)
+      assert_equal 1, notifier.calls.length
+    end
+  end
+
+  def test_finalization_without_typed_work_notifies_error_once
+    with_completion_notifier_session("finalization") do |session, notifier|
+      session.instance_variable_set(:@exit_code, 0)
+      2.times { session.send(:finalize_session!) }
+
+      snapshot = notifier.calls.fetch(0)
+      assert_equal ["error", "failed", "finalization", true],
+        snapshot.values_at(:outcome, :work_state, :terminal_signal, :receipt_present)
+      assert_equal 1, notifier.calls.length
+    end
+  end
+
   def test_classify_exit_keeps_late_pre_turn_exit_as_disconnected
     @session.instance_variable_set(:@exit_code, 0)
     @session.instance_variable_set(:@ended_at, @session.instance_variable_get(:@started_at) + 6)
@@ -628,7 +751,7 @@ class SessionJsonrpcTest < Minitest::Test
     assert_match(/Invalid request: invalid type: null/, err.message)
 
     rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
-    assert_equal %w[started attempt_started task_failed usage summary attempt_finished exited], rows.map { |row| row["type"] }
+    assert_equal %w[started attempt_started task_failed completion_notification usage summary attempt_finished exited], rows.map { |row| row["type"] }
     assert_equal "boot_failure", rows[-3]["exit"]
     assert_equal "boot_failure", rows[-1]["reason"]
 
