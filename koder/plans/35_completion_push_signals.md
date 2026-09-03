@@ -7,6 +7,7 @@ layer: unattended-completion-reliability
 created: 2026-09-03
 updated: 2026-09-03
 phases: 5
+review: approved-with-corrections (2026-09-03, 1fa07c1) + amendment 2 (2026-09-03, consumer verification from holm)
 ---
 
 # Plan 35 — Session-owned completion push signals (#71)
@@ -51,6 +52,32 @@ at a prompt.
 - The v2 `dispatch_end` row already has the canonical nested `outcome` block and
   `wait --until done` already returns `2` for rejected proof. This plan should
   assert and expose those semantics, not redesign them.
+
+### Incident evidence (`pi-b-862s2`, verified 2026-09-03 against state files)
+
+The implementer must not infer the incident's typed state from the end row.
+Read in this order:
+
+| When (UTC) | Source | Harnex's typed view |
+| --- | --- | --- |
+| `19:18:45Z` (00:18 IST) | events `seq 423` | `task_complete`, `outcome_class: completed_with_proof`, `artifact_report_status: accepted` |
+| `19:18` → `02:03` | events `424..828` | only `setStatus` heartbeats; worker alive at a prompt, prose report says `stop-rule-hit:` |
+| `02:03:42Z` (07:33 IST) | `harnex stop` → `exited code: 143` | receipt **rewritten** (`generated_at: 02:03:43Z`): `status: fail`, `outcome.status: rejected`, summary "Harnex observed an unsuccessful completion." |
+
+So at the first work-terminal signal harnex knew **`completed`**, not
+`rejected`. The end row's `outcome.status: rejected` is a SIGTERM-at-stop
+artifact (`receipt_successful?` returns false on non-zero exit) — the Issue #69
+family, explicitly out of scope here. Consequences for this plan:
+
+- In the incident the hook would have fired `HARNEX_OUTCOME=completed` at
+  00:18. That is sufficient: the orchestrator is woken and reads the report.
+  Harnex does not classify prose (`stop-rule-hit:`) and must not start to.
+- Do not write a RED test that reproduces "`task_complete` + rejected receipt
+  at first terminal" as *the incident*; under current code that state is only
+  reachable via a genuinely failed observed receipt, which the generic rejected
+  row below already covers.
+- The status-table gap in the incident was `prompt` shown for a worker whose
+  `work_state` was already `completed`; see Rejected-work visibility.
 - Issue #69 remains separate: explicit idle stop can rewrite accepted Pi proof.
   This plan must prove notification before cleanup and must not absorb stop
   lifecycle changes.
@@ -106,7 +133,7 @@ The first of these terminal conditions wins:
 | --- | --- | --- | --- |
 | accepted `task_complete` | `completed` | `completed` |
 | proof-gate rejection (`completed_no_activity`, `report_missing`, `report_invalid`, `report_rejected`) | `rejected` | `failed` |
-| observed unsuccessful completion — `task_complete` emitted but the receipt/outcome is `rejected` (the `pi-b-862s2` incident: `report_status: accepted`, `outcome.class: completed_with_proof`, `outcome.status: rejected`, `source: harnex_observed_state`) | `rejected` | `failed` |
+| observed unsuccessful completion — the observed receipt written at the first terminal signal carries `outcome.status: rejected` (e.g. `receipt_successful?` is false because a non-zero exit code is already known). Generic rule; **not** the `pi-b-862s2` first-terminal state, which was `completed` — see Incident evidence | `rejected` | `failed` |
 | other typed `task_failed` | `failed` | `failed` |
 | registered-session `dispatch_error`, or finalization without any earlier typed work result | `error` | `failed` |
 
@@ -222,6 +249,13 @@ No dispatch schema fork is allowed.
 - For a live session whose adapter input state is `prompt`, the status table
   must render `rejected` when its work outcome is a proof rejection and
   `failed` for another typed task failure. Failure state outranks input state.
+- Likewise, a live session with `work_state: completed` (accepted
+  `task_complete`, agent still alive at a prompt) renders `done`, not `prompt`.
+  This is the exact incident shape: for seven hours `harnex status` showed
+  `prompt` for a worker whose work had already completed. Rule: any settled
+  work state (`completed` → `done`, rejected → `rejected`, other failure →
+  `failed`) outranks the adapter input state; input state is shown only while
+  work is unsettled. `Status#table_state` is the single seam.
 - `status --json` remains additive-compatible and continues exposing the
   existing fields; do not invent a second status schema.
 
@@ -275,7 +309,8 @@ Extend focused existing tests to prove:
   right typed snapshot;
 - receipt persistence precedes notification on normal terminal paths;
 - repeated notifications/finalization remain exactly once;
-- a live prompt with rejected work renders `rejected` in the status table;
+- a live prompt with rejected work renders `rejected`, and a live prompt with
+  accepted completed work renders `done`, in the status table;
 - rejected final telemetry retains the existing v2 shape and `watch` exit-code
   contract.
 
@@ -323,8 +358,8 @@ an error/rejected outcome when receipt generation itself fails.
   forms, wrapper-token detection, tmux forwarding, and `build_session`.
 - Preserve the command as one argument through `Shellwords.shellescape`; never
   interpolate outcome values into the command string.
-- Make `Status#table_state` prefer rejected/failed work over prompt/busy input
-  state while leaving JSON keys stable.
+- Make `Status#table_state` prefer settled work state (`done` / `rejected` /
+  `failed`) over prompt/busy input state while leaving JSON keys stable.
 - Add a regression assertion around `DispatchHistory.build_record` rather than
   adding a new end-row field.
 - Update `guides/01_dispatch.md` and `guides/04_monitoring.md` with the safe
@@ -342,16 +377,25 @@ harnex watch --id pi-i-NN --until done --max-wait 30m
 ```
 
 `agent-speak` pages a *human*, who may be asleep (the incident). To wake the
-*orchestrator* with no human in the loop, point the hook at a file the
-orchestrator's runtime watches — e.g. a Pi `file-trigger` extension that calls
-`sendUserMessage()` on change:
+*orchestrator* with no human in the loop, point the hook at a **gitignored**
+file the orchestrator's runtime watches — e.g. a Pi extension that calls
+`sendUserMessage()` on change (Holm ships one: `.pi/extensions/harnex-wake.ts`
+watching `koder/scratch/HARNEX_WAKE.txt`):
 
 ```bash
---on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> .harnex/trigger.txt'
+--on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> koder/scratch/HARNEX_WAKE.txt'
 ```
 
+Do not point the trigger at `.harnex/`: consumers track
+`.harnex/dispatch.jsonl` as project telemetry, and a trigger file beside it
+invites an accidental commit. The guide must say "a gitignored path", not name
+`.harnex/`.
+
 The hook is an independent push path; it does not replace bounded verification
-of the receipt, expected artifact, tests, or Git state.
+of the receipt, expected artifact, tests, or Git state. In particular
+`HARNEX_OUTCOME=completed` means harnex accepted the session's completion — the
+worker's own report may still say the task failed a gate (`pi-b-862s2`); the
+woken orchestrator reads the report before acting.
 
 ## Phase 5 — Verification, review, and release gate
 
@@ -415,8 +459,8 @@ queue, callback framework, or changes to `wait`/`watch` polling.
       parsing prose or adding a competing dispatch schema.
 - [ ] Receipt persistence is attempted before marker/hook publication; normal
       successful paths expose an immediately readable receipt.
-- [ ] A live rejected worker is visibly `rejected` in the status table even if
-      its adapter reports `prompt`.
+- [ ] A live rejected worker is visibly `rejected`, and a live completed worker
+      visibly `done`, in the status table even if its adapter reports `prompt`.
 - [ ] Rejected `dispatch_end` and `wait/watch` behavior retain their canonical
       nested outcome and exit-code contracts.
 - [ ] No durable marker/event/dispatch row contains the hook command or test

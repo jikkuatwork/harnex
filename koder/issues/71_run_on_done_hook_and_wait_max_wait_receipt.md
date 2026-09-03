@@ -24,8 +24,18 @@ seen), nothing else fires. The worker had already:
 - written a receipt with `status: fail` / `outcome.status: rejected`,
 - printed a structured report including `stop-rule-hit: no-network rail`,
 
-and then parked at a prompt. Harnex knew the work was done and had failed a
-gate. Nobody was told. The user woke to a live session and 7h of nothing.
+and then parked at a prompt. Harnex knew the work was done. Nobody was told.
+The user woke to a live session and 7h of nothing.
+
+**Correction (2026-09-03, verified against the state files):** at the
+`task_complete` instant (seq 423) harnex's typed view was `completed` with
+`artifact_report_status: accepted`. The receipt's `status: fail` /
+`outcome.status: rejected` was written at `02:03:43Z` by `harnex stop`
+(`exited code: 143`), not at 00:18. The stop-rule failure existed only in the
+worker's prose report, which harnex does not classify. So the push signal for
+this incident would have been `completed`; that is sufficient because it wakes
+the orchestrator, who reads the report. The stop-time rewrite of accepted
+proof is the #69 family.
 
 Evidence (Holm repo): `.harnex/dispatch.jsonl` rows for `pi-b-862s2`
 (`dispatch_start 17:33:00Z`, `dispatch_end 02:03:42Z` = when the orchestrator
@@ -58,15 +68,16 @@ finally ran `harnex stop`); events log
    (stat/parse of a 140 KB events file every tick). `--exit-on-prompt` is
    **rejected** as a solution: prompt state is not completion proof, and the
    source incident already emitted `task_complete`.
-5. **Rejected receipts are loud in the live table**: the incident's
-   `dispatch_end` row already carries the rejection in its nested
-   `outcome.status: rejected` block (top-level `status` stays `completed` —
-   the session did complete; no schema fork). The gap is that `harnex status`
-   rendered the live worker as `prompt` instead of `rejected`. Fix: the status
-   table must render `rejected` (proof rejection or observed unsuccessful
-   completion) / `failed` (other typed task failure) over the adapter's
-   `prompt` input state, so a glance tells an operator this worker needs a
-   decision, not more waiting.
+5. **Settled work is loud in the live table**: the incident's `dispatch_end`
+   row carries its (stop-time) rejection in the nested `outcome.status`
+   block (top-level `status` stays `completed` — the session did complete; no
+   schema fork). The live gap is that `harnex status` rendered the worker as
+   `prompt` for seven hours although its `work_state` was already `completed`.
+   Fix: the status table must render settled work state — `done` (accepted
+   completion), `rejected` (proof rejection / rejected observed receipt),
+   `failed` (other typed task failure) — over the adapter's `prompt` input
+   state, so a glance tells an operator this worker needs a decision, not more
+   waiting.
 
 ## Acceptance (Plan 35 scope)
 
@@ -74,8 +85,8 @@ finally ran `harnex stop`); events log
   fixture Pi that emits `task_complete` → `/tmp/x` gets exactly one line;
   same for `task_failed` and `dispatch_error` (one unified hook).
 - Hook fires when no `wait`/`watch` client is attached.
-- A live rejected worker renders `rejected` (not `prompt`) in the `harnex
-  status` table.
+- A live rejected worker renders `rejected`, and a live completed worker
+  renders `done` (not `prompt`), in the `harnex status` table.
 - `harnex agents-guide monitoring` documents: unattended dispatch =
   `--on-done` hook + bounded `watch` calls; never a single long blocking call.
 

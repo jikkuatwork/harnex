@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-03 | 08:15 AM | IST
+Updated: 2026-09-03 | 08:55 AM | IST
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -30,8 +30,14 @@ issue/plan files.
   and loud rejected-work visibility. **Reviewed 2026-09-03 and approved with
   corrections** (observed-unsuccessful-completion classification row; top-level
   `status` stays `completed` for rejected work; orchestrator-wake file-trigger
-  note). No implementation has started; heartbeat and hard-deadline work remain
-  deferred within #71.
+  note). **Amendment 2 (2026-09-03, from the Holm consumer's verification
+  against the incident state files):** the `pi-b-862s2` first-terminal state
+  was `completed`/`accepted` (seq 423), not `rejected` — the rejected receipt
+  was written by `harnex stop` at 02:03Z (#69 family). Plan/issue corrected:
+  the incident row is now a generic "rejected observed receipt" rule; status
+  table renders settled work (`done`/`rejected`/`failed`) over `prompt`;
+  trigger-file example moved to a gitignored path. No implementation has
+  started; heartbeat and hard-deadline work remain deferred within #71.
 - RubyGems and the local executable report `0.11.0`. `main` has the unpushed
   #71 issue commit (`74b69a9`); the plan/issue/handoff edits land with this
   close.
@@ -42,8 +48,10 @@ issue/plan files.
 ## Future
 
 1. Implement Plan 35's core push-signal slice (plan reviewed 2026-09-03,
-   approved with corrections); stop after focused/full tests, the no-watcher
-   smoke, and independent review.
+   approved with corrections + amendment 2) in a Sol/max session; stop after
+   focused/full tests, the no-watcher smoke, and independent review. The Holm
+   orchestrator has asked to review the result and wire `--on-done` to
+   `koder/scratch/HARNEX_WAKE.txt`.
 2. Fix #69 before persistent Pi worker reuse.
 3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
    preflight and #70 Pi command-exit evidence.
