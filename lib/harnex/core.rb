@@ -410,6 +410,14 @@ module Harnex
     COMPLETION_OUTCOMES.map { |outcome| completion_marker_path(repo_root, id, outcome) }
   end
 
+  # Both keys are opaque identities, not paths or reusable dispatch names.
+  # Records are retained until the owner reconciles them; normal id reuse and
+  # marker cleanup must never delete another attempt's pending delivery.
+  def owned_notification_path(owner_id, session_id)
+    File.join(STATE_DIR, "notifications", Digest::SHA256.hexdigest(owner_id.to_s),
+              "#{Digest::SHA256.hexdigest(session_id.to_s)}.json")
+  end
+
   def output_log_path(repo_root, id)
     output_dir = File.join(STATE_DIR, "output")
     FileUtils.mkdir_p(output_dir)

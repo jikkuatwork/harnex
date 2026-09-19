@@ -2,18 +2,22 @@ require "time"
 
 module Harnex
   class CompletionNotifier
+    class RegistrationError < StandardError; end
+
     WORK_STATES = {
       "completed" => "completed", "rejected" => "failed",
       "failed" => "failed", "error" => "failed"
     }.freeze
 
-    def initialize(repo_root:, id:, session_id:, receipt_path:, hook_command: nil,
+    def initialize(repo_root:, id:, session_id:, receipt_path:, hook_command: nil, owner_id: nil,
                    started_at: Time.now, clock: nil, event_sink: nil, spawn: nil,
                    detach: nil, atomic_write: nil, remove: nil, stderr: $stderr)
       @repo_root = Harnex.canonical_repo_root(repo_root)
       @id = Harnex.normalize_id(id)
       @session_id = session_id.to_s
       @receipt_path = receipt_path.to_s
+      @owner_id = owner_id.to_s.strip
+      @owner_id = nil if @owner_id.empty?
       @hook_command = hook_command.to_s
       @hook_command = nil if @hook_command.empty?
       @started_at = started_at
@@ -39,6 +43,7 @@ module Harnex
         rescue StandardError => e
           report_error("completion marker cleanup failed", "cleanup", e, path: path)
         end
+        register_owned_delivery!
         @registered = true
       end
       true
@@ -67,6 +72,7 @@ module Harnex
         notified_at: now.utc.iso8601
       }
       marker_written = write_marker(path, payload)
+      write_owned_delivery(payload) if @owner_id
       hook_launched = launch_hook(payload)
       emit("completion_notification", outcome: outcome, work_state: work_state,
            marker_path: path, marker_written: marker_written,
@@ -75,6 +81,34 @@ module Harnex
     end
 
     private
+
+    def owned_identity
+      {
+        schema_version: 1, owner_id: @owner_id, id: @id, session_id: @session_id,
+        repo_root: @repo_root, receipt_path: @receipt_path,
+        runner_pid: Process.pid, started_at: @started_at.utc.iso8601
+      }
+    end
+
+    def register_owned_delivery!
+      return unless @owner_id
+
+      path = Harnex.owned_notification_path(@owner_id, @session_id)
+      FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+      @atomic_write.call(path, owned_identity.merge(work_state: "running"))
+    rescue StandardError => e
+      report_error("owned notification registration failed", "registration", e)
+      raise RegistrationError, "cannot register owned completion delivery (#{e.class})"
+    end
+
+    def write_owned_delivery(payload)
+      path = Harnex.owned_notification_path(@owner_id, @session_id)
+      @atomic_write.call(path, owned_identity.merge(payload))
+    rescue StandardError => e
+      # The running record remains: its owner can still reconcile with native
+      # watch/receipt evidence, independently of this push write or the hook.
+      report_error("owned notification write failed", "delivery", e)
+    end
 
     def optional_string(value)
       text = value.to_s

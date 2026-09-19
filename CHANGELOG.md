@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.1] - 2026-09-19 | 12:30 PM | +04
+
+### Fixed
+
+- Pi-launched dispatches now capture the invoking primary's `PI_SESSION_ID`
+  before crossing detached/tmux process boundaries and publish a durable,
+  owner-addressed, per-attempt completion record. Reusing a dispatch name no
+  longer erases an unacknowledged attempt, and nested workers never implicitly
+  nominate themselves as completion consumers.
+- Addressed delivery registration fails before the initial structured prompt
+  when it cannot be persisted. A terminal delivery-write failure leaves the
+  registered running record available for native `harnex watch` recovery.
+  Existing typed markers and optional `--on-done` hooks remain compatible.
+
 ## [0.12.0] - 2026-09-03 | 10:09 AM | IST
 
 ### Added

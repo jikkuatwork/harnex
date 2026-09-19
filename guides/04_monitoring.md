@@ -17,24 +17,27 @@ Prefer signals in this order:
 | `harnex pane` | Live UI interpretation and prompt/error diagnosis |
 | `harnex status` | Session liveness and coarse state |
 
-For unattended sessions, combine bounded watcher calls with the runner-owned
-push path. Every session writes
+For unattended sessions, combine owner-addressed delivery with bounded native
+watching. Every session writes
 `$HARNEX_STATE_DIR/done/<repo-key>--<id>.<outcome>` at its first work-terminal
-result. `harnex run --on-done CMD` can also launch one non-blocking local hook,
-even without a watcher and while the agent remains alive at a prompt:
+result. A Pi-launched dispatch also registers a durable per-owner, per-attempt
+record under `$HARNEX_STATE_DIR/notifications/` before its initial structured
+prompt, then atomically settles it at terminal work. The runner captures the
+invoking Pi shell's `PI_SESSION_ID`; nested workers are excluded unless an
+external owner is explicitly named with `--orchestration-session-id`.
 
 ```bash
-harnex run pi --id pi-i-NN --tmux pi-i-NN --context "Read the task brief" \
-  --auto-stop \
-  --on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> koder/scratch/HARNEX_WAKE.txt'
-harnex watch --id pi-i-NN --until done --max-wait 30m
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
+  --context "Read the task brief" --auto-stop
+harnex watch --id pi-i-NN --until done --max-wait 15m
 ```
 
-Use a gitignored wake destination. `CMD` is trusted shell input; never embed
-secrets. It receives `HARNEX_ID`, `HARNEX_OUTCOME`, `HARNEX_WORK_STATE`,
-`HARNEX_RECEIPT_PATH`, `HARNEX_END_SHA`, and `HARNEX_ELAPSED_S`. `completed`
-wakes the consumer but does not certify the prose; verify the receipt and
-artifact before acting.
+The consumer must match owner and attempt identity, verify the exact Harnex
+receipt, and persist acknowledgment before continuing. It must not erase a
+shared signal before delivery. `harnex run --on-done CMD` remains an optional
+non-blocking integration hook; `CMD` is trusted shell input, receives the typed
+`HARNEX_*` completion values, and must not target a destructive shared queue.
+`completed` is still only a wake: verify the artifact and acceptance gates.
 
 `harnex watch --until done` returns on the work-level `task_complete` or
 `task_failed` signal, or terminal exit, whichever comes first. Successful work
@@ -229,7 +232,7 @@ interpretation.
 - Polling `state=prompt` alone and calling it done.
 - Wrapping `harnex wait` in loops that swallow non-zero `task_failed` results.
 - Blocking orchestrators on caller-owned `/tmp/*-done.txt` as the only completion signal.
-- Using one long watcher call without the runner-owned marker or `--on-done` push path.
+- Using one long watcher call without the runner-owned marker or owner-addressed delivery path.
 - Letting an unattended loop run with no wall-clock cap.
 - Reading raw tmux panes instead of `harnex pane`.
 - Using `--wait-for-idle` as acceptance proof.

@@ -1403,6 +1403,42 @@ class RunnerTest < Minitest::Test
 
   # --tmux flag parsing (issue #20)
 
+  def test_pi_primary_identity_survives_tmux_environment_and_explicit_metadata_wins
+    with_env("PI_SESSION_ID" => "outer-pi-primary") do
+      argv = ["codex", "--id", "tmux-owner", "--tmux", "tmux-owner"]
+      runner = Harnex::Runner.new(argv)
+      runner.send(:extract_wrapper_options, argv)
+      runner.send(:apply_telemetry_options!)
+      assert_equal "outer-pi-primary", runner.instance_variable_get(:@options).dig(:meta, "orchestration_session_id")
+      captured = nil
+      registry = { "pid" => Process.pid, "port" => 43_999 }
+      runner.define_singleton_method(:wait_for_registration) { |_repo| registry }
+      runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
+      runner.stub(:system, lambda { |*args| captured = args; true }) do
+        capture_io { runner.send(:run_in_tmux, "codex", [], Dir.pwd) }
+      end
+      inner_argv = Shellwords.split(captured.last).drop(2)
+      with_env("PI_SESSION_ID" => "stale-tmux-environment") do
+        inner = Harnex::Runner.new(inner_argv)
+        inner.send(:extract_wrapper_options, inner_argv)
+        inner.send(:apply_telemetry_options!)
+        assert_equal "outer-pi-primary", inner.instance_variable_get(:@options).dig(:meta, "orchestration_session_id")
+      end
+      explicit = ["pi", "--orchestration-session-id", "explicit-primary"]
+      inner = Harnex::Runner.new(explicit)
+      inner.send(:extract_wrapper_options, explicit)
+      inner.send(:apply_telemetry_options!)
+      assert_equal "explicit-primary", inner.instance_variable_get(:@options).dig(:meta, "orchestration_session_id")
+
+      with_env("HARNEX_ID" => "nested-worker") do
+        nested = Harnex::Runner.new(["pi"])
+        nested.send(:extract_wrapper_options, ["pi"])
+        nested.send(:apply_telemetry_options!)
+        assert_nil nested.instance_variable_get(:@options)[:meta], "a worker must not address completion to itself"
+      end
+    end
+  end
+
   def test_tmux_forwards_on_done_as_one_exact_argument
     command = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" >> /tmp/harnex wake"
     argv = ["codex", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command]

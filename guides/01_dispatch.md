@@ -87,24 +87,32 @@ for i in 1 2 3; do harnex watch --id w-$i --until done --max-wait 90m & done
 wait
 ```
 
-For unattended work, add a session-owned push signal rather than depending on
-one long blocking watcher call:
+For unattended work, pair each dispatch with an owner-addressed consumer and
+bounded native monitoring rather than depending on one long blocking watcher:
 
 ```bash
 harnex run pi --id pi-i-NN --tmux pi-i-NN \
-  --context "Read and execute /tmp/task-NN.md" --auto-stop \
-  --on-done 'printf "%s %s\n" "$HARNEX_ID" "$HARNEX_OUTCOME" >> koder/scratch/HARNEX_WAKE.txt'
+  --context "Read and execute /tmp/task-NN.md" --auto-stop
 ```
 
-Every registered session writes
-`$HARNEX_STATE_DIR/done/<repo-key>--<normalized-id>.<outcome>`, even without a
-hook. `--on-done CMD` receives `HARNEX_ID`, `HARNEX_OUTCOME`,
-`HARNEX_WORK_STATE`, `HARNEX_RECEIPT_PATH`, `HARNEX_END_SHA`, and
-`HARNEX_ELAPSED_S`. Use a gitignored wake file. `CMD` is trusted `/bin/sh -c`
-input; never embed secrets in the command line.
+When `harnex run` is invoked by a Pi shell tool, it captures `PI_SESSION_ID`
+before crossing detached/tmux process boundaries. The session registers a
+per-owner, per-attempt record under `$HARNEX_STATE_DIR/notifications/` before
+sending the structured initial prompt, then atomically settles that record at
+the first typed outcome. A nested Harnex worker never implicitly nominates
+itself; non-Pi or nested orchestrators can pass `--orchestration-session-id`
+explicitly. Dispatch-name reuse does not erase these records.
 
-A push only wakes the consumer. Even `completed` requires report, artifact,
-test, and Git verification plus bounded `harnex watch --until done` calls.
+Every registered session also writes the existing
+`$HARNEX_STATE_DIR/done/<repo-key>--<normalized-id>.<outcome>` marker. Optional
+`--on-done CMD` remains available for single-consumer integrations and receives
+`HARNEX_ID`, `HARNEX_OUTCOME`, `HARNEX_WORK_STATE`, `HARNEX_RECEIPT_PATH`,
+`HARNEX_END_SHA`, and `HARNEX_ELAPSED_S`; never use one destructive shared file
+as a multi-session delivery queue. `CMD` is trusted `/bin/sh -c` input, so do
+not embed secrets in the command line.
+
+A delivery only wakes the consumer. Even `completed` requires exact-receipt,
+artifact, test, and Git verification plus a durable consumer acknowledgment.
 
 Rule: when you use `--tmux`, pass the same name as `--id`. If you pass only
 `--tmux NAME`, harnex creates a random session ID and the pane name no longer

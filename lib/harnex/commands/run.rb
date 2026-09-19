@@ -105,7 +105,8 @@ module Harnex
           --orchestration-role ROLE
                              primary or worker; defaults to worker in rollups when omitted
           --orchestration-session-id ID
-                             External primary session id to preserve in rollups
+                             External primary session id for rollups and owned
+                             completion delivery (default: shell PI_SESSION_ID)
           --orchestration-rotation-reason TEXT
                              Clean rotation/recovery reason for the generation
           --require-attribution
@@ -803,10 +804,17 @@ module Harnex
 
     def apply_telemetry_options!
       explicit = @options[:telemetry]
-      return if explicit.empty? && @options[:meta].is_a?(Hash)
-      return if explicit.empty?
+      # A nested Harnex worker's PI_SESSION_ID identifies the worker itself,
+      # which is intentionally not an eligible primary consumer. Nested
+      # orchestration must name its external primary explicitly.
+      primary = ENV["HARNEX_ID"].to_s.strip.empty? ? ENV["PI_SESSION_ID"].to_s.strip : ""
+      return if explicit.empty? && primary.empty?
 
-      @options[:meta] = (@options[:meta].is_a?(Hash) ? @options[:meta].dup : {}).merge(explicit)
+      # Capture the invoker before tmux switches to the server environment.
+      # --meta / explicit flags win, including when the inner runner inherits
+      # a stale PI_SESSION_ID from that server.
+      defaults = primary.empty? ? {} : { "orchestration_session_id" => primary }
+      @options[:meta] = defaults.merge(@options[:meta] || {}).merge(explicit)
     end
 
     def validate_attempt_metadata!

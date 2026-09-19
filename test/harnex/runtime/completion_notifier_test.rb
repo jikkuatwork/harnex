@@ -103,6 +103,48 @@ class CompletionNotifierTest < Minitest::Test
     assert_equal [false, false], @events.last.last.values_at(:marker_written, :hook_launched)
   end
 
+  def test_owned_delivery_is_registered_then_settled_without_erasing_reused_id_history
+    owner = "primary-pi-session"
+    notifier = build_notifier(owner_id: owner)
+    notifier.register!
+    path = Harnex.owned_notification_path(owner, "session-123")
+    pending = JSON.parse(File.read(path))
+    assert_equal [owner, "session-123", "running", Process.pid],
+      pending.values_at("owner_id", "session_id", "work_state", "runner_pid")
+    assert_equal 0o700, File.stat(File.dirname(path)).mode & 0o777
+
+    notifier.notify(**notification_args(outcome: "completed"))
+    completed = JSON.parse(File.read(path))
+    assert_equal [owner, "completed", @repo], completed.values_at("owner_id", "outcome", "repo_root")
+
+    replacement = Harnex::CompletionNotifier.new(
+      repo_root: @repo, id: @id, session_id: "different-attempt",
+      receipt_path: File.join(@repo, "other-receipt.json"), owner_id: owner
+    )
+    replacement.register!
+    assert_equal completed, JSON.parse(File.read(path)), "reusing a dispatch id must not erase an unacknowledged event"
+    refute File.exist?(Harnex.owned_notification_path("other-owner", "session-123"))
+  end
+
+  def test_owned_delivery_registration_failure_is_not_silently_ignored
+    notifier = build_notifier(owner_id: "primary", atomic_write: ->(*) { raise Errno::EACCES })
+    assert_raises(Harnex::CompletionNotifier::RegistrationError) { notifier.register! }
+  end
+
+  def test_failed_terminal_delivery_keeps_registered_record_for_native_watch_recovery
+    writes = 0
+    notifier = build_notifier(owner_id: "primary", atomic_write: lambda { |path, payload|
+      writes += 1
+      raise Errno::EACCES if writes > 1
+      Harnex.atomic_write_json(path, payload)
+    })
+    notifier.register!
+    assert notifier.notify(**notification_args(outcome: "failed"))
+    pending = JSON.parse(File.read(Harnex.owned_notification_path("primary", "session-123")))
+    assert_equal "running", pending.fetch("work_state")
+    assert_includes @events.map(&:last).map { |event| event[:component] }, "delivery"
+  end
+
   private
 
   def build_notifier(id: @id, **options)

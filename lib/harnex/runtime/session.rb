@@ -147,6 +147,7 @@ module Harnex
         session_id: @session_id,
         receipt_path: @artifact_report_path,
         hook_command: on_done,
+        owner_id: @meta.is_a?(Hash) ? @meta["orchestration_session_id"] : nil,
         started_at: @started_at,
         event_sink: ->(type, payload) { emit_event(type, **payload) }
       )
@@ -243,8 +244,8 @@ module Harnex
       sync_window_size
       @server = ApiServer.new(self)
       @server.start
-      persist_registry
       register_completion_notifier!
+      persist_registry
       append_dispatch_start_record
 
       stdin_state = STDIN.tty? ? STDIN.raw! : nil
@@ -524,8 +525,8 @@ module Harnex
       install_signal_handlers
       @server = ApiServer.new(self)
       @server.start
-      persist_registry
       register_completion_notifier!
+      persist_registry
       append_dispatch_start_record
 
       watch_thread = start_watch_thread
@@ -1217,6 +1218,9 @@ module Harnex
         @completion_notification_registered = true
         deliver_completion_notification(@pending_completion_notification) if @pending_completion_notification
       end
+    rescue CompletionNotifier::RegistrationError
+      # A named primary must have a durable monitor handoff before any prompt.
+      raise
     rescue StandardError => e
       warn("harnex: completion marker cleanup failed (#{e.class})")
       emit_event("completion_notification_error", component: "cleanup", error_class: e.class.name)
