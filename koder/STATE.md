@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-03 | 10:16 AM | IST
+Updated: 2026-09-19 | 12:48 PM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -31,20 +31,22 @@ issue/plan files.
 
 ## Present
 
-- RubyGems and the local executable report `0.12.0`; Holm can now consume
-  `--on-done` and the session-owned marker contract.
-- #71 remains open only for separately planned heartbeat and hard-deadline
-  slices. No polling/deadline behavior changed in Plan 35.
-- #69 still blocks persistent Pi reuse; fresh `--auto-stop` workers remain the
-  safe lifecycle. #58 remains explicitly unsupported, and the registry
-  lost-update race remains known.
+- `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
+  locally accepted: full suite `706/3051`, exact candidate gem package check,
+  and offline installed-package Pi smokes for completion, failure, and native
+  watcher recovery all pass. Issue #72 remains open.
+- Publication is blocked because the prescribed `bin/gem-push` cannot find its
+  required `.env`. No tag, push, or global install occurred; RubyGems and the
+  global executable remain `0.12.0`. Do not bypass the release helper.
+- #71 remains open for heartbeat/hard-deadline slices. #69 still blocks
+  persistent Pi reuse; fresh `--auto-stop` workers remain the safe lifecycle.
 
 ## Future
 
-1. Wire Holm's `--on-done` hook to its gitignored
-   `koder/scratch/HARNEX_WAKE.txt` trigger and verify the consumer wake path.
-2. Fix #69 before persistent Pi worker reuse.
-3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
+1. Restore the release `.env`, then follow the documented sequence: publish
+   `harnex-0.12.1.gem`, tag/push `a532a5b`, and globally install `0.12.1`.
+2. Repeat the offline installed-binary success/failure/fallback smoke, write the
+   `0.12.1` release record, resolve #72, and update this handoff.
+3. Fix #69 before persistent Pi worker reuse.
+4. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
    preflight and #70 Pi command-exit evidence.
-4. Converge #57/#59 into the deterministic conveyor; #45, #42 / Plan 30, #41,
-   and #58 remain later bounded work.

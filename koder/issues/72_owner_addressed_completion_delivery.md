@@ -31,5 +31,21 @@ attach a native bounded watcher; settle it independently of the optional hook.
   extension, not certified merely by the presence of a native marker.
 - Gate: focused regressions, full Ruby suite, then installed-CLI local smoke.
 
+## Implementation checkpoint
+
+Commit `a532a5b` implements the contract. The full suite passes `706` runs /
+`3051` assertions with zero failures or errors. The exact candidate gem
+(`dc55bbfd872c167fbfdb859c7591ba73b15fc259898bcf8fb573a2d6304219fe`)
+was installed into an isolated local GEM home and passed end-to-end Pi smokes
+for accepted completion, terminal failure, and forced terminal-delivery-write
+failure recovered by a bounded native watcher. In all three, the addressed
+idle consumer acknowledged the exact receipt while the worker remained alive;
+workers received no completion message.
+
+Release activation is blocked: the prescribed `bin/gem-push` command reports
+`.env not found`. No credential workaround, tag, Git push, or global install
+was attempted. Keep this issue open until `0.12.1` is published, globally
+installed, and the installed smoke is repeated.
+
 Source exposure: none — implementation and synthetic proofs stay local; no
-repository content, private incident logs, package, or Git objects are published.
+private downstream source, incident logs, package, or Git objects were published.
