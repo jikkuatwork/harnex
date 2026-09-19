@@ -42,10 +42,13 @@ failure recovered by a bounded native watcher. In all three, the addressed
 idle consumer acknowledged the exact receipt while the worker remained alive;
 workers received no completion message.
 
-Release activation is blocked: the prescribed `bin/gem-push` command reports
-`.env not found`. No credential workaround, tag, Git push, or global install
-was attempted. Keep this issue open until `0.12.1` is published, globally
-installed, and the installed smoke is repeated.
+The owner approved local-only activation because Harnex currently has one
+user. The exact verified gem is globally selected as local `0.12.1`, published
+`0.12.0` remains installed as rollback, and the global executable repeated all
+three smokes successfully with zero residual sessions. Public publication is
+deferred: prescribed `bin/gem-push` reports `.env not found`, and no credential
+workaround, tag, or Git push occurred. Keep this issue open as the public
+release tracker; local runtime use is unblocked.
 
 Source exposure: none — implementation and synthetic proofs stay local; no
 private downstream source, incident logs, package, or Git objects were published.

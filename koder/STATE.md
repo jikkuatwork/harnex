@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-19 | 12:48 PM | +04
+Updated: 2026-09-19 | 12:50 PM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -32,21 +32,22 @@ issue/plan files.
 ## Present
 
 - `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
-  locally accepted: full suite `706/3051`, exact candidate gem package check,
-  and offline installed-package Pi smokes for completion, failure, and native
-  watcher recovery all pass. Issue #72 remains open.
-- Publication is blocked because the prescribed `bin/gem-push` cannot find its
-  required `.env`. No tag, push, or global install occurred; RubyGems and the
-  global executable remain `0.12.0`. Do not bypass the release helper.
+  accepted: full suite `706/3051`, exact candidate gem package check, and
+  offline Pi smokes for completion, failure, and native watcher recovery pass.
+- Under explicit owner direction, the exact gem is globally selected as local
+  `0.12.1`; published `0.12.0` remains installed as rollback. The global
+  executable repeated all three smokes with zero residual sessions, so local
+  runtime use is unblocked. Issue #72 remains open only as release tracking.
+- Public publication is deferred because prescribed `bin/gem-push` cannot find
+  its required `.env`. No credential workaround, tag, or Git push occurred.
 - #71 remains open for heartbeat/hard-deadline slices. #69 still blocks
   persistent Pi reuse; fresh `--auto-stop` workers remain the safe lifecycle.
 
 ## Future
 
-1. Restore the release `.env`, then follow the documented sequence: publish
-   `harnex-0.12.1.gem`, tag/push `a532a5b`, and globally install `0.12.1`.
-2. Repeat the offline installed-binary success/failure/fallback smoke, write the
-   `0.12.1` release record, resolve #72, and update this handoff.
-3. Fix #69 before persistent Pi worker reuse.
-4. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
+1. When public publication is desired, restore the release `.env`, publish the
+   already verified `harnex-0.12.1.gem`, tag/push `a532a5b`, write the release
+   record, and resolve #72. Do not rebuild a different package under 0.12.1.
+2. Fix #69 before persistent Pi worker reuse.
+3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
    preflight and #70 Pi command-exit evidence.
