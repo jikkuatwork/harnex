@@ -898,6 +898,42 @@ class SessionTest < Minitest::Test
     end
   end
 
+  def test_attempt_chain_reads_parent_from_external_complete_history
+    Dir.mktmpdir("harnex-attempt-archive") do |dir|
+      stream = File.join(dir, "dispatch.jsonl")
+      archived = File.join(dir, "archived.jsonl")
+      File.write(stream, "")
+      write_attempt_end(archived, id: "cx-i-73-parent", status: "failed", kind: "initial")
+      helper = File.join(dir, "history-helper")
+      File.write(helper, <<~'RUBY')
+        #!/usr/bin/env ruby
+        canonical = ARGV.fetch(ARGV.index("--canonical") + 1)
+        STDOUT.write(File.binread(ENV.fetch("ARCHIVED_FIXTURE")))
+        STDOUT.write(File.binread(canonical))
+      RUBY
+      File.chmod(0o755, helper)
+      previous_reader = ENV["HARNEX_DISPATCH_HISTORY_READER"]
+      previous_fixture = ENV["ARCHIVED_FIXTURE"]
+      ENV["HARNEX_DISPATCH_HISTORY_READER"] = helper
+      ENV["ARCHIVED_FIXTURE"] = archived
+
+      session = chain_session(
+        repo_root: dir,
+        stream: stream,
+        meta: { "attempt_kind" => "retry", "parent_dispatch_id" => "cx-i-73-parent" },
+        exit_reason: "success"
+      )
+      actual = session.send(:build_summary_record).fetch(:actual)
+
+      assert_equal 2, actual.fetch(:attempts_total)
+      assert_equal 1, actual.fetch(:attempts_succeeded)
+      assert_equal 1, actual.fetch(:attempts_failed)
+    ensure
+      previous_reader ? ENV["HARNEX_DISPATCH_HISTORY_READER"] = previous_reader : ENV.delete("HARNEX_DISPATCH_HISTORY_READER")
+      previous_fixture ? ENV["ARCHIVED_FIXTURE"] = previous_fixture : ENV.delete("ARCHIVED_FIXTURE")
+    end
+  end
+
   def test_attempt_chain_recovered_uses_immediate_parent_only
     Dir.mktmpdir("harnex-attempt-recovered") do |dir|
       stream = File.join(dir, "dispatch.jsonl")

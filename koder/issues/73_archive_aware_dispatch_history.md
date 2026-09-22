@@ -31,8 +31,8 @@ JSONL; the protocol invokes only an explicitly configured local executable.
 ## Resolution
 
 Implemented in `011f186`. The focused archive-writer, complete-reader, history,
-status, and reconciliation tests pass, followed by the full suite at `712` runs
-and `3,072` assertions with zero failures or errors. Holm's matching helper also
+status, attempt-chain, and reconciliation tests pass, followed by the full
+suite at `713` runs and `3,075` assertions with zero failures or errors. Holm's matching helper also
 passed a local cross-repository round trip with real `age` encryption. No
 archive hook was enabled globally, no telemetry was transferred, and no Harnex
 release was cut.

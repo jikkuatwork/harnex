@@ -34,7 +34,7 @@ issue/plan files.
 - Issue #73's opt-in archive bridge landed at `011f186`: stable sidecar locking
   protects atomic ledger replacement, while configured local helpers prepare
   appends and provide complete archive-plus-active history to Harnex readers.
-  The full suite passed `712` runs / `3,072` assertions. No hook is globally
+  The full suite passed `713` runs / `3,075` assertions. No hook is globally
   enabled, no telemetry moved, and no release was cut.
 - `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
   accepted: full suite `706/3051`, exact candidate gem package check, and
