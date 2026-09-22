@@ -31,6 +31,11 @@ issue/plan files.
 
 ## Present
 
+- Issue #73's opt-in archive bridge landed at `011f186`: stable sidecar locking
+  protects atomic ledger replacement, while configured local helpers prepare
+  appends and provide complete archive-plus-active history to Harnex readers.
+  The full suite passed `712` runs / `3,072` assertions. No hook is globally
+  enabled, no telemetry moved, and no release was cut.
 - `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
   accepted: full suite `706/3051`, exact candidate gem package check, and
   offline Pi smokes for completion, failure, and native watcher recovery pass.
@@ -51,3 +56,5 @@ issue/plan files.
 2. Fix #69 before persistent Pi worker reuse.
 3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
    preflight and #70 Pi command-exit evidence.
+4. Release the #73 archive bridge in a later version only when Holm's archive
+   activation is cleared; keep both helper environment variables unset until then.

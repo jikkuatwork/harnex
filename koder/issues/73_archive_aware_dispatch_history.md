@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-09-22
 updated: 2026-09-22
@@ -27,3 +27,12 @@ configures a local helper executable.
 
 Source exposure: none — implementation and tests stay local and use synthetic
 JSONL; the protocol invokes only an explicitly configured local executable.
+
+## Resolution
+
+Implemented in `011f186`. The focused archive-writer, complete-reader, history,
+status, and reconciliation tests pass, followed by the full suite at `712` runs
+and `3,072` assertions with zero failures or errors. Holm's matching helper also
+passed a local cross-repository round trip with real `age` encryption. No
+archive hook was enabled globally, no telemetry was transferred, and no Harnex
+release was cut.
