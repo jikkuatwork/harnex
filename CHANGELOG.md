@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.13.0] - 2026-09-23 | 01:56 AM | +04
+
+Local-only activation approved by the owner. Public RubyGems publication, Git
+tag, and push are deferred; later publication must use the exact verified gem
+built from this commit rather than rebuilding version 0.13.0.
 
 ### Added
 
