@@ -24,6 +24,7 @@ class TelemetryReconcilerTest < Minitest::Test
   # - source classification/exclusions: test_directory_sources_exclude_canonical_git_and_symlinks
   # - unrelated JSON and malformed declared telemetry: test_source_classifier_ignores_unrelated_json_but_fails_malformed_declared_telemetry
   # - bounded payload-free JSON: test_json_report_is_bounded_and_never_echoes_payloads
+  # - archive bridge capability: test_archive_capability_reports_the_local_helper_contract
   # - CLI help/errors: test_cli_help_unknown_subcommand_option_conflict_and_required_source_contract
 
   def test_assert_canonical_accepts_clean_mixed_era_stream
@@ -413,6 +414,22 @@ class TelemetryReconcilerTest < Minitest::Test
     end
   end
 
+  def test_archive_capability_reports_the_local_helper_contract
+    result = telemetry(Dir.pwd, "archive-capability", "--json")
+
+    assert_equal 0, result.status.exitstatus, result.stderr
+    assert_equal(
+      {
+        "schema" => "harnex.telemetry_archive_capability.v1",
+        "status" => "supported",
+        "protocol_version" => 1,
+        "archiver_env" => "HARNEX_DISPATCH_ARCHIVER",
+        "history_reader_env" => "HARNEX_DISPATCH_HISTORY_READER"
+      },
+      JSON.parse(result.stdout)
+    )
+  end
+
   def test_cli_help_unknown_subcommand_option_conflict_and_required_source_contract
     # seam: cli-subprocess
     Dir.mktmpdir("harnex-telemetry-cli") do |dir|
@@ -425,7 +442,7 @@ class TelemetryReconcilerTest < Minitest::Test
       conflict = telemetry(dir, "assert-canonical", "--canonical", canonical, "--global")
       missing_source = telemetry(dir, "reconcile", "--canonical", canonical, "--json")
 
-      assert_cli(help, exitstatus: 0, stdout: ["assert-canonical", "reconcile"])
+      assert_cli(help, exitstatus: 0, stdout: ["archive-capability", "assert-canonical", "reconcile"])
       assert_cli(unknown, exitstatus: 2, stderr: ["unknown telemetry subcommand"])
       assert_cli(unknown_option, exitstatus: 2, stderr: ["invalid option", "--definitely-unknown"])
       assert_cli(conflict, exitstatus: 2, stderr: ["--canonical", "--global", "mutually exclusive"])

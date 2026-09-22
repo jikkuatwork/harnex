@@ -3,11 +3,12 @@ require "optparse"
 
 module Harnex
   class TelemetryCommand
-    COMMANDS = %w[assert-canonical reconcile].freeze
+    COMMANDS = %w[archive-capability assert-canonical reconcile].freeze
 
     def self.usage(program_name = "harnex telemetry")
       <<~TEXT
         Usage:
+          #{program_name} archive-capability [--json]
           #{program_name} assert-canonical [--canonical PATH | --global] [--source PATH] [--json]
           #{program_name} reconcile [--canonical PATH | --global] --source PATH [--apply] [--json]
 
@@ -38,6 +39,17 @@ module Harnex
           return 0
         end
         validate_options!(command, options)
+        if command == "archive-capability"
+          report = {
+            schema: "harnex.telemetry_archive_capability.v1",
+            status: "supported",
+            protocol_version: DispatchHistory::ARCHIVE_PROTOCOL_VERSION,
+            archiver_env: DispatchHistory::ARCHIVER_ENV,
+            history_reader_env: DispatchHistory::HISTORY_READER_ENV
+          }
+          puts(options[:json] ? JSON.generate(report) : "telemetry archive capability: supported (protocol #{report[:protocol_version]})")
+          return 0
+        end
         result = TelemetryReconciler.new(
           command: command,
           canonical: canonical_path(options),
@@ -78,6 +90,12 @@ module Harnex
     end
 
     def validate_options!(command, options)
+      if command == "archive-capability"
+        if options[:canonical] || options[:global] || options[:sources].any? || options[:apply]
+          raise OptionParser::InvalidOption, "archive-capability accepts only --json"
+        end
+        return
+      end
       if options[:canonical] && options[:global]
         raise OptionParser::InvalidOption, "--canonical and --global are mutually exclusive"
       end
