@@ -10,6 +10,9 @@
   history, canonical reconciliation, latest-row lookup, status, and attempt
   accounting. Helper failures never drop a new dispatch row, while unavailable
   or malformed complete history fails explicitly instead of appearing empty.
+- `harnex telemetry archive-capability --json` exposes the local helper protocol
+  version and exact archiver/history environment names so automation can refuse
+  to trim active dispatch history against an older installed Harnex.
 
 ## [0.12.1] - 2026-09-19 | 12:30 PM | +04
 

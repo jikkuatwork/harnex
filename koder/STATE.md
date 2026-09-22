@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-19 | 12:50 PM | +04
+Updated: 2026-09-23 | 01:48 AM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -34,8 +34,9 @@ issue/plan files.
 - Issue #73's opt-in archive bridge landed at `011f186`: stable sidecar locking
   protects atomic ledger replacement, while configured local helpers prepare
   appends and provide complete archive-plus-active history to Harnex readers.
-  The full suite passed `713` runs / `3,075` assertions. No hook is globally
-  enabled, no telemetry moved, and no release was cut.
+  `c2e5510` adds the protocol-1 capability probe required by Holm's fail-closed
+  close sync. The full suite passes `714` runs / `3,077` assertions. No hook is
+  globally enabled, no telemetry moved, and no release was cut.
 - `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
   accepted: full suite `706/3051`, exact candidate gem package check, and
   offline Pi smokes for completion, failure, and native watcher recovery pass.
@@ -50,11 +51,9 @@ issue/plan files.
 
 ## Future
 
-1. When public publication is desired, restore the release `.env`, publish the
-   already verified `harnex-0.12.1.gem`, tag/push `a532a5b`, write the release
-   record, and resolve #72. Do not rebuild a different package under 0.12.1.
-2. Fix #69 before persistent Pi worker reuse.
-3. Plan the remaining #71 heartbeat/deadline slices, then implement #56 adapter
-   preflight and #70 Pi command-exit evidence.
-4. Release the #73 archive bridge in a later version only when Holm's archive
-   activation is cleared; keep both helper environment variables unset until then.
+1. Restore the prescribed release `.env`; it is still absent. Do not bypass
+   `bin/gem-push`, rebuild 0.12.1, publish, tag, push, or install out of order.
+2. Cut the next release containing both owner-addressed completion and the #73
+   archive bridge, install it, and verify `telemetry archive-capability --json`
+   before Holm enables either helper variable.
+3. Fix #69 before persistent Pi worker reuse, then continue #71/#56/#70.

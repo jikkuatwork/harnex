@@ -2,7 +2,7 @@
 status: resolved
 priority: P1
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 tags: telemetry, history, locking
 type: feature
 issue_kind: slice
@@ -33,6 +33,8 @@ JSONL; the protocol invokes only an explicitly configured local executable.
 Implemented in `011f186`. The focused archive-writer, complete-reader, history,
 status, attempt-chain, and reconciliation tests pass, followed by the full
 suite at `713` runs and `3,075` assertions with zero failures or errors. Holm's matching helper also
-passed a local cross-repository round trip with real `age` encryption. No
-archive hook was enabled globally, no telemetry was transferred, and no Harnex
-release was cut.
+passed a local cross-repository round trip with real `age` encryption. Follow-up
+commit `c2e5510` exposes machine-readable archive protocol 1 so callers fail
+closed against an older installed gem; the full suite then passed 714 runs and
+3,077 assertions. No archive hook was enabled globally, no telemetry was
+transferred, and no Harnex release was cut.
