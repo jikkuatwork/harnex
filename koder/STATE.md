@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-23 | 01:48 AM | +04
+Updated: 2026-09-23 | 02:01 AM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -31,29 +31,29 @@ issue/plan files.
 
 ## Present
 
-- Issue #73's opt-in archive bridge landed at `011f186`: stable sidecar locking
-  protects atomic ledger replacement, while configured local helpers prepare
-  appends and provide complete archive-plus-active history to Harnex readers.
-  `c2e5510` adds the protocol-1 capability probe required by Holm's fail-closed
-  close sync. The full suite passes `714` runs / `3,077` assertions. No hook is
-  globally enabled, no telemetry moved, and no release was cut.
-- `0.12.1` owner-addressed completion delivery is implemented at `a532a5b` and
-  accepted: full suite `706/3051`, exact candidate gem package check, and
-  offline Pi smokes for completion, failure, and native watcher recovery pass.
-- Under explicit owner direction, the exact gem is globally selected as local
-  `0.12.1`; published `0.12.0` remains installed as rollback. The global
-  executable repeated all three smokes with zero residual sessions, so local
-  runtime use is unblocked. Issue #72 remains open only as release tracking.
-- Public publication is deferred because prescribed `bin/gem-push` cannot find
-  its required `.env`. No credential workaround, tag, or Git push occurred.
+- **`harnex 0.13.0` is installed locally** from candidate commit `bf60266`
+  under an explicit owner exception that defers public publication. It combines
+  owner-addressed completion with Issue #73's archive bridge and `c2e5510`'s
+  protocol-1 capability probe. Verification: `koder/releases/0.13.0.md`.
+- The exact retained gem is 184,832 bytes with SHA-256
+  `2a8d8bfd2d852998772cd973c2d9c19346282617b29920055f8caadd74921268`.
+  Full suite: 714 runs / 3,077 assertions. An installed-binary synthetic writer/
+  reader smoke produced two real-age local archives, reconstructed all nine
+  records exactly, and passed canonical validation.
+- Published `0.12.0` and locally installed `0.12.1` remain available as rollback.
+  Issue #72 remains open as public-release tracking. No archive hook is globally
+  enabled and no live telemetry moved.
+- Public publication is deferred because prescribed `bin/gem-push` still cannot
+  find `.env`. No credential workaround, tag, Git push, or network publication
+  occurred.
 - #71 remains open for heartbeat/hard-deadline slices. #69 still blocks
   persistent Pi reuse; fresh `--auto-stop` workers remain the safe lifecycle.
 
 ## Future
 
-1. Restore the prescribed release `.env`; it is still absent. Do not bypass
-   `bin/gem-push`, rebuild 0.12.1, publish, tag, push, or install out of order.
-2. Cut the next release containing both owner-addressed completion and the #73
-   archive bridge, install it, and verify `telemetry archive-capability --json`
-   before Holm enables either helper variable.
+1. When public publication is desired, restore `.env` and publish the exact
+   retained `harnex-0.13.0.gem`; do not rebuild version 0.13.0. Then tag/push
+   `bf60266`, update the release record, and resolve #72.
+2. Holm may consume the installed archive protocol after its remaining recipient
+   proofs; keep both helper environment variables unset until Holm activates it.
 3. Fix #69 before persistent Pi worker reuse, then continue #71/#56/#70.
