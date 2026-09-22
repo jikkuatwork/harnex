@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Dispatch telemetry now has an opt-in local archive bridge. A stable sidecar
+  lock encloses archive preparation and append, preventing atomic rotation from
+  stranding writers on an old inode. A separate complete-history reader feeds
+  history, canonical reconciliation, latest-row lookup, status, and attempt
+  accounting. Helper failures never drop a new dispatch row, while unavailable
+  or malformed complete history fails explicitly instead of appearing empty.
+
 ## [0.12.1] - 2026-09-19 | 12:30 PM | +04
 
 ### Fixed

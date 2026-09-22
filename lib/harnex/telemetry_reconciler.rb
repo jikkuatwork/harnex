@@ -37,9 +37,9 @@ module Harnex
 
     private
 
-    def analyze
+    def analyze(canonical_locked: false)
       reset_diagnostics
-      canonical = load_canonical(@canonical)
+      canonical = load_canonical(@canonical, locked: canonical_locked)
       sources = discover_sources(@sources, @canonical)
       source_rows = sources[:rows]
       conflict_rows = sources[:conflicts]
@@ -115,7 +115,7 @@ module Harnex
 
     def writable?(state) = state[:fatal].empty? && state[:conflict_rows].empty? && state[:missing_rows].any?
 
-    def load_canonical(path)
+    def load_canonical(path, locked: false)
       rows = []
       fatal = []
       families = FAMILY_KEYS.to_h { |key| [key, 0] }
@@ -123,7 +123,19 @@ module Harnex
       ends = {}
       recoverable = []
 
-      read_jsonl(path).each do |entry|
+      begin
+        entries = read_jsonl(path, complete: true, locked: locked)
+      rescue DispatchHistory::HistoryUnavailable => e
+        return {
+          rows: 0,
+          families: families,
+          recoverable: [],
+          fatal: [e.message],
+          open_starts: 0
+        }
+      end
+
+      entries.each do |entry|
         if entry[:error]
           fatal << "malformed canonical JSON at #{path}:#{entry[:line]}"
           next
@@ -281,18 +293,27 @@ module Harnex
       records.each_with_index.map { |record, index| { record: record, line: index + 1, path: path } }
     end
 
-    def read_jsonl(path)
-      return [] unless File.file?(path)
+    def read_jsonl(path, complete: false, locked: false)
+      return [] unless File.file?(path) || complete
 
-      File.readlines(path, chomp: true).each_with_index.filter_map do |line, index|
+      entries = []
+      index = 0
+      consume = proc do |line|
+        index += 1
         next if line.strip.empty?
 
         begin
-          { record: JSON.parse(line), line: index + 1, path: path }
+          entries << { record: JSON.parse(line), line: index, path: path }
         rescue JSON::ParserError => error
-          { error: error, line: index + 1, path: path }
+          entries << { error: error, line: index, path: path }
         end
       end
+      if complete
+        DispatchHistory.each_history_line(path, locked: locked, &consume)
+      else
+        File.foreach(path, &consume)
+      end
+      entries
     end
 
     def canonical_family(record)
@@ -410,23 +431,22 @@ module Harnex
 
     def append_missing_under_lock(rows)
       FileUtils.mkdir_p(File.dirname(@canonical))
-      File.open(@canonical, File::RDWR | File::CREAT, 0o644) do |file|
-        file.flock(File::LOCK_EX)
-        file.rewind
-        existing = file.read
-        locked = analyze
+      DispatchHistory.with_lock(@canonical) do
+        locked = analyze(canonical_locked: true)
         return [0, locked] unless writable?(locked)
 
         still_missing = locked[:missing_rows].select { |row| rows.any? { |wanted| wanted.identity == row.identity } }
         payload = still_missing.map { |row| JSON.generate(row.record) }.join("\n")
+        existing = File.file?(@canonical) ? File.binread(@canonical) : ""
         payload = "\n#{payload}" unless existing.empty? || existing.end_with?("\n")
         payload = "#{payload}\n" unless payload.empty?
-        file.seek(0, IO::SEEK_END)
-        file.write(payload)
-        file.flush
+        DispatchHistory.prepare_archive(@canonical, payload.bytesize)
+        File.open(@canonical, File::WRONLY | File::APPEND | File::CREAT, 0o644) do |file|
+          file.write(payload)
+          file.flush
+          file.fsync
+        end
         [still_missing.length, locked.merge(missing_rows: [])]
-      ensure
-        file.flock(File::LOCK_UN) unless file.closed?
       end
     end
 

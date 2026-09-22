@@ -1,6 +1,8 @@
+require "digest"
 require "fileutils"
 require "json"
 require "open3"
+require "tempfile"
 require "time"
 
 module Harnex
@@ -8,6 +10,10 @@ module Harnex
     module_function
 
     MAX_REPO_WALK_LEVELS = 10
+    ARCHIVER_ENV = "HARNEX_DISPATCH_ARCHIVER"
+    HISTORY_READER_ENV = "HARNEX_DISPATCH_HISTORY_READER"
+
+    class HistoryUnavailable < StandardError; end
 
     # v2 marks the unified era: one rich dispatch_end row per dispatch
     # carrying both the thin envelope and the summary sections. Readers
@@ -57,15 +63,106 @@ module Harnex
       nil
     end
 
+    def lock_path(path)
+      digest = Digest::SHA256.hexdigest(File.expand_path(path))
+      File.join(STATE_DIR, "locks", "dispatch-#{digest}.lock")
+    end
+
     def append(path, record)
       FileUtils.mkdir_p(File.dirname(path))
       line = JSON.generate(record) + "\n"
-      File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) do |file|
+      with_lock(path) do
+        prepare_archive(path, line.bytesize)
+        File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) do |file|
+          file.write(line)
+          file.flush
+          file.fsync
+        end
+      end
+    end
+
+    def with_lock(path)
+      lock = lock_path(path)
+      FileUtils.mkdir_p(File.dirname(lock), mode: 0o700)
+      File.open(lock, File::RDWR | File::CREAT, 0o600) do |file|
         file.flock(File::LOCK_EX)
-        file.write(line)
+        yield
       ensure
         file.flock(File::LOCK_UN) unless file.closed?
       end
+    end
+
+    def prepare_archive(path, incoming_bytes)
+      helper = ENV.fetch(ARCHIVER_ENV, "").strip
+      return if helper.empty?
+
+      unless helper.start_with?(File::SEPARATOR) && File.file?(helper) && File.executable?(helper) && !File.symlink?(helper)
+        warn("harnex: archive preparation failed; active dispatch history retained")
+        return
+      end
+      success = system(
+        helper,
+        "--canonical", File.expand_path(path),
+        "--incoming-bytes", incoming_bytes.to_s,
+        in: File::NULL,
+        out: File::NULL,
+        err: File::NULL
+      )
+      warn("harnex: archive preparation failed; active dispatch history retained") unless success
+    rescue StandardError
+      warn("harnex: archive preparation failed; active dispatch history retained")
+    end
+
+    def each_record(path, locked: false)
+      return enum_for(__method__, path, locked: locked) unless block_given?
+
+      external = !ENV.fetch(HISTORY_READER_ENV, "").strip.empty?
+      each_history_line(path, locked: locked) do |line|
+        next if line.strip.empty?
+
+        begin
+          record = JSON.parse(line)
+        rescue JSON::ParserError => e
+          raise HistoryUnavailable, "complete dispatch history is unavailable: malformed reader output" if external
+
+          next
+        end
+        yield record
+      end
+    end
+
+    def each_history_line(path, locked: false, &block)
+      operation = proc do
+        helper = ENV.fetch(HISTORY_READER_ENV, "").strip
+        if helper.empty?
+          File.foreach(path, &block) if File.file?(path)
+          next
+        end
+        unless helper.start_with?(File::SEPARATOR) && File.file?(helper) && File.executable?(helper) && !File.symlink?(helper)
+          raise HistoryUnavailable, "complete dispatch history is unavailable: invalid reader"
+        end
+
+        FileUtils.mkdir_p(STATE_DIR)
+        Tempfile.create(["harnex-complete-history", ".jsonl"], STATE_DIR, mode: 0o600) do |temporary|
+          success = system(
+            helper,
+            "--canonical", File.expand_path(path),
+            in: File::NULL,
+            out: temporary,
+            err: File::NULL
+          )
+          raise HistoryUnavailable, "complete dispatch history is unavailable: reader failed" unless success
+
+          temporary.flush
+          temporary.rewind
+          temporary.each_line(&block)
+        end
+      end
+      locked ? operation.call : with_lock(path, &operation)
+    rescue HistoryUnavailable
+      raise
+    rescue StandardError => e
+      raise HistoryUnavailable, "complete dispatch history is unavailable: reader failed", cause: e
     end
 
     def start_record?(record)
@@ -90,14 +187,15 @@ module Harnex
     end
 
     # Latest start row for `id` and any end row that completes it.
-    def latest_rows(path, id)
+    def latest_rows(path, id, complete: true)
       latest_start = nil
       matching_end = nil
 
-      return { start: nil, end: nil } unless File.file?(path)
+      reader_configured = complete && !ENV.fetch(HISTORY_READER_ENV, "").strip.empty?
+      return { start: nil, end: nil } unless File.file?(path) || reader_configured
 
-      File.foreach(path) do |line|
-        record = JSON.parse(line)
+      records = complete ? each_record(path) : active_records(path)
+      records.each do |record|
         next unless record.is_a?(Hash)
         next unless record["id"].to_s == id
 
@@ -107,8 +205,6 @@ module Harnex
         elsif end_record?(record)
           matching_end = record if latest_start && end_matches_start?(record, latest_start)
         end
-      rescue JSON::ParserError
-        next
       end
 
       { start: latest_start, end: matching_end }
@@ -119,7 +215,7 @@ module Harnex
     # is not visible from the caller's context.
     def live_start_record(repo_root:, id:)
       normalized_id = Harnex.normalize_id(id)
-      rows = latest_rows(path_for(repo_root), normalized_id)
+      rows = latest_rows(path_for(repo_root), normalized_id, complete: false)
       start = rows[:start]
       return nil unless start
       return nil if rows[:end]
@@ -131,6 +227,23 @@ module Harnex
       start
     rescue StandardError
       nil
+    end
+
+    def active_records(path)
+      return enum_for(__method__, path) unless block_given?
+      return unless File.file?(path)
+
+      with_lock(path) do
+        File.foreach(path) do |line|
+          next if line.strip.empty?
+
+          begin
+            yield JSON.parse(line)
+          rescue JSON::ParserError
+            next
+          end
+        end
+      end
     end
 
     def same_host?(record)

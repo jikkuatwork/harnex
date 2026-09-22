@@ -76,6 +76,31 @@ harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005
 
 Use `harnex history --json | jq .` for pipelines over the repo-local log.
 
+## Optional external archive bridge
+
+Repositories may keep the active stream bounded while preserving one logical
+history through two opt-in local executable hooks:
+
+- `HARNEX_DISPATCH_ARCHIVER=/absolute/path/to/helper` runs immediately before
+  each append as `helper --canonical PATH --incoming-bytes N`. Harnex holds a
+  stable sidecar lock under `$HARNEX_STATE_DIR/locks/` before invoking the
+  helper and opens the active stream only afterward, so an atomic replacement
+  cannot strand a waiting writer on the old inode. A helper failure emits a
+  bounded warning and the new row is still appended to the active stream.
+- `HARNEX_DISPATCH_HISTORY_READER=/absolute/path/to/helper` runs as
+  `helper --canonical PATH`. It must write the complete archive-plus-active
+  JSONL stream to stdout and exit successfully. Harnex captures that stream in
+  a private temporary file before exposing any rows; failure or malformed
+  output is reported as unavailable history rather than an empty result.
+
+Both values must name an absolute, executable, non-symlink local file. Harnex
+passes no telemetry bytes or credentials in arguments, does no network work of
+its own, suppresses helper output on the write path, and retains its ordinary
+active-file behavior when the hooks are unset. The repository-specific helper
+owns encryption, storage credentials, archive verification, and retrieval.
+`harnex history`, canonical assertion/reconciliation, latest-row lookup, and
+attempt-chain accounting consume the complete reader when configured.
+
 ## Canonical assertion and reconciliation
 
 `harnex telemetry assert-canonical` is the read-only drift gate for the

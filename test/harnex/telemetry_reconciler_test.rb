@@ -45,6 +45,63 @@ class TelemetryReconcilerTest < Minitest::Test
     end
   end
 
+  def test_assert_canonical_includes_external_archived_history
+    Dir.mktmpdir("harnex-telemetry-archive-reader") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      archived = File.join(dir, "archived.jsonl")
+      write_jsonl(
+        archived,
+        v2_start(id: "cx-old", session_id: "sess-old", started_at: "2026-08-03T01:00:00Z"),
+        v2_end(id: "cx-old", session_id: "sess-old", started_at: "2026-08-03T01:00:00Z")
+      )
+      write_jsonl(
+        canonical,
+        v2_start(id: "cx-current", session_id: "sess-current", started_at: "2026-08-03T02:00:00Z"),
+        v2_end(id: "cx-current", session_id: "sess-current", started_at: "2026-08-03T02:00:00Z")
+      )
+      helper = File.join(dir, "history-helper")
+      File.write(helper, <<~'RUBY')
+        #!/usr/bin/env ruby
+        canonical = ARGV.fetch(ARGV.index("--canonical") + 1)
+        STDOUT.write(File.binread(ENV.fetch("ARCHIVED_FIXTURE")))
+        STDOUT.write(File.binread(canonical))
+      RUBY
+      File.chmod(0o755, helper)
+
+      result = telemetry(
+        dir,
+        "assert-canonical", "--canonical", canonical, "--json",
+        env: { "HARNEX_DISPATCH_HISTORY_READER" => helper, "ARCHIVED_FIXTURE" => archived }
+      )
+
+      assert_report(result, exitstatus: 0, command: "assert-canonical", status: "clean", canonical_rows: 4)
+    end
+  end
+
+  def test_external_archive_reader_failure_marks_canonical_history_corrupt
+    Dir.mktmpdir("harnex-telemetry-archive-failure") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      write_jsonl(canonical, legacy_thin)
+      helper = File.join(dir, "history-helper")
+      File.write(helper, "#!/usr/bin/env ruby\nexit 9\n")
+      File.chmod(0o755, helper)
+
+      result = telemetry(
+        dir,
+        "assert-canonical", "--canonical", canonical, "--json",
+        env: { "HARNEX_DISPATCH_HISTORY_READER" => helper }
+      )
+
+      assert_report(
+        result,
+        exitstatus: 1,
+        command: "assert-canonical",
+        status: "corrupt",
+        diagnostic: "complete dispatch history is unavailable"
+      )
+    end
+  end
+
   def test_assert_canonical_rejects_malformed_canonical_json
     # seam: cli-subprocess
     Dir.mktmpdir("harnex-telemetry-malformed") do |dir|
@@ -380,8 +437,9 @@ class TelemetryReconcilerTest < Minitest::Test
 
   Result = Struct.new(:stdout, :stderr, :status, keyword_init: true)
 
-  def telemetry(cwd, *args)
-    out, err, status = Open3.capture3({ "HARNEX_STATE_DIR" => ENV.fetch("HARNEX_STATE_DIR") }, RbConfig.ruby, BIN, "telemetry", *args, chdir: cwd)
+  def telemetry(cwd, *args, env: {})
+    child_env = { "HARNEX_STATE_DIR" => ENV.fetch("HARNEX_STATE_DIR") }.merge(env)
+    out, err, status = Open3.capture3(child_env, RbConfig.ruby, BIN, "telemetry", *args, chdir: cwd)
     Result.new(stdout: out, stderr: err, status: status)
   end
 

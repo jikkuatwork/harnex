@@ -64,8 +64,7 @@ module Harnex
       summary_record = nil
       history_record = nil
 
-      File.foreach(path) do |line|
-        record = JSON.parse(line)
+      DispatchHistory.each_record(path) do |record|
         next unless record.is_a?(Hash)
         next if DispatchHistory.start_record?(record)
 
@@ -83,8 +82,6 @@ module Harnex
         elsif history_record?(record) && record["id"].to_s == id
           history_record = record
         end
-      rescue JSON::ParserError
-        next
       end
 
       [summary_record, history_record]

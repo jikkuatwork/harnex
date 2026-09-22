@@ -135,15 +135,9 @@ module Harnex
 
     def load_records
       path = DispatchHistory.path_for(Dir.pwd, global: @options[:global])
-      return [] unless File.file?(path)
+      return [] unless File.file?(path) || !ENV.fetch(DispatchHistory::HISTORY_READER_ENV, "").strip.empty?
 
-      File.readlines(path, chomp: true).filter_map do |line|
-        next if line.strip.empty?
-
-        JSON.parse(line)
-      rescue JSON::ParserError
-        nil
-      end
+      DispatchHistory.each_record(path).to_a
     end
 
     def started_after?(record, floor)

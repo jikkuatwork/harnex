@@ -375,6 +375,100 @@ class DispatchHistoryTest < Minitest::Test
     end
   end
 
+  def test_external_archiver_replaces_stream_before_append_under_stable_lock
+    Dir.mktmpdir("harnex-history-archive-writer") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate(history_record("archived", "2026-05-08T05:00:00Z")) + "\n")
+      helper = File.join(repo, "archive-helper")
+      File.write(helper, <<~'RUBY')
+        #!/usr/bin/env ruby
+        canonical = ARGV.fetch(ARGV.index("--canonical") + 1)
+        incoming = ARGV.fetch(ARGV.index("--incoming-bytes") + 1)
+        File.write(ENV.fetch("ARCHIVER_ARGS"), "#{canonical}\n#{incoming}\n")
+        File.rename(canonical, canonical + ".archived")
+        File.write(canonical, "")
+      RUBY
+      File.chmod(0o755, helper)
+
+      with_env("HARNEX_DISPATCH_ARCHIVER" => helper, "ARCHIVER_ARGS" => File.join(repo, "args")) do
+        Harnex::DispatchHistory.append(path, history_record("current", "2026-05-08T06:00:00Z"))
+      end
+
+      assert_equal ["archived"], File.readlines(path + ".archived").map { |line| JSON.parse(line).fetch("id") }
+      assert_equal ["current"], File.readlines(path).map { |line| JSON.parse(line).fetch("id") }
+      arguments = File.readlines(File.join(repo, "args"), chomp: true)
+      assert_equal path, arguments[0]
+      assert_operator Integer(arguments[1]), :>, 0
+      assert_path_exists Harnex::DispatchHistory.lock_path(path)
+    end
+  end
+
+  def test_archiver_failure_is_loud_but_never_drops_dispatch_row_or_leaks_stderr
+    Dir.mktmpdir("harnex-history-archive-failure") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      helper = File.join(repo, "archive-helper")
+      File.write(helper, "#!/usr/bin/env ruby\nwarn 'credential-shaped-secret'\nexit 7\n")
+      File.chmod(0o755, helper)
+
+      _, error = capture_io do
+        with_env("HARNEX_DISPATCH_ARCHIVER" => helper) do
+          Harnex::DispatchHistory.append(path, history_record("retained", "2026-05-08T06:00:00Z"))
+        end
+      end
+
+      assert_equal ["retained"], File.readlines(path).map { |line| JSON.parse(line).fetch("id") }
+      assert_match(/archive preparation failed/, error)
+      refute_includes error, "credential-shaped-secret"
+    end
+  end
+
+  def test_history_command_reads_external_complete_history_stream
+    Dir.mktmpdir("harnex-history-archive-reader") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      Harnex::DispatchHistory.append(path, history_record("current", "2026-05-08T07:00:00Z"))
+      archived = File.join(repo, "archived.jsonl")
+      File.write(archived, JSON.generate(history_record("archived", "2026-05-08T06:00:00Z")) + "\n")
+      helper = File.join(repo, "history-helper")
+      File.write(helper, <<~'RUBY')
+        #!/usr/bin/env ruby
+        canonical = ARGV.fetch(ARGV.index("--canonical") + 1)
+        STDOUT.write(File.binread(ENV.fetch("ARCHIVED_FIXTURE")))
+        STDOUT.write(File.binread(canonical))
+      RUBY
+      File.chmod(0o755, helper)
+
+      with_env("HARNEX_DISPATCH_HISTORY_READER" => helper, "ARCHIVED_FIXTURE" => archived) do
+        Dir.chdir(repo) do
+          out, = capture_io { assert_equal 0, Harnex::History.new(["--json", "--all"]).run }
+          assert_equal %w[archived current], out.lines.map { |line| JSON.parse(line).fetch("id") }
+        end
+      end
+    end
+  end
+
+  def test_external_history_failure_is_explicit
+    Dir.mktmpdir("harnex-history-reader-failure") do |repo|
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      Harnex::DispatchHistory.append(path, history_record("current", "2026-05-08T07:00:00Z"))
+      helper = File.join(repo, "history-helper")
+      File.write(helper, "#!/usr/bin/env ruby\nwarn 'credential-shaped-secret'\nexit 9\n")
+      File.chmod(0o755, helper)
+
+      with_env("HARNEX_DISPATCH_HISTORY_READER" => helper) do
+        error = assert_raises(Harnex::DispatchHistory::HistoryUnavailable) do
+          Harnex::DispatchHistory.each_record(path).to_a
+        end
+        assert_match(/complete dispatch history is unavailable/, error.message)
+        refute_includes error.message, "credential-shaped-secret"
+      end
+    end
+  end
+
   def test_run_history_uses_launch_cwd_when_child_changes_directory
     Dir.mktmpdir("harnex-history-cross-repo") do |root|
       source_repo = File.join(root, "source")
@@ -410,6 +504,14 @@ class DispatchHistoryTest < Minitest::Test
   end
 
   private
+
+  def with_env(overrides)
+    saved = overrides.to_h { |key, _value| [key, ENV[key]] }
+    overrides.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    yield
+  ensure
+    saved.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
 
   def fake_session(overrides = {})
     defaults = {

@@ -2222,8 +2222,7 @@ module Harnex
 
       records = {}
       duplicates = {}
-      File.foreach(path) do |line|
-        record = JSON.parse(line)
+      DispatchHistory.each_record(path) do |record|
         next unless DispatchHistory.end_record?(record)
 
         dispatch_id = summary_string(record["id"])
@@ -2235,8 +2234,6 @@ module Harnex
         elsif !duplicates.key?(dispatch_id)
           records[dispatch_id] = record
         end
-      rescue JSON::ParserError
-        next
       end
       records
     rescue StandardError
