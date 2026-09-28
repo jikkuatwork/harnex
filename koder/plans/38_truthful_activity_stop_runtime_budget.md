@@ -1,5 +1,6 @@
 ---
-status: in_progress
+status: completed
+implementation_review: approved
 issue: 71
 plan: 38
 layer: unattended-completion-reliability
@@ -46,3 +47,14 @@ verification record including skipped/non-covered tests. Install a new version
 locally without rebuilding/replacing retained 0.13.0 or publishing anything.
 No consumer wake queue, automatic first-write kill, scheduler, retries policy,
 or Pi command-exit observation expansion is in scope.
+
+## Delivery
+
+Completed in local 0.14.0 (package source `aab0973`). Review findings covering
+blocked local I/O, startup, descendant ownership, earlier-stop suppression and
+truncated transport were fixed; final callback-drain correction `78d3efa` was
+independently approved. Installed real Pi budget/tool cleanup and two-turn idle
+cleanup passed. Full suite: 815 runs / 3,820 assertions, no failures/errors.
+Actual enforcement is separate from caller stop labels; owned groups are not an
+OS sandbox and local I/O can still delay finalization. Full evidence/limits:
+`koder/releases/0.14.0.md`.

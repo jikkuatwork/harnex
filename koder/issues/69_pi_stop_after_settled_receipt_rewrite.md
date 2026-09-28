@@ -1,8 +1,10 @@
 ---
-status: open
+status: resolved
+resolved: 2026-09-28
+plan: 36
 priority: P1
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-09-28
 tags: pi, rpc, stop, receipts, lifecycle, reliability
 type: bug
 issue_kind: slice
@@ -59,16 +61,33 @@ cleanup:
 
 ## Acceptance Criteria
 
-- [ ] Persistent Pi RPC: accepted turn → idle → `harnex stop` leaves the final
+- [x] Persistent Pi RPC: accepted turn → idle → `harnex stop` leaves the final
       receipt valid and preserves `accepted`/`no_change` as observed before stop.
-- [ ] The dispatch end row classifies teardown as clean operator cleanup, not
+- [x] The dispatch end row classifies teardown as clean operator cleanup, not
       `adapter_close: lost` or a real disconnection.
-- [ ] A two-turn regression test proves follow-up completion is preserved after
+- [x] A two-turn regression test proves follow-up completion is preserved after
       explicit idle stop.
-- [ ] Stop while Pi is busy still aborts/fails the active turn and cannot reuse a
+- [x] Stop while Pi is busy still aborts/fails the active turn and cannot reuse a
       previous accepted turn as proof for unfinished work.
-- [ ] After stop, `harnex status` has no live session and terminal telemetry has
+- [x] After stop, `harnex status` has no live session and terminal telemetry has
       one coherent end row.
+
+## Resolution — 2026-09-28
+
+Delivered in locally installed **0.14.0**, package source `aab0973`; implementation
+is in `e429f6a`, with reviewed lifecycle/transport hardening through `78d3efa`.
+Plan: `koder/plans/36_pi_idle_stop_preserves_settlement.md`.
+
+The final installed-binary Pi 0.87.1 smoke completed two turns, validated both
+artifacts and the receipt, then stopped while idle. Final proof remained accepted;
+raw Pi exit was 143 without an OS signal, logical exit was 0, adapter close was
+normal, real disconnections were zero, registry was gone, and exactly one end
+row remained. Unexpected EOF, malformed/truncated output, and abnormal cleanup
+still fail closed. A 3.2s local receipt gate no longer fabricates transport loss.
+
+Full package-HEAD suite: 815 runs / 3,820 assertions / no failures or errors;
+independent review approved. Public publication is separate and was not done.
+Detailed evidence and limits: `koder/releases/0.14.0.md`.
 
 ## Non-Goals
 

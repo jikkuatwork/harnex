@@ -1,5 +1,6 @@
 ---
-status: in_progress
+status: completed
+implementation_review: approved
 issue: 69
 plan: 36
 layer: unattended-completion-reliability
@@ -39,3 +40,10 @@ transport loss remain failures. Do not confuse process teardown with acceptance.
 
 Stop rather than broadening into Pi command-exit observation (#70), PTY support,
 or a second notification queue. Related layer plans: 35 (shipped), 37, 38.
+
+## Delivery
+
+Completed in local 0.14.0, package source `aab0973`. All acceptance checks passed,
+including the installed two-turn Pi 0.87.1 idle-stop proof, 3.2s gated receipt,
+and independent final review at `78d3efa`. Full suite: 815 runs / 3,820 assertions,
+no failures/errors. Evidence and non-coverage: `koder/releases/0.14.0.md`.

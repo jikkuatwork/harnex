@@ -1,5 +1,6 @@
 ---
-status: in_progress
+status: completed
+implementation_review: approved
 issue: 71
 plan: 37
 layer: unattended-completion-reliability
@@ -37,3 +38,11 @@ Use deterministic clocks/probes where possible plus one process-level real-time
 cap test. Acceptance target: process returns within configured cap plus one poll
 and modest scheduling tolerance under deliberately slow probes. Do not claim
 universal OS scheduling or uninterruptible-kernel guarantees.
+
+## Delivery
+
+Completed in local 0.14.0. Slow-probe/process/HTTP/grace and pre-exit heartbeat
+proofs passed; independent review found no remaining monitor blocker. The
+installed CLI exercised watch/send/wait around real Pi work. Full package-HEAD
+suite: 815 runs / 3,820 assertions, no failures/errors. Evidence and limits:
+`koder/releases/0.14.0.md`.

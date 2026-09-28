@@ -1,5 +1,6 @@
 ---
-status: open
+status: resolved
+resolved: 2026-09-28
 priority: P1
 created: 2026-09-03
 updated: 2026-09-28
@@ -57,12 +58,12 @@ finally ran `harnex stop`); events log
 2. **`--on-done` default marker**: even without a hook, write
    `<state>/done/<repo-hash>--<id>.<outcome>` so a dumb `ls`/inotify can see
    completion without parsing events.
-3. **[deferred — not in Plan 35]** `wait`/`watch --heartbeat <dur>`: while
+3. **[delivered by Plan 37 — not in Plan 35]** `wait`/`watch --heartbeat <dur>`: while
    blocked, print one line per interval (`waited=… state=… last_event=… seq=…`)
    so a caller whose stdout is streamed can distinguish "still waiting" from
    "hung". Default off for JSON consumers; `--heartbeat 60s` recommended in the
    agents-guide for LLM callers.
-4. **[deferred — not in Plan 35]** `--max-wait` must be a hard promise:
+4. **[delivered by Plan 37 — not in Plan 35]** `--max-wait` must be a hard promise:
    `wait_until_done` already has a deadline; add a test that the process exits
    within `max-wait + poll` even when `live_session`/`scan_events` are slow
    (stat/parse of a 140 KB events file every tick). `--exit-on-prompt` is
@@ -90,8 +91,8 @@ finally ran `harnex stop`); events log
 - `harnex agents-guide monitoring` documents: unattended dispatch =
   `--on-done` hook + bounded `watch` calls; never a single long blocking call.
 
-Deferred to later plan IDs: `wait`/`watch --heartbeat`, hard `--max-wait`
-enforcement, and any prompt-based exit.
+Follow-up `wait`/`watch --heartbeat` and hard `--max-wait` enforcement were
+delivered by Plan 37. Prompt-based exit remains rejected, not planned work.
 
 ## Implementation status — 2026-09-03
 
@@ -110,12 +111,12 @@ rejected-work visibility. It deliberately leaves heartbeat streaming and hard
 not planned because prompt state is not completion proof and would not address
 the source incident, which already emitted `task_complete`.
 
-Issue #71 remains open after Plan 35 until those monitor-hardening slices are
-planned and delivered.
+Plan 35 shipped first; Plans 37 and 38 now complete the monitor and runtime
+hardening needed to resolve this issue.
 
-## Next bounded hardening scope — 2026-09-28 (not implemented)
+## Follow-up hardening scope — 2026-09-28 (delivered)
 
-Current source confirms two observability gaps: `Session#status_payload` exposes
+The pre-implementation source audit identified two observability gaps: `Session#status_payload` exposes
 log age, while `handle_extension_ui_request` writes UI chatter to that same log
 (`lib/harnex/runtime/session.rb:284,936,2614`). A fresh log is therefore not proof
 of model/tool progress. `Stopper` posts a bare `/stop` and `stop_requested!` stores
@@ -154,6 +155,34 @@ uses `streamingBehavior: steer`. Document transport/queue acceptance honestly;
 it is not proof that an in-flight model call has consumed the instruction.
 Stale/visible completion-message suppression belongs to the Pi consumer bridge,
 not a second queue or acknowledgment system inside Harnex.
+
+## Resolution — 2026-09-28
+
+Delivered in locally installed **0.14.0** (package source `aab0973`):
+
+- Plan 37 (`koder/plans/37_monitor_heartbeat_hard_deadline.md`): opt-in flushed
+  heartbeat stderr, one final JSON result, monotonic observer cap encompassing
+  slow probes/grace, isolated observer cleanup, and no worker kill on timeout.
+- Plan 38 (`koder/plans/38_truthful_activity_stop_runtime_budget.md`): truthful
+  model/tool clocks, immutable bounded stop provenance, capability-gated
+  `run --max-runtime`, and separate internal enforcement evidence. No timer
+  reset on UI/retries/prompts; earlier advisory stops cannot disable the cap.
+- Review corrections prove physical enforcement during blocked stdout/receipt I/O
+  and startup handshake, owned-group descendant termination, fail-closed truncated
+  JSONL, and preservation of accepted proof through slow local callback drain.
+  #69's separate cleanup fix is included, rather than hidden by provenance.
+
+The installed Pi 0.87.1 runtime smoke stopped an actually running sleep tool at a
+30s budget (enforcement recorded 4ms after deadline), returned logical exit 124,
+rejected unfinished work, retained runtime provenance, reported zero false
+transport disconnections, and left neither Pi nor the tool running.
+
+Full package-HEAD suite: 815 runs / 3,820 assertions / no failures or errors;
+independent review approved. `koder/releases/0.14.0.md` records all verification,
+real telemetry, and explicit non-coverage. Public publication was not performed.
+Process-group escapes and uninterruptible OS work are not sandboxed; finalization
+still depends on local I/O after physical termination. Notifications remain
+once per Harnex session, not per reusable turn.
 
 ## Non-Goals
 
