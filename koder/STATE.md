@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-28 | 04:46 PM | +04
+Updated: 2026-09-28 | 05:16 PM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -31,6 +31,9 @@ issue/plan files.
 
 ## Present
 
+- Pi now discovers the repo's existing `open`/`close` skills through relative
+  `.pi/skills/` links to `.claude/skills/`; installed Pi loader validation passed.
+  Existing sessions need `/reload`, then `/skill:open` or `/skill:close`.
 - **`harnex 0.13.0` is installed locally** from candidate commit `bf60266`
   under an explicit owner exception that defers public publication. It combines
   owner-addressed completion with Issue #73's archive bridge and `c2e5510`'s
