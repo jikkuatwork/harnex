@@ -86,6 +86,7 @@ class SessionPiStopTest < Minitest::Test
     Timeout.timeout(2) { entered.pop }
     sleep 0.8
     alive = Harnex.alive_pid?(@session.pid)
+    sleep 2.4 # local processing exceeds the old 2s reader-join timeout
     @session.define_singleton_method(:persist_observed_receipt!) { original.call }
     release << true
     assert sender.join(3)

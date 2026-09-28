@@ -6,6 +6,31 @@ class PiAdapterTest < Minitest::Test
     @adapter = Harnex::Adapters::Pi.new
   end
 
+  def test_reader_drain_still_bounds_an_actual_blocked_read
+    reader, writer = IO.pipe
+    entered = Queue.new
+    error = nil
+    @adapter.on_disconnect { |value| error = value }
+    thread = Thread.new do
+      @adapter.instance_variable_set(:@read_wait_started_at, Process.clock_gettime(Process::CLOCK_MONOTONIC))
+      entered << true
+      reader.readpartial(1)
+    rescue EOFError, IOError
+      nil
+    end
+    @adapter.instance_variable_set(:@reader_thread, thread)
+    entered.pop
+    start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    @adapter.send(:wait_for_reader_drain, timeout: 0.03)
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - start, :<, 0.5
+    assert_instance_of Timeout::Error, error
+    assert_includes error.message, "output did not close"
+  ensure
+    writer&.close unless writer&.closed?
+    thread&.join(1)
+    reader&.close unless reader&.closed?
+  end
+
   def test_base_command_and_transport
     assert_equal ["pi", "--mode", "rpc"], @adapter.base_command
     assert_equal :stdio_jsonl_rpc, @adapter.transport

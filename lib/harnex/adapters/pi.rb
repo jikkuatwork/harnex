@@ -344,12 +344,9 @@ module Harnex
                    process_status
                  end
         @pid = nil
-        # Process reaping can beat the stdout reader. Consume its terminal
-        # events/EOF (including malformed trailing output) before Session
-        # freezes receipts and disconnection counters.
-        if @reader_thread && !@reader_thread.join(2)
-          signal_disconnect(Timeout::Error.new("pi rpc output did not close after process exit"))
-        end
+        # Reaping can beat event/EOF processing. Bound an actual blocked read,
+        # not a local Session callback doing receipt/output I/O on this thread.
+        wait_for_reader_drain
         status
       rescue Errno::ECHILD
         @pid = nil
@@ -491,10 +488,25 @@ module Harnex
         nil
       end
 
+      def wait_for_reader_drain(timeout: 2.0)
+        exited_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        while @reader_thread&.alive?
+          @reader_thread.join(0.05)
+          read_started = @read_wait_started_at
+          next unless @reader_thread.alive? && read_started
+          next if Process.clock_gettime(Process::CLOCK_MONOTONIC) - [read_started, exited_at].max < timeout
+
+          signal_disconnect(Timeout::Error.new("pi rpc output did not close after process exit"))
+          break
+        end
+      end
+
       def read_loop
         buffer = +""
         loop do
+          @read_wait_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           chunk = @read_io.readpartial(4096)
+          @read_wait_started_at = nil
           buffer << chunk
 
           while (idx = buffer.index("\n"))
@@ -507,10 +519,12 @@ module Harnex
           end
         end
       rescue EOFError, IOError, Errno::EIO
+        @read_wait_started_at = nil
         if buffer.b.match?(/[^\t\n\v\f\r ]/n)
           signal_disconnect(JSON::ParserError.new("pi rpc unterminated JSONL record at EOF"))
         end
       ensure
+        @read_wait_started_at = nil
         buffer&.clear
         signal_disconnect(nil)
       end
