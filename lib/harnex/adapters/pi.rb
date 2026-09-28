@@ -2,6 +2,7 @@ require "json"
 require "open3"
 require "rubygems/version"
 require "timeout"
+require_relative "../owned_process_group"
 
 module Harnex
   module Adapters
@@ -176,8 +177,15 @@ module Harnex
         @disconnect_handler = block
       end
 
+      # Called once IO/PID ownership is installed, before any protocol writes.
+      # The owner should only publish readiness/schedule work, not block here.
+      def on_spawn(&block)
+        @spawn_handler = block
+      end
+
       def start_rpc(env: nil, cwd: nil, read_io: nil, write_io: nil, pid: nil)
         if read_io && write_io
+          @owned_process_group = nil
           @read_io = read_io
           @write_io = write_io
           @pid = pid
@@ -189,6 +197,7 @@ module Harnex
         @closed = false
         @disconnect_signaled = false
         @state = :prompt
+        @spawn_handler&.call(@pid)
         @stderr_thread = Thread.new { drain_stderr } if @stderr_io
         @reader_thread = Thread.new { read_loop }
         request_state_async
@@ -293,6 +302,14 @@ module Harnex
       end
 
       def terminate_subprocess(term_grace_seconds: STOP_TERM_GRACE_SECONDS, kill_grace_seconds: STOP_KILL_GRACE_SECONDS)
+        if @owned_process_group
+          return @owned_process_group.terminate(
+            term_grace_seconds: term_grace_seconds,
+            kill_grace_seconds: kill_grace_seconds
+          )
+        end
+
+        # Injected IO/PID callers retain direct-PID behavior, never group rights.
         pid = @pid
         return false unless pid
 
@@ -490,16 +507,20 @@ module Harnex
           end
         end
       rescue EOFError, IOError, Errno::EIO
-        nil
+        if buffer.b.match?(/[^\t\n\v\f\r ]/n)
+          signal_disconnect(JSON::ParserError.new("pi rpc unterminated JSONL record at EOF"))
+        end
       ensure
+        buffer&.clear
         signal_disconnect(nil)
       end
 
       def handle_line(line)
         message = JSON.parse(line)
         handle_message(message)
-      rescue JSON::ParserError => e
-        signal_disconnect(e)
+      rescue JSON::ParserError
+        # Parser diagnostics can quote arbitrary payloads, including thinking.
+        signal_disconnect(JSON::ParserError.new("pi rpc malformed JSONL record"))
       end
 
       def handle_message(message)
@@ -745,9 +766,10 @@ module Harnex
 
       def spawn_subprocess(env, cwd)
         spawn_env = env || {}
-        opts = {}
+        opts = { pgroup: true }
         opts[:chdir] = cwd if cwd
         stdin_io, stdout_io, stderr_io, wait_thr = Open3.popen3(spawn_env, *build_command, **opts)
+        @owned_process_group = OwnedProcessGroup.new(wait_thr.pid)
         [wait_thr.pid, stdin_io, stdout_io, stderr_io, wait_thr]
       end
 

@@ -349,6 +349,29 @@ class PiAdapterTest < Minitest::Test
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
   end
 
+  def test_unterminated_jsonl_tail_is_a_bounded_redacted_transport_error
+    ["{private-thinking", '{"type":"agent_settled"}', "x" * 20_000, "\0", "\xff".b].each do |tail|
+      error = disconnect_after_output(tail)
+      assert_kind_of StandardError, error
+      assert_match(/unterminated.*JSONL/i, error.message)
+      assert_operator error.message.bytesize, :<, 160
+      refute_includes error.message, "private-thinking"
+      refute_includes error.message, "agent_settled"
+    end
+  end
+
+  def test_clean_empty_or_whitespace_eof_is_not_a_transport_error
+    ["", " \t\r", "\n \t\r\n"].each do |tail|
+      assert_nil disconnect_after_output(tail)
+    end
+  end
+
+  def test_newline_terminated_malformed_json_is_also_redacted
+    error = disconnect_after_output("{private-thinking\n")
+    assert_kind_of JSON::ParserError, error
+    refute_includes error.message, "private-thinking"
+  end
+
   def test_context_usage_tracks_terminal_and_peak_across_stats_samples
     @adapter.send(:absorb_session_stats, {
       "contextUsage" => { "tokens" => 40_000, "contextWindow" => 200_000, "percent" => 20 }
@@ -388,5 +411,28 @@ class PiAdapterTest < Minitest::Test
     assert_equal 2, context.fetch(:samples)
     assert_equal 1, context.fetch(:missing_samples)
     assert_equal "missing", context.fetch(:latest_sample_status)
+  end
+
+  private
+
+  def disconnect_after_output(output)
+    adapter = Harnex::Adapters::Pi.new
+    server_in, client_out = IO.pipe
+    client_in, server_out = IO.pipe
+    disconnected = Queue.new
+    adapter.on_disconnect { |error| disconnected << error }
+    adapter.start_rpc(read_io: client_in, write_io: client_out)
+    writer = Thread.new do
+      server_out.write(output)
+      server_out.close
+    end
+    error = Timeout.timeout(2) { disconnected.pop }
+    assert writer.join(1)
+    assert disconnected.empty?, "disconnect must be reported only once"
+    error
+  ensure
+    adapter&.close
+    [server_in, client_out, client_in, server_out].compact.each { |io| io.close unless io.closed? }
+    writer&.join(1)
   end
 end

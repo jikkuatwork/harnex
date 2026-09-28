@@ -1,5 +1,6 @@
 require "json"
 require "open3"
+require_relative "../../owned_process_group"
 
 module Harnex
   module Codex
@@ -9,10 +10,13 @@ module Harnex
       class Client
         attr_reader :pid
 
-        def initialize(read_io:, write_io:, pid: nil)
+        def initialize(read_io:, write_io:, pid: nil, owned_process_group: nil, wait_thread: nil, stderr_io: nil)
           @read_io = read_io
           @write_io = write_io
           @pid = pid
+          @owned_process_group = owned_process_group
+          @wait_thread = wait_thread
+          @stderr_io = stderr_io
           @next_id = 1
           @pending = {}
           @id_mutex = Mutex.new
@@ -49,6 +53,10 @@ module Harnex
 
           queue = Queue.new
           id = @id_mutex.synchronize do
+            # EOF may arrive between spawn readiness and the first request.
+            # Do not enqueue after the one disconnect signal already drained it.
+            raise "codex_appserver disconnected" if @disconnect_signaled
+
             assigned = @next_id
             @next_id += 1
             @pending[assigned] = queue
@@ -84,7 +92,9 @@ module Harnex
             nil
           end
 
-          if @pid && process_alive?(@pid)
+          if @owned_process_group
+            terminate_process(term_grace_seconds: 0.5, kill_grace_seconds: 1.0)
+          elsif @pid && process_alive?(@pid)
             sleep 0.05
             begin
               Process.kill("TERM", @pid)
@@ -94,9 +104,29 @@ module Harnex
           end
 
           @reader_thread&.join(2)
+          close_read_streams
+        end
+
+        def wait_for_exit
+          return nil unless @wait_thread || @pid
+
+          status = @wait_thread ? @wait_thread.value : Process.wait2(@pid).last
+          @pid = nil
+          status
+        rescue Errno::ECHILD
+          @pid = nil
+          nil
         end
 
         def terminate_process(term_grace_seconds:, kill_grace_seconds:)
+          if @owned_process_group
+            return @owned_process_group.terminate(
+              term_grace_seconds: term_grace_seconds,
+              kill_grace_seconds: kill_grace_seconds
+            )
+          end
+
+          # A supplied PID grants no authority over its process group.
           return false unless @pid
 
           begin
@@ -129,11 +159,15 @@ module Harnex
           env = deployment_config[:env] || deployment_config["env"] || {}
           cwd = deployment_config[:cwd] || deployment_config["cwd"]
 
-          opts = {}
+          opts = { pgroup: true }
           opts[:chdir] = cwd if cwd
 
-          stdin_io, stdout_io, _stderr_io, wait_thr = Open3.popen3(env, *Array(command), **opts)
-          new(read_io: stdout_io, write_io: stdin_io, pid: wait_thr.pid)
+          stdin_io, stdout_io, stderr_io, wait_thr = Open3.popen3(env, *Array(command), **opts)
+          new(
+            read_io: stdout_io, write_io: stdin_io, pid: wait_thr.pid,
+            owned_process_group: OwnedProcessGroup.new(wait_thr.pid),
+            wait_thread: wait_thr, stderr_io: stderr_io
+          )
         end
 
         # Plan 30 Phase 2 — full subprocess restart for deployment fallback.
@@ -146,10 +180,12 @@ module Harnex
         # post-handshake notification is dropped.
         def self.spawn_with_fallback(prior_thread_id:, deployment_config:, handshake_params:,
                                       notification_handler: nil, request_handler: nil,
-                                      disconnect_handler: nil)
+                                      disconnect_handler: nil, spawn_handler: nil)
           raise ArgumentError, "prior_thread_id required" if prior_thread_id.nil? || prior_thread_id.to_s.empty?
 
           client = spawn(deployment_config: deployment_config)
+          # Publish the new process to its owner before initialize/resume I/O.
+          spawn_handler&.call(client)
           client.on_notification(&notification_handler) if notification_handler
           client.on_request(&request_handler) if request_handler
           client.on_disconnect(&disconnect_handler) if disconnect_handler
@@ -211,10 +247,19 @@ module Harnex
             end
 
           @reader_thread&.join(2)
+          close_read_streams
           terminated
         end
 
         private
+
+        def close_read_streams
+          [@read_io, @stderr_io].compact.each do |io|
+            io.close unless io.closed?
+          rescue IOError
+            nil
+          end
+        end
 
         def write_line(message)
           @write_mutex.synchronize do

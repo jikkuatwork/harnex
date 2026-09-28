@@ -164,16 +164,24 @@ module Harnex
         @disconnect_handler = block
       end
 
+      # Notify the owner after IO/PID/group initialization, before handshake I/O.
+      # Callbacks should publish readiness/schedule work without blocking.
+      def on_spawn(&block)
+        @spawn_handler = block
+      end
+
       # Start the JSON-RPC client. In production, spawns the codex
       # subprocess. In tests, callers may pass pre-built IO objects.
       def start_rpc(env: nil, cwd: nil, read_io: nil, write_io: nil, pid: nil)
         if read_io && write_io
           @client = Harnex::Codex::AppServer::Client.new(read_io: read_io, write_io: write_io, pid: pid)
         else
-          spawn_pid, child_stdin, child_stdout = spawn_subprocess(env, cwd)
-          @client = Harnex::Codex::AppServer::Client.new(read_io: child_stdout, write_io: child_stdin, pid: spawn_pid)
+          @client = Harnex::Codex::AppServer::Client.spawn(
+            deployment_config: { command: build_command, env: env, cwd: cwd }
+          )
         end
 
+        @spawn_handler&.call(@client.pid)
         @client.on_notification { |msg| handle_notification(msg) }
         @client.on_request { |method, params| handle_server_request(method, params) }
         @client.on_disconnect { |err| handle_disconnect(err) }
@@ -256,7 +264,8 @@ module Harnex
           handshake_params: handshake_initialize_params,
           notification_handler: ->(msg) { handle_notification(msg) },
           request_handler: ->(method, params) { handle_server_request(method, params) },
-          disconnect_handler: ->(err) { handle_disconnect(err) }
+          disconnect_handler: ->(err) { handle_disconnect(err) },
+          spawn_handler: ->(client) { @client = client; @spawn_handler&.call(client.pid) }
         )
 
         @thread_id = prior_thread_id
@@ -278,6 +287,10 @@ module Harnex
           term_grace_seconds: term_grace_seconds,
           kill_grace_seconds: kill_grace_seconds
         )
+      end
+
+      def wait_for_exit
+        @client&.wait_for_exit
       end
 
       def pid
@@ -385,15 +398,6 @@ module Harnex
       def handle_disconnect(error)
         @state = :disconnected
         @disconnect_handler&.call(error)
-      end
-
-      def spawn_subprocess(env, cwd)
-        spawn_env = env || {}
-        opts = {}
-        opts[:chdir] = cwd if cwd
-        stdin_io, stdout_io, _stderr_io, wait_thr =
-          Open3.popen3(spawn_env, *build_command, **opts)
-        [wait_thr.pid, stdin_io, stdout_io]
       end
 
       def blocked_message(state, enter_only:)

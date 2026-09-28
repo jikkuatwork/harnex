@@ -38,6 +38,24 @@ class HarnexCodexAppServerClientTest < Minitest::Test
 
   # ---- stop_for_fallback ----
 
+  def test_request_after_reader_eof_fails_without_waiting_for_another_disconnect
+    _server_in, client_out, client_in, server_out = make_pipes
+    client = Client.new(read_io: client_in, write_io: client_out)
+    disconnected = Queue.new
+    client.on_disconnect { disconnected << true }
+    client.start
+    server_out.close
+    Timeout.timeout(1) { disconnected.pop }
+
+    error = assert_raises(StandardError) do
+      Timeout.timeout(0.2) { client.request("initialize", {}) }
+    end
+    refute_kind_of Timeout::Error, error
+    assert_match(/disconnected/, error.message)
+  ensure
+    client&.close
+  end
+
   def test_stop_for_fallback_drains_pending_requests
     server_in, client_out, client_in, _server_out = make_pipes
     client = Client.new(read_io: client_in, write_io: client_out)
