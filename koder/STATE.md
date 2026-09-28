@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-23 | 02:01 AM | +04
+Updated: 2026-09-28 | 04:46 PM | +04
 
 This is the thin session handoff. Durable history belongs in `CHANGELOG.md`,
 release evidence in `koder/releases/`, and implementation detail in linked
@@ -46,8 +46,13 @@ issue/plan files.
 - Public publication is deferred because prescribed `bin/gem-push` still cannot
   find `.env`. No credential workaround, tag, Git push, or network publication
   occurred.
-- #71 remains open for heartbeat/hard-deadline slices. #69 still blocks
-  persistent Pi reuse; fresh `--auto-stop` workers remain the safe lifecycle.
+- #71 remains open for heartbeat/hard-deadline slices. A 2026-09-28 source audit
+  records the next bounded scope: genuine model/tool activity versus UI/log age,
+  typed stop provenance, then a runner-owned runtime budget distinct from a
+  watch timeout. These are proposals, not implemented or installed behavior.
+  Consumer-side stale/visible wake suppression belongs in the Pi bridge, not
+  another Harnex queue. #69 still blocks persistent Pi reuse; fresh
+  `--auto-stop` workers remain the safe lifecycle.
 
 ## Future
 

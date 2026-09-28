@@ -2,7 +2,7 @@
 status: open
 priority: P1
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-28
 tags: pi, watch, wait, lifecycle, notification, orchestration, unattended
 type: feature
 issue_kind: slice
@@ -113,7 +113,51 @@ the source incident, which already emitted `task_complete`.
 Issue #71 remains open after Plan 35 until those monitor-hardening slices are
 planned and delivered.
 
+## Next bounded hardening scope — 2026-09-28 (not implemented)
+
+Current source confirms two observability gaps: `Session#status_payload` exposes
+log age, while `handle_extension_ui_request` writes UI chatter to that same log
+(`lib/harnex/runtime/session.rb:284,936,2614`). A fresh log is therefore not proof
+of model/tool progress. `Stopper` posts a bare `/stop` and `stop_requested!` stores
+only a boolean (`lib/harnex/commands/stop.rb`, `lib/harnex/runtime/session.rb:1563`), so an
+operator/budget stop is hard to distinguish from an unsuccessful worker in the
+final report.
+
+Source exposure: none — this proposal uses local Harnex source and generic
+synthetic cases; no private consumer source, credentials or publication.
+
+Recommended serial slices, not another scheduler or LLM monitor:
+
+1. **Truthful progress + stop provenance.** Expose current model-turn age and
+   last model/tool activity separately from UI/log age. Track thinking-stream
+   activity without recording thinking content. Unobserved/PTY progress is
+   unknown, not inferred from repaint/log mtime. Add a bounded stop-reason/origin
+   field that survives into events/receipt/end telemetry; keep cancellation
+   separate from product acceptance and preserve a previously settled outcome
+   (#69 must not be masked by the new metadata).
+2. **Runner-owned runtime deadline.** Add an explicit worker-runtime budget
+   armed before the initial prompt, independent of the supervisor and UI
+   activity. It is not `watch --max-wait`, which bounds the observer's wait.
+   Record budget termination as such. Progress/checkpoint warnings do not imply
+   an earlier automatic first-write kill; no timer resets on heartbeats/retries.
+   Integrators enable it only after a capability/version check.
+
+Minimum deterministic proof: UI-only updates do not advance work clocks;
+model/tool events update only their proper clocks; a quiet active generation
+remains distinguishable from a completed task; budget/manual stop provenance is
+preserved; completed proof is not downgraded by later cleanup; slow status/event
+reads cannot overrun the observer deadline; runtime expiry works without an
+attached supervisor. Keep the existing fresh-worker lifecycle and owner ack.
+
+Pi steering already exists (`lib/harnex/adapters/pi.rb:159`): `--force` on a busy Pi send
+uses `streamingBehavior: steer`. Document transport/queue acceptance honestly;
+it is not proof that an in-flight model call has consumed the instruction.
+Stale/visible completion-message suppression belongs to the Pi consumer bridge,
+not a second queue or acknowledgment system inside Harnex.
+
 ## Non-Goals
 
 Not a scheduler, not a daemon; the hook runs once from the existing runner
-process. No new telemetry stream (Issue 63 stands).
+process. No new telemetry stream (Issue 63 stands). No model/effort changes,
+automatic first-write kill, persistent-worker reuse fix or source-publication
+permission is included in these proposed follow-ups.
