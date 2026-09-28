@@ -139,8 +139,12 @@ Harnex 0.14.0 adds opt-in `run --max-runtime DUR`, independent of observer
 `capabilities.runtime_budget: 1` before enabling it. The fixed monotonic budget
 is armed before child launch and initial prompting, and never resets on retries,
 follow-up prompts, steering, or UI output. Expiry terminates without waiting for
-an abort RPC. Active work fails with logical run exit 124; cleanup after accepted
-idle settlement preserves proof. Shutdown/finalization has separate overhead.
+an abort RPC or completion/output lock, including during startup. Owned worker
+process groups cover their normal descendants; deliberately detached groups are
+not an OS-level containment guarantee. Active work fails with logical run exit
+124; cleanup after accepted idle settlement preserves proof. Shutdown/finalization
+has separate I/O overhead. An earlier stop cannot disable the deadline;
+`runtime_budget.enforced` records actual enforcement separately from stop labels.
 
 Live JSON status separates `activity` work clocks from `log_idle_s`. Pi assistant
 message boundaries and text/thinking/tool-call deltas update model activity;
@@ -155,7 +159,7 @@ The first requested stop records reason/origin/time and work state in a
 The labels are bounded caller declarations, separate from acceptance. Harnex's
 runtime expiry is `runtime_budget`/`runtime`, ordinary stop is `manual`/`cli`,
 and auto-stop is `completion`/`auto_stop`. Expected cancellation EOF is not a
-provider disconnection; unexpected EOF or malformed output remains a failure.
+provider disconnection; unexpected EOF or malformed/unterminated JSONL remains a failure.
 Raw Pi exit evidence is in `process_exited`, before logical normalization.
 
 See `harnex agents-guide monitoring` for clock fields, heartbeat streaming,

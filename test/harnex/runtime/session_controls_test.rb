@@ -158,6 +158,27 @@ class SessionControlsTest < Minitest::Test
     assert Harnex::ArtifactReport.validate(@session.artifact_report_path, final: true).ok
   end
 
+  def test_a_replacement_child_after_expiry_is_terminated_without_resetting_budget
+    emit("agent_start")
+    expire_budget
+    first = @session.status_payload[:runtime_budget][:enforced_at]
+    count = @adapter.terminations
+    @session.instance_variable_set(:@pid, 9_999_999) # fixture adapter never signals a real process
+    @session.send(:runtime_child_started!)
+    @session.send(:drain_auto_stop_threads)
+    assert_operator @adapter.terminations, :>, count
+    assert_equal first, @session.status_payload[:runtime_budget][:enforced_at]
+  end
+
+  def test_caller_labels_do_not_claim_actual_runtime_enforcement
+    emit("agent_start")
+    @session.inject_stop(reason: "runtime_budget", origin: "runtime", interrupt: false)
+    finish
+    assert_equal 1, @session.exit_code, "caller labels cannot turn an unexpired budget into exit 124"
+    assert_equal false, final_record.dig("runtime_budget", "enforced")
+    assert_equal "runtime_budget", final_record.dig("stop", "reason")
+  end
+
   def test_manual_busy_stop_is_interrupted_work_not_a_provider_disconnect
     emit("agent_start")
     @session.inject_stop(reason: "manual", origin: "cli", interrupt: false)

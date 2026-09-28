@@ -92,12 +92,19 @@ harnex watch --id cx-i-NN --max-wait 5m --heartbeat 60s
 `--max-runtime` is a fixed monotonic budget in the session-owning runner. It is
 armed before child launch/initial prompt, after binary validation, and never
 reset by prompts, retries, UI chatter, or activity. Expiry requires no supervisor:
-it terminates the child with bounded TERM/KILL escalation without waiting for an
-abort RPC. Child shutdown and receipt/telemetry finalization can take additional
-time; this is not a promise to preempt OS scheduling or uninterruptible I/O.
+it terminates the owned worker process group with bounded TERM/KILL escalation
+without waiting for an abort RPC, startup handshake, receipt lock, or runner
+stdout. Normal descendant processes in that group are included; descendants
+which deliberately create a different group/session are not contained. This is
+not an OS sandbox. Child shutdown and receipt/telemetry finalization can take
+additional time and still require working I/O/drained output; this is not a
+promise to preempt OS scheduling or uninterruptible I/O.
 Active work is failed with logical run exit `124`. Expiry used only to clean up
 already accepted idle work preserves that proof and logical exit `0`. The stop
-record still says `runtime_budget`. Without this option there is no runtime cap.
+record says `runtime_budget` when expiry was the first requested stop. An earlier
+stop keeps its original labels but cannot disable the cap: `runtime_budget.enforced`
+and its timestamp plus `runtime_budget_expired` record actual enforcement
+independently. Without this option there is no runtime cap.
 
 `status --json` and dispatch-end records expose separate `activity` and
 `runtime_budget` objects:
@@ -126,13 +133,15 @@ Reasons are `manual`, `completion`, `runtime_budget`; origins are `api`, `cli`,
 The first stop request wins. Inspect the `stop_requested` event, live/terminal
 `stop` metadata, or receipt `observed.stop` for reason, origin, request time,
 work state at request, and an applicable runtime limit. Harnex's own budget
-expiry uses `runtime_budget`/`runtime`; auto-stop uses `completion`/`auto_stop`;
+expiry requests `runtime_budget`/`runtime` unless a prior stop already won;
+auto-stop uses `completion`/`auto_stop`;
 `watch --stop-on-terminal` uses `completion`/`watch`. Raw child status remains in
-`process_exited` for Pi and budgeted runs; the final run exit is logical status.
+`process_exited` for Pi and budgeted runs when observed (startup failure may
+have no raw wait status); the final run exit is logical status.
 
 Explicit idle Pi cleanup preserves the latest settled accepted/no-change proof,
 including after follow-up turns. Busy stop rejects unfinished work and cannot
-reuse an older accepted turn. Unexpected EOF, malformed transport, and abnormal
+reuse an older accepted turn. Unexpected EOF, malformed/truncated JSONL, and abnormal
 idle teardown remain failures. Completion notifications remain once per session,
 not once per reusable turn; verify the receipt appropriate to each turn.
 

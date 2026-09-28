@@ -33,6 +33,8 @@ class SessionPiStopTest < Minitest::Test
       File.write("result.txt", text) if text.start_with?("change")
       if text == "malformed-on-stop"
         trap("TERM") { puts "{broken"; exit! 143 }
+      elsif text == "truncated-on-stop"
+        trap("TERM") { STDOUT.write("{broken"); STDOUT.flush; exit! 143 }
       elsif text == "kill-on-stop"
         trap("TERM") { Process.kill("KILL", Process.pid) }
       elsif text == "exit143-on-stop"
@@ -67,6 +69,33 @@ class SessionPiStopTest < Minitest::Test
     reap_thread(@runner)
     @adapter.close rescue nil
     FileUtils.rm_rf(@tmp)
+  end
+
+  def test_runtime_physical_stop_does_not_wait_for_receipt_lock
+    @session.instance_variable_set(:@runtime_budget, Harnex::RuntimeBudget.new(seconds: 0.3))
+    original = @session.method(:persist_observed_receipt!)
+    entered = Queue.new
+    release = Queue.new
+    @session.define_singleton_method(:persist_observed_receipt!) do
+      entered << true
+      release.pop
+      original.call
+    end
+    start_session
+    sender = Thread.new { send_prompt("no-change") }
+    Timeout.timeout(2) { entered.pop }
+    sleep 0.8
+    alive = Harnex.alive_pid?(@session.pid)
+    @session.define_singleton_method(:persist_observed_receipt!) { original.call }
+    release << true
+    assert sender.join(3)
+    finish
+    refute alive, "runtime cap left worker alive while receipt I/O held the completion lock"
+    assert @session.task_complete?, "settlement which won before expiry must remain accepted"
+    assert_equal "runtime_budget", end_row.dig("stop", "reason")
+  ensure
+    release << true if release
+    reap_thread(sender)
   end
 
   def test_idle_stop_preserves_accepted_receipt_and_raw_child_status
@@ -243,6 +272,15 @@ class SessionPiStopTest < Minitest::Test
   def test_malformed_transport_during_idle_shutdown_is_not_accepted
     start_session
     complete_turn("malformed-on-stop")
+    stop_and_finish
+
+    assert_rejected
+    assert_equal 1, end_row.dig("reliability", "real_disconnections")
+  end
+
+  def test_truncated_transport_during_idle_shutdown_is_not_accepted
+    start_session
+    complete_turn("truncated-on-stop")
     stop_and_finish
 
     assert_rejected
