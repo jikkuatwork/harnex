@@ -1,6 +1,7 @@
 require "json"
 require "net/http"
 require "optparse"
+require "stringio"
 require "uri"
 
 module Harnex
@@ -45,7 +46,9 @@ module Harnex
                                              "prompt", "busy")
                           Without --until, waits for session exit (default).
           --repo PATH     Resolve session using PATH's repo root (default: current repo)
-          --timeout SECS  Maximum time to wait in seconds (default: unlimited)
+          --timeout DUR   Hard observer cap (seconds, or suffix s/m/h; default: unlimited)
+          --max-wait DUR  Alias for --timeout
+          --heartbeat DUR  Flush observed progress to stderr at this interval (default: off)
           -h, --help      Show this help
 
         Common patterns:
@@ -60,7 +63,7 @@ module Harnex
           2    completed but proof rejected (completed_no_activity,
                report_missing, report_invalid, report_rejected)
           3    no such session (no live, start, event, or terminal signal)
-          124  --timeout elapsed while the session was still running
+          124  observer deadline elapsed (does not stop the worker)
 
         Gotchas:
           done is the safest work-level fence for monitors.
@@ -74,26 +77,63 @@ module Harnex
       TEXT
     end
 
-    def initialize(argv)
+    # Reuse the shared duration grammar while preserving wait's numeric
+    # timeout syntax and guarding numeric fallback/forwarded Float values.
+    def self.duration(value, option_name:)
+      seconds = begin
+        Harnex.parse_duration_seconds(value, option_name: option_name)
+      rescue OptionParser::InvalidArgument => invalid_duration
+        # Preserve wait --timeout's former Float syntax (e.g. .5 or 1e-3),
+        # also used by Float#to_s when watch forwards very small intervals.
+        begin
+          Float(value)
+        rescue ArgumentError, TypeError
+          raise invalid_duration
+        end
+      end
+      unless seconds.finite? && seconds.positive?
+        raise OptionParser::InvalidArgument, "#{option_name} must be a finite positive duration"
+      end
+      seconds
+    end
+
+    def initialize(argv, out: nil, err: nil)
       @argv = argv.dup
+      @out = out
+      @err = err
       @options = {
         id: nil,
         until_state: nil,
         repo_path: Dir.pwd,
         timeout: nil,
+        heartbeat: nil,
         help: false
       }
     end
 
     def run
+      @out ||= $stdout
+      @err ||= $stderr
       parser.parse!(@argv)
       if @options[:help]
-        puts self.class.usage
+        @out.puts self.class.usage
         return 0
       end
 
       raise "--id is required for harnex wait" unless @options[:id]
 
+      @started_at = monotonic
+      @observation = { "state" => "unknown", "last_event" => "unknown", "seq" => nil }
+      if @options[:timeout] || @options[:heartbeat]
+        observe_in_child
+      else
+        wait
+      end
+    end
+
+    private
+
+    def wait
       if @options[:until_state]
         case @options[:until_state]
         when "done"
@@ -108,14 +148,180 @@ module Harnex
       end
     end
 
-    private
+    # Only the read-side observer runs in this child, never the session or any
+    # stop/marker action. A process boundary lets the parent enforce its cap
+    # during blocking Ruby/HTTP probes, even probes with slow ensure clauses or
+    # broad rescue handlers. No asynchronous Ruby exception crosses a probe.
+    # The private process group also contains repo-resolution subprocesses.
+    def observe_in_child
+      reader, writer = IO.pipe
+      writer.sync = true
+      pid = fork do
+        exit_code = 1
+        begin
+          Process.setpgid(0, 0)
+          reader.close
+          @observation_writer = writer
+          @out = StringIO.new
+          @err = DiagnosticStream.new { |text| send_observation_message(["warning", text]) }
+          code = wait
+          send_observation_message(["result", @out.string, code])
+          exit_code = 0
+        rescue Exception => error # transport errors too; never run inherited at_exit hooks
+          begin
+            send_observation_message(["error", error.class.name, error.message, error.backtrace])
+          rescue IOError, SystemCallError
+            nil # the caller may already have closed the pipe
+          end
+        ensure
+          exit! exit_code
+        end
+      end
+      writer.close
+      deadline = @options[:timeout] && @started_at + @options[:timeout]
+      next_heartbeat = @options[:heartbeat] && @started_at + @options[:heartbeat]
+      buffer = +""
+
+      loop do
+        now = monotonic
+        return emit_timeout if deadline && now >= deadline
+
+        # Drain complete records without blocking on a partial pipe write.
+        if (newline = buffer.index("\n"))
+          message = JSON.parse(buffer.slice!(0..newline))
+          case message[0]
+          when "observation" then @observation = message[1]
+          when "warning" then @err.write(message[1])
+          when "result"
+            return emit_timeout if deadline && monotonic >= deadline
+
+            @out.write(message[1])
+            return message[2]
+          when "error"
+            raise RuntimeError, "harnex wait observer: #{message[1]}: #{message[2]}", message[3]
+          end
+          next
+        end
+
+        if next_heartbeat && now >= next_heartbeat
+          emit_heartbeat
+          # Do not burst missed heartbeats after a scheduler pause.
+          next_heartbeat = now + @options[:heartbeat]
+        end
+        wake_at = [deadline, next_heartbeat].compact.min
+        # Clamp even finite enormous durations to an OS-safe select timeout.
+        pause = [[wake_at - monotonic, 0].max, POLL_INTERVAL].min
+        IO.select([reader], nil, nil, pause)
+        chunk = reader.read_nonblock(16_384, exception: false)
+        raise "harnex wait: observer exited without a result" if chunk.nil?
+
+        buffer << chunk unless chunk == :wait_readable
+      end
+    ensure
+      reader&.close unless reader&.closed?
+      writer&.close unless writer&.closed?
+      reap_observer(pid) if pid
+    end
+
+    # SIGKILL bypasses slow Ruby ensure handlers. Reap without an unbounded
+    # wait/join. Uninterruptible kernel I/O or a descheduled OS cannot be given
+    # a universal preemption guarantee; no helper thread is left waiting on it.
+    def reap_observer(pid)
+      begin
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      end
+      begin
+        Process.kill("KILL", pid)
+      rescue Errno::ESRCH
+        nil
+      end
+      cleanup_deadline = monotonic + EVENT_POLL_INTERVAL
+      loop do
+        return if Process.waitpid(pid, Process::WNOHANG)
+        break if monotonic >= cleanup_deadline
+
+        sleep 0.005
+      end
+      @err.puts("harnex wait: OS has not reaped the cancelled observer yet")
+    rescue Errno::ECHILD
+      nil
+    end
+
+    class DiagnosticStream
+      def initialize(&write)
+        @write = write
+      end
+
+      def write(text)
+        @write.call(text)
+      end
+
+      def puts(text)
+        write("#{text}\n")
+      end
+    end
+
+    def send_observation_message(message)
+      @observation_writer.write(JSON.generate(message) + "\n")
+    end
+
+    def observe(**fields)
+      updated = @observation.merge(fields.transform_keys(&:to_s))
+      return if updated == @observation
+
+      @observation = updated
+      send_observation_message(["observation", updated]) if @observation_writer
+    end
+
+    def emit_heartbeat
+      # These are observations, not model/tool activity or a log-age proxy.
+      values = %w[state last_event seq].map do |key|
+        value = @observation[key] || "unknown"
+        "#{key}=#{value.to_s.gsub(/[[:space:][:cntrl:]]/, '_')[0, 128]}"
+      end
+      @err.puts("harnex wait: id=#{@options[:id]} waited=#{(monotonic - @started_at).round(1)}s #{values.join(' ')}")
+      @err.flush
+    end
+
+    def emit_timeout
+      payload = { ok: false, id: @options[:id], status: "timeout",
+                  waited_seconds: (monotonic - @started_at).round(1) }
+      case @options[:until_state]
+      when "done"
+        payload.merge!(wait_result: "timeout", done: false,
+                       work_state: @observation["live"] ? "running" : "unknown")
+      when *EVENT_PREDICATES
+        # Event waits retain their existing timeout payload shape.
+      when nil
+        payload[:pid] = @observation["pid"] if @observation["pid"]
+      else
+        payload[:state] = @observation["state"]
+      end
+      @out.puts JSON.generate(payload)
+      DONE_EXIT_TIMEOUT
+    end
+
+    # All output goes through per-instance streams, including legacy wait
+    # diagnostics. Resolve defaults in run so callers can still capture IO.
+    def puts(text)
+      @out.puts(text)
+    end
+
+    def warn(text)
+      @err.puts(text)
+    end
+
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
 
     def wait_until_event(predicate)
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       events_path = Harnex.events_log_path(repo_root, @options[:id])
       registry = Harnex.read_registry(repo_root, @options[:id])
-      start_time = Time.now
-      deadline = @options[:timeout] ? start_time + @options[:timeout] : nil
+      start_time = @started_at
 
       unless registry || File.exist?(events_path)
         warn("harnex wait: no session found with id #{@options[:id].inspect}")
@@ -131,21 +337,17 @@ module Harnex
       return status if status
 
       target_pid = registry && registry["pid"]
+      observe(state: "running", pid: target_pid) if target_pid
 
       loop do
         status, offset, task_complete_seen = scan_events(events_path, offset, predicate, task_complete_seen, start_time)
         return status if status
 
-        if deadline && Time.now >= deadline
-          waited = (Time.now - start_time).round(1)
-          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", waited_seconds: waited)
-          return 124
-        end
-
         if target_pid && !Harnex.alive_pid?(target_pid)
-          final_event_deadline ||= Time.now + FINAL_EVENT_GRACE_SECONDS
-          if Time.now >= final_event_deadline
-            waited = (Time.now - start_time).round(1)
+          observe(state: "exited")
+          final_event_deadline ||= monotonic + FINAL_EVENT_GRACE_SECONDS
+          if monotonic >= final_event_deadline
+            waited = (monotonic - start_time).round(1)
             puts JSON.generate(ok: false, id: @options[:id], state: "exited", waited_seconds: waited)
             return 1
           end
@@ -169,6 +371,8 @@ module Harnex
           next unless event
           next if stale_event?(event, min_ts)
 
+          observe(last_event: event_type(event), seq: event["seq"])
+          observe(state: event["state"]) if event_type(event) == "agent_state" && event["state"]
           task_complete_seen = true if %w[task_complete task_failed].include?(event_type(event))
           if matches?(event, predicate, task_complete_seen)
             return [emit_event_match(event, start_time, predicate), f.pos, task_complete_seen]
@@ -235,7 +439,7 @@ module Harnex
     end
 
     def emit_event_match(event, start_time, predicate)
-      waited = (Time.now - start_time).round(1)
+      waited = (monotonic - start_time).round(1)
       payload = {
         ok: true,
         id: @options[:id],
@@ -288,8 +492,7 @@ module Harnex
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       events_path = Harnex.events_log_path(repo_root, @options[:id])
       exit_path = Harnex.exit_status_path(repo_root, @options[:id])
-      start_time = Time.now
-      deadline = @options[:timeout] ? start_time + @options[:timeout] : nil
+      start_time = @started_at
 
       offset = 0
       task_complete_seen = false
@@ -298,6 +501,7 @@ module Harnex
 
       loop do
         live = live_session(repo_root)
+        observe(state: live ? "running" : "unknown", pid: live && live["pid"], live: !!live)
         if live
           observed_live = live
           session_started_at ||= parse_wait_time(live["started_at"])
@@ -326,14 +530,6 @@ module Harnex
                                terminal: false, task_complete: false, done: false, work_state: "unknown")
             return DONE_EXIT_NO_SESSION
           end
-        end
-
-        if deadline && Time.now >= deadline
-          waited = (Time.now - start_time).round(1)
-          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", wait_result: "timeout",
-                             waited_seconds: waited, done: false,
-                             work_state: live ? "running" : "unknown")
-          return DONE_EXIT_TIMEOUT
         end
 
         sleep EVENT_POLL_INTERVAL
@@ -367,7 +563,7 @@ module Harnex
       terminal = done_status(repo_root, min_started_at: session_started_at)
       return emit_done_terminal_status(terminal) if terminal
 
-      waited = (Time.now - start_time).round(1)
+      waited = (monotonic - start_time).round(1)
       puts JSON.generate(ok: false, id: @options[:id], state: "exited", process_state: "exited",
                          terminal: true, task_complete: false, done: false, work_state: "unknown",
                          wait_result: "failed", waited_seconds: waited)
@@ -399,8 +595,7 @@ module Harnex
     def wait_until_state
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       target_state = @options[:until_state]
-      start_time = Time.now
-      deadline = @options[:timeout] ? start_time + @options[:timeout] : nil
+      start_time = @started_at
 
       registry = Harnex.read_registry(repo_root, @options[:id])
       unless registry
@@ -417,22 +612,17 @@ module Harnex
 
       loop do
         unless Harnex.alive_pid?(target_pid)
-          waited = (Time.now - start_time).round(1)
+          waited = (monotonic - start_time).round(1)
           puts JSON.generate(ok: false, id: @options[:id], state: "exited", waited_seconds: waited)
           return 1
         end
 
         state = fetch_agent_state(host, port, token)
+        observe(state: state || "unknown", pid: target_pid)
         if state == target_state
-          waited = (Time.now - start_time).round(1)
+          waited = (monotonic - start_time).round(1)
           puts JSON.generate(ok: true, id: @options[:id], state: state, waited_seconds: waited)
           return 0
-        end
-
-        if deadline && Time.now >= deadline
-          waited = (Time.now - start_time).round(1)
-          puts JSON.generate(ok: false, id: @options[:id], state: state || "unknown", waited_seconds: waited, status: "timeout")
-          return 124
         end
 
         sleep POLL_INTERVAL
@@ -441,7 +631,6 @@ module Harnex
 
     def wait_until_exit
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
-      deadline = @options[:timeout] ? Time.now + @options[:timeout] : nil
       exit_path = Harnex.exit_status_path(repo_root, @options[:id])
 
       registry = Harnex.read_registry(repo_root, @options[:id])
@@ -458,6 +647,7 @@ module Harnex
       end
 
       target_pid = registry["pid"]
+      observe(state: "running", pid: target_pid)
       warn("harnex wait: watching session #{@options[:id]} (pid #{target_pid})")
 
       loop do
@@ -473,11 +663,6 @@ module Harnex
           return 1
         end
 
-        if deadline && Time.now >= deadline
-          puts JSON.generate(ok: false, id: @options[:id], status: "timeout", pid: target_pid)
-          return 124
-        end
-
         sleep POLL_INTERVAL
       end
     end
@@ -487,8 +672,8 @@ module Harnex
     def await_exit_status(exit_path)
       return if File.exist?(exit_path)
 
-      grace_deadline = Time.now + exit_status_grace_seconds
-      until File.exist?(exit_path) || Time.now >= grace_deadline
+      grace_deadline = monotonic + exit_status_grace_seconds
+      until File.exist?(exit_path) || monotonic >= grace_deadline
         sleep EXIT_STATUS_GRACE_POLL_INTERVAL
       end
     end
@@ -635,7 +820,15 @@ module Harnex
         opts.on("--id ID", "Session ID to wait for") { |value| @options[:id] = Harnex.normalize_id(value) }
         opts.on("--until STATE", "Wait until session reaches STATE") { |value| @options[:until_state] = value }
         opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
-        opts.on("--timeout SECONDS", Float, "Maximum time to wait") { |value| @options[:timeout] = value }
+        opts.on("--timeout DUR", "Hard observer cap") do |value|
+          @options[:timeout] = self.class.duration(value, option_name: "--timeout")
+        end
+        opts.on("--max-wait DUR", "Alias for --timeout") do |value|
+          @options[:timeout] = self.class.duration(value, option_name: "--max-wait")
+        end
+        opts.on("--heartbeat DUR", "Flush progress to stderr") do |value|
+          @options[:heartbeat] = self.class.duration(value, option_name: "--heartbeat")
+        end
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
     end

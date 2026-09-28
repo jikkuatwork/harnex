@@ -218,6 +218,7 @@ module Harnex
       repo_path: Dir.pwd,
       until_state: "done",
       max_wait: nil,
+      heartbeat: nil,
       done_marker: nil,
       fail_marker: nil,
       stop_on_terminal: false,
@@ -228,6 +229,7 @@ module Harnex
       @repo_path = repo_path
       @until_state = until_state.to_s.strip.empty? ? "done" : until_state.to_s
       @max_wait = max_wait
+      @heartbeat = heartbeat
       @done_marker = done_marker
       @fail_marker = fail_marker
       @stop_on_terminal = stop_on_terminal
@@ -238,8 +240,7 @@ module Harnex
     def run
       raise "harnex watch: only --until done is supported" unless @until_state == "done"
 
-      output, warnings, exit_code = capture_wait
-      @err.write(warnings) unless warnings.empty?
+      output, exit_code = capture_wait
       @out.write(output) unless output.empty?
 
       payload = parse_payload(output)
@@ -260,18 +261,13 @@ module Harnex
     def capture_wait
       argv = ["--id", @id, "--repo", @repo_path, "--until", @until_state]
       argv += ["--timeout", @max_wait.to_s] if @max_wait
+      argv += ["--heartbeat", @heartbeat.to_s] if @heartbeat
 
+      # Buffer only the one final JSON result for marker classification.
+      # Diagnostics (including heartbeats) stream directly to the caller.
       out_buffer = StringIO.new
-      err_buffer = StringIO.new
-      original_stdout = $stdout
-      original_stderr = $stderr
-      $stdout = out_buffer
-      $stderr = err_buffer
-      exit_code = Waiter.new(argv).run
-      [out_buffer.string, err_buffer.string, exit_code]
-    ensure
-      $stdout = original_stdout
-      $stderr = original_stderr
+      exit_code = Waiter.new(argv, out: out_buffer, err: @err).run
+      [out_buffer.string, exit_code]
     end
 
     def parse_payload(output)
@@ -342,8 +338,9 @@ module Harnex
           --id ID              Existing session ID to watch (required)
           --until done         Watch work-level terminal state (default: done)
           --repo PATH          Resolve session using PATH's repo root (default: current repo)
-          --max-wait DUR       Wall-clock cap before returning timeout (examples: 900, 15m, 2h)
+          --max-wait DUR       Hard observer cap (examples: 900, 15m, 2h)
           --timeout DUR        Alias for --max-wait
+          --heartbeat DUR      Flush observed progress to stderr (default: off)
           --done-marker PATH   Write a JSON marker when work completes successfully
           --fail-marker PATH   Write a JSON marker when work fails
           --stop-on-terminal   Stop the live session after success/failure (not on timeout)
@@ -365,6 +362,7 @@ module Harnex
         repo_path: Dir.pwd,
         until_state: "done",
         max_wait: nil,
+        heartbeat: nil,
         done_marker: nil,
         fail_marker: nil,
         stop_on_terminal: false,
@@ -386,6 +384,7 @@ module Harnex
         repo_path: @options[:repo_path],
         until_state: @options[:until_state],
         max_wait: @options[:max_wait],
+        heartbeat: @options[:heartbeat],
         done_marker: @options[:done_marker],
         fail_marker: @options[:fail_marker],
         stop_on_terminal: @options[:stop_on_terminal]
@@ -400,11 +399,14 @@ module Harnex
         opts.on("--id ID", "Existing session ID to watch") { |value| @options[:id] = Harnex.normalize_id(value) }
         opts.on("--until STATE", "Watch until terminal state") { |value| @options[:until_state] = value }
         opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
-        opts.on("--max-wait DUR", "Wall-clock cap") do |value|
-          @options[:max_wait] = Harnex.parse_duration_seconds(value, option_name: "--max-wait")
+        opts.on("--max-wait DUR", "Hard observer cap") do |value|
+          @options[:max_wait] = Waiter.duration(value, option_name: "--max-wait")
         end
         opts.on("--timeout DUR", "Alias for --max-wait") do |value|
-          @options[:max_wait] = Harnex.parse_duration_seconds(value, option_name: "--timeout")
+          @options[:max_wait] = Waiter.duration(value, option_name: "--timeout")
+        end
+        opts.on("--heartbeat DUR", "Flush progress to stderr") do |value|
+          @options[:heartbeat] = Waiter.duration(value, option_name: "--heartbeat")
         end
         opts.on("--done-marker PATH", "Write marker on successful completion") { |value| @options[:done_marker] = value }
         opts.on("--fail-marker PATH", "Write marker on failed completion") { |value| @options[:fail_marker] = value }

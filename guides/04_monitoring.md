@@ -29,7 +29,7 @@ external owner is explicitly named with `--orchestration-session-id`.
 ```bash
 harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read the task brief" --auto-stop
-harnex watch --id pi-i-NN --until done --max-wait 15m
+harnex watch --id pi-i-NN --until done --max-wait 15m --heartbeat 60s
 ```
 
 The consumer must match owner and attempt identity, verify the exact Harnex
@@ -41,9 +41,41 @@ non-blocking integration hook; `CMD` is trusted shell input, receives the typed
 
 `harnex watch --until done` returns on the work-level `task_complete` or
 `task_failed` signal, or terminal exit, whichever comes first. Successful work
-exits `0`, failed work exits non-zero, and wall-clock caps exit `124`. For
+exits `0`, failed work exits non-zero, and observer caps exit `124`. For
 callers that need the lower-level primitive, `harnex wait --until done` exposes
 the same work fence. Do not park an orchestrator in one unbounded watcher call.
+
+## Heartbeats and Hard Observer Caps
+
+For LLM callers, opt in to `--heartbeat 60s` on `wait` or `watch`. While the
+observer is blocked, it flushes a diagnostic line to **stderr** at each interval:
+
+```text
+harnex wait: id=pi-i-NN waited=60.0s state=running last_event=started seq=1
+```
+
+These are the last observed state/event/sequence, not evidence of model or tool
+progress. Unknown observations remain `unknown`; a slow probe does not prevent
+heartbeats, but the snapshot can be stale. Neither UI repaint nor log freshness
+is interpreted as work activity. Heartbeats are off by default, including for
+JSON consumers. Even when enabled, stdout remains **one final JSON result**;
+consume stderr live rather than combining/buffering the streams until exit.
+
+`wait --timeout DUR` (alias `--max-wait`) and `watch --max-wait DUR` (alias
+`--timeout`) accept finite positive durations in seconds or with `s`, `m`, `h`
+suffixes. The cap uses a monotonic clock and includes repo resolution, registry
+and event reads, status HTTP, and final-event/exit-status grace. Heartbeats and
+new events never reset it. A late probe result cannot turn an expired observer
+into success. Timeout exits `124`, without stopping the live worker or writing
+compatibility done/fail markers, even with `--stop-on-terminal`.
+
+This bounds the **observer**, not worker runtime. The timed/heartbeat observer
+uses a short-lived, isolated read-side child; cancellation kills and reaps that
+child, not the session. Slow Ruby probes, HTTP, and even slow Ruby cleanup are
+bounded by the cap plus at most one poll and scheduling tolerance. This is not a
+promise to preempt uninterruptible kernel I/O or OS scheduling stalls. Output
+consumers must keep draining streams. Optional marker writes and
+`--stop-on-terminal` are post-observation actions, not read-side probes.
 
 ## Live-Run Visibility
 
@@ -75,7 +107,7 @@ worker as dead. If `status` says running, do not dispatch a replacement.
 | `1` | `failed` | Work failed, process failed, or killed |
 | `2` | `rejected_proof` | Completed but proof rejected (`completed_no_activity`, `report_missing`, `report_invalid`, `report_rejected`) |
 | `3` | `no_such_session` | No live, start, event, or terminal signal for the id |
-| `124` | `timeout` | `--timeout` elapsed while the session was still running |
+| `124` | `timeout` | Observer cap elapsed before a result was obtained; worker is not stopped |
 
 The JSON payload always carries `wait_result` plus the work-state fields
 (`done`, `work_state`, `outcome_class`, `artifact_report_status`). The child
@@ -170,9 +202,9 @@ harnex events --id pi-i-NN
 For task completion:
 
 ```bash
-harnex watch --id pi-i-NN --until done --max-wait 15m
+harnex watch --id pi-i-NN --until done --max-wait 15m --heartbeat 60s
 # Primitive equivalent when a script wants raw wait semantics:
-harnex wait --id pi-i-NN --until done --timeout 900
+harnex wait --id pi-i-NN --until done --timeout 900 --heartbeat 60s
 # Or, when you specifically need the structured successful-turn event:
 harnex wait --id pi-i-NN --until task_complete --timeout 900
 ```
