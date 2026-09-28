@@ -116,6 +116,22 @@ RPC requests are bounded, stderr is continuously drained into a bounded
 diagnostic tail, and Harnex consumes Open3's wait thread so the real subprocess
 exit status is not lost to a competing `waitpid`.
 
+Persistent workers can be stopped after accepted `agent_settled` completion.
+An explicit idle `harnex stop` preserves the latest accepted/no-change receipt,
+including after a follow-up turn. Expected EOF and TERM teardown are normal
+adapter cleanup, not a lost connection. Harnex reports a logical exit of zero
+for that cleanup; the `process_exited` event retains the raw child exit code
+and signal (TERM yields code 143; Pi may handle it with `process.exit(143)`,
+so signal 15 is only present when the OS reports a signalled exit).
+
+A new prompt invalidates the preceding turn's completion before waiting for its
+RPC response. Stop during that new work fails closed, and late lifecycle events
+cannot promote the interrupted turn or replace the idle-stop decision. Unexpected
+EOF (even exit zero), malformed transport, and abnormal cleanup exits remain
+failures. Output is drained before final receipt/dispatch finalization so trailing
+transport errors are not silently lost. Existing `--auto-stop` settlement remains
+supported.
+
 ## Telemetry
 
 At settlement and teardown, Harnex reads `get_session_stats` and records:

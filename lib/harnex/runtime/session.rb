@@ -184,6 +184,9 @@ module Harnex
       @pi_last_assistant_stop_reason = nil
       @pi_last_assistant_error = nil
       @pi_last_retry_error = nil
+      @pi_awaiting_run_start = false
+      @pi_idle_stop = false
+      @pi_transport_failed = false
       @auto_stop = !!auto_stop
       @auto_stop_fired = false
       @auto_stop_seen_busy = false
@@ -383,6 +386,9 @@ module Harnex
       return { ok: true, signal: "already_requested" } if stop_requested!
 
       if structured_transport?
+        # There is nothing to abort after Pi's accepted settlement. In
+        # particular, do not race an abort RPC/write against the TERM below.
+        interrupt = false if adapter.transport == :stdio_jsonl_rpc && @pi_idle_stop
         if adapter.respond_to?(:terminate_subprocess)
           Thread.new do
             begin
@@ -460,16 +466,32 @@ module Harnex
 
       turn_id = nil
       @inject_mutex.synchronize do
+        if adapter.transport == :stdio_jsonl_rpc
+          @completion_transition_lock.synchronize do
+            raise "session is stopping or disconnected" if @stop_requested || @session_finalized || @pi_transport_failed
+
+            # Reserve this run before the blocking RPC: neither stop nor a fast
+            # callback may mistake the preceding turn's proof for this work.
+            begin_pi_run!
+            @pi_awaiting_run_start = true
+          end
+        end
         begin
           turn_id = adapter.dispatch(**dispatch)
         rescue StandardError => e
-          mark_task_failed(status: "dispatch_error", error: e.message)
+          @completion_transition_lock.synchronize do
+            mark_task_failed(status: "dispatch_error", error: e.message) unless @session_finalized
+          end
           raise
         end
-        @state_machine.force_busy!
-        @injected_count += 1
-        @last_injected_at = Time.now
-        refresh_registry
+        @completion_transition_lock.synchronize do
+          unless @session_finalized
+            @state_machine.force_busy! unless adapter.transport == :stdio_jsonl_rpc
+            @injected_count += 1
+            @last_injected_at = Time.now
+            refresh_registry
+          end
+        end
       end
 
       emit_send_event(dispatch.fetch(:prompt, text), force: payload[:force])
@@ -558,9 +580,17 @@ module Harnex
       end
       @ended_at = Time.now
 
-      enforce_required_artifact_report!
-      normalize_work_acceptance_exit_code!
-      normalize_auto_stop_exit_code!
+      @completion_transition_lock.synchronize do
+        if adapter.transport == :stdio_jsonl_rpc
+          # Keep process evidence even when accepted idle cleanup has a logical
+          # exit of zero. The receipt's turn exit describes work acceptance.
+          emit_event("process_exited", code: @exit_code, signal: @term_signal)
+          normalize_pi_stop_exit_code!
+        end
+        enforce_required_artifact_report!
+        normalize_work_acceptance_exit_code!
+        normalize_auto_stop_exit_code!
+      end
       drain_auto_stop_threads
       finalize_session!
       watch_thread&.kill
@@ -848,15 +878,26 @@ module Harnex
     end
 
     def handle_jsonl_notification(message)
+      @completion_transition_lock.synchronize do
+        # Stop owns the terminal decision. Late abort/settled/start callbacks
+        # cannot resurrect interrupted work or invalidate settled idle cleanup.
+        return if @stop_requested || @session_finalized || @pi_transport_failed
+
+        handle_jsonl_notification_locked(message)
+      end
+    end
+
+    def handle_jsonl_notification_locked(message)
       event_type = message["type"].to_s
 
       case event_type
       when "agent_start"
-        reset_pi_run_outcome!
-        @state_machine.force_busy!
+        begin_pi_run!
+        @pi_awaiting_run_start = false
       when "turn_start"
+        begin_pi_run!
+        @pi_awaiting_run_start = false
         @turn_started_seen = true
-        @state_machine.force_busy!
         emit_event("turn_started")
       when "agent_end"
         capture_pi_agent_end(message)
@@ -864,6 +905,8 @@ module Harnex
         emit_event("agent_end", will_retry: message["willRetry"] == true)
         adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
       when "agent_settled"
+        return if @pi_awaiting_run_start
+
         @state_machine.force_prompt!
         emit_event("agent_settled", stop_reason: @pi_last_assistant_stop_reason)
         settle_pi_task!
@@ -951,12 +994,21 @@ module Harnex
     end
 
     def handle_structured_disconnect(error)
-      handle_rpc_disconnect(error)
+      if adapter.transport == :stdio_jsonl_rpc
+        @completion_transition_lock.synchronize { handle_rpc_disconnect(error) }
+      else
+        handle_rpc_disconnect(error)
+      end
     end
 
     def handle_rpc_disconnect(error)
+      return if @session_finalized
+
       msg = error.is_a?(Hash) ? error["message"] : error&.message
-      if normal_auto_stop_disconnect?(msg)
+      pi = adapter.transport == :stdio_jsonl_rpc
+      expected_pi_cleanup = pi && error.nil? && @stop_requested &&
+        !@pi_transport_failed && (@pi_idle_stop || (@auto_stop_fired && task_failed?))
+      if expected_pi_cleanup || (!pi && normal_auto_stop_disconnect?(msg))
         signal_rpc_done!
         return
       end
@@ -966,6 +1018,16 @@ module Harnex
       end
       @last_error = msg.to_s unless msg.to_s.empty?
       @state_machine.force_busy!
+      if pi
+        return if @pi_transport_failed
+
+        @pi_transport_failed = true
+        @pi_idle_stop = false
+        mark_task_failed(
+          status: "disconnected", error: msg,
+          outcome_class: "task_failed", artifact_report_status: "rejected"
+        )
+      end
       emit_event("disconnected", source: "transport", message: msg) rescue nil
       if adapter.respond_to?(:terminate_subprocess)
         Thread.new do
@@ -1041,6 +1103,18 @@ module Harnex
       ""
     end
 
+    def begin_pi_run!
+      @last_completed_at = nil
+      @last_failed_at = nil
+      @last_failed_status = nil
+      @completion_outcome_class = nil
+      @completion_report_status = nil
+      @completion_diagnostics = []
+      @last_error = nil
+      reset_pi_run_outcome!
+      @state_machine.force_busy!
+    end
+
     def reset_pi_run_outcome!
       @pi_last_assistant_stop_reason = nil
       @pi_last_assistant_error = nil
@@ -1064,7 +1138,7 @@ module Harnex
     end
 
     def settle_pi_task!
-      return if @stop_requested && !task_complete? && !task_failed?
+      return if @stop_requested || @pi_transport_failed
 
       reason = @pi_last_assistant_stop_reason
       case reason
@@ -1535,10 +1609,12 @@ module Harnex
     end
 
     def finalize_session!
-      return if @session_finalized
-      return unless @events_log
+      @completion_transition_lock.synchronize do
+        return if @session_finalized
+        return unless @events_log
 
-      @session_finalized = true
+        @session_finalized = true
+      end
       @ended_at ||= Time.now
       begin
         emit_session_end_telemetry
@@ -1561,11 +1637,20 @@ module Harnex
     end
 
     def stop_requested!
-      @stop_mutex.synchronize do
-        return true if @stop_requested
+      @completion_transition_lock.synchronize do
+        @stop_mutex.synchronize do
+          return true if @stop_requested || @session_finalized
 
-        @stop_requested = true
-        false
+          @stop_requested = true
+          if adapter.transport == :stdio_jsonl_rpc
+            @pi_idle_stop = task_complete? && !@pi_transport_failed &&
+              !@pi_awaiting_run_start && @state_machine.to_s == "prompt" && adapter.state == :prompt
+            unless @pi_idle_stop || task_failed?
+              mark_task_failed(status: "interrupted", error: "Pi stopped before accepted settlement")
+            end
+          end
+          false
+        end
       end
     end
 
@@ -1825,7 +1910,26 @@ module Harnex
       @term_signal = nil if @exit_code == 1
     end
 
+    def normalize_pi_stop_exit_code!
+      if @pi_idle_stop && task_complete? && !@pi_transport_failed
+        # Pi may handle TERM itself and call process.exit(143), in which case
+        # wait reports a normal exit with no signal. The idle-stop latch, not
+        # exit 143 alone, is the authority to preserve the settled proof.
+        if @exit_code == 0 || (@exit_code == 143 && [nil, 15].include?(@term_signal))
+          @exit_code = 0
+          @term_signal = nil
+        else
+          mark_task_failed(status: "process_exit", error: "Pi idle cleanup exited unexpectedly")
+        end
+      end
+      if task_failed?
+        @exit_code = 1 if @exit_code.nil? || @exit_code.zero? || @term_signal
+        @term_signal = nil if @exit_code == 1
+      end
+    end
+
     def normalize_auto_stop_exit_code!
+      return normalize_pi_stop_exit_code! if adapter.transport == :stdio_jsonl_rpc
       return unless @auto_stop
       return unless @auto_stop_fired
 

@@ -100,6 +100,16 @@ class PiAdapterTest < Minitest::Test
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
   end
 
+  def test_fast_settlement_before_prompt_response_is_not_overwritten_as_busy
+    @adapter.stub(:ensure_open!, true) do
+      @adapter.stub(:request, ->(_payload) { @adapter.send(:handle_event, { "type" => "agent_settled" }); {} }) do
+        @adapter.dispatch(prompt: "fast turn")
+      end
+    end
+
+    assert_equal :prompt, @adapter.state
+  end
+
   def test_dispatch_applies_model_and_effort_through_rpc_commands
     server_in, client_out = IO.pipe
     client_in, server_out = IO.pipe

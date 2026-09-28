@@ -200,8 +200,10 @@ module Harnex
         apply_dispatch_overrides(model: model, effort: effort) unless @state == :busy
         payload = { "type" => "prompt", "message" => prompt.to_s }
         payload["streamingBehavior"] = streaming_behavior if streaming_behavior
-        request(payload)
+        # Events may settle a fast run before the prompt response wakes us.
+        # Mark busy before writing, never after the response.
         @state = :busy
+        request(payload)
         nil
       end
 
@@ -291,23 +293,24 @@ module Harnex
       end
 
       def terminate_subprocess(term_grace_seconds: STOP_TERM_GRACE_SECONDS, kill_grace_seconds: STOP_KILL_GRACE_SECONDS)
-        return false unless @pid
+        pid = @pid
+        return false unless pid
 
         begin
-          Process.kill("TERM", @pid)
+          Process.kill("TERM", pid)
         rescue Errno::ESRCH
           return true
         end
 
-        return true if wait_for_process_exit(@pid, term_grace_seconds)
+        return true if wait_for_process_exit(pid, term_grace_seconds)
 
         begin
-          Process.kill("KILL", @pid)
+          Process.kill("KILL", pid)
         rescue Errno::ESRCH
           return true
         end
 
-        wait_for_process_exit(@pid, kill_grace_seconds)
+        wait_for_process_exit(pid, kill_grace_seconds)
       end
 
       def pid
@@ -324,6 +327,12 @@ module Harnex
                    process_status
                  end
         @pid = nil
+        # Process reaping can beat the stdout reader. Consume its terminal
+        # events/EOF (including malformed trailing output) before Session
+        # freezes receipts and disconnection counters.
+        if @reader_thread && !@reader_thread.join(2)
+          signal_disconnect(Timeout::Error.new("pi rpc output did not close after process exit"))
+        end
         status
       rescue Errno::ECHILD
         @pid = nil
