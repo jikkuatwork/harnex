@@ -2,7 +2,7 @@
 
 ## [0.14.0] - 2026-09-28 | 08:25 PM | +04
 
-Local-only release candidate; public publication, tag and push are not authorized.
+Owner-authorized local-only release; public publication, tag and push remain deferred.
 
 ### Fixed
 
