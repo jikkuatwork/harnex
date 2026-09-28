@@ -45,6 +45,16 @@ class RuntimeBudgetTest < Minitest::Test
     assert_equal "expired", @budget.snapshot[:state]
   end
 
+  def test_enormous_finite_budget_uses_os_safe_waits_and_can_be_cancelled
+    @budget = Harnex::RuntimeBudget.new(seconds: 1e100)
+    @budget.start { flunk("future budget fired") }
+    timer = @budget.instance_variable_get(:@thread)
+    timer.report_on_exception = false
+    assert_nil timer.join(0.02)
+    @budget.cancel
+    refute timer.alive?
+  end
+
   def test_invalid_limits_are_rejected
     [0, -1, Float::INFINITY, Float::NAN, "garbage"].each do |value|
       assert_raises(ArgumentError) { Harnex::RuntimeBudget.new(seconds: value) }

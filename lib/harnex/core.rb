@@ -47,7 +47,7 @@ module Harnex
     text = value.to_s.strip
     raise OptionParser::InvalidArgument, "#{option_name} requires a value" if text.empty?
 
-    match = text.match(/\A([0-9]+(?:\.[0-9]+)?)([smhSMH]?)\z/)
+    match = text.match(/\A([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)([smhSMH]?)\z/)
     unless match
       raise OptionParser::InvalidArgument,
             "#{option_name} must be a positive duration (examples: 30, 30s, 5m, 2h)"

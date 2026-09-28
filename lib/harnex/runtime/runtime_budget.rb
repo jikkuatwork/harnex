@@ -30,7 +30,7 @@ module Harnex
               remaining = @deadline - @clock.call
               break unless remaining.positive?
 
-              @condition.wait(@mutex, remaining)
+              @condition.wait(@mutex, [remaining, 60.0].min)
             end
           end
           check!

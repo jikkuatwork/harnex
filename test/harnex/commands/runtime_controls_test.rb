@@ -16,6 +16,18 @@ class RuntimeControlsTest < Minitest::Test
     assert_nil runner.instance_variable_get(:@options)[:max_runtime_s]
   end
 
+  def test_runtime_float_values_round_trip_through_tmux_forwarding
+    ["0.00001", "9" * 100].each do |value|
+      argv = ["--tmux", "runtime-window", "--max-runtime=#{value}", "pi"]
+      outer = Harnex::Runner.new(argv)
+      assert_equal ["pi", []], outer.send(:extract_wrapper_options, argv)
+      seconds = outer.instance_variable_get(:@options)[:max_runtime_s]
+      inner = Harnex::Runner.new([])
+      inner.send(:extract_wrapper_options, ["pi", "--max-runtime", seconds.to_s])
+      assert_equal seconds, inner.instance_variable_get(:@options)[:max_runtime_s]
+    end
+  end
+
   def test_invalid_runtime_budget_is_rejected_before_launch
     %w[0 -1 NaN Infinity 3fortnights].push("9" * 400).each do |value|
       argv = ["pi", "--max-runtime", value]
