@@ -319,6 +319,8 @@ module Harnex
       uri = URI("http://#{registry.fetch('host')}:#{registry.fetch('port')}/stop")
       request = Net::HTTP::Post.new(uri)
       request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(reason: "completion", origin: "watch")
 
       response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 2) do |http|
         http.request(request)

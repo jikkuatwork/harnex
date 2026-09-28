@@ -64,7 +64,9 @@ module Harnex
       end
 
     seconds = amount * multiplier
-    raise OptionParser::InvalidArgument, "#{option_name} must be greater than 0" if seconds <= 0.0
+    unless seconds.finite? && seconds.positive?
+      raise OptionParser::InvalidArgument, "#{option_name} must be finite and greater than 0"
+    end
 
     seconds
   end

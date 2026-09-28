@@ -466,6 +466,7 @@ module Harnex
           artifact_report_status: event["artifact_report_status"]
         )
         payload[:last_error] = event["message"] || event["error"] if failed
+        payload[:stop] = event["stop"] if event["stop"].is_a?(Hash)
       end
       puts JSON.generate(payload)
       exit_code
@@ -807,6 +808,8 @@ module Harnex
         work_state: work_state,
         outcome_class: status["outcome_class"],
         artifact_report_status: status["artifact_report_status"],
+        stop: status["stop"],
+        runtime_budget: status["runtime_budget"],
         exit: status["exit"],
         exit_code: status["exit_code"],
         ended_at: status["ended_at"],

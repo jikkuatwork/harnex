@@ -33,7 +33,7 @@ module Harnex
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --meta
       --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
-      --require-artifact-report --require-attribution --auto-stop --on-done --fast --legacy-pty
+      --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime --fast --legacy-pty
       --allow-live-parent --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
@@ -43,7 +43,7 @@ module Harnex
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
       --max-resumes --preset --context --meta --artifact-report
-      --validation-report --on-done --cwd --root --timeout --inbox-ttl
+      --validation-report --on-done --max-runtime --cwd --root --timeout --inbox-ttl
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
     def self.usage(program_name = "harnex run")
@@ -65,6 +65,7 @@ module Harnex
           --context TEXT     Inject as the initial prompt (prepends session header)
           --auto-stop        Stop after the first accepted task completion from --context
           --on-done CMD      Launch /bin/sh -c CMD once at the first typed work result
+          --max-runtime DUR  Fixed worker runtime budget (e.g. 30m); not a watch timeout
           --fast             (codex only) Use Codex service_tier="fast".
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
@@ -128,6 +129,8 @@ module Harnex
           accepted completion after command/tool activity or a Git delta.
           --on-done CMD is trusted local shell input. Do not put secrets in CMD;
           command lines may be visible to local process inspection.
+          --max-runtime is opt-in and never resets on prompts/retries/activity.
+          It terminates the worker, unlike watch --max-wait which only stops waiting.
           Every dispatch gets a harness-authored receipt. Workers may write only
           optional claims to HARNEX_ARTIFACT_CLAIMS_PATH; claims never accept work.
           Explicit --stall-after/--max-resumes values override --preset defaults.
@@ -182,6 +185,7 @@ module Harnex
         root: nil,
         auto_stop: false,
         on_done: nil,
+        max_runtime_s: nil,
         allow_live_parent: false,
         detach: false,
         tmux: false,
@@ -273,6 +277,7 @@ module Harnex
       tmux_cmd += ["--context", @options[:context]] if @options[:context]
       tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--on-done", @options[:on_done]] if @options[:on_done]
+      tmux_cmd += ["--max-runtime", @options[:max_runtime_s].to_s] if @options[:max_runtime_s]
       tmux_cmd += ["--meta", JSON.generate(@options[:meta])] if @options[:meta]
       @options[:telemetry].each do |key, value|
         flag = TELEMETRY_KEYS_TO_FLAGS[key]
@@ -464,6 +469,7 @@ module Harnex
         inbox_ttl: @options[:inbox_ttl],
         auto_stop: @options[:auto_stop],
         on_done: @options[:on_done],
+        max_runtime_s: @options[:max_runtime_s],
         launch_cwd: history_cwd,
         child_cwd: session_child_cwd
       )
@@ -636,6 +642,15 @@ module Harnex
           @options[:on_done] = required_option_value(arg, argv[index])
         when /\A--on-done=(.+)\z/
           @options[:on_done] = required_option_value("--on-done", Regexp.last_match(1))
+        when "--max-runtime"
+          index += 1
+          @options[:max_runtime_s] = Harnex.parse_duration_seconds(
+            required_option_value(arg, argv[index]), option_name: "--max-runtime"
+          )
+        when /\A--max-runtime=(.*)\z/
+          @options[:max_runtime_s] = Harnex.parse_duration_seconds(
+            Regexp.last_match(1), option_name: "--max-runtime"
+          )
         when "--allow-live-parent"
           @options[:allow_live_parent] = true
         when "--require-attribution"
@@ -744,7 +759,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|on-done|cwd|root|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl)=/
           nil
         when telemetry_equals_regex
           nil
@@ -765,7 +780,7 @@ module Harnex
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=",
-          "--artifact-report=", "--validation-report=", "--on-done=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
+          "--artifact-report=", "--validation-report=", "--on-done=", "--max-runtime=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
           *TELEMETRY_EQUALS_PREFIXES
         )
     end

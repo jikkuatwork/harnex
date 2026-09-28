@@ -255,7 +255,7 @@ module Harnex
     def build_observed(
       id:, session_id:, generated_at:, successful:, outcome_status:,
       outcome_summary:, git:, commands:, turn:, usage:, claims:,
-      command_observation:
+      command_observation:, stop: nil
     )
       observed_commands = compact_commands(commands).select do |entry|
         non_empty_string?(entry["cmd"]) && entry["exit_code"].is_a?(Integer)
@@ -305,6 +305,7 @@ module Harnex
           "usage" => usage_payload
         }
       }
+      report["observed"]["stop"] = compact_observed_stop(stop) if stop
       report["claims"] = claims_payload unless claims_payload.empty?
       fit_observed_report!(report)
     end
@@ -632,6 +633,7 @@ module Harnex
         )
       end
 
+      validate_observed_stop(value["stop"], diagnostics) if value.key?("stop")
       turn = value["turn"]
       unless turn.is_a?(Hash)
         diagnostics << diagnostic("object_required", "$.observed.turn", "observed.turn must be an object")
@@ -654,6 +656,30 @@ module Harnex
         unless USAGE_STATUSES.include?(value.dig("usage", "status"))
           diagnostics << diagnostic("enum", "$.observed.usage.status", "observed.usage.status must be observed, estimated, unsupported, missing, or zero")
         end
+      end
+    end
+
+    def validate_observed_stop(value, diagnostics)
+      path = "$.observed.stop"
+      unless value.is_a?(Hash)
+        diagnostics << diagnostic("object_required", path, "observed.stop must be an object")
+        return
+      end
+      { "reason" => StopRequest::REASONS, "origin" => StopRequest::ORIGINS,
+        "work_state" => StopRequest::WORK_STATES }.each do |key, allowed|
+        next if allowed.include?(value[key])
+
+        diagnostics << diagnostic("enum", "#{path}.#{key}", "stop #{key} is not supported")
+      end
+      validate_required_string(value, "requested_at", "#{path}.requested_at", diagnostics)
+      begin
+        Time.iso8601(value["requested_at"].to_s)
+      rescue ArgumentError
+        diagnostics << diagnostic("timestamp_required", "#{path}.requested_at", "stop timestamp must be ISO 8601")
+      end
+      if value.key?("runtime_limit_s") &&
+         !(finite_number?(value["runtime_limit_s"]) && value["runtime_limit_s"].positive?)
+        diagnostics << diagnostic("number_required", "#{path}.runtime_limit_s", "runtime limit must be finite and positive")
       end
     end
 
@@ -910,7 +936,8 @@ module Harnex
         "commands_truncated" => boolean_or_nil(value["commands_truncated"]),
         "command_observation" => bounded_string_or_nil(value["command_observation"]),
         "turn" => compact_observed_turn(value["turn"]),
-        "usage" => compact_observed_usage(value["usage"])
+        "usage" => compact_observed_usage(value["usage"]),
+        "stop" => compact_observed_stop(value["stop"])
       }
       payload.delete_if { |_key, item| item.nil? }
       payload.empty? ? nil : payload
@@ -952,6 +979,17 @@ module Harnex
         "signal" => integer_or_nil(hash_value(value, "signal"))
       }
       payload.delete_if { |_key, item| item.nil? }
+      payload
+    end
+
+    def compact_observed_stop(value)
+      return nil unless value.is_a?(Hash)
+
+      payload = %w[reason origin work_state requested_at].to_h do |key|
+        [key, bounded_string_or_nil(hash_value(value, key))]
+      end
+      limit = finite_float_or_nil(hash_value(value, "runtime_limit_s"))
+      payload["runtime_limit_s"] = limit unless limit.nil?
       payload
     end
 

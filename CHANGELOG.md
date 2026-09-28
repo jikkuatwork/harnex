@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.14.0] - 2026-09-28 | 08:25 PM | +04
+
+Local-only release candidate; public publication, tag and push are not authorized.
+
+### Fixed
+
+- Explicit idle Pi shutdown preserves the latest settled accepted/no-change
+  proof, including follow-up turns. Busy/newly dispatched work cannot reuse an
+  older receipt; unexpected transport loss and malformed output still fail.
+  Raw child exits remain observable separately from logical cleanup status (#69).
+- `wait`/`watch` observer deadlines now include slow registry, event, HTTP and
+  exit-grace probes. A private observer process enforces the monotonic cap without
+  stopping the worker; late results cannot override timeout (#71).
+
+### Added
+
+- Opt-in `wait/watch --heartbeat DUR` streams flushed diagnostics on stderr while
+  preserving one final JSON stdout result. `wait --max-wait` aliases `--timeout`.
+- Structured work/model/tool activity clocks distinguish real events from UI/log
+  freshness, with unknown PTY clocks and no retained thinking-stream content.
+- Bounded stop reason/origin survives events, status, receipts and dispatch-end
+  telemetry. Expected cancellation is distinct from provider disconnection.
+- `run --max-runtime DUR` enforces a fixed runner-owned worker budget independent
+  of supervisors, prompts, retries or UI chatter. Active expiry fails work; idle
+  cleanup preserves accepted proof. Doctor exposes versioned capabilities (#71).
+
 ## [0.13.0] - 2026-09-23 | 01:56 AM | +04
 
 Local-only activation approved by the owner. Public RubyGems publication, Git

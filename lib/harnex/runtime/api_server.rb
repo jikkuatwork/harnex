@@ -66,7 +66,7 @@ module Harnex
       when ["POST", "/stop"]
         return unauthorized(client) unless authorized?(headers)
 
-        json(client, 200, @session.inject_stop)
+        json(client, 200, @session.inject_stop(**parse_stop_body(body)))
       when ["POST", "/send"]
         return unauthorized(client) unless authorized?(headers)
 
@@ -124,6 +124,16 @@ module Harnex
       end
     ensure
       client.close unless client.closed?
+    end
+
+    def parse_stop_body(body)
+      parsed = body.to_s.empty? ? {} : JSON.parse(body)
+      raise ArgumentError, "stop body must be a JSON object" unless parsed.is_a?(Hash)
+      raise ArgumentError, "stop accepts only reason and origin" unless (parsed.keys - %w[reason origin]).empty?
+
+      context = { reason: parsed.fetch("reason", "manual"), origin: parsed.fetch("origin", "api") }
+      StopRequest.validate!(**context)
+      context
     end
 
     def parse_send_body(headers, body)

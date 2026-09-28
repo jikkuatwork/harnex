@@ -183,7 +183,7 @@ class SessionJsonrpcTest < Minitest::Test
   def test_auto_stop_rejects_acknowledgment_only_turn_without_parsing_prose
     @session.instance_variable_set(:@auto_stop, true)
     stops = Queue.new
-    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true, **_context|
       stops << [turn_id, interrupt]
       { ok: true, signal: "test" }
     end
@@ -236,7 +236,7 @@ class SessionJsonrpcTest < Minitest::Test
 
   def test_auto_stop_accepts_structured_command_activity_regardless_of_final_prose
     @session.instance_variable_set(:@auto_stop, true)
-    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+    @session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true, **_context|
       { ok: true, signal: "test" }
     end
 

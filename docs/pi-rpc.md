@@ -132,6 +132,35 @@ failures. Output is drained before final receipt/dispatch finalization so traili
 transport errors are not silently lost. Existing `--auto-stop` settlement remains
 supported.
 
+## Runtime limits and activity
+
+Harnex 0.14.0 adds opt-in `run --max-runtime DUR`, independent of observer
+`watch --max-wait` / `wait --timeout`. Check `doctor --adapter pi` for
+`capabilities.runtime_budget: 1` before enabling it. The fixed monotonic budget
+is armed before child launch and initial prompting, and never resets on retries,
+follow-up prompts, steering, or UI output. Expiry terminates without waiting for
+an abort RPC. Active work fails with logical run exit 124; cleanup after accepted
+idle settlement preserves proof. Shutdown/finalization has separate overhead.
+
+Live JSON status separates `activity` work clocks from `log_idle_s`. Pi assistant
+message boundaries and text/thinking/tool-call deltas update model activity;
+`tool_execution_*` updates tool activity. Thinking content is not stored in the
+activity tracker or newly logged. Extension UI/queue/retry events never fake
+model/tool progress. `model_active` describes an observed stream lifetime, not
+hidden provider state; a quiet active stream is not a completed task. PTY clocks
+are unknown. Dispatch-end rows retain the terminal activity snapshot.
+
+The first requested stop records reason/origin/time and work state in a
+`stop_requested` event, JSON status/end metadata, and receipt `observed.stop`.
+The labels are bounded caller declarations, separate from acceptance. Harnex's
+runtime expiry is `runtime_budget`/`runtime`, ordinary stop is `manual`/`cli`,
+and auto-stop is `completion`/`auto_stop`. Expected cancellation EOF is not a
+provider disconnection; unexpected EOF or malformed output remains a failure.
+Raw Pi exit evidence is in `process_exited`, before logical normalization.
+
+See `harnex agents-guide monitoring` for clock fields, heartbeat streaming,
+observer deadlines, stop labels, and the full runtime-budget contract.
+
 ## Telemetry
 
 At settlement and teardown, Harnex reads `get_session_stats` and records:

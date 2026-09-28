@@ -77,6 +77,69 @@ promise to preempt uninterruptible kernel I/O or OS scheduling stalls. Output
 consumers must keep draining streams. Optional marker writes and
 `--stop-on-terminal` are post-observation actions, not read-side probes.
 
+## Worker Runtime Budgets, Activity, and Stops
+
+A watcher timeout stops **waiting**, not working. To cap the worker itself,
+first require `harnex doctor --adapter pi` to report `ok: true` and
+`capabilities.runtime_budget: 1` (available in Harnex 0.14.0+), then opt in:
+
+```bash
+harnex run pi --id cx-i-NN --tmux cx-i-NN \
+  --context "Read the task brief" --auto-stop --max-runtime 30m
+harnex watch --id cx-i-NN --max-wait 5m --heartbeat 60s
+```
+
+`--max-runtime` is a fixed monotonic budget in the session-owning runner. It is
+armed before child launch/initial prompt, after binary validation, and never
+reset by prompts, retries, UI chatter, or activity. Expiry requires no supervisor:
+it terminates the child with bounded TERM/KILL escalation without waiting for an
+abort RPC. Child shutdown and receipt/telemetry finalization can take additional
+time; this is not a promise to preempt OS scheduling or uninterruptible I/O.
+Active work is failed with logical run exit `124`. Expiry used only to clean up
+already accepted idle work preserves that proof and logical exit `0`. The stop
+record still says `runtime_budget`. Without this option there is no runtime cap.
+
+`status --json` and dispatch-end records expose separate `activity` and
+`runtime_budget` objects:
+
+- `activity.turn_active`, `turn_started_at`, `turn_age_s` track the current
+  structured run, including quiet waits and retries.
+- `model_active`, `model_started_at`, `model_age_s` describe the observed
+  assistant stream/item lifetime, not hidden provider internals.
+- `last_model_activity_at` / `model_idle_s` and `last_tool_activity_at` /
+  `tool_idle_s` track their respective protocol events. Thinking deltas advance
+  the model clock without retaining their content in the activity tracker.
+- UI requests, queue updates, log mtime, and status reads never advance work
+  clocks. A new run clears the prior run's activity clocks; steering an active
+  run does not. PTY/unobserved activity is `status: unknown` with null clocks.
+- Existing `log_idle_s` and the status table's `IDLE` column remain **log age**,
+  not work progress. A degraded registry snapshot is stale, not a fresh sample.
+
+Stops record bounded caller-declared labels, separately from work acceptance:
+
+```bash
+harnex stop --id cx-i-NN --reason manual --origin cli
+```
+
+Reasons are `manual`, `completion`, `runtime_budget`; origins are `api`, `cli`,
+`auto_stop`, `watch`, `runtime`. These labels are not authenticated identities.
+The first stop request wins. Inspect the `stop_requested` event, live/terminal
+`stop` metadata, or receipt `observed.stop` for reason, origin, request time,
+work state at request, and an applicable runtime limit. Harnex's own budget
+expiry uses `runtime_budget`/`runtime`; auto-stop uses `completion`/`auto_stop`;
+`watch --stop-on-terminal` uses `completion`/`watch`. Raw child status remains in
+`process_exited` for Pi and budgeted runs; the final run exit is logical status.
+
+Explicit idle Pi cleanup preserves the latest settled accepted/no-change proof,
+including after follow-up turns. Busy stop rejects unfinished work and cannot
+reuse an older accepted turn. Unexpected EOF, malformed transport, and abnormal
+idle teardown remain failures. Completion notifications remain once per session,
+not once per reusable turn; verify the receipt appropriate to each turn.
+
+Pi `send --force` while busy queues steering for a subsequent assistant turn.
+Transport/queue acceptance is not proof the current model call consumed it.
+Consumer wake deduplication/acknowledgment still belongs in the Pi bridge.
+
 ## Live-Run Visibility
 
 Every dispatch appends a `dispatch_start` row to the repo's dispatch stream

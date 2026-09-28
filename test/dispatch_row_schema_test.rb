@@ -227,6 +227,7 @@ class DispatchRowSchemaTest < Minitest::Test
   ].freeze
 
   DISPATCH_END_SECTION_KEYS = %w[
+    activity
     actual
     agent
     artifact_report
@@ -239,6 +240,8 @@ class DispatchRowSchemaTest < Minitest::Test
     predicted
     receipt
     reliability
+    runtime_budget
+    stop
     usage
     validation
   ].freeze
@@ -312,6 +315,10 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal USAGE_KEYS, record.fetch("usage").keys.sort
       assert_equal CONTEXT_KEYS, record.fetch("context").keys.sort
       assert_equal RELIABILITY_KEYS, record.fetch("reliability").keys.sort
+      assert_equal "unknown", record.dig("activity", "status")
+      assert_nil record.dig("activity", "model_active")
+      assert_nil record.fetch("stop")
+      assert_nil record.fetch("runtime_budget")
 
       meta = record.fetch("meta")
       assert_equal id, meta.fetch("id")

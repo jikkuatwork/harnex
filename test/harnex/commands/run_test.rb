@@ -1441,7 +1441,7 @@ class RunnerTest < Minitest::Test
 
   def test_tmux_forwards_on_done_as_one_exact_argument
     command = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" >> /tmp/harnex wake"
-    argv = ["codex", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command]
+    argv = ["codex", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command, "--max-runtime", "2m"]
     runner = Harnex::Runner.new(argv)
     runner.send(:extract_wrapper_options, argv)
     captured = nil
@@ -1459,6 +1459,9 @@ class RunnerTest < Minitest::Test
     index = inner_argv.index("--on-done")
     refute_nil index
     assert_equal command, inner_argv.fetch(index + 1)
+    budget_index = inner_argv.index("--max-runtime")
+    refute_nil budget_index
+    assert_equal "120.0", inner_argv.fetch(budget_index + 1)
   end
 
   def test_tmux_does_not_consume_following_flag_as_window_name

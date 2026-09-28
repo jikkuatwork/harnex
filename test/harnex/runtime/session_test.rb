@@ -494,8 +494,8 @@ class SessionTest < Minitest::Test
     calls = Queue.new
     session = build_session(command: adapter.build_command, adapter: adapter, auto_stop: true)
     session.send(:prepare_events_log)
-    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
-      calls << [:stop, turn_id, interrupt]
+    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true, **context|
+      calls << [:stop, turn_id, interrupt, context]
       { ok: true, signal: "test_stop" }
     end
 
@@ -504,7 +504,7 @@ class SessionTest < Minitest::Test
       "params" => { "turn" => { "id" => "trn-1", "status" => "completed" } }
     })
 
-    assert_equal [:stop, nil, false], Timeout.timeout(2) { calls.pop }
+    assert_equal [:stop, nil, false, { reason: "completion", origin: "auto_stop" }], Timeout.timeout(2) { calls.pop }
     failed = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }.find { |event| event["type"] == "task_failed" }
     assert_equal "completed_no_activity", failed.fetch("status")
     assert_equal "completed_no_activity", failed.fetch("outcome_class")
@@ -526,7 +526,7 @@ class SessionTest < Minitest::Test
     calls = Queue.new
     session = build_session(adapter: adapter, auto_stop: true)
     session.send(:prepare_output_log)
-    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true|
+    session.define_singleton_method(:inject_stop) do |turn_id: nil, interrupt: true, **_context|
       calls << :stop
       { ok: true, signal: "test_stop" }
     end

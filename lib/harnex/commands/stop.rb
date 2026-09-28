@@ -19,9 +19,12 @@ module Harnex
           --repo PATH  Resolve the session using PATH's repo root (default: current repo)
           --cli CLI    Filter by CLI type
           --timeout S  How long to retry transient API failures (default: #{DEFAULT_TIMEOUT})
+          --reason R   Stop reason: #{StopRequest::REASONS.join(', ')} (default: manual)
+          --origin O   Caller label: #{StopRequest::ORIGINS.join(', ')} (default: cli)
           -h, --help   Show this help
 
-        Sends the adapter stop sequence to the session.
+        Sends the adapter stop sequence to the session. Reason/origin are bounded
+        caller-declared labels, not proof of task failure or caller identity.
         Use `harnex wait --id ID` afterward to block until the session finishes.
 
         Common patterns:
@@ -43,6 +46,8 @@ module Harnex
         repo_path: Dir.pwd,
         cli: nil,
         timeout: DEFAULT_TIMEOUT,
+        reason: "manual",
+        origin: "cli",
         help: false
       }
     end
@@ -56,6 +61,7 @@ module Harnex
 
       raise "--id is required for harnex stop" unless @options[:id]
 
+      StopRequest.validate!(reason: @options[:reason], origin: @options[:origin])
       repo_root = Harnex.resolve_repo_root(@options[:repo_path])
       registry = Harnex.read_registry(repo_root, @options[:id], cli: @options[:cli])
       unless registry
@@ -66,6 +72,8 @@ module Harnex
       uri = URI("http://#{registry.fetch('host')}:#{registry.fetch('port')}/stop")
       request = Net::HTTP::Post.new(uri)
       request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(reason: @options[:reason], origin: @options[:origin])
 
       deadline = monotonic_now + @options[:timeout]
       response = with_http_retry(deadline: deadline) do
@@ -130,6 +138,8 @@ module Harnex
         opts.on("--repo PATH", "Resolve the session using PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--cli CLI", "Filter by CLI type") { |value| @options[:cli] = value }
         opts.on("--timeout SECS", Float, "How long to retry transient API failures") { |value| @options[:timeout] = value }
+        opts.on("--reason REASON", "Bounded stop reason") { |value| @options[:reason] = value }
+        opts.on("--origin ORIGIN", "Caller-declared stop origin") { |value| @options[:origin] = value }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
     end

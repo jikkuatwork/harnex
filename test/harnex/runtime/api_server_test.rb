@@ -34,7 +34,7 @@ class ApiServerTest < Minitest::Test
   end
 
   class FakeSession
-    attr_reader :host, :port, :token, :inbox
+    attr_reader :host, :port, :token, :inbox, :stop_context
 
     def initialize(host:, port:, token:, inbox:)
       @host = host
@@ -48,6 +48,11 @@ class ApiServerTest < Minitest::Test
     end
 
     def status_payload
+      { ok: true }
+    end
+
+    def inject_stop(**context)
+      @stop_context = context
       { ok: true }
     end
   end
@@ -120,16 +125,36 @@ class ApiServerTest < Minitest::Test
     assert_empty list_body["messages"]
   end
 
+  def test_stop_accepts_typed_context_and_defaults_legacy_empty_body
+    assert_equal "200", request("POST", "/stop").code
+    assert_equal({ reason: "manual", origin: "api" }, @session.stop_context)
+    assert_equal "200", request("POST", "/stop", body: '{"reason":"completion","origin":"watch"}').code
+    assert_equal({ reason: "completion", origin: "watch" }, @session.stop_context)
+  end
+
+  def test_stop_rejects_unbounded_context_before_calling_session
+    response = request("POST", "/stop", body: '{"reason":"private-free-text","origin":"cli"}')
+    assert_equal "409", response.code
+    refute_includes response.body, "private-free-text"
+    assert_nil @session.stop_context
+    assert_equal "409", request("POST", "/stop", body: '[]').code
+    assert_equal "409", request("POST", "/stop", body: '{"extra":"data"}').code
+    assert_nil @session.stop_context
+  end
+
   private
 
-  def request(method, path)
+  def request(method, path, body: nil)
     uri = URI("http://#{@host}:#{@port}#{path}")
     request_class = {
       "GET" => Net::HTTP::Get,
-      "DELETE" => Net::HTTP::Delete
+      "DELETE" => Net::HTTP::Delete,
+      "POST" => Net::HTTP::Post
     }.fetch(method)
     request = request_class.new(uri)
     request["Authorization"] = "Bearer #{@token}"
+    request["Content-Type"] = "application/json"
+    request.body = body if body
 
     Net::HTTP.start(uri.host, uri.port) { |http| http.request(request) }
   end

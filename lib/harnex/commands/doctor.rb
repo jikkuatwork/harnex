@@ -34,6 +34,8 @@ module Harnex
         Gotchas:
           doctor validates local adapter prerequisites; it does not start sessions.
           Pi RPC requires >= #{MIN_PI_VERSION} so `agent_settled` is available.
+          JSON includes harnex_version and versioned capabilities; check
+          capabilities.runtime_budget == 1 before using run --max-runtime.
           --sweep is diagnostic only; it does not stop sessions or remove files.
           --dry-run must be paired with --prune.
           Run it after installing or upgrading a selected agent CLI.
@@ -64,7 +66,16 @@ module Harnex
       summary = {
         ok: checks.all? { |c| c[:ok] } && retention.fetch(:ok, true),
         checks: checks,
-        retention: retention
+        retention: retention,
+        harnex_version: Harnex::VERSION,
+        capabilities: {
+          runtime_budget: 1,
+          work_activity: 1,
+          stop_provenance: 1,
+          monitor_deadline: 1,
+          monitor_heartbeat: 1,
+          pi_idle_stop: 1
+        }
       }
       summary[:sweep] = sweep_payload if @options[:sweep]
       puts JSON.generate(summary)

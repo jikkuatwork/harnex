@@ -95,8 +95,13 @@ module Harnex
                 :output_log_path, :events_log_path, :started_at, :ended_at, :exit_code, :term_signal,
                 :require_artifact_report
 
-    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, on_done: nil, launch_cwd: nil, child_cwd: nil, completion_notifier: nil)
+    def initialize(adapter:, command:, repo_root:, host:, port: nil, id: DEFAULT_ID, watch: nil, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Inbox::DEFAULT_TTL, auto_stop: false, on_done: nil, launch_cwd: nil, child_cwd: nil, completion_notifier: nil, max_runtime_s: nil)
       @adapter = adapter
+      @activity = ActivityTracker.new(transport: adapter.transport)
+      @runtime_budget = RuntimeBudget.new(seconds: max_runtime_s) unless max_runtime_s.nil?
+      @runtime_child_ready = false
+      @runtime_stop_scheduled = false
+      @stop_request = nil
       @command = command
       @repo_root = repo_root
       @launch_cwd = File.expand_path(launch_cwd.to_s.empty? ? repo_root : launch_cwd)
@@ -228,10 +233,13 @@ module Harnex
       prune_retained_logs
       prepare_output_log
       prepare_events_log
+      start_runtime_budget!
 
       return run_structured if structured_transport?
 
       run_pty
+    ensure
+      @runtime_budget&.cancel
     end
 
     def run_pty
@@ -239,6 +247,7 @@ module Harnex
       spawn_args << { chdir: child_cwd } if child_cwd
       @reader, @writer, @pid = PTY.spawn(*spawn_args)
       @writer.sync = true
+      runtime_child_started!
       arm_auto_stop_after_initial_context
       emit_started_event
       emit_git_start_event
@@ -261,10 +270,13 @@ module Harnex
       @term_signal = status.signaled? ? status.termsig : nil
       @exit_code = status.exited? ? status.exitstatus : 128 + status.termsig
       @ended_at = Time.now
+      @runtime_budget&.cancel
+      emit_event("process_exited", code: @exit_code, signal: @term_signal) if @runtime_budget
 
       enforce_required_artifact_report!
       normalize_work_acceptance_exit_code!
       normalize_auto_stop_exit_code!
+      normalize_runtime_exit_code!
       drain_auto_stop_threads
       output_thread.join(1)
       finalize_session!
@@ -305,6 +317,9 @@ module Harnex
         artifact_claims_path: artifact_claims_path
       }
       payload.merge!(log_activity_snapshot)
+      payload[:activity] = @activity.snapshot
+      payload[:stop] = @stop_request&.to_h
+      payload[:runtime_budget] = @runtime_budget&.snapshot
       payload[:description] = description if description
 
       if watch
@@ -378,12 +393,19 @@ module Harnex
       inject_sequence([{ text: text, newline: newline }])
     end
 
-    def inject_stop(turn_id: nil, interrupt: true)
+    def inject_stop(turn_id: nil, interrupt: true, reason: "manual", origin: "api")
+      StopRequest.validate!(reason: reason, origin: origin)
       unless structured_transport?
         raise "session is not running" unless pid && Harnex.alive_pid?(pid)
       end
 
-      return { ok: true, signal: "already_requested" } if stop_requested!
+      return { ok: true, signal: "already_requested" } if stop_requested!(reason: reason, origin: origin)
+
+      if runtime_budget_stop?
+        @state_machine.force_busy!
+        signal_rpc_done! unless @pid
+        return { ok: true, signal: "terminate_sent" }
+      end
 
       if structured_transport?
         # There is nothing to abort after Pi's accepted settlement. In
@@ -453,6 +475,10 @@ module Harnex
     end
 
     def inject_via_structured(text:, submit:, enter_only:, force: false)
+      if @runtime_budget&.expired?
+        stop_for_runtime_budget!
+        raise ArgumentError, "session runtime budget is exhausted"
+      end
       payload = adapter.build_send_payload(
         text: text,
         submit: submit,
@@ -466,21 +492,25 @@ module Harnex
 
       turn_id = nil
       @inject_mutex.synchronize do
-        if adapter.transport == :stdio_jsonl_rpc
-          @completion_transition_lock.synchronize do
-            raise "session is stopping or disconnected" if @stop_requested || @session_finalized || @pi_transport_failed
+        @completion_transition_lock.synchronize do
+          raise "session is stopping or disconnected" if @stop_requested || @session_finalized || @pi_transport_failed
 
-            # Reserve this run before the blocking RPC: neither stop nor a fast
-            # callback may mistake the preceding turn's proof for this work.
+          # Reserve work before the blocking RPC. Steering an active run does
+          # not reset its clocks, but a new prompt cannot reuse old proof.
+          @activity.start_turn
+          if adapter.transport == :stdio_jsonl_rpc
             begin_pi_run!
             @pi_awaiting_run_start = true
+          else
+            reset_work_outcome!
+            @state_machine.force_busy!
           end
         end
         begin
           turn_id = adapter.dispatch(**dispatch)
         rescue StandardError => e
           @completion_transition_lock.synchronize do
-            mark_task_failed(status: "dispatch_error", error: e.message) unless @session_finalized
+            mark_task_failed(status: "dispatch_error", error: e.message) unless @session_finalized || @stop_requested
           end
           raise
         end
@@ -540,7 +570,8 @@ module Harnex
 
       adapter.start_rpc(env: child_env, cwd: child_cwd || repo_root)
       @pid = adapter.pid
-      @state_machine.force_prompt!
+      runtime_child_started!
+      @state_machine.force_prompt! unless @stop_requested
       emit_started_event
       emit_git_start_event
 
@@ -553,7 +584,14 @@ module Harnex
 
       watch_thread = start_watch_thread
       @inbox.start
-      dispatch_initial_prompt
+      begin
+        dispatch_initial_prompt
+      rescue StandardError
+        raise unless @runtime_budget&.expired?
+
+        stop_for_runtime_budget!
+        raise unless runtime_budget_stop?
+      end
 
       if @pid
         begin
@@ -579,17 +617,19 @@ module Harnex
         @exit_code = 0
       end
       @ended_at = Time.now
+      @runtime_budget&.cancel
 
       @completion_transition_lock.synchronize do
-        if adapter.transport == :stdio_jsonl_rpc
-          # Keep process evidence even when accepted idle cleanup has a logical
-          # exit of zero. The receipt's turn exit describes work acceptance.
+        # Keep raw process evidence separate from logical work/cleanup status.
+        if adapter.transport == :stdio_jsonl_rpc || @runtime_budget
           emit_event("process_exited", code: @exit_code, signal: @term_signal)
-          normalize_pi_stop_exit_code!
         end
+        normalize_pi_stop_exit_code! if adapter.transport == :stdio_jsonl_rpc
+        normalize_runtime_exit_code!
         enforce_required_artifact_report!
         normalize_work_acceptance_exit_code!
         normalize_auto_stop_exit_code!
+        normalize_runtime_exit_code!
       end
       drain_auto_stop_threads
       finalize_session!
@@ -629,6 +669,15 @@ module Harnex
     end
 
     def handle_rpc_notification(message)
+      @completion_transition_lock.synchronize do
+        return if @stop_requested || @session_finalized
+
+        handle_rpc_notification_locked(message)
+      end
+    end
+
+    def handle_rpc_notification_locked(message)
+      @activity.observe_rpc(message)
       method = message["method"]
       params = message["params"] || {}
 
@@ -636,6 +685,7 @@ module Harnex
       when "thread/started"
         @rpc_thread_id = params.dig("thread", "id")
       when "turn/started"
+        reset_work_outcome!
         @turn_started_seen = true
         @state_machine.force_busy!
         emit_event("turn_started", turnId: params.dig("turn", "id"))
@@ -713,6 +763,12 @@ module Harnex
     end
 
     def record_successful_completion_locked(payload)
+      return false if @stop_requested || @session_finalized
+      if @runtime_budget&.expired?
+        stop_for_runtime_budget!
+        return false
+      end
+      @activity.settle
       assessment = completion_gate_required? ? assess_completion_proof : { accepted: true }
       unless assessment[:accepted]
         mark_task_failed(
@@ -821,6 +877,7 @@ module Harnex
 
     def mark_task_failed_locked(turn_id: nil, status: nil, error: nil, codex_error_info: nil, outcome_class: nil, artifact_report_status: nil, diagnostics: nil, publish: true)
       @last_completed_at = nil if outcome_class
+      @activity.settle
       @last_failed_at = Time.now
       @last_failed_status = status.to_s.empty? ? "failed" : status.to_s
       @last_error = error.to_s unless error.to_s.empty?
@@ -829,6 +886,7 @@ module Harnex
       @completion_diagnostics = Array(diagnostics).first(Harnex::ArtifactReport::MAX_DIAGNOSTICS) if diagnostics
 
       payload = { status: @last_failed_status }
+      payload[:stop] = @stop_request.to_h if @stop_request
       payload[:turnId] = turn_id if turn_id
       payload[:message] = error unless error.to_s.empty?
       payload[:codex_error_info] = codex_error_info if codex_error_info
@@ -889,7 +947,9 @@ module Harnex
 
     def handle_jsonl_notification_locked(message)
       event_type = message["type"].to_s
+      return if event_type == "agent_settled" && @pi_awaiting_run_start
 
+      @activity.observe_pi(message)
       case event_type
       when "agent_start"
         begin_pi_run!
@@ -1006,9 +1066,8 @@ module Harnex
 
       msg = error.is_a?(Hash) ? error["message"] : error&.message
       pi = adapter.transport == :stdio_jsonl_rpc
-      expected_pi_cleanup = pi && error.nil? && @stop_requested &&
-        !@pi_transport_failed && (@pi_idle_stop || (@auto_stop_fired && task_failed?))
-      if expected_pi_cleanup || (!pi && normal_auto_stop_disconnect?(msg))
+      expected_cleanup = error.nil? && @stop_requested && !@pi_transport_failed
+      if expected_cleanup || (!pi && normal_auto_stop_disconnect?(msg))
         signal_rpc_done!
         return
       end
@@ -1044,6 +1103,11 @@ module Harnex
     end
 
     def dispatch_initial_prompt
+      if @runtime_budget&.expired?
+        stop_for_runtime_budget!
+        return
+      end
+      return if @stop_requested
       return unless adapter.respond_to?(:initial_prompt)
 
       prompt = adapter.initial_prompt
@@ -1104,6 +1168,13 @@ module Harnex
     end
 
     def begin_pi_run!
+      @activity.start_turn
+      reset_work_outcome!
+      reset_pi_run_outcome!
+      @state_machine.force_busy!
+    end
+
+    def reset_work_outcome!
       @last_completed_at = nil
       @last_failed_at = nil
       @last_failed_status = nil
@@ -1111,8 +1182,6 @@ module Harnex
       @completion_report_status = nil
       @completion_diagnostics = []
       @last_error = nil
-      reset_pi_run_outcome!
-      @state_machine.force_busy!
     end
 
     def reset_pi_run_outcome!
@@ -1389,7 +1458,9 @@ module Harnex
         artifact_report_status: @completion_report_status,
         started_at: @started_at.iso8601,
         exited_at: Time.now.iso8601,
-        injected_count: @injected_count
+        injected_count: @injected_count,
+        stop: @stop_request&.to_h,
+        runtime_budget: @runtime_budget&.snapshot
       }
       payload[:signal] = @term_signal if @term_signal
       Harnex.write_registry(exit_path, payload)
@@ -1609,11 +1680,13 @@ module Harnex
     end
 
     def finalize_session!
+      @runtime_budget&.cancel
       @completion_transition_lock.synchronize do
         return if @session_finalized
         return unless @events_log
 
         @session_finalized = true
+        @activity.settle
       end
       @ended_at ||= Time.now
       begin
@@ -1636,21 +1709,94 @@ module Harnex
       emit_exit_event
     end
 
-    def stop_requested!
+    def stop_requested!(reason: "manual", origin: "api")
       @completion_transition_lock.synchronize do
         @stop_mutex.synchronize do
           return true if @stop_requested || @session_finalized
 
+          work_state = task_failed? ? "failed" : (task_complete? ? "completed" : "running")
+          @stop_request = StopRequest.new(
+            reason: reason, origin: origin, work_state: work_state,
+            runtime_limit_s: reason == "runtime_budget" ? @runtime_budget&.snapshot&.fetch(:limit_s) : nil
+          )
           @stop_requested = true
+          # Do not make physical budget enforcement wait for receipt/Git I/O.
+          terminate_runtime_child_async if runtime_budget_stop?
+          emit_event("stop_requested", **@stop_request.to_h)
           if adapter.transport == :stdio_jsonl_rpc
             @pi_idle_stop = task_complete? && !@pi_transport_failed &&
               !@pi_awaiting_run_start && @state_machine.to_s == "prompt" && adapter.state == :prompt
             unless @pi_idle_stop || task_failed?
-              mark_task_failed(status: "interrupted", error: "Pi stopped before accepted settlement")
+              mark_task_failed(
+                status: runtime_budget_stop? ? "runtime_budget" : "interrupted",
+                error: runtime_budget_stop? ? "worker runtime budget expired" : "Pi stopped before accepted settlement"
+              )
             end
+          elsif runtime_budget_stop? && !task_complete? && !task_failed?
+            mark_task_failed(status: "runtime_budget", error: "worker runtime budget expired")
           end
           false
         end
+      end
+    end
+
+    def start_runtime_budget!
+      @runtime_budget&.start { schedule_runtime_stop }
+    end
+
+    def runtime_child_started!
+      @runtime_child_ready = true
+      schedule_runtime_stop if @runtime_budget&.expired?
+    end
+
+    def schedule_runtime_stop
+      return unless @runtime_child_ready
+
+      @stop_mutex.synchronize do
+        return if @runtime_stop_scheduled || @stop_requested || @session_finalized
+
+        @runtime_stop_scheduled = true
+      end
+      track_auto_stop_thread(Thread.new { stop_for_runtime_budget! })
+    end
+
+    def stop_for_runtime_budget!
+      @runtime_budget&.check!
+      inject_stop(reason: "runtime_budget", origin: "runtime", interrupt: false)
+    end
+
+    def runtime_budget_stop?
+      @runtime_budget&.expired? && @stop_request&.to_h&.values_at(:reason, :origin) == %w[runtime_budget runtime]
+    end
+
+    def terminate_runtime_child_async
+      thread = Thread.new do
+        if adapter.respond_to?(:terminate_subprocess)
+          adapter.terminate_subprocess
+        elsif (child_pid = @pid)
+          Process.kill("TERM", child_pid)
+          sleep Adapters::Pi::STOP_TERM_GRACE_SECONDS
+          Process.kill("KILL", child_pid) if Harnex.alive_pid?(child_pid)
+        end
+      rescue Errno::ESRCH
+        nil
+      rescue StandardError => e
+        warn("harnex: runtime termination failed (#{e.class})")
+      end
+      track_auto_stop_thread(thread)
+    end
+
+    def normalize_runtime_exit_code!
+      return unless runtime_budget_stop?
+
+      if task_complete? && !task_failed? && @stop_request.to_h[:work_state] == "completed"
+        if @exit_code == 0 || (@exit_code == 143 && [nil, 15].include?(@term_signal))
+          @exit_code = 0
+          @term_signal = nil
+        end
+      else
+        @exit_code = 124
+        @term_signal = nil
       end
     end
 
@@ -1690,7 +1836,7 @@ module Harnex
 
       thread = Thread.new do
         begin
-          inject_stop(turn_id: turn_id, interrupt: interrupt)
+          inject_stop(turn_id: turn_id, interrupt: interrupt, reason: "completion", origin: "auto_stop")
         rescue StandardError => e
           warn("harnex: auto-stop failed after #{reason}: #{e.message}")
         end
@@ -1703,8 +1849,6 @@ module Harnex
     end
 
     def drain_auto_stop_threads
-      return unless @auto_stop
-
       threads = @auto_stop_mutex.synchronize { @auto_stop_threads.dup }
       return if threads.empty?
 
@@ -1722,7 +1866,7 @@ module Harnex
       timed_out.each(&:kill)
       @exit_code = 1 if @exit_code.nil? || @exit_code.zero?
       @term_signal = nil if @exit_code == 1
-      emit_event("auto_stop_teardown_timeout", grace_seconds: grace_seconds, threads: timed_out.size)
+      emit_event(@auto_stop ? "auto_stop_teardown_timeout" : "stop_teardown_timeout", grace_seconds: grace_seconds, threads: timed_out.size)
     end
 
     def auto_stop_teardown_grace_seconds
@@ -1786,7 +1930,8 @@ module Harnex
         turn: receipt_turn_payload(successful),
         usage: build_summary_usage,
         claims: @artifact_claims,
-        command_observation: command_observation_status
+        command_observation: command_observation_status,
+        stop: @stop_request&.to_h
       )
       @artifact_report_generated = true
       @artifact_report_write_error = nil
@@ -1959,6 +2104,7 @@ module Harnex
     end
 
     def boot_failure_exit?
+      return false if @stop_requested
       return false unless structured_transport?
       return false if @turn_started_seen
 
@@ -1984,7 +2130,10 @@ module Harnex
         attribution: attribution,
         outcome: outcome,
         attempt: build_summary_attempt,
-        reliability: build_summary_reliability
+        reliability: build_summary_reliability,
+        activity: @activity.snapshot,
+        stop: @stop_request&.to_h,
+        runtime_budget: @runtime_budget&.snapshot
       }
       queue = build_summary_queue
       record[:queue] = queue if queue
