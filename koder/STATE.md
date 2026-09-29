@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-09-28 | 09:31 PM | +04
+Updated: 2026-09-29 | 04:55 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -35,8 +35,12 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future
 
-1. Consumers may adopt the new controls after `doctor --adapter pi` capability
+1. **Owner-selected next session: #70 — Pi command/exit evidence in receipts.**
+   Read `koder/issues/70_pi_rpc_command_exit_observation.md`; inspect actual Pi
+   bash result metadata before choosing the implementation. Do not infer exits
+   from prose. Work is deferred to next session; no #70 implementation started.
+2. Consumers may adopt the new controls after `doctor --adapter pi` capability
    checks; retain exact-receipt/artifact verification and owner acknowledgment.
-2. Continue #70 (Pi command-exit observation), then #56 and the remaining backlog.
+   Continue #56 after #70.
 3. Publish only when separately authorized, using the verified retained artifact
    and the repository release procedure; public-release tracking remains #72.
