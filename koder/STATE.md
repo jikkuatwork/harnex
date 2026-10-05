@@ -1,13 +1,19 @@
 # Harnex State
 
-Updated: 2026-09-29 | 04:55 PM | IST
+Updated: 2026-10-05 | 10:08 PM | +04
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.14.0 is built, installed locally, and verified on PATH** from package
+- **0.14.1 is installed locally and verified on PATH** from `c835a93`.
+  Issue #74 is resolved: persisted home paths are portable, mixed forms
+  reconcile, and status/retention consumers keep their path contracts.
+  Full suite: 824 runs / 3,867 assertions / no failures or errors / three
+  opt-in provider skips. Installed CLI and real-record read-only checks pass;
+  exact package and non-coverage: `koder/releases/0.14.1.md`.
+- **0.14.0 was built and verified locally** from package
   source `aab0973`. #69 and #71 are resolved; Plans 36–38 are complete.
   Full suite: 815 runs / 3,820 assertions / no failures or errors; independent
   review approved. Evidence and explicit non-coverage: `koder/releases/0.14.0.md`.
@@ -20,8 +26,10 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 ## Present
 
 - **Local-only release.** No RubyGems push, tag, Git push, or public source
-  publication occurred. The exact ignored `harnex-0.14.0.gem` is retained;
-  its identity is in the release record. Do not rebuild version 0.14.0.
+  publication occurred. The exact 0.14.1 gem is retained in private validation
+  storage; its identity is in the release record. Do not rebuild 0.14.1 for
+  later publication without re-verification. The earlier 0.14.0 gem is retained
+  unchanged as rollback; no unrelated running session was restarted.
 - `run --max-runtime` is opt-in and independent of observer `--max-wait`.
   Doctor exposes versioned capabilities. Work clocks exclude UI/log freshness;
   stop labels and actual runtime enforcement are distinct.
