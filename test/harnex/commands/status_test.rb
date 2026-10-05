@@ -206,6 +206,29 @@ class StatusCommandTest < Minitest::Test
     assert result.start_with?("..")
   end
 
+  def test_portable_start_record_keeps_status_repo_absolute
+    Dir.mktmpdir("harnex-status-home") do |home|
+      previous_home = ENV["HOME"]
+      ENV["HOME"] = home
+      repo = File.join(home, "project")
+      FileUtils.mkdir_p(repo)
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      Harnex::DispatchHistory.append(Harnex::DispatchHistory.path_for(repo), {
+        schema_version: 2, record_type: "dispatch_start", id: "cx-portable-start",
+        session_id: "portable-start", pid: Process.pid, host: Harnex.host_info[:host],
+        cli: "codex", started_at: "2026-10-05T00:00:00Z", repo_root: repo, meta: {}
+      })
+      status = Harnex::Status.new(["--json", "--id", "cx-portable-start", "--repo", repo])
+      out, = capture_io { assert_equal 0, status.run }
+      row = JSON.parse(out).first
+      assert_equal repo, row.fetch("repo_root")
+      assert_equal "dispatch_start", row.fetch("source")
+      assert_equal "running", row.fetch("state")
+    ensure
+      ENV["HOME"] = previous_home
+    end
+  end
+
   private
 
   def create_git_repo

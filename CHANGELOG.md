@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.1] - 2026-10-05 | 09:55 PM | +04
+
+Owner-authorized local-only release; public publication, tag and push remain deferred.
+
+### Fixed
+
+- New dispatch records and reconciliation repair appends store paths under the
+  user's home as `~`/`~/...`, without mutating runtime records or rewriting
+  existing rows. Nested data and home-prefix boundaries are preserved (#74).
+- Canonical reconciliation accepts equivalent absolute and home-relative paths
+  while retaining genuine payload conflicts. Status results keep their absolute
+  repository roots, and retention still protects portable live-record paths.
+
 ## [0.14.0] - 2026-09-28 | 08:25 PM | +04
 
 Owner-authorized local-only release; public publication, tag and push remain deferred.

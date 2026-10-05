@@ -3,6 +3,25 @@ require "json"
 require_relative "../test_helper"
 
 class TerminalStatusTest < Minitest::Test
+  def test_portable_history_keeps_terminal_status_repo_absolute
+    Dir.mktmpdir("harnex-terminal-home") do |home|
+      previous_home = ENV["HOME"]
+      ENV["HOME"] = home
+      repo = File.join(home, "project")
+      FileUtils.mkdir_p(repo)
+      init_git_repo(repo)
+      path = Harnex::DispatchHistory.path_for(repo)
+      Harnex::DispatchHistory.append(path, v2_end_row(id: "cx-portable", repo: repo))
+      assert_equal "~/project", JSON.parse(File.read(path)).dig("meta", "repo")
+
+      status = Harnex::TerminalStatus.resolve(id: "cx-portable", repo_root: repo)
+      assert_equal repo, status.fetch("repo_root")
+      assert_equal "completed", status.fetch("state")
+    ensure
+      ENV["HOME"] = previous_home
+    end
+  end
+
   def test_resolves_v2_end_row_as_summary_and_history_in_one_shot
     Dir.mktmpdir("harnex-terminal-v2") do |repo|
       init_git_repo(repo)

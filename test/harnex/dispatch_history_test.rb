@@ -54,6 +54,81 @@ class DispatchHistoryTest < Minitest::Test
     actual agent attempt attribution context meta outcome predicted reliability usage
   ].freeze
 
+  def test_append_persists_portable_home_paths_without_mutating_runtime_data
+    Dir.mktmpdir("harnex-portable-history") do |dir|
+      home = File.join(dir, "home")
+      path = File.join(dir, "dispatch.jsonl")
+      record = {
+        repo_root: File.join(home, "project"),
+        meta: { "repo" => File.join(home, "project") },
+        actual: { "output_log_path" => File.join(home, "logs", "run.log"), "duration_s" => 1.25 },
+        artifacts: [{ "path" => File.join(home, "reports", "result.json") }],
+        outside: "#{home}-other/project",
+        root: home,
+        literal: "A reference to #{home}/project in prose",
+        other_user: "~another-user/project"
+      }
+      original = Marshal.dump(record)
+
+      Dir.stub(:home, home) { Harnex::DispatchHistory.append(path, record) }
+
+      stored = JSON.parse(File.read(path))
+      assert_equal "~/project", stored.fetch("repo_root")
+      assert_equal "~/project", stored.dig("meta", "repo")
+      assert_equal "~/logs/run.log", stored.dig("actual", "output_log_path")
+      assert_equal "~/reports/result.json", stored.fetch("artifacts").first.fetch("path")
+      assert_equal "~", stored.fetch("root")
+      assert_equal 1.25, stored.dig("actual", "duration_s")
+      assert_equal "#{home}-other/project", stored.fetch("outside")
+      assert_equal record.fetch(:literal), stored.fetch("literal")
+      assert_equal "~another-user/project", stored.fetch("other_user")
+      assert_equal original, Marshal.dump(record), "runtime input must remain untouched"
+
+      Dir.stub(:home, home) { Harnex::DispatchHistory.append(path, stored) }
+      first, second = File.readlines(path)
+      assert_equal first, second, "already-portable records must serialize identically"
+    end
+  end
+
+  def test_record_builders_keep_runtime_paths_absolute
+    Dir.mktmpdir("harnex-runtime-paths") do |home|
+      session = fake_session(repo_root: File.join(home, "project"), events_log_path: File.join(home, "events.jsonl"))
+      Dir.stub(:home, home) do
+        assert_equal session.repo_root, Harnex::DispatchHistory.build_start_record(session).fetch(:repo_root)
+        assert_equal session.events_log_path, Harnex::DispatchHistory.build_record(session).fetch(:events_log_path)
+      end
+    end
+  end
+
+  def test_root_home_does_not_rewrite_every_absolute_path
+    Dir.mktmpdir("harnex-root-home") do |dir|
+      path = File.join(dir, "dispatch.jsonl")
+      Dir.stub(:home, "/") { Harnex::DispatchHistory.append(path, { "path" => "/tmp/example" }) }
+      assert_equal "/tmp/example", JSON.parse(File.read(path)).fetch("path")
+    end
+  end
+
+  def test_portable_live_start_keeps_artifacts_protected_by_retention
+    Dir.mktmpdir("harnex-retention-home") do |home|
+      previous_home = ENV["HOME"]
+      ENV["HOME"] = home
+      repo = File.join(home, "project")
+      FileUtils.mkdir_p(repo)
+      init_git_repo(repo)
+      events = File.join(home, "logs", "events.jsonl")
+      report = File.join(home, "reports", "result.json")
+      claims = "#{report}.claims.json"
+      session = fake_session(pid: Process.pid, repo_root: repo,
+        events_log_path: events, artifact_report_path: report, artifact_claims_path: claims)
+      Harnex::DispatchHistory.append(Harnex::DispatchHistory.path_for(repo), Harnex::DispatchHistory.build_start_record(session))
+
+      protected_paths = Harnex::Retention.protected_paths(repo, [])
+      [events, report, claims].each { |path| assert_includes protected_paths, path }
+    ensure
+      ENV["HOME"] = previous_home
+    end
+  end
+
   def test_schema_round_trip
     session = fake_session(
       task_complete: true,

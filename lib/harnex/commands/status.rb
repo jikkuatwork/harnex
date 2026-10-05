@@ -117,7 +117,7 @@ module Harnex
         "cli" => start["cli"],
         "pid" => start["pid"],
         "description" => start["description"],
-        "repo_root" => start["repo_root"] || repo_root,
+        "repo_root" => Harnex::DispatchHistory.expand_portable_path(start["repo_root"] || repo_root),
         "started_at" => start["started_at"],
         "state" => "running",
         "process_state" => "running",

@@ -136,7 +136,7 @@ module Harnex
       terminal = state != "unknown"
       {
         "id" => meta["id"].to_s,
-        "repo_root" => meta["repo"] || fallback_repo_root,
+        "repo_root" => DispatchHistory.expand_portable_path(meta["repo"] || fallback_repo_root),
         "state" => state,
         "process_state" => Harnex.process_state_for(state, terminal: terminal),
         "terminal" => terminal,

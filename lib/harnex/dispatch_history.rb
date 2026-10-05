@@ -69,9 +69,38 @@ module Harnex
       File.join(STATE_DIR, "locks", "dispatch-#{digest}.lock")
     end
 
+    # Serialize a copy: runtime paths stay absolute and existing rows are untouched.
+    def portable_record(value, home: Dir.home)
+      case value
+      when Hash
+        value.to_h { |key, item| [key, portable_record(item, home: home)] }
+      when Array
+        value.map { |item| portable_record(item, home: home) }
+      when String
+        portable_path(value, home: home)
+      else
+        value
+      end
+    end
+
+    def portable_path(value, home: Dir.home)
+      root = home.to_s.sub(%r{/+\z}, "")
+      return value if root.empty? || !root.start_with?(File::SEPARATOR)
+      return "~" if value == root
+      return "~#{value.delete_prefix(root)}" if value.start_with?("#{root}/")
+
+      value
+    end
+
+    def expand_portable_path(value)
+      return value unless value.is_a?(String) && (value == "~" || value.start_with?("~/"))
+
+      File.expand_path(value)
+    end
+
     def append(path, record)
       FileUtils.mkdir_p(File.dirname(path))
-      line = JSON.generate(record) + "\n"
+      line = JSON.generate(portable_record(record)) + "\n"
       with_lock(path) do
         prepare_archive(path, line.bytesize)
         File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) do |file|

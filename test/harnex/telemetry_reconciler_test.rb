@@ -27,6 +27,88 @@ class TelemetryReconcilerTest < Minitest::Test
   # - archive bridge capability: test_archive_capability_reports_the_local_helper_contract
   # - CLI help/errors: test_cli_help_unknown_subcommand_option_conflict_and_required_source_contract
 
+  def test_equivalent_home_paths_reconcile_across_current_and_legacy_records
+    Dir.mktmpdir("harnex-portable-reconcile") do |dir|
+      home = File.join(dir, "home")
+      FileUtils.mkdir_p(home)
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      finish = v2_end
+      finish["meta"]["repo"] = "~/project"
+      finish["actual"]["output_log_path"] = "~/logs/run.log"
+      absolute = v2_end
+      absolute["meta"]["repo"] = File.join(home, "project")
+      absolute["actual"]["output_log_path"] = File.join(home, "logs", "run.log")
+      legacy = legacy_rich(id: "cx-v2", started_at: finish.fetch("started_at"))
+      legacy["meta"]["repo"] = File.join(home, "project")
+      legacy["actual"]["output_log_path"] = File.join(home, "logs", "run.log")
+      write_jsonl(canonical, v2_start, finish)
+      write_jsonl(source, absolute, legacy)
+      before = File.binread(canonical)
+
+      result = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source, "--json", env: { "HOME" => home })
+
+      assert_report(result, exitstatus: 0, command: "assert-canonical", status: "clean", missing: 0, conflicts: 0)
+      assert_equal before, File.binread(canonical), "comparison is read-only"
+    end
+  end
+
+  def test_home_path_normalization_does_not_hide_real_payload_conflicts
+    Dir.mktmpdir("harnex-portable-conflicts") do |dir|
+      home = File.join(dir, "home")
+      FileUtils.mkdir_p(home)
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      finish = v2_end
+      finish["meta"]["repo"] = "~/project"
+      finish["actual"]["output_log_path"] = "~/logs/run.log"
+      write_jsonl(canonical, v2_start, finish)
+      before = File.binread(canonical)
+
+      ["different-project", "home-prefix-sibling", "different-outcome"].each do |kind|
+        other = v2_end
+        other["meta"]["repo"] = File.join(home, "project")
+        other["actual"]["output_log_path"] = File.join(home, "logs", "run.log")
+        other["meta"]["repo"] = File.join(home, "different") if kind == "different-project"
+        other["meta"]["repo"] = "#{home}-other/project" if kind == "home-prefix-sibling"
+        other["actual"]["exit_code"] = 7 if kind == "different-outcome"
+        write_jsonl(source, other)
+        result = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json", env: { "HOME" => home })
+        assert_report(result, exitstatus: 1, command: "reconcile", status: "conflict", appended: 0)
+        assert_equal before, File.binread(canonical), kind
+      end
+    end
+  end
+
+  def test_repair_appends_portable_paths_without_rewriting_existing_rows
+    Dir.mktmpdir("harnex-portable-repair") do |dir|
+      home = File.join(dir, "home")
+      FileUtils.mkdir_p(home)
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      start = v2_start
+      start["repo_root"] = File.join(home, "project")
+      finish = v2_end
+      finish["meta"]["repo"] = File.join(home, "project")
+      finish["actual"]["output_log_path"] = File.join(home, "logs", "run.log")
+      write_jsonl(canonical, start)
+      write_jsonl(source, finish)
+      before = File.binread(canonical)
+
+      applied = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json", env: { "HOME" => home })
+      assert_report(applied, exitstatus: 0, command: "reconcile", status: "clean", appended: 1)
+      after = File.binread(canonical)
+      assert after.start_with?(before), "existing rows are append-only"
+      appended = JSON.parse(File.readlines(canonical).last)
+      assert_equal "~/project", appended.dig("meta", "repo")
+      assert_equal "~/logs/run.log", appended.dig("actual", "output_log_path")
+
+      repeated = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json", env: { "HOME" => home })
+      assert_report(repeated, exitstatus: 0, command: "reconcile", status: "clean", appended: 0)
+      assert_equal after, File.binread(canonical)
+    end
+  end
+
   def test_assert_canonical_accepts_clean_mixed_era_stream
     # seam: cli-subprocess
     Dir.mktmpdir("harnex-telemetry-clean") do |dir|

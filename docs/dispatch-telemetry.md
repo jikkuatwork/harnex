@@ -11,6 +11,26 @@ git repo it is `~/.local/state/harnex/dispatch.jsonl`. `harnex history`,
 `status --id`, and `wait` consume the same rows. Legacy v1 thin rows and
 pre-v2 envelope-less summaries may coexist and remain readable/skippable.
 
+## Portable home paths
+
+From 0.14.1, new canonical records and reconciliation repair appends serialize
+string values equal to the current user's home as `~`, and paths beneath it as
+`~/...`. The home-directory match uses a complete path-component boundary;
+sibling directories, other users' tilde forms and paths outside that home are
+not rewritten. A path mentioned later inside a prose string is not scrubbed.
+This is path serialization, not a general identity or secret redactor.
+
+The writer serializes a copy. Runtime/session structures, the events stream,
+registry and receipt files retain their normal paths. Existing ledger rows are
+not rewritten automatically. Status API results still expose absolute repository
+roots, and path-consuming retention/report operations resolve portable paths
+against the reader's home.
+
+Reconciliation compares absolute paths under the current home and their portable
+forms consistently. Genuinely different paths, identities, values and outcomes
+still conflict. Home-relative paths are interpreted in the current user's home
+context; this does not infer another machine's home directory or migrate archives.
+
 ## Clean-Tree Checks And The Tracked Stream
 
 Some repos deliberately track `.harnex/dispatch.jsonl` as project telemetry.
@@ -161,9 +181,10 @@ the top-level `queue` block but are not duplicated into legacy `meta`. Unknown
 top-level keys are kept on `started.meta` but are not copied into the v2 end
 row.
 
-`predicted` is copied verbatim from `--meta.predicted` when it is a JSON object;
-otherwise it is `{}`. Harnex does no profile lookup or recommendation-table
-resolution.
+`predicted` is copied from `--meta.predicted` when it is a JSON object;
+otherwise it is `{}`. The canonical record applies the portable-path serialization
+above; runtime values are unchanged. Harnex does no profile lookup or
+recommendation-table resolution.
 
 ## Queue, agent, and reliability blocks
 

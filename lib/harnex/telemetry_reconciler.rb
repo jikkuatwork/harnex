@@ -436,7 +436,7 @@ module Harnex
         return [0, locked] unless writable?(locked)
 
         still_missing = locked[:missing_rows].select { |row| rows.any? { |wanted| wanted.identity == row.identity } }
-        payload = still_missing.map { |row| JSON.generate(row.record) }.join("\n")
+        payload = still_missing.map { |row| JSON.generate(DispatchHistory.portable_record(row.record)) }.join("\n")
         existing = File.file?(@canonical) ? File.binread(@canonical) : ""
         payload = "\n#{payload}" unless existing.empty? || existing.end_with?("\n")
         payload = "#{payload}\n" unless payload.empty?
@@ -479,6 +479,8 @@ module Harnex
         end
       when Array
         value.map { |item| deep_normalize(item) }
+      when String
+        DispatchHistory.portable_path(value)
       else
         value
       end
