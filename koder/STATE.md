@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-16 | 07:30 AM | +04
+Updated: 2026-10-16 | 08:52 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
