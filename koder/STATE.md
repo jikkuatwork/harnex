@@ -1,38 +1,37 @@
 # Harnex State
 
-Updated: 2026-10-16 | 07:05 AM | +04
+Updated: 2026-10-16 | 07:30 AM | +04
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **#70 and #75 resolved on `main`, unreleased** (CHANGELOG `[Unreleased]`).
-  #70: Pi RPC receipts attest bash command text + integer exits from
-  `structuredContent.exit_code`; missing evidence fails closed via
-  `command_observation: partial|unsupported` and `observed.commands_unobserved`.
-  #75: `wait`/`watch` no longer die when a sibling registry vanishes mid-scan.
-  Full suite: 834 runs / 3,913 assertions / no failures or errors / three
-  opt-in skips; `PI_INTEGRATION=1` passes on Pi 1.3.0; live `harnex run pi`
-  receipt verified. Detail: the two issue files' Resolution sections.
-- **0.14.1 is installed locally** from `c835a93` (#74); record:
-  `koder/releases/0.14.1.md`. 0.14.0/0.13.0 gems retained as rollback.
+- **0.15.0 is installed locally and verified on PATH** from `81c6cb8`.
+  #70: Pi receipts attest bash command text + integer exits; missing evidence
+  fails closed (`command_observation: partial|unsupported`,
+  `observed.commands_unobserved`); doctor advertises `pi_command_proof: 1`.
+  #75: `wait`/`watch` survive a sibling registry vanishing mid-scan.
+  Full suite: 834 runs / 3,914 assertions / no failures or errors / three
+  opt-in skips; installed-gem regressions and a live installed-CLI Pi smoke
+  pass. Exact package and non-coverage: `koder/releases/0.15.0.md`.
+- 0.14.1 (#74) and earlier gems remain installed as rollback.
 
 ## Present
 
-- **Installed CLI is still 0.14.1** — neither fix is live for Holm queues until
-  a local release is cut and installed (owner decision; not done this session).
-- Pi on this machine is now **1.3.0** (owner-updated mid-session). Run
-  `pi update` before any Pi work.
-- Local-only release posture unchanged: no RubyGems push, tag, or Git push;
-  public publication tracked in #72. `run --max-runtime` caveats from 0.14.0
-  still apply (owned process groups only; once-per-session notifications).
+- **Local-only release.** No RubyGems push, tag, or Git push; public
+  publication tracked in #72. The exact 0.15.0 gem is in private validation
+  storage (identity in the release record); do not rebuild 0.15.0 for
+  publication without re-verification.
+- Pi on this machine is **1.3.0**. Run `pi update` before any Pi work.
+- `run --max-runtime` caveats from 0.14.0 still apply (owned process groups
+  only; once-per-session notifications).
 
 ## Future
 
-1. **If authorized:** cut 0.15.0 locally per the repo release procedure (skip
-   RubyGems/tag/push), install, smoke `harnex doctor --adapter pi` and a short
-   Pi bash receipt, write `koder/releases/0.15.0.md`.
-2. Continue #56. #76 (`watch --stall-after`) is a P3 follow-up from #75 with
-   open design questions listed in the issue.
+1. Holm can adopt Pi command proof after checking
+   `capabilities.pi_command_proof == 1`; keep supervisor replay for high-risk
+   acceptance (#70 non-goal).
+2. Continue #56. #76 (`watch --stall-after`) is a P3 follow-up with open
+   design questions in the issue.
 3. Publish only when separately authorized (#72).

@@ -58,4 +58,7 @@ target and a sibling whose registry vanishes mid-read. Without the fix the wait
 test reproduces the production message (`harnex wait observer: Errno::ENOENT`);
 with it the observer keeps waiting (timeout 124, `work_state: running`).
 
+Delivered in locally installed **0.15.0** (source `81c6cb8`; record
+`koder/releases/0.15.0.md`).
+
 The "Also observed" `watch --stall-after DUR` idea is split into #76.

@@ -91,7 +91,9 @@ caps/redaction and never persist command output as proof payload.
 
 ## Resolution — 2026-10-16
 
-Implemented on `main` (unreleased; see CHANGELOG `[Unreleased]`).
+Delivered in locally installed **0.15.0** (source `81c6cb8`; record
+`koder/releases/0.15.0.md`). Consumers gate on `harnex doctor`
+`capabilities.pi_command_proof: 1`.
 
 - **Evidence first.** Installed Pi 1.2.0 and, after the owner's mid-session
   update, Pi 1.3.0 were live-probed over raw `pi --mode rpc`. Built-in `bash`
