@@ -43,6 +43,9 @@ module Harnex
     PROOF_REJECTION_CLASSES = %w[
       completed_no_activity report_missing report_invalid report_rejected
     ].freeze
+    # Pi tools whose structured results carry an integer exit code.
+    PI_COMMAND_TOOLS = %w[bash].freeze
+    MAX_PENDING_PI_COMMANDS = 256
     class EventCounters
       def initialize
         @counts = {
@@ -167,6 +170,8 @@ module Harnex
       @event_counters = EventCounters.new
       @observed_commands_mutex = Mutex.new
       @observed_commands = []
+      @pi_pending_commands = {}
+      @pi_unobserved_commands = 0
       @artifact_claims = {}
       @artifact_claims_loaded = false
       @artifact_report_generated = false
@@ -1021,11 +1026,17 @@ module Harnex
           record_synthesized(text) if text
         end
       when "tool_execution_start"
-        @event_counters.record_item({ "type" => "dynamicToolCall" })
+        if pi_command_tool?(message)
+          @event_counters.record_item({ "type" => "commandExecution" })
+          start_pi_command(message)
+        else
+          @event_counters.record_item({ "type" => "dynamicToolCall" })
+        end
         record_synthesized(
           "tool: #{message["toolName"] || "tool"}#{message["args"] ? " #{summarize(message["args"])}" : ""}"
         )
       when "tool_execution_end"
+        finish_pi_command(message) if pi_command_tool?(message)
         tool_name = message["toolName"] || "tool"
         status = message["isError"] ? "error" : "ok"
         record_synthesized("tool-result: #{tool_name} (#{status})")
@@ -1184,6 +1195,60 @@ module Harnex
       end
     rescue ArgumentError, TypeError
       nil
+    end
+
+    def pi_command_tool?(message)
+      PI_COMMAND_TOOLS.include?(message["toolName"].to_s)
+    end
+
+    # Pi bash calls become proof only from structured evidence: command text
+    # from the start event's args and an integer exit from the end event's
+    # result.structuredContent, correlated by toolCallId. Aborts, timeouts,
+    # extension-replaced results, and older Pi releases carry no structured
+    # exit; those calls are counted as unobserved, never inferred from prose.
+    def start_pi_command(message)
+      call_id = message["toolCallId"].to_s
+      args = message["args"]
+      command = args["command"] if args.is_a?(Hash)
+      command = command.is_a?(String) && !command.strip.empty? ? Harnex::ArtifactReport.bounded_string(command) : nil
+      @observed_commands_mutex.synchronize do
+        if call_id.empty?
+          @pi_unobserved_commands += 1
+          next
+        end
+        if @pi_pending_commands.key?(call_id)
+          @pi_pending_commands.delete(call_id)
+          @pi_unobserved_commands += 1
+        elsif @pi_pending_commands.length >= MAX_PENDING_PI_COMMANDS
+          @pi_pending_commands.shift
+          @pi_unobserved_commands += 1
+        end
+        @pi_pending_commands[call_id] = command
+      end
+    end
+
+    def finish_pi_command(message)
+      call_id = message["toolCallId"].to_s
+      result = message["result"]
+      structured = result["structuredContent"] if result.is_a?(Hash)
+      exit_code = structured["exit_code"] if structured.is_a?(Hash)
+      duration_ms = message["durationMs"]
+      duration = duration_ms / 1000.0 if duration_ms.is_a?(Numeric) && duration_ms.finite? && duration_ms >= 0
+      @observed_commands_mutex.synchronize do
+        command = @pi_pending_commands.delete(call_id) unless call_id.empty?
+        unless command && exit_code.is_a?(Integer)
+          @pi_unobserved_commands += 1
+          next
+        end
+
+        @observed_commands << {
+          "cmd" => command,
+          "exit_code" => exit_code,
+          "status" => message["isError"] == true ? "failed" : "completed",
+          "duration_s" => duration
+        }.compact
+        @observed_commands = @observed_commands.last(Harnex::ArtifactReport::MAX_COMMANDS)
+      end
     end
 
     def summarize(value)
@@ -1989,6 +2054,7 @@ module Harnex
         usage: build_summary_usage,
         claims: @artifact_claims,
         command_observation: command_observation_status,
+        commands_unobserved: unobserved_command_count,
         stop: @stop_request&.to_h
       )
       @artifact_report_generated = true
@@ -2029,7 +2095,22 @@ module Harnex
     end
 
     def command_observation_status
-      adapter.transport == :stdio_jsonrpc ? "observed" : "unsupported"
+      case adapter.transport
+      when :stdio_jsonrpc then "observed"
+      when :stdio_jsonl_rpc
+        if unobserved_command_count.zero?
+          "observed"
+        else
+          observed_commands_snapshot.empty? ? "unsupported" : "partial"
+        end
+      else "unsupported"
+      end
+    end
+
+    # Pi command-tool calls that ended without structured exit evidence, plus
+    # any still in flight when the receipt is written.
+    def unobserved_command_count
+      @observed_commands_mutex.synchronize { @pi_unobserved_commands + @pi_pending_commands.length }
     end
 
     def receipt_successful?

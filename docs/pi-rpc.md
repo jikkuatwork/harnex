@@ -176,6 +176,29 @@ At settlement and teardown, Harnex reads `get_session_stats` and records:
 - terminal and peak active-context usage.
 
 Message/tool/retry/compaction events are available through `harnex events`.
+
+### Command proof
+
+Built-in `bash` tool calls are command evidence in the observed receipt.
+Harnex correlates `tool_execution_start` and `tool_execution_end` by
+`toolCallId` and records a command only when both structured facts exist:
+non-empty `args.command` text (bounded to 2,000 characters) and an integer
+`result.structuredContent.exit_code`. Status is `completed` or `failed` from
+`isError`; `duration_s` comes from `durationMs`. Command output, including
+`structuredContent.output`, is never persisted.
+
+Pi reports aborts, timeouts, and shell exits without a code as plain error
+text with no `structuredContent`; extensions that replace a result can drop it
+too. Harnex never parses that prose. Such calls, malformed exits, and calls
+still in flight at teardown count in `observed.commands_unobserved`, and
+`command_observation` becomes `partial` (some exits observed) or `unsupported`
+(none). A session with no bash calls reports `observed` with no commands.
+Other tools — read, edit, write, MCP, extension tools — are tool calls, not
+commands. `actual.commands_executed` counts bash calls; `actual.tool_calls` is
+Pi's own reported total, which includes them.
+
+Live verified on Pi 1.2.0 and 1.3.0. Older Pi releases without bash
+`structuredContent` fail closed to `unsupported`.
 Blocking extension dialogs (`select`, `confirm`, `input`, `editor`) are
 currently auto-cancelled so autonomous workers cannot hang. Full extension UI
 mediation is not implemented.

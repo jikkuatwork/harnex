@@ -309,7 +309,9 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal "provider_reported", record.dig("usage", "cost_source")
     assert_equal 0.07, record.dig("usage", "cost_usd")
     assert_equal 3, record.dig("actual", "tool_calls")
-    assert_equal "unsupported", record.dig("observed", "command_observation")
+    # No bash calls ran, so nothing went unobserved (#70).
+    assert_equal "observed", record.dig("observed", "command_observation")
+    assert_equal "not_run", record.dig("validation", "status")
     assert_equal "harnex", record.dig("receipt", "author")
     assert_equal "anthropic", record.dig("meta", "agent_provider")
     assert_equal "anthropic/claude-sonnet-4-5", record.dig("agent", "model_requested")
@@ -375,5 +377,131 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal 2, record.dig("context", "samples")
     assert_equal 1, record.dig("context", "missing_samples")
     assert_equal "missing", record.dig("context", "latest_sample_status")
+  end
+
+  # --- #70: Pi bash command/exit observation ---
+
+  def pi_tool_start(call_id, name, args)
+    @session.send(:handle_jsonl_notification, {
+      "type" => "tool_execution_start", "toolCallId" => call_id, "toolName" => name, "args" => args
+    })
+  end
+
+  # Mirrors Pi 1.3.0 bash results: exit evidence lives in
+  # result.structuredContent, alongside output Harnex must not persist.
+  def pi_tool_end(call_id, name, exit_code: nil, is_error: false, structured: true, duration_ms: 12)
+    result = { "content" => [{ "type" => "text", "text" => "SECRET-OUTPUT" }] }
+    if structured
+      result["structuredContent"] = {
+        "output" => "SECRET-OUTPUT", "truncated" => false, "exit_code" => exit_code, "wall_time_seconds" => 0
+      }
+    end
+    message = {
+      "type" => "tool_execution_end", "toolCallId" => call_id, "toolName" => name,
+      "result" => result, "isError" => is_error
+    }
+    message["durationMs"] = duration_ms if duration_ms
+    @session.send(:handle_jsonl_notification, message)
+  end
+
+  def finalized_record
+    @session.send(:emit_started_event)
+    @session.send(:emit_git_start_event)
+    @session.instance_variable_set(:@exit_code, 0)
+    @session.instance_variable_set(:@last_completed_at, Time.now)
+    @session.send(:finalize_session!)
+    JSON.parse(File.read(Harnex::DispatchHistory.path_for(@tmp)).lines.last)
+  end
+
+  def test_pi_bash_success_and_failure_are_observed_with_integer_exits
+    pi_tool_start("call_ok", "bash", { "command" => "ruby -c lib/a.rb", "timeout" => 10 })
+    pi_tool_end("call_ok", "bash", exit_code: 0, duration_ms: 1500)
+    pi_tool_start("call_bad", "bash", { "command" => "sh -c 'exit 3'" })
+    pi_tool_end("call_bad", "bash", exit_code: 3, is_error: true)
+
+    record = finalized_record
+
+    assert_equal "observed", record.dig("observed", "command_observation")
+    assert_equal [
+      { "cmd" => "ruby -c lib/a.rb", "exit_code" => 0, "status" => "completed", "duration_s" => 1.5 },
+      { "cmd" => "sh -c 'exit 3'", "exit_code" => 3, "status" => "failed", "duration_s" => 0.012 }
+    ], record.dig("observed", "commands")
+    assert_equal "fail", record.dig("validation", "status")
+    assert_equal 2, record.dig("actual", "commands_executed")
+    assert_equal 0, record.dig("actual", "tool_calls")
+    refute_includes JSON.generate(record), "SECRET-OUTPUT"
+    refute record["observed"].key?("commands_unobserved")
+  end
+
+  def test_pi_concurrent_bash_calls_correlate_by_tool_call_id
+    pi_tool_start("call_a", "bash", { "command" => "make a" })
+    pi_tool_start("call_b", "bash", { "command" => "make b" })
+    pi_tool_end("call_b", "bash", exit_code: 2, is_error: true)
+    pi_tool_end("call_a", "bash", exit_code: 0)
+
+    commands = finalized_record.dig("observed", "commands")
+
+    assert_equal({ "make b" => 2, "make a" => 0 }, commands.to_h { |entry| [entry["cmd"], entry["exit_code"]] })
+  end
+
+  def test_pi_non_bash_tools_stay_tool_calls_not_commands
+    pi_tool_start("call_r", "read", { "path" => "README.md" })
+    pi_tool_end("call_r", "read", structured: false)
+    pi_tool_start("call_w", "write", { "path" => "a.txt", "content" => "x" })
+    pi_tool_end("call_w", "write", structured: false)
+
+    record = finalized_record
+
+    assert_equal [], record.dig("observed", "commands")
+    assert_equal "observed", record.dig("observed", "command_observation")
+    assert_equal "not_run", record.dig("validation", "status")
+    assert_equal 2, record.dig("actual", "tool_calls")
+    assert_equal 0, record.dig("actual", "commands_executed")
+  end
+
+  def test_pi_bash_without_structured_exit_fails_closed_to_unsupported
+    # Aborts and timeouts reach the RPC stream as plain error text with no
+    # structuredContent; the prose "exited with code" must not be scraped.
+    pi_tool_start("call_abort", "bash", { "command" => "sleep 999" })
+    pi_tool_end("call_abort", "bash", structured: false, is_error: true)
+
+    record = finalized_record
+
+    assert_equal "unsupported", record.dig("observed", "command_observation")
+    assert_equal 1, record.dig("observed", "commands_unobserved")
+    assert_equal [], record.dig("observed", "commands")
+    assert_equal "unknown", record.dig("validation", "status")
+    assert_equal 1, record.dig("actual", "commands_executed")
+  end
+
+  def test_pi_malformed_or_uncorrelated_exits_make_observation_partial
+    pi_tool_start("call_ok", "bash", { "command" => "true" })
+    pi_tool_end("call_ok", "bash", exit_code: 0)
+    pi_tool_start("call_str", "bash", { "command" => "echo string-exit" })
+    pi_tool_end("call_str", "bash", exit_code: "0")
+    pi_tool_start("call_float", "bash", { "command" => "echo float-exit" })
+    pi_tool_end("call_float", "bash", exit_code: 0.0)
+    pi_tool_end("call_orphan", "bash", exit_code: 0)
+    pi_tool_start("call_noargs", "bash", nil)
+    pi_tool_end("call_noargs", "bash", exit_code: 0)
+    pi_tool_start("call_inflight", "bash", { "command" => "sleep 999" })
+
+    record = finalized_record
+
+    assert_equal "partial", record.dig("observed", "command_observation")
+    assert_equal ["true"], record.dig("observed", "commands").map { |entry| entry["cmd"] }
+    assert_equal 5, record.dig("observed", "commands_unobserved")
+    assert_equal "unknown", record.dig("validation", "status")
+  end
+
+  def test_pi_bash_command_text_is_bounded
+    long = "echo #{'x' * (Harnex::ArtifactReport::MAX_STRING_LENGTH * 3)}"
+    pi_tool_start("call_long", "bash", { "command" => long })
+    pi_tool_end("call_long", "bash", exit_code: 0)
+
+    cmd = finalized_record.dig("observed", "commands", 0, "cmd")
+
+    assert_equal Harnex::ArtifactReport::MAX_STRING_LENGTH, cmd.length
+    assert long.start_with?(cmd)
   end
 end

@@ -301,6 +301,75 @@ class ArtifactReportTest < Minitest::Test
     end
   end
 
+  # Issue #70: commands that ran without structured exit evidence keep a clean
+  # observed history from reading as a pass, and are counted explicitly.
+  def test_partial_command_observation_reports_unobserved_count_and_unknown_validation
+    Dir.mktmpdir("harnex-observed-partial") do |dir|
+      path = File.join(dir, "receipt.json")
+      attributes = {
+        id: "pi-i-70",
+        session_id: "session-partial",
+        generated_at: Time.now.utc,
+        successful: true,
+        outcome_status: "accepted",
+        outcome_summary: "Harnex observed accepted completion.",
+        git: { status: "unavailable" },
+        commands: [{ "cmd" => "ruby -c lib/a.rb", "exit_code" => 0, "status" => "completed" }],
+        turn: { status: "completed", task_complete: true, task_failed: false, accepted: true },
+        usage: { status: "missing" },
+        claims: {},
+        command_observation: "partial",
+        commands_unobserved: 1
+      }
+
+      result = Harnex::ArtifactReport.write_observed(path, **attributes)
+
+      assert result.ok
+      assert Harnex::ArtifactReport.accepted_final?(result)
+      report = JSON.parse(File.read(path))
+      assert_equal "partial", report.dig("observed", "command_observation")
+      assert_equal 1, report.dig("observed", "commands_unobserved")
+      assert_equal "unknown", report.dig("validation", "status")
+
+      failed = attributes.merge(commands: attributes[:commands] + [{ "cmd" => "false", "exit_code" => 1 }])
+      assert_equal "fail", Harnex::ArtifactReport.write_observed(path, **failed).report.dig("validation", "status")
+
+      clean = attributes.merge(command_observation: "observed", commands_unobserved: 0)
+      report = Harnex::ArtifactReport.write_observed(path, **clean).report
+      assert_equal "pass", report.dig("validation", "status")
+      refute report["observed"].key?("commands_unobserved")
+    end
+  end
+
+  def test_observed_validation_rejects_unknown_command_observation_and_bad_unobserved_count
+    Dir.mktmpdir("harnex-observed-enum") do |dir|
+      path = File.join(dir, "receipt.json")
+      Harnex::ArtifactReport.write_observed(
+        path,
+        id: "pi-i-70",
+        session_id: "session-enum",
+        generated_at: Time.now.utc,
+        successful: false,
+        outcome_status: "rejected",
+        outcome_summary: "rejected",
+        git: { status: "unavailable" },
+        commands: [],
+        turn: { status: "failed", task_complete: false, task_failed: true, accepted: false },
+        usage: { status: "missing" },
+        claims: {},
+        command_observation: "unsupported"
+      )
+      document = JSON.parse(File.read(path))
+      document["observed"]["command_observation"] = "guessed"
+      document["observed"]["commands_unobserved"] = -1
+      File.write(path, JSON.generate(document))
+
+      codes = Harnex::ArtifactReport.validate(path).diagnostics.map { |item| item.fetch("path") }
+      assert_includes codes, "$.observed.command_observation"
+      assert_includes codes, "$.observed.commands_unobserved"
+    end
+  end
+
   def test_generated_receipt_truncates_evidence_to_the_hard_byte_limit
     Dir.mktmpdir("harnex-observed-bounds") do |dir|
       path = File.join(dir, "receipt.json")

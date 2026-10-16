@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-10-16
 tags: pi, rpc, receipts, commands, validation, telemetry
 type: feature
 issue_kind: slice
@@ -67,20 +67,20 @@ caps/redaction and never persist command output as proof payload.
 
 ## Acceptance Criteria
 
-- [ ] A Pi RPC bash success appears in `observed.commands` with bounded command
+- [x] A Pi RPC bash success appears in `observed.commands` with bounded command
       text, `exit_code: 0`, and completed status.
-- [ ] A Pi RPC bash failure appears with its nonzero integer exit and makes the
+- [x] A Pi RPC bash failure appears with its nonzero integer exit and makes the
       legacy command-history validation status fail as expected.
-- [ ] `actual.commands_executed` counts observed Pi bash executions while generic
+- [x] `actual.commands_executed` counts observed Pi bash executions while generic
       read/edit/write tools remain `tool_calls`, not commands.
-- [ ] Multiple/concurrent tool calls correlate by `toolCallId` without mixing
+- [x] Multiple/concurrent tool calls correlate by `toolCallId` without mixing
       command/result pairs.
-- [ ] Missing or malformed exit metadata fails closed to unsupported/partial
+- [x] Missing or malformed exit metadata fails closed to unsupported/partial
       observation; no prose or rendered log scraping.
-- [ ] Harness-authored receipts remain within size/redaction bounds, and tests
+- [x] Harness-authored receipts remain within size/redaction bounds, and tests
       cover successful, failed, missing-exit, truncated-command, and non-bash
       Pi tool events.
-- [ ] Pi adapter and dispatch-telemetry docs state the new proof semantics and
+- [x] Pi adapter and dispatch-telemetry docs state the new proof semantics and
       their limits.
 
 ## Non-Goals
@@ -88,3 +88,38 @@ caps/redaction and never persist command output as proof payload.
 - Replacing supervisor replay for high-risk product acceptance.
 - Capturing command stdout/stderr in the receipt.
 - Fixing explicit Pi stop lifecycle corruption; tracked in #69.
+
+## Resolution — 2026-10-16
+
+Implemented on `main` (unreleased; see CHANGELOG `[Unreleased]`).
+
+- **Evidence first.** Installed Pi 1.2.0 and, after the owner's mid-session
+  update, Pi 1.3.0 were live-probed over raw `pi --mode rpc`. Built-in `bash`
+  `tool_execution_end` carries `result.structuredContent.exit_code` (integer,
+  `0`/`3` in the probe) plus top-level `durationMs`; aborts/timeouts throw and
+  arrive as plain error text with no `structuredContent`.
+- **Mechanism.** `Session` correlates bash start/end by `toolCallId`; a command
+  is recorded only with non-empty `args.command` (bounded to 2,000 chars) and
+  an integer structured exit. Status is `completed`/`failed` from `isError`.
+  Output (`structuredContent.output`) is never persisted.
+- **Fail closed.** Calls without structured exit, malformed exits (string or
+  float), uncorrelated ends, duplicate ids and calls still in flight at receipt
+  time count in the new `observed.commands_unobserved`. `command_observation`
+  is `observed` when that count is zero (including Pi sessions with no bash
+  calls), `partial` when some exits were observed, `unsupported` when none were.
+  `validation.status` becomes `unknown` instead of `pass` while unobserved
+  commands exist. `partial` is an additive receipt enum value (receipt v1).
+- **Counters.** Pi bash calls count in `commands_executed`; other tools stay
+  `tool_calls`. `actual.tool_calls` remains Pi's reported total when
+  `get_session_stats` supplies it (bash included).
+- **Verification.** Hermetic tests cover success, failure, concurrency,
+  missing/malformed/uncorrelated/in-flight exits, truncation, non-bash tools and
+  output exclusion. Live: `harnex run pi` (local checkout) on Pi 1.3.0 recorded
+  `echo ok`→0, `sh -c 'exit 3'`→3, `git status --short`→0 with
+  `command_observation: observed`, `validation: fail`, harness `status: pass`,
+  `commands_executed: 3`, no output in the row. `PI_INTEGRATION=1` contract test
+  passes on 1.3.0.
+
+Not covered: Pi `powershell` or extension command tools (remain tool calls);
+the existing 50-entry command cap keeps the most recent commands without a
+truncation flag, as for Codex.

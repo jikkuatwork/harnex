@@ -461,17 +461,23 @@ A generated receipt contains:
 (`start_sha != end_sha`, commit count/path/LOC evidence) from an observed
 `no_change` result. `start_dirty`, `end_dirty`, and `worktree_changed` expose
 worktree caveats while unchanged pre-session dirt is excluded from the delta.
-Codex app-server `commandExecution` items contribute
-bounded command text, integer exit code, status, and optional duration. Other
-transports currently report `command_observation: "unsupported"` rather than
-guessing from prose or generic tool events. If the 256-KiB receipt cap requires
+Codex app-server `commandExecution` items and Pi RPC built-in `bash` tool
+calls contribute bounded command text, integer exit code, status, and optional
+duration. Pi commands require an integer `result.structuredContent.exit_code`
+correlated by `toolCallId`; Pi bash calls without one (abort, timeout,
+extension override, older Pi, still running at teardown) are counted in
+`observed.commands_unobserved` and mark `command_observation` as `partial`
+when some exits were observed, or `unsupported` when none were. PTY transports
+report `command_observation: "unsupported"` rather than guessing from prose or
+generic tool events. If the 256-KiB receipt cap requires
 trimming, `commands_truncated` / `changed_paths_truncated` make that explicit;
 full aggregate counts remain in the dispatch row. Usage carries the same
 measured/missing/unsupported semantics as the dispatch
 row and is refreshed at teardown when final adapter usage becomes available.
 
 `validation.commands` mirrors all bounded observed command exits for legacy
-readers. Its aggregate status is `not_run`, `pass`, or `fail`; a failed
+readers. Its aggregate status is `not_run`, `pass`, or `fail`, or `unknown`
+when no observed exit failed but `commands_unobserved` is positive; a failed
 exploratory command may precede a successful turn. For harness receipts,
 `validate --final` therefore validates receipt authorship/shape, accepted turn,
 and accepted/no-change outcome instead of letting an intermediate command exit
@@ -524,7 +530,7 @@ answer text and claims. Intentional no-op work must still perform observable
 inspection/validation; a model assertion of `no_change` cannot self-approve.
 
 PTY transports do not expose equivalent completion-item metadata, so their
-existing prompt-return auto-stop behavior remains. Non-Codex transports label
+existing prompt-return auto-stop behavior remains. PTY transports label
 command observation `unsupported`; Git and terminal state are still recorded
 without guessing.
 

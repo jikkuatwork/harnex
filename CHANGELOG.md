@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Pi RPC receipts now attest built-in `bash` commands: bounded command text,
+  integer exit from `result.structuredContent.exit_code`, status and duration,
+  correlated by `toolCallId`. Output is never persisted. Pi bash calls count in
+  `commands_executed`; other tools stay `tool_calls` (#70).
+- Receipts gain `command_observation: "partial"` and
+  `observed.commands_unobserved`: Pi command calls without structured exit
+  evidence (abort, timeout, extension override, older Pi, in flight at
+  teardown) are counted rather than inferred, and `validation.status` reads
+  `unknown` instead of `pass` while any exist. Live verified on Pi 1.2.0/1.3.0.
+
+### Fixed
+
+- `wait`/`watch` observers no longer exit 1 when a sibling session's registry
+  file is removed between the session scan's glob and read (stop/cleanup
+  race); `doctor`'s registry sweep is guarded the same way (#75).
+
 ## [0.14.1] - 2026-10-05 | 09:55 PM | +04
 
 Owner-authorized local-only release; public publication, tag and push remain deferred.

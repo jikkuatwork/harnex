@@ -16,7 +16,7 @@ module Harnex
     MAX_CHANGED_PATHS = 200
     RECEIPT_VERSION = 1
     CLAIM_SEVERITIES = %w[P1 P2 P3].freeze
-    COMMAND_OBSERVATION_STATUSES = %w[observed unsupported].freeze
+    COMMAND_OBSERVATION_STATUSES = %w[observed partial unsupported].freeze
     GIT_OBSERVATION_STATUSES = %w[observed unavailable].freeze
     USAGE_STATUSES = %w[observed estimated unsupported missing zero].freeze
 
@@ -255,21 +255,26 @@ module Harnex
     def build_observed(
       id:, session_id:, generated_at:, successful:, outcome_status:,
       outcome_summary:, git:, commands:, turn:, usage:, claims:,
-      command_observation:, stop: nil
+      command_observation:, stop: nil, commands_unobserved: 0
     )
       observed_commands = compact_commands(commands).select do |entry|
         non_empty_string?(entry["cmd"]) && entry["exit_code"].is_a?(Integer)
       end
+      unobserved = non_negative_integer_or_nil(commands_unobserved).to_i
       git_payload = compact_observed_git(git)
       turn_payload = compact_observed_turn(turn)
       usage_payload = compact_observed_usage(usage)
       claims_payload = compact_claims(claims)
-      validation_status = if observed_commands.empty?
-                            "not_run"
-                          elsif observed_commands.all? { |entry| entry["exit_code"].zero? }
-                            "pass"
-                          else
+      # Commands that ran without structured exit evidence keep an otherwise
+      # clean history from reading as a pass.
+      validation_status = if observed_commands.any? { |entry| !entry["exit_code"].zero? }
                             "fail"
+                          elsif unobserved.positive?
+                            "unknown"
+                          elsif observed_commands.empty?
+                            "not_run"
+                          else
+                            "pass"
                           end
       start_sha = git_payload["start_sha"].to_s
       end_sha = git_payload["end_sha"].to_s
@@ -305,6 +310,7 @@ module Harnex
           "usage" => usage_payload
         }
       }
+      report["observed"]["commands_unobserved"] = unobserved if unobserved.positive?
       report["observed"]["stop"] = compact_observed_stop(stop) if stop
       report["claims"] = claims_payload unless claims_payload.empty?
       fit_observed_report!(report)
@@ -625,11 +631,14 @@ module Harnex
       if value.key?("commands_truncated") && !boolean?(value["commands_truncated"])
         diagnostics << diagnostic("boolean_required", "$.observed.commands_truncated", "observed.commands_truncated must be true or false")
       end
+      if value.key?("commands_unobserved") && !(value["commands_unobserved"].is_a?(Integer) && value["commands_unobserved"] >= 0)
+        diagnostics << diagnostic("integer_required", "$.observed.commands_unobserved", "observed.commands_unobserved must be a non-negative integer")
+      end
       unless COMMAND_OBSERVATION_STATUSES.include?(value["command_observation"])
         diagnostics << diagnostic(
           "enum",
           "$.observed.command_observation",
-          "observed.command_observation must be observed or unsupported"
+          "observed.command_observation must be observed, partial, or unsupported"
         )
       end
 
@@ -934,6 +943,7 @@ module Harnex
         "git" => compact_observed_git(value["git"]),
         "commands" => compact_commands(value["commands"]),
         "commands_truncated" => boolean_or_nil(value["commands_truncated"]),
+        "commands_unobserved" => non_negative_integer_or_nil(value["commands_unobserved"]),
         "command_observation" => bounded_string_or_nil(value["command_observation"]),
         "turn" => compact_observed_turn(value["turn"]),
         "usage" => compact_observed_usage(value["usage"]),
