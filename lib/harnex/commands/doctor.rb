@@ -35,7 +35,8 @@ module Harnex
           doctor validates local adapter prerequisites; it does not start sessions.
           Pi RPC requires >= #{MIN_PI_VERSION} so `agent_settled` is available.
           JSON includes harnex_version and versioned capabilities; check
-          capabilities.runtime_budget == 1 before using run --max-runtime.
+          capabilities.runtime_budget == 1 before using run --max-runtime, and
+          capabilities.pi_command_proof == 1 before trusting Pi receipt commands.
           --sweep is diagnostic only; it does not stop sessions or remove files.
           --dry-run must be paired with --prune.
           Run it after installing or upgrading a selected agent CLI.
@@ -74,7 +75,8 @@ module Harnex
           stop_provenance: 1,
           monitor_deadline: 1,
           monitor_heartbeat: 1,
-          pi_idle_stop: 1
+          pi_idle_stop: 1,
+          pi_command_proof: 1
         }
       }
       summary[:sweep] = sweep_payload if @options[:sweep]

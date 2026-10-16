@@ -58,6 +58,7 @@ class RuntimeControlsTest < Minitest::Test
         assert_equal 1, payload.dig("capabilities", "runtime_budget")
         assert_equal 1, payload.dig("capabilities", "work_activity")
         assert_equal 1, payload.dig("capabilities", "stop_provenance")
+        assert_equal 1, payload.dig("capabilities", "pi_command_proof")
       end
     end
   end

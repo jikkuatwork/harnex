@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.0] - 2026-10-16 | 07:20 AM | +04
+
+Owner-authorized local-only release; public publication, tag and push remain deferred.
 
 ### Added
 
@@ -13,6 +15,8 @@
   evidence (abort, timeout, extension override, older Pi, in flight at
   teardown) are counted rather than inferred, and `validation.status` reads
   `unknown` instead of `pass` while any exist. Live verified on Pi 1.2.0/1.3.0.
+- `harnex doctor` advertises `capabilities.pi_command_proof: 1`; consumers
+  should check it before treating Pi receipt commands as proof.
 
 ### Fixed
 

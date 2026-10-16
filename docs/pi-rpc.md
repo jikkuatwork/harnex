@@ -198,7 +198,9 @@ commands. `actual.commands_executed` counts bash calls; `actual.tool_calls` is
 Pi's own reported total, which includes them.
 
 Live verified on Pi 1.2.0 and 1.3.0. Older Pi releases without bash
-`structuredContent` fail closed to `unsupported`.
+`structuredContent` fail closed to `unsupported`. Harnex 0.15.0+ advertises
+this contract as `harnex doctor` `capabilities.pi_command_proof: 1`; check it
+before treating Pi receipt commands as proof.
 Blocking extension dialogs (`select`, `confirm`, `input`, `editor`) are
 currently auto-cancelled so autonomous workers cannot hang. Full extension UI
 mediation is not implemented.
