@@ -1,54 +1,38 @@
 # Harnex State
 
-Updated: 2026-10-05 | 10:08 PM | +04
+Updated: 2026-10-16 | 07:05 AM | +04
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.14.1 is installed locally and verified on PATH** from `c835a93`.
-  Issue #74 is resolved: persisted home paths are portable, mixed forms
-  reconcile, and status/retention consumers keep their path contracts.
-  Full suite: 824 runs / 3,867 assertions / no failures or errors / three
-  opt-in provider skips. Installed CLI and real-record read-only checks pass;
-  exact package and non-coverage: `koder/releases/0.14.1.md`.
-- **0.14.0 was built and verified locally** from package
-  source `aab0973`. #69 and #71 are resolved; Plans 36–38 are complete.
-  Full suite: 815 runs / 3,820 assertions / no failures or errors; independent
-  review approved. Evidence and explicit non-coverage: `koder/releases/0.14.0.md`.
-- Installed Pi 0.87.1 live checks passed: two accepted turns followed by idle
-  stop preserve proof; a 30s runtime cap stops active tool work with typed
-  provenance and no false disconnection. All task dispatch rows are retained.
-- Pi `open`/`close` discovery was restored through repo-local skill links.
-  Published 0.12.0 and local 0.13.0/0.12.1 remain available as rollback.
+- **#70 and #75 resolved on `main`, unreleased** (CHANGELOG `[Unreleased]`).
+  #70: Pi RPC receipts attest bash command text + integer exits from
+  `structuredContent.exit_code`; missing evidence fails closed via
+  `command_observation: partial|unsupported` and `observed.commands_unobserved`.
+  #75: `wait`/`watch` no longer die when a sibling registry vanishes mid-scan.
+  Full suite: 834 runs / 3,913 assertions / no failures or errors / three
+  opt-in skips; `PI_INTEGRATION=1` passes on Pi 1.3.0; live `harnex run pi`
+  receipt verified. Detail: the two issue files' Resolution sections.
+- **0.14.1 is installed locally** from `c835a93` (#74); record:
+  `koder/releases/0.14.1.md`. 0.14.0/0.13.0 gems retained as rollback.
 
 ## Present
 
-- **Local-only release.** No RubyGems push, tag, Git push, or public source
-  publication occurred. The exact 0.14.1 gem is retained in private validation
-  storage; its identity is in the release record. Do not rebuild 0.14.1 for
-  later publication without re-verification. The earlier 0.14.0 gem is retained
-  unchanged as rollback; no unrelated running session was restarted.
-- `run --max-runtime` is opt-in and independent of observer `--max-wait`.
-  Doctor exposes versioned capabilities. Work clocks exclude UI/log freshness;
-  stop labels and actual runtime enforcement are distinct.
-- The cap terminates owned process groups, not deliberately escaped sessions;
-  finalization can still wait on local I/O. Pi command-exit observation remains
-  unsupported (#70). Notifications are once per session: verify each reused
-  turn's receipt/artifacts, not an old completion marker. Fresh workers remain
-  the default, not a mandatory #69 workaround.
-- No archive hook was globally enabled and no live telemetry was trimmed.
-  The retained 0.13.0 gem is unchanged; #72 still tracks public publication.
+- **Installed CLI is still 0.14.1** — neither fix is live for Holm queues until
+  a local release is cut and installed (owner decision; not done this session).
+- Pi on this machine is now **1.3.0** (owner-updated mid-session). Run
+  `pi update` before any Pi work.
+- Local-only release posture unchanged: no RubyGems push, tag, or Git push;
+  public publication tracked in #72. `run --max-runtime` caveats from 0.14.0
+  still apply (owned process groups only; once-per-session notifications).
 
 ## Future
 
-1. **Owner-selected next session: #70 — Pi command/exit evidence in receipts.**
-   Read `koder/issues/70_pi_rpc_command_exit_observation.md`; inspect actual Pi
-   bash result metadata before choosing the implementation. Do not infer exits
-   from prose. Work is deferred to next session; no #70 implementation started.
-2. Consumers may adopt the new controls after `doctor --adapter pi` capability
-   checks; retain exact-receipt/artifact verification and owner acknowledgment.
-   Continue #56 after #70.
-3. Publish only when separately authorized, using the verified retained artifact
-   and the repository release procedure; public-release tracking remains #72.
+1. **If authorized:** cut 0.15.0 locally per the repo release procedure (skip
+   RubyGems/tag/push), install, smoke `harnex doctor --adapter pi` and a short
+   Pi bash receipt, write `koder/releases/0.15.0.md`.
+2. Continue #56. #76 (`watch --stall-after`) is a P3 follow-up from #75 with
+   open design questions listed in the issue.
+3. Publish only when separately authorized (#72).
