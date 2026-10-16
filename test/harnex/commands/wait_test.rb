@@ -393,6 +393,52 @@ class WaiterTest < Minitest::Test
     end
   end
 
+  # Issue #75: stopping a sibling session must not kill the observer watching
+  # a different, still-busy session in the same repo.
+  def test_wait_until_done_keeps_waiting_when_a_sibling_registry_vanishes
+    Dir.mktmpdir("harnex-wait-sibling-vanish") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "busy-worker-75"
+      registry_path = Harnex.registry_path(repo, id)
+      sibling_path = Harnex.registry_path(repo, "stopped-sibling-75")
+      child_pid = spawn("sleep", "30")
+      sibling_pid = spawn("sleep", "30")
+      [[registry_path, id, child_pid], [sibling_path, "stopped-sibling-75", sibling_pid]].each do |path, sid, pid|
+        Harnex.write_registry(path, {
+          "id" => sid,
+          "pid" => pid,
+          "session_id" => "#{sid}-run",
+          "host" => "127.0.0.1",
+          "port" => 19_995,
+          "started_at" => Time.now.iso8601,
+          "repo_root" => repo
+        })
+      end
+      # The sibling's registry disappears after the observer's glob but before
+      # its read, as when `harnex stop` finalizes it mid-scan.
+      original_read = File.method(:read)
+      vanishing_read = lambda do |path, *args, **kwargs|
+        if path == sibling_path
+          FileUtils.rm_f(sibling_path)
+          raise Errno::ENOENT, sibling_path
+        end
+        original_read.call(path, *args, **kwargs)
+      end
+
+      waiter = Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--timeout", "1"])
+      out, = File.stub(:read, vanishing_read) { capture_io { assert_equal 124, waiter.run } }
+
+      payload = JSON.parse(out)
+      assert_equal "timeout", payload["status"]
+      assert_equal "running", payload["work_state"]
+    ensure
+      reap_process(child_pid) if child_pid
+      reap_process(sibling_pid) if sibling_pid
+      FileUtils.rm_f(registry_path) if registry_path
+      FileUtils.rm_f(sibling_path) if sibling_path
+    end
+  end
+
   def test_wait_until_done_ignores_stale_events_from_previous_run_of_same_id
     Dir.mktmpdir("harnex-wait-stale-events") do |repo|
       system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)

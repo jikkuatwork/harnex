@@ -217,6 +217,8 @@ module Harnex
         end
       rescue JSON::ParserError
         stale << { registry_path: path, error: "invalid_json" }
+      rescue Errno::ENOENT
+        next # removed by a finalizing session after the glob
       end
 
       [active.sort_by { |session| [session["repo_root"].to_s, session["started_at"].to_s, session["id"].to_s] }.reverse, stale]

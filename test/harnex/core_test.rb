@@ -445,4 +445,32 @@ class CoreTest < Minitest::Test
   ensure
     FileUtils.rm_f(corrupt) if corrupt
   end
+
+  # Issue #75: a sibling registry file removed between the glob and the read
+  # (stop/cleanup race) must be skipped, not raised.
+  def test_active_sessions_skips_a_sibling_removed_between_glob_and_read
+    repo = Dir.pwd
+    live = Harnex.registry_path(repo, "cx-live-75")
+    sibling = Harnex.registry_path(repo, "cx-sibling-75")
+    Harnex.write_registry(live, "id" => "cx-live-75", "repo_root" => repo, "pid" => Process.pid)
+    Harnex.write_registry(sibling, "id" => "cx-sibling-75", "repo_root" => repo, "pid" => Process.pid)
+    original_read = File.method(:read)
+    vanishing_read = lambda do |path, *args, **kwargs|
+      if path == sibling
+        FileUtils.rm_f(sibling)
+        raise Errno::ENOENT, sibling
+      end
+      original_read.call(path, *args, **kwargs)
+    end
+
+    sessions = File.stub(:read, vanishing_read) { Harnex.active_sessions(repo) }
+
+    ids = sessions.map { |row| row["id"] }
+    assert_includes ids, "cx-live-75"
+    refute_includes ids, "cx-sibling-75"
+    assert_equal "cx-live-75", File.stub(:read, vanishing_read) { Harnex.read_registry(repo, "cx-live-75") }["id"]
+  ensure
+    FileUtils.rm_f(live) if live
+    FileUtils.rm_f(sibling) if sibling
+  end
 end

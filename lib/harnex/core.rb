@@ -465,6 +465,11 @@ module Harnex
     rescue JSON::ParserError
       FileUtils.rm_f(path)
       nil
+    rescue Errno::ENOENT
+      # A peer session finalized between the glob and the read. Treat it as
+      # gone, exactly as if it had been removed before the scan; raising here
+      # would kill observers watching a different, still-live session.
+      nil
     end
   end
 
