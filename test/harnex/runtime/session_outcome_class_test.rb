@@ -27,7 +27,8 @@ class SessionOutcomeClassTest < Minitest::Test
   end
 
   def test_completion_and_proof_classes_are_never_refined
-    (Harnex::Session::OUTCOME_CLASSES - %w[unknown task_failed]).each do |klass|
+    # report_rejected without a completion signal is covered separately below.
+    (Harnex::Session::OUTCOME_CLASSES - %w[unknown task_failed report_rejected]).each do |klass|
       assert_equal klass, refine(klass, exit_reason: "boot_failure", exit_code: 124,
                                          stop_request: stop("manual", "running"))
     end
@@ -52,7 +53,7 @@ class SessionOutcomeClassTest < Minitest::Test
 
   def test_process_exit_paths_classify_distinctly
     assert_equal "boot_failure", refine("unknown", exit_reason: "boot_failure", exit_code: 1)
-    assert_equal "disconnected_unproven", refine("unknown", exit_reason: "disconnected", exit_code: 0)
+    assert_equal "unknown", refine("unknown", exit_reason: "disconnected", exit_code: 0)
     assert_equal "process_failed", refine("unknown", exit_reason: "failure", exit_code: 2)
     assert_equal "unknown", refine("unknown", exit_reason: "success", exit_code: 0)
     assert_equal "boot_failure", refine("legacy_class", exit_reason: "boot_failure")
@@ -67,6 +68,36 @@ class SessionOutcomeClassTest < Minitest::Test
 
     assert_equal :blocked, state.state
     assert_equal "permission_prompt", target.send(:refine_terminal_outcome_class, "unknown")
+  end
+
+  def test_receipt_rejection_of_a_process_without_completion_is_refined
+    assert_equal "process_failed", refine("report_rejected", exit_reason: "failure", exit_code: 3)
+    assert_equal "boot_failure", refine("report_rejected", exit_reason: "boot_failure", exit_code: 1)
+    assert_equal "stopped_by_caller", refine("report_rejected", stop_request: stop("manual", "running"), exit_code: 143)
+  end
+
+  def test_receipt_rejection_after_a_completion_signal_stays_a_proof_verdict
+    assert_equal "report_rejected", refine("report_rejected", exit_reason: "failure", last_completed_at: Time.now)
+    assert_equal "report_rejected", refine("report_rejected", exit_reason: "failure", completion_outcome_class: "report_rejected")
+  end
+
+  # Through finalize: the receipt is written, the row is appended, and the
+  # row's class is the refined process class (review finding: the direct
+  # refine tests above cannot see the receipt path).
+  def test_crashed_process_row_is_process_failed_end_to_end
+    system("git", "init", "-q", @tmp, out: File::NULL, err: File::NULL)
+    system("git", "-C", @tmp, "-c", "user.name=t", "-c", "user.email=t@l", "commit", "-q", "--allow-empty", "-m", "base",
+           out: File::NULL, err: File::NULL)
+    target = Harnex::Session.new(
+      adapter: Harnex::Adapters::Generic.new(RbConfig.ruby), command: [RbConfig.ruby, "-e", "sleep 0.2; exit 3"],
+      repo_root: @tmp, host: "127.0.0.1", id: "outcome-crash"
+    )
+    capture_io { assert_equal 3, target.run(validate_binary: false) }
+    row = JSON.parse(File.readlines(File.join(@tmp, ".harnex", "dispatch.jsonl")).last)
+
+    assert_equal "process_failed", row.dig("outcome", "class")
+    assert_equal "rejected", row.dig("outcome", "status")
+    assert_equal "failure", row.dig("actual", "exit")
   end
 
   def test_dispatch_row_outcome_uses_the_refined_class

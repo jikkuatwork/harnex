@@ -161,13 +161,13 @@ class OrchestrationTest < Minitest::Test
     assert_raises(ArgumentError) { Harnex::Orchestration.build_report(dispatch_rows: [], sample_rows: []) }
   end
 
-  def test_report_cli_exits_2_when_the_failure_budget_is_breached
+  def test_report_cli_exits_3_when_the_failure_budget_is_breached
     Dir.mktmpdir("harnex-orchestration-budget") do |dir|
       path = File.join(dir, "dispatch.jsonl")
       File.write(path, class_rows.map { |row| JSON.generate(row) }.join("\n") + "\n")
       base = ["orchestration", "report", "--dispatch", path, "--queue-id", "queue-055"]
 
-      out, = capture_io { assert_equal 2, Harnex::CLI.new(base + ["--failure-budget", "3"]).run }
+      out, = capture_io { assert_equal 3, Harnex::CLI.new(base + ["--failure-budget", "3"]).run }
       assert_includes out, "Failure budget: 3/3 attempts"
       assert_includes out, "BREACHED"
       assert_includes out, "boot_failure=2"
@@ -184,7 +184,33 @@ class OrchestrationTest < Minitest::Test
       assert_raises(OptionParser::ParseError) do
         capture_io { Harnex::CLI.new(["orchestration", "report", "--dispatch", path]).run }
       end
+      error = assert_raises(ArgumentError) do
+        capture_io { Harnex::CLI.new(["orchestration", "report", "--dispatch", "#{path}.typo", "--queue-id", "q"]).run }
+      end
+      assert_includes error.message, "dispatch file not found"
     end
+  end
+
+  def test_start_rows_are_not_counted_as_dispatches
+    end_row = worker_row("impl-9", entry: "Z", outcome: "unknown", exit_reason: "failure", tokens: nil, klass: "task_failed")
+    start_row = { "record_type" => "dispatch_start", "id" => "impl-9",
+                  "meta" => { "id" => "impl-9", "orchestration_run_id" => "orch-1" } }
+    report = Harnex::Orchestration.build_report(dispatch_rows: [start_row, end_row], sample_rows: [], run_id: "orch-1")
+
+    assert_equal 1, report.dig("workers", "dispatches")
+    assert_equal({ "task_failed" => 1 }, report.dig("workers", "outcome_classes", "attempts"))
+  end
+
+  def test_spawner_parent_does_not_merge_unrelated_initial_workers_into_one_family
+    rows = %w[a b c].map do |name|
+      worker_row("w-#{name}", entry: name, outcome: "unknown", exit_reason: "failure", tokens: nil,
+                              klass: "task_failed", parent_dispatch: "orchestrator-1")
+    end
+    rows.unshift(worker_row("orchestrator-1", entry: "o", outcome: "unknown", exit_reason: "success", tokens: nil))
+    report = Harnex::Orchestration.build_report(dispatch_rows: rows, sample_rows: [], run_id: "orch-1",
+                                                budget: { limit: 9, unit: "families" })
+
+    assert_equal 3, report.dig("failure_budget", "fatal_families")
   end
 
   def test_report_usage_lists_the_whole_outcome_vocabulary

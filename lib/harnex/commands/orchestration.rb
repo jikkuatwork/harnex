@@ -40,7 +40,7 @@ module Harnex
           --run-id ID                   Logical orchestration run id
           --queue-id ID                 Queue id (alone, or narrowing --run-id)
           --include-preflight           Count `harnex preflight` rows (excluded by default)
-          --failure-budget N            Exit 2 once N fatal worker failures are counted
+          --failure-budget N            Exit 3 once N fatal worker failures are counted
           --budget-unit UNIT            attempts (default) or families (retries joined
                                         by parent attempt/dispatch id count once)
           --fatal-classes A,B           Outcome classes that consume the budget
@@ -52,10 +52,11 @@ module Harnex
           completed   completed_with_proof completed_with_activity
           proof       completed_no_activity* report_missing report_invalid report_rejected
           process     task_failed* boot_failure* permission_prompt* timeout*
-                      disconnected_unproven* process_failed* stopped_by_caller
+                      process_failed* stopped_by_caller
           fallback    unknown
         The budget is a ledger, not a breaker: enforcement stays with the caller.
-        Exit codes: 0 report printed (within budget), 2 budget breached.
+        Exit codes: 0 report printed (within budget), 1 error, 2 usage error,
+        3 budget breached.
       TEXT
     end
 
@@ -109,8 +110,11 @@ module Harnex
         raise OptionParser::MissingArgument, "--run-id or --queue-id"
       end
 
+      dispatch_path = required_option(options[:dispatch], "--dispatch")
+      raise ArgumentError, "dispatch file not found: #{dispatch_path}" unless File.file?(dispatch_path)
+
       report = Harnex::Orchestration.report(
-        dispatch_path: required_option(options[:dispatch], "--dispatch"),
+        dispatch_path: dispatch_path,
         samples_path: options[:samples],
         run_id: blank?(options[:run_id]) ? nil : options[:run_id],
         queue_id: blank?(options[:queue_id]) ? nil : options[:queue_id],
@@ -125,7 +129,8 @@ module Harnex
       report.dig("failure_budget", "breached") ? BUDGET_BREACHED_EXIT : 0
     end
 
-    BUDGET_BREACHED_EXIT = 2
+    # Distinct from 1 (errors) and 2 (usage errors from bin/harnex).
+    BUDGET_BREACHED_EXIT = 3
 
     def report_budget(options)
       if options[:failure_budget].nil?

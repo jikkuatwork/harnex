@@ -434,7 +434,8 @@ module Harnex
       metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
       phase = metadata["phase"].to_s
       allowlist = phase_config.fetch("allowlist")
-      return if allowlist.include?(phase)
+      # `harnex preflight` tags its own probe; repo phase policy governs work.
+      return if allowlist.include?(phase) || phase == Preflight::PHASE
 
       policy = phase_config.fetch("policy")
       message = "harnex run: meta.phase #{phase.empty? ? '(none)' : phase.inspect} " \
@@ -775,7 +776,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl|final-gate)=/
           nil
         when telemetry_equals_regex
           nil
@@ -797,7 +798,7 @@ module Harnex
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=",
           "--artifact-report=", "--validation-report=", "--on-done=", "--max-runtime=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
-          *TELEMETRY_EQUALS_PREFIXES
+          "--final-gate=", *TELEMETRY_EQUALS_PREFIXES
         )
     end
 

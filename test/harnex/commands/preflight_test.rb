@@ -80,16 +80,48 @@ class PreflightTest < Minitest::Test
     verdict, code = preflight(mode: "hang", extra: ["--timeout", "3"])
 
     assert_equal 1, code
+    assert_equal "timeout", verdict["failure"]
     assert_equal "fail", status_of(verdict, "stop")
+    assert_equal "skipped", status_of(verdict, "workspace_write"), "a timeout is not blamed on the workspace"
     assert_includes verdict["checks"].find { |item| item["name"] == "stop" }["detail"], "did not finish"
     assert_nil Harnex.read_registry(@repo, verdict["id"]), "the stuck worker is stopped"
   end
 
-  def test_missing_adapter_binary_fails_registration_without_running_later_checks
+  # `harnex stop --repo` resolves the Git top-level, but `run --cwd DIR`
+  # registers under DIR: the stop must still reach a worker in a subdirectory.
+  def test_hanging_turn_in_a_repo_subdirectory_is_still_stopped
+    subdir = File.join(@repo, "pkg", "inner")
+    FileUtils.mkdir_p(subdir)
+    verdict, = preflight(mode: "hang", cwd: subdir, extra: ["--timeout", "3"])
+
+    assert_equal "timeout", verdict["failure"]
+    assert_nil Harnex.read_registry(subdir, verdict["id"]), "the stuck worker in the subdirectory is stopped"
+  end
+
+  def test_reserved_preflight_phase_passes_a_rejecting_repo_phase_policy
+    FileUtils.mkdir_p(File.join(@repo, ".harnex"))
+    File.write(File.join(@repo, ".harnex", "config.json"),
+               JSON.generate(phase: { allowlist: %w[implement review], policy: "reject" }))
+    verdict, code = preflight
+
+    assert_equal 0, code, verdict.inspect
+  end
+
+  def test_launch_errors_are_not_reported_as_registration_timeouts
+    FileUtils.mkdir_p(File.join(@repo, ".harnex"))
+    File.write(File.join(@repo, ".harnex", "config.json"), JSON.generate(phase: { allowlist: ["x"], policy: "nope" }))
+    verdict, code = preflight
+
+    assert_equal 1, code
+    assert_equal "launch_failed", verdict["failure"]
+    assert_includes verdict["checks"].first["detail"], "invalid config"
+  end
+
+  def test_missing_adapter_binary_fails_launch_without_running_later_checks
     verdict, code = preflight(adapter: "definitely-not-an-agent-cli", extra: ["--registration-timeout", "2"])
 
     assert_equal 1, code
-    assert_equal "registration_timeout", verdict["failure"]
+    assert_equal "launch_failed", verdict["failure"]
     assert_equal "fail", status_of(verdict, "registration")
     assert_equal "skipped", status_of(verdict, "completion")
     assert_equal({ "usage" => "unavailable", "cost" => "unavailable", "context" => "unavailable" }, verdict["telemetry"])
@@ -128,7 +160,7 @@ class PreflightTest < Minitest::Test
 
   private
 
-  def preflight(adapter: "codex", mode: "obey", extra: [])
+  def preflight(adapter: "codex", mode: "obey", extra: [], cwd: @repo, child: [])
     env = {
       "PATH" => "#{@bin}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
       "HARNEX_STUB_MODE" => mode,
@@ -139,7 +171,7 @@ class PreflightTest < Minitest::Test
     with_env(env) do
       out = StringIO.new
       code = Harnex::Preflight.new(
-        [adapter, "--cwd", @repo, "--task-root", @task_root, *extra],
+        [adapter, "--cwd", cwd, "--task-root", @task_root, *extra, *(child.empty? ? [] : ["--", *child])],
         out: out, harnex_command: [Gem.ruby, "-I#{LIB}", BIN]
       ).run
       [JSON.parse(out.string), code]

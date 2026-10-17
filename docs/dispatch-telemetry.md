@@ -349,25 +349,31 @@ facts prove the delta, not semantic quality or human authorship.
   transport died before its first turn), `permission_prompt` (ended on a
   trust/confirmation prompt the adapter recognizes), `timeout` (`--max-runtime`
   stopped running work, or exit 124), `stopped_by_caller` (a manual stop
-  while work was running), `disconnected_unproven` (clean exit with no
-  completion), `process_failed` (nonzero exit with no turn verdict).
+  while work was running), `process_failed` (nonzero exit with no turn
+  verdict).
 - **Fallback:** `unknown`.
 
-Completion and proof classes are never overridden. Process classes refine
-only an `unknown` or `task_failed` terminal, from the exit path, stop
-provenance, and final input state; never from transcript text. A stop or
-deadline outranks `task_failed` only when the work was still running when it
-was stopped. Older rows are not reclassified.
+Completion and proof classes are never overridden. Process classes refine an
+`unknown` or `task_failed` terminal, or a `report_rejected` receipt for a
+process that never signalled completion (finalization always writes a receipt,
+so that rejection records the failed process, not a proof verdict). Signals:
+the exit path, stop provenance, and final input state; never transcript text.
+A stop or deadline outranks `task_failed` only when the work was still running
+when it was stopped. A clean exit 0 without completion keeps its accepted
+receipt (`completed_with_proof`), as before. Older rows are not reclassified.
 
 `harnex orchestration report --run-id ID` (or `--queue-id ID`) counts
 `workers.outcome_classes` per raw attempt and per retry family. A family joins
-attempts by `parent_attempt_id`/`parent_dispatch_id` or a reused dispatch id,
-so correlated retries count as one root cause. An optional
+attempts by `parent_attempt_id`, by `parent_dispatch_id` for non-initial
+attempts (retry/fix/fallback/superseding/review), or by a reused dispatch id,
+so correlated retries count as one root cause. Spawner-derived parents of
+initial workers do not join families. Start rows are not counted. An optional
 `--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]`
-adds a `failure_budget` verdict and exits 2 once N fatal failures are counted.
+adds a `failure_budget` verdict and exits 3 once N fatal failures are counted
+(1 is an error, 2 a usage error; a missing `--dispatch` file is an error).
 By default the fatal classes are `completed_no_activity`, `task_failed`,
-`boot_failure`, `permission_prompt`, `timeout`, `disconnected_unproven`, and
-`process_failed`; proof defects, caller stops and `unknown` are not fatal.
+`boot_failure`, `permission_prompt`, `timeout`, and `process_failed`; proof
+defects, caller stops and `unknown` are not fatal.
 Harnex supplies the ledger only: the caller decides what to do on a breach.
 
 Every end row has one Harnex-session `attempt`. Its random `id` is distinct

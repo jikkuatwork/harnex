@@ -22,8 +22,7 @@ module Harnex
     # (report_missing/invalid/rejected), caller stops, and unknown terminals
     # are not fatal unless a caller names them (#57).
     DEFAULT_FATAL_CLASSES = %w[
-      completed_no_activity task_failed boot_failure permission_prompt timeout
-      disconnected_unproven process_failed
+      completed_no_activity task_failed boot_failure permission_prompt timeout process_failed
     ].freeze
 
     module_function
@@ -101,6 +100,8 @@ module Harnex
       # throughput, cost and failure-budget arithmetic unless asked for (#56).
       selected_dispatches = dispatch_rows.select do |row|
         row.is_a?(Hash) &&
+          # Start rows share the run id with their end row; count each dispatch once.
+          !Harnex::DispatchHistory.start_record?(row) &&
           (include_preflight || !preflight_row?(row)) &&
           (run_id.nil? || dispatch_run_id(row) == run_id) &&
           (queue_id.nil? || dispatch_queue_id(row) == queue_id)
@@ -243,10 +244,14 @@ module Harnex
           by_dispatch[dispatch_id] = index
         end
       end
+      # parent_dispatch_id is auto-filled from the spawner's HARNEX_ID, which
+      # names who launched a worker, not what it retries: only a non-initial
+      # attempt (retry/fix/fallback/...) joins its parent dispatch's family.
       rows.each_with_index do |row, index|
-        parent_index = by_attempt[string_value(row.dig("attempt", "parent_attempt_id"))] ||
-                       by_dispatch[string_value(row.dig("attempt", "parent_dispatch_id")) ||
-                                   string_value(row.dig("meta", "parent_dispatch_id"))]
+        parent_index = by_attempt[string_value(row.dig("attempt", "parent_attempt_id"))]
+        if parent_index.nil? && ![nil, "initial"].include?(string_value(row.dig("attempt", "kind")))
+          parent_index = by_dispatch[string_value(row.dig("attempt", "parent_dispatch_id"))]
+        end
         union.call(parent_index, index) if parent_index
       end
       rows.each_index.map do |index|

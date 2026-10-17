@@ -109,9 +109,16 @@ Implemented 2026-10-18 as `harnex preflight ADAPTER [--cwd DIR]
 - `telemetry` reports `usage`, `cost` (`observed` when provider-reported,
   `estimated` from price table/caller, else `unsupported`) and `context`
   provenance; `unavailable` when no row exists. Never absent.
-- The dispatch row carries `phase=preflight`; `orchestration report` excludes
+- The dispatch row carries `phase=preflight` (exempt from a repo phase
+  allowlist, since Harnex owns that phase); `orchestration report` excludes
   such rows unless `--include-preflight`. Task and workspace files are removed;
   the row stays as history.
+- Workers cannot be orphaned: stops go straight to the session API (works for
+  `--cwd` subdirectories), the run carries a `--max-runtime` backstop of
+  registration + timeout + 60s, and an `ensure` stops any still-registered
+  worker. Launch errors (bad config, missing binary) report `launch_failed`,
+  distinct from `registration_timeout`; a timeout or blocking prompt skips the
+  downstream checks instead of blaming the workspace.
 - Docs: `guides/01_dispatch.md` recommends preflight for the chosen adapter
   plus one declared fallback, both inside the dispatch-model policy.
 

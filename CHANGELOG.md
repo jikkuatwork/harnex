@@ -16,14 +16,15 @@
   outcome classes do not change (#68).
 - Dispatch-row `outcome.class` gains process classes from signals Harnex
   already holds: `boot_failure`, `permission_prompt`, `timeout`,
-  `stopped_by_caller`, `disconnected_unproven`, `process_failed`. They refine
-  only an `unknown`/`task_failed` terminal; completion and proof verdicts are
-  never overridden, and the vocabulary is closed with an `unknown` fallback.
+  `stopped_by_caller`, `process_failed`. They refine an `unknown`/`task_failed`
+  terminal or the receipt rejection of a process that never signalled
+  completion; completion and proof verdicts are never overridden, and the
+  vocabulary is closed with an `unknown` fallback.
 - `harnex orchestration report` counts worker outcome classes per raw attempt
   and per retry family (joined by parent attempt/dispatch id), accepts
   `--queue-id` as well as `--run-id`, and takes an optional
   `--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]`
-  that adds a `failure_budget` verdict and exits 2 on breach (#57).
+  that adds a `failure_budget` verdict and exits 3 on breach (#57).
 - `harnex preflight ADAPTER [--cwd DIR] [--commit-check]` runs one tiny real
   dispatch through `harnex run` and prints a JSON verdict
   (`harnex.preflight.v1`): registration, boot, permission prompt, task read
@@ -33,8 +34,10 @@
   distinct check and failure class; a turn that fails before any work reports
   its (redacted) error as the root cause. Usage, cost and context telemetry
   provenance is reported per adapter. Exits non-zero on any failed check. Its
-  dispatch row carries `phase=preflight` and `orchestration report` excludes
-  such rows unless `--include-preflight` (#56).
+  dispatch row carries `phase=preflight` (exempt from repo phase allowlists)
+  and `orchestration report` excludes such rows unless `--include-preflight`.
+  Workers are stopped through the session API and carry a `--max-runtime`
+  backstop, so a killed or timed-out preflight cannot orphan them (#56).
 - `harnex doctor` capabilities add `final_gates: 1`, `outcome_classes: 1` and
   `preflight: 1`.
 

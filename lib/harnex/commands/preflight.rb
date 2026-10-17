@@ -14,6 +14,10 @@ module Harnex
   # had to write, and the dispatch row's receipt fields. Never worker prose.
   class Preflight
     SCHEMA = "harnex.preflight.v1"
+    PHASE = "preflight"
+    # A worker never outlives its probe by more than this, even if preflight
+    # itself is killed: `--max-runtime` is enforced by the session.
+    RUNTIME_BACKSTOP_S = 60.0
     DEFAULT_TIMEOUT_S = 180.0
     DEFAULT_REGISTRATION_TIMEOUT_S = 30.0
     PERMISSION_GRACE_S = 15.0
@@ -28,6 +32,7 @@ module Harnex
     # classes reuse the #57 outcome vocabulary where one applies.
     FAILURE_CLASSES = {
       "registration" => "registration_timeout",
+      "launch" => "launch_failed",
       "boot" => "boot_failure",
       "permission" => "permission_prompt",
       "task_read" => "task_read_denied",
@@ -135,6 +140,7 @@ module Harnex
 
       failed = checks.find { |item| item["status"] == "fail" }
       failure = failed && FAILURE_CLASSES.fetch(failed["name"], failed["name"])
+      failure = "launch_failed" if failed && failed["name"] == "registration" && !probe[:registration_timeout]
       # A failed or missing completion is named by the #57 outcome class.
       failure = probe.dig(:row, "outcome", "class") || failure if failed && failed["name"] == "completion"
       {
@@ -195,8 +201,11 @@ module Harnex
               end
       row = launch[:ok] || launch[:launched] ? wait_for_row(id, cwd) : nil
       checks = evaluate(launch, watch, row, token: token, out_path: out_path)
-      { checks: checks, row: row, token: token }
+      { checks: checks, row: row, token: token, registration_timeout: launch[:launched] }
     ensure
+      # Interrupts and errors must not orphan the worker; normal paths have
+      # already torn it down, so this is a no-op then.
+      stop_session(id, cwd) if id && cwd && Harnex.read_registry(cwd, id)
       FileUtils.rm_f(task_path) if task_path
       unless commit || out_path.nil?
         FileUtils.rm_f(out_path)
@@ -225,8 +234,9 @@ module Harnex
         "run", adapter, "--detach", "--id", id, "--cwd", cwd,
         "--description", "harnex preflight",
         "--context", prompt, "--auto-stop", "--final-gate", gate,
-        "--phase", "preflight",
-        "--timeout", @options[:registration_timeout_s].to_s
+        "--phase", PHASE,
+        "--timeout", @options[:registration_timeout_s].to_s,
+        "--max-runtime", (@options[:registration_timeout_s] + @options[:timeout_s] + RUNTIME_BACKSTOP_S).ceil.to_s
       ]
       argv += ["--model", @options[:model]] if @options[:model]
       argv += ["--effort", @options[:effort]] if @options[:effort]
@@ -240,7 +250,8 @@ module Harnex
       end
       {
         ok: status.success? && payload["ok"] == true,
-        # A registration timeout can still leave a live or finished session.
+        # A registration timeout can still leave a live or finished session;
+        # anything else (bad flags, repo policy, missing binary) never launched.
         launched: stderr.include?("did not register"),
         payload: payload,
         stderr: stderr.strip.lines.last(3).join.strip,
@@ -254,16 +265,11 @@ module Harnex
     def watch_session(id, cwd)
       deadline = monotonic + @options[:timeout_s]
       blocked_since = nil
-      result = { registered: true, alive_at_registration: nil }
-      first = true
+      result = { registered: true }
       loop do
         registry = Harnex.read_registry(cwd, id)
         return result.merge(exited: true) unless registry
 
-        if first
-          result[:alive_at_registration] = Harnex.alive_pid?(registry["pid"])
-          first = false
-        end
         state = live_agent_state(registry)
         if state == "blocked"
           blocked_since ||= monotonic
@@ -294,8 +300,18 @@ module Harnex
       nil
     end
 
+    # Straight to the session API: `harnex stop --repo` resolves the Git
+    # top-level, but `run --cwd DIR` registers under DIR itself.
     def stop_session(id, cwd)
-      Open3.capture3(*@harnex_command, "stop", "--id", id, "--repo", cwd, chdir: cwd)
+      registry = Harnex.read_registry(cwd, id)
+      return unless registry
+
+      uri = URI("http://#{registry['host']}:#{registry['port']}/stop")
+      request = Net::HTTP::Post.new(uri)
+      request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(reason: "manual", origin: "cli")
+      Net::HTTP.start(uri.host, uri.port, open_timeout: 2, read_timeout: 5) { |http| http.request(request) }
     rescue StandardError
       nil
     end
@@ -343,7 +359,7 @@ module Harnex
       end
 
       checks << check("registration", "pass", "registered as #{launch.dig(:payload, 'mode')} pid #{launch[:pid]}")
-      checks << if watch[:alive_at_registration] == false || outcome_class == "boot_failure"
+      checks << if outcome_class == "boot_failure"
                   check("boot", "fail", "session died before its first turn (#{outcome_class || 'no row'})")
                 else
                   check("boot", "pass", "session alive after registration")
@@ -355,6 +371,12 @@ module Harnex
                 end
 
       written = File.file?(out_path) ? File.read(out_path).strip : nil
+      if watch[:timed_out] || watch[:blocked]
+        reason = watch[:blocked] ? "not reached: blocked on a prompt" : "not reached: the dispatch timed out"
+        %w[task_read workspace_write command_exit receipt claims completion].each { |name| checks << check(name, "skipped", reason) }
+        checks << stop_check(watch, row)
+        return checks
+      end
       if turn_failed_before_work?(row, written)
         reason = "not reached: the turn failed before doing any work"
         %w[task_read workspace_write command_exit receipt claims].each { |name| checks << check(name, "skipped", reason) }
@@ -390,7 +412,12 @@ module Harnex
       observation = row.dig("observed", "command_observation")
       case gates["status"]
       when "pass" then check("command_exit", "pass", "gate command exit observed as 0")
-      when "fail" then check("command_exit", "fail", "gate command observed with a nonzero exit")
+      when "fail"
+        if gates["observed_fail"].to_i.positive?
+          check("command_exit", "fail", "gate command observed with a nonzero exit")
+        else
+          check("command_exit", "fail", "gate command was never run (command observation was complete)")
+        end
       else
         if observation == "unsupported"
           check("command_exit", "unsupported", "adapter does not expose command exits")

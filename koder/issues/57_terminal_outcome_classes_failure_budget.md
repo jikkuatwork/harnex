@@ -134,22 +134,26 @@ Completed 2026-10-18 on top of the 0.7.14 proof classes.
   `completed_no_activity` (the zero-token/no-work refusal shape),
   `report_missing` (completed without receipt), `report_invalid`,
   `report_rejected`; process `task_failed`, `boot_failure`,
-  `permission_prompt`, `timeout`, `stopped_by_caller`,
-  `disconnected_unproven`, `process_failed`.
-- **Classification** refines only an `unknown`/`task_failed` terminal from the
-  exit path, stop provenance (`StopRequest` reason + work state) and the final
-  adapter input state; completions and proof verdicts stand, so "disconnected
-  but proof ingested" stays `completed_with_proof`. A stop/deadline outranks
-  `task_failed` only when work was still running at the stop.
-- **Not included:** `registration_timeout`. The session that writes the row
-  cannot observe the launcher giving up on registration; #56 preflight reports
-  it as a distinct check instead.
+  `permission_prompt`, `timeout`, `stopped_by_caller`, `process_failed`.
+- **Classification** refines an `unknown`/`task_failed` terminal, or the
+  receipt rejection of a process that never signalled completion
+  (finalization always writes a receipt, so that rejection records the failed
+  process), from the exit path, stop provenance (`StopRequest` reason + work
+  state) and the final adapter input state. Completions and proof verdicts
+  stand, so "disconnected but proof ingested" stays `completed_with_proof`. A
+  stop/deadline outranks `task_failed` only when work was still running.
+- **Not included:** `registration_timeout` (the session cannot observe the
+  launcher giving up; #56 preflight reports it) and `disconnected_unproven`
+  (a clean exit 0 without completion gets an accepted harness receipt under
+  the existing #64 semantics, so the class could never be emitted; changing
+  that acceptance rule is out of scope).
 - **Rollup:** `harnex orchestration report (--run-id | --queue-id)` adds
   `workers.outcome_classes` (`attempts`, `families`, `family_count`); families
-  join by `parent_attempt_id`/`parent_dispatch_id` or a reused dispatch id.
+  join by `parent_attempt_id`, by `parent_dispatch_id` for non-initial
+  attempts, or by a reused dispatch id. Start rows are not counted.
 - **Budget:** `--failure-budget N [--budget-unit attempts|families]
   [--fatal-classes A,B]` → `failure_budget {limit, unit, fatal_classes,
-  consumed, fatal_attempts, fatal_families, breached}`; exit 2 on breach
+  consumed, fatal_attempts, fatal_families, breached}`; exit 3 on breach
   (breached once consumed ≥ N). Default fatal classes: no-work and process
   failures; proof defects, caller stops and `unknown` are not fatal by
   default. Enforcement stays with the caller.

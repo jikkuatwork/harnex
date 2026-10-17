@@ -48,7 +48,7 @@ module Harnex
     # or failed terminal from signals Harnex already holds (exit path, stop
     # provenance, final input state), never from transcript text.
     PROCESS_OUTCOME_CLASSES = %w[
-      boot_failure permission_prompt timeout stopped_by_caller disconnected_unproven process_failed
+      boot_failure permission_prompt timeout stopped_by_caller process_failed
     ].freeze
     OUTCOME_CLASSES = (
       %w[completed_with_proof completed_with_activity] + PROOF_REJECTION_CLASSES +
@@ -2509,9 +2509,10 @@ module Harnex
 
     def build_summary_outcome(artifact_payload)
       receipt_outcome = artifact_payload&.dig("outcome") || {}
-      outcome_class, report_status = summary_proof_classification
-      outcome_class = refine_terminal_outcome_class(outcome_class)
-      proof_failure = %w[completed_no_activity report_missing report_invalid report_rejected task_failed].include?(outcome_class)
+      base_class, report_status = summary_proof_classification
+      outcome_class = refine_terminal_outcome_class(base_class)
+      # Status/source derive from the proof verdict, not the refined label.
+      proof_failure = %w[completed_no_activity report_missing report_invalid report_rejected task_failed].include?(base_class)
       harness_receipt = artifact_payload&.dig("receipt", "author") == "harnex"
       status = receipt_outcome["status"]
       status = nil if status == "accepted" && proof_failure
@@ -2565,6 +2566,11 @@ module Harnex
     # is the real cause. Anything unrecognized stays unknown.
     def refine_terminal_outcome_class(base)
       base = "unknown" unless OUTCOME_CLASSES.include?(base)
+      # Finalization always writes a receipt, so a process that ended without
+      # any completion signal reaches here as report_rejected. That is
+      # Harnex's own record of an unsuccessful process, not a verdict on
+      # finished work: classify the process instead.
+      base = "unknown" if base == "report_rejected" && receipt_rejection_without_completion?
       return base unless %w[unknown task_failed].include?(base)
 
       stop = @stop_request&.to_h || {}
@@ -2575,10 +2581,13 @@ module Harnex
       return base if base == "task_failed"
       return "boot_failure" if @exit_reason == "boot_failure"
       return "permission_prompt" if @state_machine&.state == :blocked
-      return "disconnected_unproven" if @exit_reason == "disconnected"
       return "process_failed" if @exit_reason == "failure"
 
       "unknown"
+    end
+
+    def receipt_rejection_without_completion?
+      @completion_outcome_class.nil? && !task_complete? && !task_failed?
     end
 
     def build_summary_attempt

@@ -110,6 +110,16 @@ class RunnerTest < Minitest::Test
     assert_equal ["rake lint", "rake test"], runner.instance_variable_get(:@options)[:meta]["final_gates"]
   end
 
+  def test_final_gate_equals_form_is_a_wrapper_option_next_to_optional_value_flags
+    argv = ["pi", "--watch", "--final-gate=rake test"]
+    runner = Harnex::Runner.new(argv)
+    cli_name, forwarded = runner.send(:extract_wrapper_options, argv)
+
+    assert_equal "pi", cli_name
+    assert_equal [], forwarded
+    assert_equal ["rake test"], runner.instance_variable_get(:@options)[:final_gates]
+  end
+
   def test_final_gates_reject_malformed_meta_and_blank_commands
     bad_meta = ["pi", "--meta", '{"final_gates":"rake test"}']
     runner = Harnex::Runner.new(bad_meta)
