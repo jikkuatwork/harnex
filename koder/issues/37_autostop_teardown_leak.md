@@ -1,6 +1,6 @@
 # #37 — `--auto-stop` teardown leak leaves `harnex run` alive
 
-**Status:** Tier 2 landed
+**Status:** resolved (2026-10-17)
 **Priority:** P2
 **Filed:** 2026-05-08
 
@@ -121,3 +121,9 @@ Landed 2026-05-08:
 - F24 unknown-flag rejection for `harnex run`.
 - `harnex doctor --sweep` detection behavior.
 - Release/version bump.
+
+## Resolution
+
+Tier 2 (`0fecf58`, 0.7.1; CHANGELOG "Closes harnex issue #37") met "Done
+when". Closed during the 2026-10-17 tracker triage. The millisecond
+event-timestamp follow-up is delivered separately (see CHANGELOG).

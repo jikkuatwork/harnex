@@ -1,11 +1,12 @@
 ---
 status: open
 priority: P2
+updated: 2026-10-17
 ---
 
 # Issue 41 — Extract `Harnex::Codex::AppServer` module from adapter
 
-**Status**: open
+**Status**: open — Slices A (`3a9f0bf`) and B (`b820793`) landed; only Slice C (public API doc) remains, which needs a maintainer call on what Harnex promises as stable
 **Priority**: P2
 **Filed**: 2026-05-11
 **Tier**: B (plan → impl in thin slices)

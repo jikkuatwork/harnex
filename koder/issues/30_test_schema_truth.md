@@ -1,8 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-05-06
 tags: tests,appserver,jsonrpc,contract,quality
+updated: 2026-10-17
 ---
 
 # Issue 30: Test stubs validate harnex against itself, not against Codex's actual schema
@@ -123,3 +124,13 @@ Two scenarios that must pass without `--legacy-pty`:
   (cross-repo bug-find that surfaced this)
 - evidence (gitignored): `~/.local/state/harnex/events/*--cx-stress-{1,2,3,4}.jsonl`
 - spike script: `/tmp/codex-spike.rb`
+
+## Resolution
+
+Resolved by plan 29 (all six phases): captured Codex JSON Schema fixture
+(`77ce9a0`), vendored stdlib schema validator (`4d68e4d`), outgoing payload
+contract tests (`c3a4b6b`), realistic incoming-response stubs (`d53c2c0`),
+schema-true adapter/session reads (`f9cedca`), and the drift gate
+`test/harnex/contract/schema_freshness_test.rb` (`1f88d2f`). Fixtures live in
+`test/fixtures/codex_schema/`. The status line was stale; closed during the
+2026-10-17 tracker triage.

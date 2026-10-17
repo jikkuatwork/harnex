@@ -1,6 +1,6 @@
 # #35 — DISPATCH.jsonl telemetry hygiene
 
-**Status:** open
+**Status:** resolved (2026-10-17)
 **Priority:** P2
 **Filed:** 2026-05-07 (after 0.6.5 release verification)
 
@@ -151,3 +151,11 @@ Resolved 2026-05-07.
 - No conditional-presence fields — every row has the same keys.
 - A new test asserts the row schema (key set + types) end-to-end so
   silent regressions don't sneak in.
+
+## Resolution
+
+Tiers 1–3 landed in `9d9a0ab`, `a8cd0d8`, and `15abfae` (0.7.0), including the
+row-schema regression test `test/dispatch_row_schema_test.rb`, which satisfies
+"Done when". Tier 4 (`commit_shas`, `branch_end`) was optional ("only if we
+want it") and is not planned; file a new issue if a consumer needs it. Closed
+during the 2026-10-17 tracker triage.

@@ -1,13 +1,14 @@
 ---
 title: Full adapter abstraction
-status: open
+status: resolved
 priority: P2
 created: 2026-03-15
+updated: 2026-10-17
 ---
 
 # Issue 06: Full Adapter Abstraction
 
-**Status**: open
+**Status**: resolved — superseded (2026-10-17)
 **Priority**: P2
 **Created**: 2026-03-15
 
@@ -63,3 +64,12 @@ design.
 
 - Plan 02, Phase 0b (adapter contract cleanup)
 - Issue #04 (output streaming — may interact with on_output hook)
+
+## Resolution
+
+Superseded. Adapters now declare a transport (`Adapters::Base#transport`:
+`:pty`, `:stdio_jsonrpc`, `:stdio_jsonl_rpc`), and structured Codex app-server
+and Pi RPC adapters landed alongside claude/codex/opencode/generic PTY adapters
+without needing the speculative hook API proposed here. Per this issue's own
+"don't abstract ahead of need" rule, any further contract change should be
+filed against a concrete adapter. Closed during the 2026-10-17 tracker triage.

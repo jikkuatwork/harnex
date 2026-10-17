@@ -1,8 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-05-06
 tags: telemetry,dispatch,jsonrpc,observability,tokens
+updated: 2026-10-17
 ---
 
 # Issue 33: JSON-RPC adapter doesn't capture token usage in DISPATCH telemetry
@@ -95,3 +96,10 @@ cached_tokens, reasoning_tokens }` per the `TaskCompleteParams` shape.
   #32 is fixed, the row exists; this issue ensures the row is *useful*.
 - holm #272 (open) — SESSION.jsonl rollup depends on these fields
   being populated.
+
+## Resolution
+
+Shipped in 0.6.5 (`349cd10`; CHANGELOG #33). `thread/tokenUsage/updated`
+totals feed `actual.{input,output,cached,reasoning}_tokens` for JSON-RPC
+dispatches, with stub coverage. The status line was stale; closed during the
+2026-10-17 tracker triage.

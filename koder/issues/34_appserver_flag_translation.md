@@ -1,8 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-05-07
 tags: appserver,jsonrpc,cli,ux,flags,boot_failure
+updated: 2026-10-17
 ---
 
 # Issue 34: harnex silently forwards `-m MODEL` to `codex app-server`, which rejects it and boot-disconnects with no message
@@ -121,3 +122,11 @@ harnex wait --id good --until task_complete --timeout 60
   (Codex's call, not harnex's).
 - Auto-detecting and translating `--enable`/`--disable` differences
   between the two CLIs (none known today).
+
+## Resolution
+
+Shipped in 0.6.5 (`d594c57`; CHANGELOG #34) as recommended options (1) + (3):
+`-m`/`--model`/`--model=…` are rejected before spawn with a pointer to
+`-c model="<name>"` (`lib/harnex/adapters/codex_appserver.rb`), and the
+JSON-RPC vs PTY flag forms are documented in `harnex help run` and the dispatch
+guide. The status line was stale; closed during the 2026-10-17 tracker triage.

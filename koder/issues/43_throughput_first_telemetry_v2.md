@@ -5,7 +5,7 @@ priority: P1
 
 # Issue 43 — Throughput-first telemetry v2 (attempt-level + retry/fallback economics)
 
-**Status**: open
+**Status**: open — blocked on runtime recovery/fallback (#42, plan 30 phases 3–5); see Implementation status
 **Priority**: P1
 **Filed**: 2026-05-19
 **Tier**: B (plan -> impl -> verification)

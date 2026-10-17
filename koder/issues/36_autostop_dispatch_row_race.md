@@ -1,6 +1,6 @@
 # #36 — `--auto-stop` lingers `disconnected` before DISPATCH row emission
 
-**Status:** Tier 2 landed (race bounded); follow-ups optional
+**Status:** resolved (2026-10-17)
 **Priority:** P3
 **Filed:** 2026-05-07
 
@@ -227,3 +227,10 @@ is on disk."
 - DISPATCH row schema changes (covered by #35).
 - New transports.
 
+## Resolution
+
+Tier 2 (`164258a`) met "Done when". Closed during the 2026-10-17 tracker
+triage. The millisecond event-timestamp follow-up shared with #37 is delivered
+separately (see CHANGELOG); `wait --until row_emitted` is not planned —
+`wait` already returns only after the exit-status file, which is written after
+the DISPATCH row.

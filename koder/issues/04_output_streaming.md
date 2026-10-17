@@ -1,10 +1,11 @@
 ---
-status: backlog
+status: resolved
+updated: 2026-10-17
 ---
 
 # Issue 04: Output Streaming
 
-**Status**: open (P3 — remaining work is low priority)
+**Status**: resolved (2026-10-17; Phase 3 deferred — see Resolution)
 **Priority**: P3
 **Created**: 2026-03-14
 **Tags**: feature, architecture
@@ -42,3 +43,11 @@ Add a cursor or byte-offset based HTTP endpoint for dashboards and other local
 consumers. Deferred — `harnex pane --follow` covers the primary supervisor use
 case. Revisit only if a browser/dashboard or detached-session monitoring
 becomes a real need.
+
+## Resolution
+
+Phases 1–2 are done, and the transcript retention gap listed above closed with
+bounded events/output retention (#63, `a62ca88`). Phase 3 (read-only HTTP output
+API) stays deferred by this issue's own rule — no dashboard or detached-session
+consumer needs it. Closed during the 2026-10-17 tracker triage; file a new
+issue if a concrete consumer appears.
