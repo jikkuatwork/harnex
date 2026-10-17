@@ -33,6 +33,14 @@ harnex doctor --adapter pi
 These verify the local structured-transport version prerequisites without
 starting a model turn.
 
+Before an unattended run, `harnex preflight` proves an adapter end to end with
+one tiny real dispatch (one model turn) and prints a JSON verdict:
+
+```bash
+harnex preflight pi --cwd ~/repo
+harnex preflight codex --cwd ~/repo --commit-check
+```
+
 `harnex agents-guide` is the agent-facing reference for dispatch, chain,
 buddy, monitoring, and naming patterns. It is packaged in the gem; no skills
 or project-local docs are required.
@@ -444,6 +452,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
 | `harnex artifact-report init\|validate PATH` | Validate harness-authored `harnex.artifact_report.v1` receipts; `init` remains for legacy/manual documents |
 | `harnex doctor` | Run dependency and retention diagnostics; `--sweep` reports session drift, `--prune --dry-run` previews retention, and `--prune` applies it |
+| `harnex preflight <cli>` | One tiny real dispatch proving boot, files, command exits, receipt, completion and stop (`--commit-check` adds a scratch-repo commit); JSON verdict, non-zero on failure |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |
 | `harnex recipes` | List and read tested workflow patterns (`show 01`, `show buddy`) |

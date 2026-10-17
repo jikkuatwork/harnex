@@ -24,6 +24,19 @@
   `--queue-id` as well as `--run-id`, and takes an optional
   `--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]`
   that adds a `failure_budget` verdict and exits 2 on breach (#57).
+- `harnex preflight ADAPTER [--cwd DIR] [--commit-check]` runs one tiny real
+  dispatch through `harnex run` and prints a JSON verdict
+  (`harnex.preflight.v1`): registration, boot, permission prompt, task read
+  from the task root (default `/tmp`), workspace write, harness-observed
+  command exit (via a final gate), receipt, worker claims, completion, and
+  stop, plus a scratch-repo commit with `--commit-check`. Each failure is a
+  distinct check and failure class; a turn that fails before any work reports
+  its (redacted) error as the root cause. Usage, cost and context telemetry
+  provenance is reported per adapter. Exits non-zero on any failed check. Its
+  dispatch row carries `phase=preflight` and `orchestration report` excludes
+  such rows unless `--include-preflight` (#56).
+- `harnex doctor` capabilities add `final_gates: 1`, `outcome_classes: 1` and
+  `preflight: 1`.
 
 ### Changed
 

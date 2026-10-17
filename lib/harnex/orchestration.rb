@@ -81,23 +81,27 @@ module Harnex
       sample
     end
 
-    def report(dispatch_path:, samples_path: nil, run_id: nil, queue_id: nil, budget: nil)
+    def report(dispatch_path:, samples_path: nil, run_id: nil, queue_id: nil, budget: nil, include_preflight: false)
       build_report(
         dispatch_rows: load_jsonl(dispatch_path),
         sample_rows: samples_path ? load_jsonl(samples_path) : [],
         run_id: run_id,
         queue_id: queue_id,
-        budget: budget
+        budget: budget,
+        include_preflight: include_preflight
       )
     end
 
     # Rows are selected by orchestration run id, by queue id, or by both.
     # budget: { limit: Integer, unit: "attempts"|"families", fatal_classes: [...] }
-    def build_report(dispatch_rows:, sample_rows:, run_id: nil, queue_id: nil, budget: nil)
+    def build_report(dispatch_rows:, sample_rows:, run_id: nil, queue_id: nil, budget: nil, include_preflight: false)
       raise ArgumentError, "run_id or queue_id is required" if run_id.nil? && queue_id.nil?
 
+      # `harnex preflight` rows prove plumbing, not work: they stay out of
+      # throughput, cost and failure-budget arithmetic unless asked for (#56).
       selected_dispatches = dispatch_rows.select do |row|
         row.is_a?(Hash) &&
+          (include_preflight || !preflight_row?(row)) &&
           (run_id.nil? || dispatch_run_id(row) == run_id) &&
           (queue_id.nil? || dispatch_queue_id(row) == queue_id)
       end
@@ -249,6 +253,10 @@ module Harnex
         root = rows[find.call(index)]
         string_value(root.dig("attempt", "run_id")) || string_value(root.dig("meta", "id")) || "row-#{find.call(index)}"
       end
+    end
+
+    def preflight_row?(row)
+      [row.dig("meta", "phase"), row.dig("queue", "phase")].include?("preflight")
     end
 
     def dispatch_queue_id(row)

@@ -37,6 +37,8 @@ module Harnex
         AgentsGuide.new(@argv.drop(1)).run
       when "doctor"
         Doctor.new(@argv.drop(1)).run
+      when "preflight"
+        Preflight.new(@argv.drop(1)).run
       when "orchestration"
         OrchestrationCommand.new(@argv.drop(1)).run
       when "artifact-report"
@@ -89,6 +91,8 @@ module Harnex
         AgentsGuide.usage
       when "doctor"
         Doctor.usage
+      when "preflight"
+        Preflight.usage
       when "orchestration"
         OrchestrationCommand.usage
       when "artifact-report"
@@ -115,6 +119,7 @@ module Harnex
           harnex pane --id ID [options]
           harnex agents-guide [topic]
           harnex doctor
+          harnex preflight ADAPTER [options] [--] [cli-args...]
           harnex orchestration sample|report [options]
           harnex artifact-report init|validate PATH [options]
           harnex telemetry assert-canonical|reconcile [options]
@@ -135,7 +140,9 @@ module Harnex
           guide   Show the getting started guide
           agents-guide
                   Show agent dispatch, chain, buddy, monitoring, and naming guides
-          doctor  Run preflight checks and optional read-only session sweep
+          doctor  Run static adapter checks and optional read-only session sweep
+          preflight
+                  Prove an adapter end to end with one tiny dispatch (JSON verdict)
           orchestration
                   Emit external primary samples and report orchestration tax
           artifact-report
@@ -163,6 +170,7 @@ module Harnex
           harnex pane --id main --lines 40
           harnex agents-guide dispatch
           harnex doctor
+          harnex preflight pi --cwd . -- --no-approve
           harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
           harnex artifact-report validate /path/from-dispatch-row.json --final
           harnex artifact-report init .harnex/reports/legacy-v1.json

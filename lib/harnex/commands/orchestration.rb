@@ -39,6 +39,7 @@ module Harnex
           --samples PATH                External primary sample JSONL
           --run-id ID                   Logical orchestration run id
           --queue-id ID                 Queue id (alone, or narrowing --run-id)
+          --include-preflight           Count `harnex preflight` rows (excluded by default)
           --failure-budget N            Exit 2 once N fatal worker failures are counted
           --budget-unit UNIT            attempts (default) or families (retries joined
                                         by parent attempt/dispatch id count once)
@@ -98,7 +99,7 @@ module Harnex
     end
 
     def run_report(argv)
-      options = { json: false }
+      options = { json: false, include_preflight: false }
       report_parser(options).parse!(argv)
       if options[:help]
         puts self.class.usage
@@ -113,7 +114,8 @@ module Harnex
         samples_path: options[:samples],
         run_id: blank?(options[:run_id]) ? nil : options[:run_id],
         queue_id: blank?(options[:queue_id]) ? nil : options[:queue_id],
-        budget: report_budget(options)
+        budget: report_budget(options),
+        include_preflight: options[:include_preflight]
       )
       if options[:json]
         puts JSON.generate(report)
@@ -192,6 +194,7 @@ module Harnex
         opts.on("--samples PATH") { |value| options[:samples] = value }
         opts.on("--run-id ID") { |value| options[:run_id] = value }
         opts.on("--queue-id ID") { |value| options[:queue_id] = value }
+        opts.on("--include-preflight") { options[:include_preflight] = true }
         opts.on("--failure-budget N") { |value| options[:failure_budget] = value }
         opts.on("--budget-unit UNIT") { |value| options[:budget_unit] = value }
         opts.on("--fatal-classes LIST") { |value| options[:fatal_classes] = value }

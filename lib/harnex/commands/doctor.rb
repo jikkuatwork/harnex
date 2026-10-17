@@ -76,7 +76,10 @@ module Harnex
           monitor_deadline: 1,
           monitor_heartbeat: 1,
           pi_idle_stop: 1,
-          pi_command_proof: 1
+          pi_command_proof: 1,
+          final_gates: 1,
+          outcome_classes: 1,
+          preflight: 1
         }
       }
       summary[:sweep] = sweep_payload if @options[:sweep]

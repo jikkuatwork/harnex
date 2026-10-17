@@ -87,6 +87,28 @@ for i in 1 2 3; do harnex watch --id w-$i --until done --max-wait 90m & done
 wait
 ```
 
+Before an unattended queue run, prove the plumbing with one tiny real
+dispatch per adapter you may use: the chosen adapter and one declared fallback.
+Both must be inside your dispatch-model policy; an out-of-policy adapter is a
+launch blocker, not a fallback. `preflight` exits non-zero on any failed check
+(boot, registration, trust prompt, task read, workspace write, command exit,
+receipt, claims, completion, stop) and names the failure class:
+
+```bash
+harnex preflight pi --cwd "$REPO" && harnex preflight codex --cwd "$REPO" \
+  && harnex run pi --id pi-i-NN --tmux pi-i-NN --context "Read and execute /tmp/task-NN.md" --auto-stop
+```
+
+Add `--commit-check` when workers must commit (it commits only in a throwaway
+scratch repo). Preflight rows land in history with `phase=preflight` and stay
+out of `orchestration report` rollups unless `--include-preflight` is passed.
+
+To separate final acceptance from exploratory command noise in the receipt,
+declare the final commands: `--final-gate 'bundle exec rake test'` (repeatable).
+`validation.status` then reflects each gate's last observed exit, and
+`validation.commands_had_failures` keeps the history. Still replay the gates
+yourself before accepting work.
+
 For unattended work, pair each dispatch with an owner-addressed consumer and
 bounded native monitoring rather than depending on one long blocking watcher:
 

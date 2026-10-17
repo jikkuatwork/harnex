@@ -1,9 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P1
 issue_kind: slice
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-10-18
 tags: preflight,adapter,readiness,doctor,unattended,queue
 ---
 
@@ -50,17 +50,17 @@ dispatch history like any other dispatch, flagged `phase: preflight`.
 
 ## Acceptance criteria
 
-- [ ] One command exercises boot, registration, task read, workspace write,
+- [x] One command exercises boot, registration, task read, workspace write,
       command execution, typed report ingestion, completion, and stop for a
       named adapter in a named cwd.
-- [ ] Trust prompts, registration timeouts, sandbox read/write denials, and
+- [x] Trust prompts, registration timeouts, sandbox read/write denials, and
       missing receipts each produce a distinct failing check, not a generic
       failure.
-- [ ] Telemetry capability (usage/cost/context) is reported per adapter with
+- [x] Telemetry capability (usage/cost/context) is reported per adapter with
       provenance status, never silently absent.
-- [ ] The preflight row lands in dispatch history and is excluded from
+- [x] The preflight row lands in dispatch history and is excluded from
       throughput/cost rollups by default.
-- [ ] Docs recommend running preflight for the chosen adapter plus one declared
+- [x] Docs recommend running preflight for the chosen adapter plus one declared
       fallback adapter before any unattended queue run, noting that both must
       be inside the caller's dispatch-model policy (out-of-policy adapters are
       launch blockers, not fallbacks).
@@ -84,3 +84,43 @@ dispatch history like any other dispatch, flagged `phase: preflight`.
 - **Risk**: low; composes existing run/wait/report primitives.
 - **First useful slice**: preflight for `pi` and `codex` app-server with task
   read/workspace write/report ingestion checks and a JSON verdict.
+
+## Resolution
+
+Implemented 2026-10-18 as `harnex preflight ADAPTER [--cwd DIR]
+[--task-root DIR] [--commit-check] [--timeout DUR] [--registration-timeout DUR]
+[--model NAME] [--effort LEVEL] [--legacy-pty] [--] [cli-args...]`
+(`lib/harnex/commands/preflight.rb`).
+
+- Drives the real `harnex run ADAPTER --detach --auto-stop` path in a child
+  process with a numbered prompt: read a pinned task file from the task root
+  (default `/tmp`, where queue task files usually live), write its token into
+  `<cwd>/.harnex/preflight/<id>.txt`, run an exact `echo` gate command
+  (declared with `--final-gate`, so its exit comes from harness observation),
+  write claims to `$HARNEX_ARTIFACT_CLAIMS_PATH`, and reply DONE.
+- Verdict `harnex.preflight.v1`: checks `registration`, `boot`, `permission`
+  (blocking trust/confirmation prompt for ≥15s), `task_read`,
+  `workspace_write`, `command_exit` (`unsupported` for PTY transports),
+  `receipt`, `claims`, `completion`, `stop`, plus `commit` with
+  `--commit-check` (second dispatch in a throwaway scratch repo). The first
+  failing check names `failure`; a failed completion uses the #57 outcome class.
+  A turn that fails before any work (auth/model errors) skips downstream checks
+  and reports the redacted error.
+- `telemetry` reports `usage`, `cost` (`observed` when provider-reported,
+  `estimated` from price table/caller, else `unsupported`) and `context`
+  provenance; `unavailable` when no row exists. Never absent.
+- The dispatch row carries `phase=preflight`; `orchestration report` excludes
+  such rows unless `--include-preflight`. Task and workspace files are removed;
+  the row stays as history.
+- Docs: `guides/01_dispatch.md` recommends preflight for the chosen adapter
+  plus one declared fallback, both inside the dispatch-model policy.
+
+Verification: hermetic tests with an obedient/misbehaving Codex app-server stub
+(`test/harnex/commands/preflight_test.rb`: pass path, write denial, read
+mismatch, missing claims, auth-failed turn, timeout + stop, missing binary,
+commit check, usage errors, rollup exclusion). Live on this machine (checkout):
+`harnex preflight pi` passed all checks in 57s with observed usage/cost/context;
+`--commit-check` passed (caller repo untouched). `harnex preflight codex`
+correctly failed in ~20s with `task_failed` (OpenAI `401 invalid_api_key` in
+the local Codex configuration), so a live Codex pass and the live Codex
+command-string shape remain unverified here.
