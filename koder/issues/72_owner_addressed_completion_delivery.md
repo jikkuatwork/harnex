@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-10-18
 tags: pi, notifications, lifecycle
 type: bug
 issue_kind: slice
@@ -52,3 +52,11 @@ release tracker; local runtime use is unblocked.
 
 Source exposure: none — implementation and synthetic proofs stay local; no
 private downstream source, incident logs, package, or Git objects were published.
+
+## Resolution
+
+Closed 2026-10-18. The implementation shipped in local installs from 0.12.1
+on. The issue stayed open only as the public-release tracker; the owner
+decided on 2026-10-18 that Harnex is not published to RubyGems ("we dont have
+to publish anything to Ruby Gems; just install it locally"), so local install
+is the release path and nothing remains here.
