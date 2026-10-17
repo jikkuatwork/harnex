@@ -271,6 +271,7 @@ class StatusCommandTest < Minitest::Test
   end
 
   def test_status_hints_at_sessions_in_other_repos_when_current_repo_is_empty
+    clear_session_registries
     Dir.mktmpdir("harnex-status-sibling") do |sibling|
       write_registry("cx-i-385-c1", repo_root: sibling)
       write_registry("cx-i-385-c2", repo_root: sibling)
@@ -285,6 +286,7 @@ class StatusCommandTest < Minitest::Test
   end
 
   def test_status_explicit_repo_filter_gets_no_other_repos_hint
+    clear_session_registries
     Dir.mktmpdir("harnex-status-sibling") do |sibling|
       write_registry("cx-i-385-c1", repo_root: sibling)
 
@@ -298,6 +300,7 @@ class StatusCommandTest < Minitest::Test
   end
 
   def test_status_empty_everywhere_prints_no_hint
+    clear_session_registries
     Dir.mktmpdir("harnex-status-empty") do |empty_repo|
       out, = capture_io { assert_equal 0, Dir.chdir(empty_repo) { Harnex::Status.new([]) }.run }
 
@@ -312,6 +315,12 @@ class StatusCommandTest < Minitest::Test
     @created_dirs << dir
     system("git", "init", "-q", dir, out: File::NULL, err: File::NULL)
     dir
+  end
+
+  # These tests count sessions across all repos; other suites in the same
+  # process can leave registries owned by this (live) pid behind.
+  def clear_session_registries
+    FileUtils.rm_f(Dir[File.join(Harnex::SESSIONS_DIR, "*.json")])
   end
 
   def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil, last_completed_at: nil, repo_root: @repo_root)
