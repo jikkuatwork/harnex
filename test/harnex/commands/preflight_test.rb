@@ -98,6 +98,15 @@ class PreflightTest < Minitest::Test
     assert_nil Harnex.read_registry(subdir, verdict["id"]), "the stuck worker in the subdirectory is stopped"
   end
 
+  def test_subdirectory_workspace_is_left_without_a_new_harnex_dir
+    subdir = File.join(@repo, "pkg")
+    FileUtils.mkdir_p(subdir)
+    verdict, code = preflight(cwd: subdir)
+
+    assert_equal 0, code, verdict.inspect
+    assert_empty Dir.children(subdir), "no .harnex/ litter in a workspace that had none"
+  end
+
   def test_reserved_preflight_phase_passes_a_rejecting_repo_phase_policy
     FileUtils.mkdir_p(File.join(@repo, ".harnex"))
     File.write(File.join(@repo, ".harnex", "config.json"),

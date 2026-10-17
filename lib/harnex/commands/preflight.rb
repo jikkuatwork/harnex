@@ -187,6 +187,8 @@ module Harnex
       gate = "echo harnex-preflight-#{SecureRandom.hex(4)}"
       task_path = File.join(task_root, "harnex-preflight-#{id}.md")
       out_path = commit ? File.join(cwd, "preflight.txt") : File.join(cwd, ".harnex", "preflight", "#{id}.txt")
+      harnex_dir = File.join(cwd, ".harnex")
+      harnex_dir_existed = File.directory?(harnex_dir)
       FileUtils.mkdir_p(task_root)
       File.write(task_path, "#{token}\n")
 
@@ -209,8 +211,11 @@ module Harnex
       FileUtils.rm_f(task_path) if task_path
       unless commit || out_path.nil?
         FileUtils.rm_f(out_path)
-        preflight_dir = File.dirname(out_path)
-        Dir.rmdir(preflight_dir) if File.directory?(preflight_dir) && Dir.empty?(preflight_dir)
+        # Leave the caller's workspace as found: drop the probe's directories
+        # when they are empty, including a .harnex/ the worker had to create.
+        [File.dirname(out_path), (harnex_dir unless harnex_dir_existed)].compact.each do |dir|
+          Dir.rmdir(dir) if File.directory?(dir) && Dir.empty?(dir)
+        end
       end
     end
 
