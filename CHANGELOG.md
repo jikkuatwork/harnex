@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `harnex status` (default current-repo view) now says how many sessions are
+  active in other repos, with up to three ids, instead of a bare
+  "No active harnex sessions" that read as global emptiness when workers run
+  in sibling worktrees. `--repo`, `--all` and `--json` output is unchanged
+  (#26).
+
+### Fixed
+
+- Two status tests that sat below a `private` keyword never ran; they run now.
+
 ## [0.15.0] - 2026-10-16 | 07:20 AM | +04
 
 Owner-authorized local-only release; public publication, tag and push remain deferred.

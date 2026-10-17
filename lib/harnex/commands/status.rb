@@ -29,6 +29,8 @@ module Harnex
         Gotchas:
           By default, status filters to the current repo root.
           Use --all when supervising workers launched from sibling worktrees.
+          When the current repo has none, the default view says how many
+          sessions are active in other repos (never with --repo or --all).
           With --id, terminal summaries can report completed/failed/unknown
           even after the live session registry is gone.
           Settled work outranks prompt state in the table: done, rejected, or failed.
@@ -42,6 +44,7 @@ module Harnex
       @options = {
         id: nil,
         repo_path: Dir.pwd,
+        repo_explicit: false,
         all: false,
         json: false,
         help: false
@@ -65,7 +68,10 @@ module Harnex
         if @options[:all]
           puts "No active harnex sessions."
         else
-          puts "No active harnex sessions for #{Harnex.resolve_repo_root(@options[:repo_path])}."
+          repo_root = Harnex.resolve_repo_root(@options[:repo_path])
+          puts "No active harnex sessions for #{repo_root}."
+          hint = other_repos_hint(repo_root)
+          puts hint if hint
         end
         return 0
       end
@@ -80,11 +86,33 @@ module Harnex
       @parser ||= OptionParser.new do |opts|
         opts.banner = "Usage: harnex status [options]"
         opts.on("--id ID", "Show a specific session") { |value| @options[:id] = Harnex.normalize_id(value) }
-        opts.on("--repo PATH", "Filter to PATH's repo root") { |value| @options[:repo_path] = value }
+        opts.on("--repo PATH", "Filter to PATH's repo root") do |value|
+          @options[:repo_path] = value
+          @options[:repo_explicit] = true
+        end
         opts.on("--all", "List sessions across all repos") { @options[:all] = true }
         opts.on("--json", "Output JSON instead of a table") { @options[:json] = true }
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
+    end
+
+    # The implicit current-repo filter must not read as global emptiness
+    # when workers run in sibling worktrees (#26). An explicit --repo is a
+    # deliberate narrow view and gets no hint.
+    def other_repos_hint(repo_root)
+      return nil if @options[:repo_explicit]
+
+      local_prefix = "#{Harnex.repo_key(repo_root)}--"
+      elsewhere = Harnex.active_sessions.reject do |session|
+        File.basename(session["registry_path"].to_s).start_with?(local_prefix)
+      end
+      return nil if elsewhere.empty?
+
+      ids = elsewhere.map { |session| session["id"].to_s }.sort
+      shown = ids.first(3).join(", ")
+      shown += ", ..." if ids.length > 3
+      noun = elsewhere.length == 1 ? "session" : "sessions"
+      "#{elsewhere.length} active #{noun} in other repos (#{shown}); pass --all to view."
     end
 
     def load_sessions

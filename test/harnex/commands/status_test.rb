@@ -229,15 +229,6 @@ class StatusCommandTest < Minitest::Test
     end
   end
 
-  private
-
-  def create_git_repo
-    dir = Dir.mktmpdir("harnex-status-repo")
-    @created_dirs << dir
-    system("git", "init", "-q", dir, out: File::NULL, err: File::NULL)
-    dir
-  end
-
   def test_status_labels_unreachable_live_api_as_degraded_registry_data
     write_registry("degraded")
 
@@ -279,15 +270,59 @@ class StatusCommandTest < Minitest::Test
     end
   end
 
-  def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil, last_completed_at: nil)
-    path = Harnex.registry_path(@repo_root, id)
+  def test_status_hints_at_sessions_in_other_repos_when_current_repo_is_empty
+    Dir.mktmpdir("harnex-status-sibling") do |sibling|
+      write_registry("cx-i-385-c1", repo_root: sibling)
+      write_registry("cx-i-385-c2", repo_root: sibling)
+
+      Dir.mktmpdir("harnex-status-empty") do |empty_repo|
+        out, = capture_io { assert_equal 0, Dir.chdir(empty_repo) { Harnex::Status.new([]) }.run }
+
+        assert_includes out, "No active harnex sessions for #{Harnex.resolve_repo_root(empty_repo)}."
+        assert_includes out, "2 active sessions in other repos (cx-i-385-c1, cx-i-385-c2); pass --all to view."
+      end
+    end
+  end
+
+  def test_status_explicit_repo_filter_gets_no_other_repos_hint
+    Dir.mktmpdir("harnex-status-sibling") do |sibling|
+      write_registry("cx-i-385-c1", repo_root: sibling)
+
+      Dir.mktmpdir("harnex-status-empty") do |empty_repo|
+        out, = capture_io { assert_equal 0, Harnex::Status.new(["--repo", empty_repo]).run }
+
+        assert_includes out, "No active harnex sessions for"
+        refute_includes out, "other repos"
+      end
+    end
+  end
+
+  def test_status_empty_everywhere_prints_no_hint
+    Dir.mktmpdir("harnex-status-empty") do |empty_repo|
+      out, = capture_io { assert_equal 0, Dir.chdir(empty_repo) { Harnex::Status.new([]) }.run }
+
+      refute_includes out, "other repos"
+    end
+  end
+
+  private
+
+  def create_git_repo
+    dir = Dir.mktmpdir("harnex-status-repo")
+    @created_dirs << dir
+    system("git", "init", "-q", dir, out: File::NULL, err: File::NULL)
+    dir
+  end
+
+  def write_registry(id, description: nil, include_log_keys: false, log_mtime: nil, log_idle_s: nil, last_completed_at: nil, repo_root: @repo_root)
+    path = Harnex.registry_path(repo_root, id)
     payload = {
       "id" => id,
       "cli" => "codex",
       "pid" => Process.pid,
       "host" => "127.0.0.1",
       "port" => 43_210 + @created_paths.length,
-      "repo_root" => @repo_root,
+      "repo_root" => repo_root,
       "started_at" => Time.now.iso8601
     }
     payload["description"] = description if description

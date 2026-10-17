@@ -1,7 +1,8 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-05-03
+updated: 2026-10-17
 tags: cli,status,monitoring,worktree,orchestration
 ---
 
@@ -52,14 +53,23 @@ others should not have to remember a flag to see their own children.
 
 ## Acceptance criteria
 
-- [ ] `harnex status` from a repo with zero local sessions but active
+- [x] `harnex status` from a repo with zero local sessions but active
       sessions elsewhere produces a hint, not a `No active sessions` message
       that implies global emptiness.
-- [ ] Test: spawn a session in worktree A, run `harnex status` from worktree
+- [x] Test: spawn a session in worktree A, run `harnex status` from worktree
       B (same `.bare`), confirm output mentions the session or hints at it.
-- [ ] No behavior change for users who already use `--all` or `--repo`.
+- [x] No behavior change for users who already use `--all` or `--repo`.
 
 ## Out of scope
 
 - Replacing the `--repo` filter (it remains useful for narrow status).
 - Cross-machine visibility.
+
+## Resolution
+
+Implemented option 3 (2026-10-17). When the implicit current-repo filter finds
+nothing, `harnex status` adds `N active session(s) in other repos (id, id, id,
+...); pass --all to view.` Explicit `--repo`, `--all`, and `--json` output are
+unchanged. Tests in `test/harnex/commands/status_test.rb` cover the hint, the
+explicit-`--repo` exemption, and the empty-everywhere case (registries written
+for a sibling directory stand in for a sibling worktree).
