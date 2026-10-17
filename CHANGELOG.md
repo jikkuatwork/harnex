@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [0.16.0] - 2026-10-18 | 12:55 AM | +04
+
+Owner-authorized local-only release. Owner decision (2026-10-18): Harnex is
+installed locally and is not published to RubyGems.
 
 ### Added
 
