@@ -1,9 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P1
 issue_kind: slice
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-10-18
 tags: telemetry,outcomes,refusal,circuit-breaker,budget,queue
 ---
 
@@ -82,24 +82,24 @@ supplies the ledger and the arithmetic.
 
 ## Acceptance criteria
 
-- [ ] Every dispatch row carries exactly one `outcome.class` with a documented
+- [x] Every dispatch row carries exactly one `outcome.class` with a documented
       closed vocabulary and an `unknown` fallback.
-- [ ] Zero-token/no-activity completions are distinguishable from crashes,
+- [x] Zero-token/no-activity completions are distinguishable from crashes,
       timeouts, completed artifacts with a missing report, and schema-invalid
       reports.
-- [ ] "Terminal state disconnected but typed report ingested" classifies as
+- [x] "Terminal state disconnected but typed report ingested" classifies as
       completed-with-proof, not as a reliability failure (see #47's
       generic-disconnection complaint).
-- [ ] One command aggregates outcome classes across a queue/run id and
+- [x] One command aggregates outcome classes across a queue/run id and
       evaluates an optional caller-declared failure budget.
-- [ ] Rollups report both raw failed attempts and retry/failure families joined
+- [x] Rollups report both raw failed attempts and retry/failure families joined
       by parent attempt/dispatch identity, so correlated retries do not look
       like unrelated root causes.
-- [ ] Budget evaluation can name which outcome classes count as fatal; a caller
+- [x] Budget evaluation can name which outcome classes count as fatal; a caller
       can separate no-work/boot failures from reconstructable proof warnings.
-- [ ] Reclassification is not required for historical rows; the contract is
+- [x] Reclassification is not required for historical rows; the contract is
       additive.
-- [ ] Tests cover each class plus the budget breach and non-breach paths.
+- [x] Tests cover each class plus the budget breach and non-breach paths.
 
 ## Out of scope
 
@@ -124,3 +124,35 @@ supplies the ledger and the arithmetic.
 - **First useful slice**: classify from existing signals (usage totals, report
   ingestion, completion event, exit reason) plus the `run-report` count
   command; budget flag second.
+
+## Resolution
+
+Completed 2026-10-18 on top of the 0.7.14 proof classes.
+
+- **Vocabulary** (`Session::OUTCOME_CLASSES`, closed, `unknown` fallback):
+  completion `completed_with_proof`, `completed_with_activity`; proof defects
+  `completed_no_activity` (the zero-token/no-work refusal shape),
+  `report_missing` (completed without receipt), `report_invalid`,
+  `report_rejected`; process `task_failed`, `boot_failure`,
+  `permission_prompt`, `timeout`, `stopped_by_caller`,
+  `disconnected_unproven`, `process_failed`.
+- **Classification** refines only an `unknown`/`task_failed` terminal from the
+  exit path, stop provenance (`StopRequest` reason + work state) and the final
+  adapter input state; completions and proof verdicts stand, so "disconnected
+  but proof ingested" stays `completed_with_proof`. A stop/deadline outranks
+  `task_failed` only when work was still running at the stop.
+- **Not included:** `registration_timeout`. The session that writes the row
+  cannot observe the launcher giving up on registration; #56 preflight reports
+  it as a distinct check instead.
+- **Rollup:** `harnex orchestration report (--run-id | --queue-id)` adds
+  `workers.outcome_classes` (`attempts`, `families`, `family_count`); families
+  join by `parent_attempt_id`/`parent_dispatch_id` or a reused dispatch id.
+- **Budget:** `--failure-budget N [--budget-unit attempts|families]
+  [--fatal-classes A,B]` → `failure_budget {limit, unit, fatal_classes,
+  consumed, fatal_attempts, fatal_families, breached}`; exit 2 on breach
+  (breached once consumed ≥ N). Default fatal classes: no-work and process
+  failures; proof defects, caller stops and `unknown` are not fatal by
+  default. Enforcement stays with the caller.
+
+Tests: `test/harnex/runtime/session_outcome_class_test.rb`,
+`test/harnex/orchestration_test.rb`. Docs: `docs/dispatch-telemetry.md`.

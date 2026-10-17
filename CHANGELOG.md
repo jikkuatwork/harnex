@@ -14,6 +14,16 @@
   is exact, after unwrapping a single `bash -lc`/`sh -c` transport wrapper.
   Without gates, behavior is unchanged. Diagnostics only: acceptance and
   outcome classes do not change (#68).
+- Dispatch-row `outcome.class` gains process classes from signals Harnex
+  already holds: `boot_failure`, `permission_prompt`, `timeout`,
+  `stopped_by_caller`, `disconnected_unproven`, `process_failed`. They refine
+  only an `unknown`/`task_failed` terminal; completion and proof verdicts are
+  never overridden, and the vocabulary is closed with an `unknown` fallback.
+- `harnex orchestration report` counts worker outcome classes per raw attempt
+  and per retry family (joined by parent attempt/dispatch id), accepts
+  `--queue-id` as well as `--run-id`, and takes an optional
+  `--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]`
+  that adds a `failure_budget` verdict and exits 2 on breach (#57).
 
 ### Changed
 
@@ -30,6 +40,8 @@
 ### Fixed
 
 - Two status tests that sat below a `private` keyword never ran; they run now.
+- Test-suite flakes: cross-repo status hint tests no longer see registries
+  leaked by other suites, and the detached on-done smoke waits for teardown.
 
 ## [0.15.0] - 2026-10-16 | 07:20 AM | +04
 

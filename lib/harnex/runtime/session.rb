@@ -43,6 +43,17 @@ module Harnex
     PROOF_REJECTION_CLASSES = %w[
       completed_no_activity report_missing report_invalid report_rejected
     ].freeze
+    # Closed dispatch-row `outcome.class` vocabulary (#57). Proof classes come
+    # from completion assessment; process classes refine an otherwise unknown
+    # or failed terminal from signals Harnex already holds (exit path, stop
+    # provenance, final input state), never from transcript text.
+    PROCESS_OUTCOME_CLASSES = %w[
+      boot_failure permission_prompt timeout stopped_by_caller disconnected_unproven process_failed
+    ].freeze
+    OUTCOME_CLASSES = (
+      %w[completed_with_proof completed_with_activity] + PROOF_REJECTION_CLASSES +
+      %w[task_failed] + PROCESS_OUTCOME_CLASSES + %w[unknown]
+    ).freeze
     # Pi tools whose structured results carry an integer exit code.
     PI_COMMAND_TOOLS = %w[bash].freeze
     MAX_PENDING_PI_COMMANDS = 256
@@ -2499,6 +2510,7 @@ module Harnex
     def build_summary_outcome(artifact_payload)
       receipt_outcome = artifact_payload&.dig("outcome") || {}
       outcome_class, report_status = summary_proof_classification
+      outcome_class = refine_terminal_outcome_class(outcome_class)
       proof_failure = %w[completed_no_activity report_missing report_invalid report_rejected task_failed].include?(outcome_class)
       harness_receipt = artifact_payload&.dig("receipt", "author") == "harnex"
       status = receipt_outcome["status"]
@@ -2545,6 +2557,28 @@ module Harnex
       return ["completed_with_activity", @completion_report_status] if task_complete? && structured_activity_observed?
 
       ["unknown", @completion_report_status]
+    end
+
+    # Only an unknown or failed terminal is refined; completions and proof
+    # verdicts stand. A stop or deadline outranks task_failed only when the
+    # work was still running at the stop: a failure that preceded the stop
+    # is the real cause. Anything unrecognized stays unknown.
+    def refine_terminal_outcome_class(base)
+      base = "unknown" unless OUTCOME_CLASSES.include?(base)
+      return base unless %w[unknown task_failed].include?(base)
+
+      stop = @stop_request&.to_h || {}
+      stopped_while_running = stop[:work_state] == "running"
+      return "timeout" if stop[:reason] == "runtime_budget" && stopped_while_running
+      return "timeout" if @exit_code == 124 && base == "unknown"
+      return "stopped_by_caller" if stop[:reason] == "manual" && stopped_while_running
+      return base if base == "task_failed"
+      return "boot_failure" if @exit_reason == "boot_failure"
+      return "permission_prompt" if @state_machine&.state == :blocked
+      return "disconnected_unproven" if @exit_reason == "disconnected"
+      return "process_failed" if @exit_reason == "failure"
+
+      "unknown"
     end
 
     def build_summary_attempt

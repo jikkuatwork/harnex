@@ -7,7 +7,8 @@ module Harnex
       <<~TEXT
         Usage:
           #{program_name} sample --out PATH --run-id ID --generation-id ID [options]
-          #{program_name} report --dispatch PATH --run-id ID [--samples PATH] [--json]
+          #{program_name} report --dispatch PATH (--run-id ID | --queue-id ID) [--samples PATH]
+              [--failure-budget N] [--budget-unit attempts|families] [--fatal-classes A,B] [--json]
 
         Sample options:
           --project-id ID
@@ -37,8 +38,23 @@ module Harnex
           --dispatch PATH               Dispatch summary JSONL
           --samples PATH                External primary sample JSONL
           --run-id ID                   Logical orchestration run id
+          --queue-id ID                 Queue id (alone, or narrowing --run-id)
+          --failure-budget N            Exit 2 once N fatal worker failures are counted
+          --budget-unit UNIT            attempts (default) or families (retries joined
+                                        by parent attempt/dispatch id count once)
+          --fatal-classes A,B           Outcome classes that consume the budget
+                                        (default: the classes marked * below)
           --json                        Output the full report JSON
           -h, --help                    Show this help
+
+        Worker outcome classes (dispatch row outcome.class):
+          completed   completed_with_proof completed_with_activity
+          proof       completed_no_activity* report_missing report_invalid report_rejected
+          process     task_failed* boot_failure* permission_prompt* timeout*
+                      disconnected_unproven* process_failed* stopped_by_caller
+          fallback    unknown
+        The budget is a ledger, not a breaker: enforcement stays with the caller.
+        Exit codes: 0 report printed (within budget), 2 budget breached.
       TEXT
     end
 
@@ -88,17 +104,53 @@ module Harnex
         puts self.class.usage
         return 0
       end
+      if blank?(options[:run_id]) && blank?(options[:queue_id])
+        raise OptionParser::MissingArgument, "--run-id or --queue-id"
+      end
+
       report = Harnex::Orchestration.report(
         dispatch_path: required_option(options[:dispatch], "--dispatch"),
         samples_path: options[:samples],
-        run_id: required_option(options[:run_id], "--run-id")
+        run_id: blank?(options[:run_id]) ? nil : options[:run_id],
+        queue_id: blank?(options[:queue_id]) ? nil : options[:queue_id],
+        budget: report_budget(options)
       )
       if options[:json]
         puts JSON.generate(report)
       else
         puts render_report(report)
       end
-      0
+      report.dig("failure_budget", "breached") ? BUDGET_BREACHED_EXIT : 0
+    end
+
+    BUDGET_BREACHED_EXIT = 2
+
+    def report_budget(options)
+      if options[:failure_budget].nil?
+        if options[:budget_unit] || options[:fatal_classes]
+          raise OptionParser::InvalidArgument, "--budget-unit/--fatal-classes need --failure-budget"
+        end
+        return nil
+      end
+
+      limit = Integer(options[:failure_budget], exception: false)
+      raise OptionParser::InvalidArgument, "--failure-budget must be a positive integer" unless limit&.positive?
+
+      unit = options[:budget_unit] || "attempts"
+      unless Harnex::Orchestration::BUDGET_UNITS.include?(unit)
+        raise OptionParser::InvalidArgument, "--budget-unit must be attempts or families"
+      end
+
+      fatal = options[:fatal_classes]&.split(",")&.map(&:strip)&.reject(&:empty?)
+      unknown = Array(fatal) - Harnex::Session::OUTCOME_CLASSES
+      raise OptionParser::InvalidArgument, "unknown outcome class: #{unknown.join(', ')}" unless unknown.empty?
+      raise OptionParser::InvalidArgument, "--fatal-classes needs at least one class" if fatal && fatal.empty?
+
+      { limit: limit, unit: unit, fatal_classes: fatal }
+    end
+
+    def blank?(value)
+      value.to_s.strip.empty?
     end
 
     def sample_parser(options)
@@ -135,10 +187,14 @@ module Harnex
 
     def report_parser(options)
       OptionParser.new do |opts|
-        opts.banner = "Usage: harnex orchestration report --dispatch PATH --run-id ID [options]"
+        opts.banner = "Usage: harnex orchestration report --dispatch PATH (--run-id ID | --queue-id ID) [options]"
         opts.on("--dispatch PATH") { |value| options[:dispatch] = value }
         opts.on("--samples PATH") { |value| options[:samples] = value }
         opts.on("--run-id ID") { |value| options[:run_id] = value }
+        opts.on("--queue-id ID") { |value| options[:queue_id] = value }
+        opts.on("--failure-budget N") { |value| options[:failure_budget] = value }
+        opts.on("--budget-unit UNIT") { |value| options[:budget_unit] = value }
+        opts.on("--fatal-classes LIST") { |value| options[:fatal_classes] = value }
         opts.on("--json") { options[:json] = true }
         opts.on("-h", "--help") { options[:help] = true }
       end
@@ -155,12 +211,27 @@ module Harnex
       primary = report.fetch("primary")
       workers = report.fetch("workers")
       ratios = report.fetch("ratios")
-      [
-        "Run: #{report.fetch('orchestration_run_id')}",
+      classes = workers.fetch("outcome_classes")
+      lines = [
+        "Run: #{format_value(report.fetch('orchestration_run_id'))} queue=#{format_value(report['queue_id'])}",
         "Primary: generations=#{primary.fetch('generation_count')} usage=#{primary.dig('usage', 'status')} total_tokens=#{format_value(primary.dig('usage', 'total_tokens'))} peak_context=#{format_value(primary.dig('context', 'peak_tokens'))} tool_calls=#{primary.fetch('tool_calls')}",
         "Workers: dispatches=#{workers.fetch('dispatches')} usage=#{workers.dig('usage', 'status')} active_s=#{workers.fetch('active_s')} accepted=#{workers.dig('outcomes', 'accepted')} rejected=#{workers.dig('outcomes', 'rejected')} blocked=#{workers.dig('outcomes', 'blocked')} unknown=#{workers.dig('outcomes', 'unknown')}",
+        "Outcome classes: #{format_counts(classes.fetch('attempts'))} " \
+          "(families=#{classes.fetch('family_count')}: #{format_counts(classes.fetch('families'))})",
         "Ratios: primary_tokens_per_accepted_entry=#{format_value(ratios.fetch('primary_total_tokens_per_accepted_entry'))} primary_tool_calls_per_accepted_entry=#{format_value(ratios.fetch('primary_tool_calls_per_accepted_entry'))}"
-      ].join("\n")
+      ]
+      if (budget = report["failure_budget"])
+        verdict = budget.fetch("breached") ? "BREACHED" : "within budget"
+        lines << "Failure budget: #{budget.fetch('consumed')}/#{budget.fetch('limit')} #{budget.fetch('unit')} " \
+                 "(fatal attempts=#{budget.fetch('fatal_attempts')} families=#{budget.fetch('fatal_families')}) #{verdict}"
+      end
+      lines.join("\n")
+    end
+
+    def format_counts(counts)
+      return "-" if counts.empty?
+
+      counts.map { |klass, count| "#{klass}=#{count}" }.join(" ")
     end
 
     def format_value(value)

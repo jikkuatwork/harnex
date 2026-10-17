@@ -103,20 +103,111 @@ class OrchestrationTest < Minitest::Test
     assert_equal "observed", report.dig("workers", "usage", "status")
   end
 
+  # --- #57: outcome class rollup and failure budget ---
+
+  def class_rows
+    [
+      worker_row("impl-1", entry: "A", outcome: "unknown", exit_reason: "boot_failure", tokens: nil, klass: "boot_failure"),
+      worker_row("impl-1-r1", entry: "A", outcome: "unknown", exit_reason: "boot_failure", tokens: nil,
+                              klass: "boot_failure", attempt_kind: "retry", parent_dispatch: "impl-1"),
+      worker_row("impl-1-r2", entry: "A", outcome: "accepted", exit_reason: "success", tokens: 9,
+                              klass: "completed_with_proof", attempt_kind: "retry", parent_dispatch: "impl-1-r1"),
+      worker_row("impl-2", entry: "B", outcome: "accepted", exit_reason: "success", tokens: 9, klass: "report_missing"),
+      worker_row("impl-3", entry: "C", outcome: "unknown", exit_reason: "timeout", tokens: nil, klass: "timeout"),
+      worker_row("impl-4", entry: "D", outcome: "unknown", exit_reason: "failure", tokens: nil),
+      worker_row("other", entry: "E", outcome: "unknown", exit_reason: "failure", tokens: nil, klass: "timeout",
+                          run_id: "orch-2", queue_id: "queue-other")
+    ]
+  end
+
+  def test_report_counts_outcome_classes_per_attempt_and_per_retry_family
+    report = Harnex::Orchestration.build_report(dispatch_rows: class_rows, sample_rows: [], run_id: "orch-1")
+    classes = report.dig("workers", "outcome_classes")
+
+    assert_equal(
+      { "boot_failure" => 2, "completed_with_proof" => 1, "report_missing" => 1, "timeout" => 1, "unknown" => 1 },
+      classes.fetch("attempts")
+    )
+    assert_equal 1, classes.dig("families", "boot_failure")
+    assert_equal 4, classes.fetch("family_count")
+    refute report.key?("failure_budget")
+  end
+
+  def test_failure_budget_counts_attempts_or_families_and_named_fatal_classes
+    rows = class_rows
+    attempts = Harnex::Orchestration.build_report(
+      dispatch_rows: rows, sample_rows: [], run_id: "orch-1", budget: { limit: 3, unit: "attempts" }
+    ).fetch("failure_budget")
+    assert_equal [3, 3, 2, true], attempts.values_at("consumed", "fatal_attempts", "fatal_families", "breached")
+    refute_includes attempts.fetch("fatal_classes"), "report_missing"
+
+    families = Harnex::Orchestration.build_report(
+      dispatch_rows: rows, sample_rows: [], run_id: "orch-1", budget: { limit: 3, unit: "families" }
+    ).fetch("failure_budget")
+    assert_equal [2, false], families.values_at("consumed", "breached")
+
+    proof_only = Harnex::Orchestration.build_report(
+      dispatch_rows: rows, sample_rows: [], run_id: "orch-1",
+      budget: { limit: 1, unit: "attempts", fatal_classes: %w[report_missing] }
+    ).fetch("failure_budget")
+    assert_equal [1, true], proof_only.values_at("consumed", "breached")
+  end
+
+  def test_report_selects_rows_by_queue_id
+    report = Harnex::Orchestration.build_report(dispatch_rows: class_rows, sample_rows: [], queue_id: "queue-other")
+
+    assert_equal 1, report.dig("workers", "dispatches")
+    assert_equal({ "timeout" => 1 }, report.dig("workers", "outcome_classes", "attempts"))
+    assert_raises(ArgumentError) { Harnex::Orchestration.build_report(dispatch_rows: [], sample_rows: []) }
+  end
+
+  def test_report_cli_exits_2_when_the_failure_budget_is_breached
+    Dir.mktmpdir("harnex-orchestration-budget") do |dir|
+      path = File.join(dir, "dispatch.jsonl")
+      File.write(path, class_rows.map { |row| JSON.generate(row) }.join("\n") + "\n")
+      base = ["orchestration", "report", "--dispatch", path, "--queue-id", "queue-055"]
+
+      out, = capture_io { assert_equal 2, Harnex::CLI.new(base + ["--failure-budget", "3"]).run }
+      assert_includes out, "Failure budget: 3/3 attempts"
+      assert_includes out, "BREACHED"
+      assert_includes out, "boot_failure=2"
+
+      out, = capture_io { assert_equal 0, Harnex::CLI.new(base + ["--failure-budget", "3", "--budget-unit", "families"]).run }
+      assert_includes out, "within budget"
+
+      out, = capture_io { assert_equal 0, Harnex::CLI.new(base + ["--json"]).run }
+      refute JSON.parse(out).key?("failure_budget")
+
+      [["--fatal-classes", "made_up", "--failure-budget", "1"], ["--failure-budget", "0"], ["--budget-unit", "families"]].each do |extra|
+        assert_raises(OptionParser::ParseError) { capture_io { Harnex::CLI.new(base + extra).run } }
+      end
+      assert_raises(OptionParser::ParseError) do
+        capture_io { Harnex::CLI.new(["orchestration", "report", "--dispatch", path]).run }
+      end
+    end
+  end
+
+  def test_report_usage_lists_the_whole_outcome_vocabulary
+    usage = Harnex::OrchestrationCommand.usage
+    Harnex::Session::OUTCOME_CLASSES.each { |klass| assert_includes usage, klass }
+    Harnex::Orchestration::DEFAULT_FATAL_CLASSES.each { |klass| assert_includes usage, "#{klass}*" }
+  end
+
   private
 
-  def worker_row(id, entry:, outcome:, exit_reason:, tokens:, duration_s: 1, attempt_kind: "initial")
-    {
+  def worker_row(id, entry:, outcome:, exit_reason:, tokens:, duration_s: 1, attempt_kind: "initial",
+                 klass: nil, parent_dispatch: nil, run_id: "orch-1", queue_id: "queue-055")
+    row = {
       "meta" => { "id" => id },
       "queue" => {
         "project_id" => "harnex",
-        "queue_id" => "queue-055",
+        "queue_id" => queue_id,
         "entry_id" => entry,
         "phase" => "implement",
         "intent" => "queue-work"
       },
       "orchestration" => {
-        "run_id" => "orch-1",
+        "run_id" => run_id,
         "generation_id" => "gen-worker",
         "role" => "worker"
       },
@@ -141,6 +232,9 @@ class OrchestrationTest < Minitest::Test
         "exit" => exit_reason
       }
     }
+    row["outcome"]["class"] = klass if klass
+    row["attempt"]["parent_dispatch_id"] = parent_dispatch if parent_dispatch
+    row
   end
 
   def primary_row(id, generation:, tokens:, context_tokens:)

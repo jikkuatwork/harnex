@@ -17,6 +17,14 @@ module Harnex
       terminal_tokens window_tokens terminal_percent peak_tokens peak_percent
     ].freeze
     STATUSES = %w[observed estimated unsupported missing zero].freeze
+    BUDGET_UNITS = %w[attempts families].freeze
+    # No-work and process failures. Reconstructable proof defects
+    # (report_missing/invalid/rejected), caller stops, and unknown terminals
+    # are not fatal unless a caller names them (#57).
+    DEFAULT_FATAL_CLASSES = %w[
+      completed_no_activity task_failed boot_failure permission_prompt timeout
+      disconnected_unproven process_failed
+    ].freeze
 
     module_function
 
@@ -73,20 +81,31 @@ module Harnex
       sample
     end
 
-    def report(dispatch_path:, samples_path: nil, run_id:)
+    def report(dispatch_path:, samples_path: nil, run_id: nil, queue_id: nil, budget: nil)
       build_report(
         dispatch_rows: load_jsonl(dispatch_path),
         sample_rows: samples_path ? load_jsonl(samples_path) : [],
-        run_id: run_id
+        run_id: run_id,
+        queue_id: queue_id,
+        budget: budget
       )
     end
 
-    def build_report(dispatch_rows:, sample_rows:, run_id:)
-      selected_dispatches = dispatch_rows.select { |row| dispatch_run_id(row) == run_id }
+    # Rows are selected by orchestration run id, by queue id, or by both.
+    # budget: { limit: Integer, unit: "attempts"|"families", fatal_classes: [...] }
+    def build_report(dispatch_rows:, sample_rows:, run_id: nil, queue_id: nil, budget: nil)
+      raise ArgumentError, "run_id or queue_id is required" if run_id.nil? && queue_id.nil?
+
+      selected_dispatches = dispatch_rows.select do |row|
+        row.is_a?(Hash) &&
+          (run_id.nil? || dispatch_run_id(row) == run_id) &&
+          (queue_id.nil? || dispatch_queue_id(row) == queue_id)
+      end
       samples = sample_rows.select do |row|
         row.is_a?(Hash) &&
           row["schema"].to_s == SAMPLE_SCHEMA &&
-          row["orchestration_run_id"].to_s == run_id.to_s
+          (run_id.nil? || row["orchestration_run_id"].to_s == run_id.to_s) &&
+          (queue_id.nil? || row["queue_id"].to_s == queue_id.to_s)
       end
       primary_dispatches, worker_dispatches = selected_dispatches.partition do |row|
         row.dig("orchestration", "role").to_s == "primary"
@@ -97,6 +116,7 @@ module Harnex
       generations = build_generations(primary_dispatches, samples)
       accepted_work = accepted_work_keys(worker_dispatches)
       outcome_counts = deduped_outcome_counts(worker_dispatches)
+      class_rollup = outcome_class_rollup(worker_dispatches)
       primary_usage = summarize_usage(primary_sources)
       worker_usage = summarize_usage(worker_dispatches.map { |row| row["usage"] }.compact)
       primary_tool_calls = sum_numeric(primary_dispatches.map { |row| row.dig("actual", "tool_calls") }) +
@@ -131,6 +151,7 @@ module Harnex
           "usage" => worker_usage,
           "active_s" => sum_numeric(worker_dispatches.map { |row| row.dig("actual", "duration_s") }),
           "outcomes" => outcome_counts,
+          "outcome_classes" => class_rollup.reject { |key, _value| key == "rows" },
           "accepted_work_ids" => accepted_work.sort
         },
         "ratios" => {
@@ -143,7 +164,95 @@ module Harnex
           "worker_usage_status" => worker_usage["status"],
           "primary_context_status" => summarize_context(primary_contexts)["status"]
         }
+      }.tap do |report|
+        report["failure_budget"] = evaluate_failure_budget(class_rollup, budget) if budget
+      end
+    end
+
+    # Counts outcome.class per raw attempt and per retry family. A family is
+    # the set of attempts joined by parent attempt/dispatch identity (or a
+    # reused dispatch id), so correlated retries count as one root cause.
+    def outcome_class_rollup(rows)
+      classes = rows.map { |row| outcome_class(row) }
+      families = attempt_families(rows)
+      attempts = Hash.new(0)
+      family_sets = Hash.new { |hash, key| hash[key] = [] }
+      classes.each_with_index do |klass, index|
+        attempts[klass] += 1
+        family_sets[klass] |= [families[index]]
+      end
+      {
+        "attempts" => attempts.sort.to_h,
+        "families" => family_sets.transform_values(&:length).sort.to_h,
+        "family_count" => families.uniq.length,
+        "rows" => classes.zip(families)
       }
+    end
+
+    def evaluate_failure_budget(rollup, budget)
+      limit = Integer(budget.fetch(:limit))
+      unit = budget.fetch(:unit, "attempts").to_s
+      raise ArgumentError, "budget unit must be one of #{BUDGET_UNITS.join(', ')}" unless BUDGET_UNITS.include?(unit)
+
+      fatal = Array(budget[:fatal_classes] || DEFAULT_FATAL_CLASSES).map(&:to_s).uniq
+      fatal_rows = rollup.fetch("rows").select { |klass, _family| fatal.include?(klass) }
+      consumed = unit == "families" ? fatal_rows.map(&:last).uniq.length : fatal_rows.length
+      {
+        "limit" => limit,
+        "unit" => unit,
+        "fatal_classes" => fatal,
+        "consumed" => consumed,
+        "fatal_attempts" => fatal_rows.length,
+        "fatal_families" => fatal_rows.map(&:last).uniq.length,
+        # A budget of N is exhausted by the Nth fatal failure.
+        "breached" => consumed >= limit
+      }
+    end
+
+    def outcome_class(row)
+      klass = string_value(row.dig("outcome", "class"))
+      Harnex::Session::OUTCOME_CLASSES.include?(klass) ? klass : "unknown"
+    end
+
+    def attempt_families(rows)
+      parent = (0...rows.length).to_a
+      find = lambda do |index|
+        index = parent[index] = parent[parent[index]] while parent[index] != index
+        index
+      end
+      # The earliest row stays the root, so a family is named by its first dispatch.
+      union = lambda do |a, b|
+        roots = [find.call(a), find.call(b)].sort
+        parent[roots.last] = roots.first
+      end
+      by_attempt = {}
+      by_dispatch = {}
+      rows.each_with_index do |row, index|
+        attempt_id = string_value(row.dig("attempt", "id"))
+        dispatch_id = string_value(row.dig("attempt", "run_id")) || string_value(row.dig("meta", "id"))
+        by_attempt[attempt_id] ||= index if attempt_id
+        next unless dispatch_id
+
+        if by_dispatch.key?(dispatch_id)
+          union.call(by_dispatch[dispatch_id], index)
+        else
+          by_dispatch[dispatch_id] = index
+        end
+      end
+      rows.each_with_index do |row, index|
+        parent_index = by_attempt[string_value(row.dig("attempt", "parent_attempt_id"))] ||
+                       by_dispatch[string_value(row.dig("attempt", "parent_dispatch_id")) ||
+                                   string_value(row.dig("meta", "parent_dispatch_id"))]
+        union.call(parent_index, index) if parent_index
+      end
+      rows.each_index.map do |index|
+        root = rows[find.call(index)]
+        string_value(root.dig("attempt", "run_id")) || string_value(root.dig("meta", "id")) || "row-#{find.call(index)}"
+      end
+    end
+
+    def dispatch_queue_id(row)
+      row.dig("queue", "queue_id") || row.dig("orchestration", "queue_id")
     end
 
     def load_jsonl(path)
