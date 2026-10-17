@@ -34,7 +34,7 @@ module Harnex
       --stall-after --max-resumes --preset --context --meta
       --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
       --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime --fast --legacy-pty
-      --allow-live-parent --help
+      --allow-live-parent --final-gate --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
     # Attempt kinds that redo the parent's work; dispatching one while the
@@ -44,6 +44,7 @@ module Harnex
       --id --description --host --port --watch --watch-file --stall-after
       --max-resumes --preset --context --meta --artifact-report
       --validation-report --on-done --max-runtime --cwd --root --timeout --inbox-ttl
+      --final-gate
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
     def self.usage(program_name = "harnex run")
@@ -76,6 +77,11 @@ module Harnex
           --require-artifact-report
                              Compatibility strict-proof flag; a default harness receipt
                              path is used when no explicit path is provided
+          --final-gate CMD   Declare a final acceptance command (repeatable; or meta
+                             "final_gates": [...]). The receipt's validation.status
+                             then reports the last observed exit of each gate,
+                             matched by exact command string; earlier failures
+                             stay visible as validation.commands_had_failures
           --project-id ID    Queue telemetry project id (first-class flags override --meta)
           --queue-id ID      Queue telemetry queue id
           --entry-id ID      Queue telemetry entry id
@@ -134,6 +140,9 @@ module Harnex
           Every dispatch gets a harness-authored receipt. Workers may write only
           optional claims to HARNEX_ARTIFACT_CLAIMS_PATH; claims never accept work.
           Explicit --stall-after/--max-resumes values override --preset defaults.
+          --final-gate is receipt diagnostics, not proof: replay the gate commands
+          yourself before accepting work. Only adapters that observe command exits
+          (codex app-server, pi) can pass a gate; PTY dispatches report unknown.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
           Wrapper options may appear before or after <cli>.
@@ -194,6 +203,7 @@ module Harnex
         inbox_ttl: default_inbox_ttl,
         fast: false,
         legacy_pty: false,
+        final_gates: [],
         help: false
       }
     end
@@ -209,6 +219,7 @@ module Harnex
       validate_auto_stop_context!
       validate_required_artifact_report!
       apply_telemetry_options!
+      apply_final_gates!
       validate_attempt_metadata!
       validate_orchestration_metadata!
       validate_required_attribution!
@@ -657,6 +668,11 @@ module Harnex
           @options[:require_attribution] = true
         when "--fast"
           @options[:fast] = true
+        when "--final-gate"
+          index += 1
+          @options[:final_gates] << required_option_value(arg, argv[index])
+        when /\A--final-gate=(.+)\z/
+          @options[:final_gates] << required_option_value("--final-gate", Regexp.last_match(1))
         when "--meta"
           index += 1
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
@@ -830,6 +846,27 @@ module Harnex
       # a stale PI_SESSION_ID from that server.
       defaults = primary.empty? ? {} : { "orchestration_session_id" => primary }
       @options[:meta] = defaults.merge(@options[:meta] || {}).merge(explicit)
+    end
+
+    # Gates travel in meta so tmux/detached children and dispatch rows carry
+    # them without a second transport. --final-gate appends to meta's list.
+    def apply_final_gates!
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      declared = metadata["final_gates"]
+      unless declared.nil? || (declared.is_a?(Array) && declared.all? { |gate| gate.is_a?(String) })
+        raise OptionParser::InvalidOption, "harnex run: meta final_gates must be an array of command strings"
+      end
+      return if @options[:final_gates].empty?
+
+      gates = Array(declared) + @options[:final_gates]
+      if gates.any? { |gate| gate.strip.empty? }
+        raise OptionParser::InvalidOption, "harnex run: --final-gate needs a non-empty command"
+      end
+      if gates.uniq.length > ArtifactReport::MAX_FINAL_GATES
+        raise OptionParser::InvalidOption, "harnex run: at most #{ArtifactReport::MAX_FINAL_GATES} final gates"
+      end
+
+      @options[:meta] = metadata.merge("final_gates" => gates.uniq)
     end
 
     def validate_attempt_metadata!

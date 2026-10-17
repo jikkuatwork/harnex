@@ -1,8 +1,9 @@
 ---
-status: open
+status: resolved
 priority: P3
 issue_kind: slice
 created: 2026-08-08
+updated: 2026-10-18
 tags: telemetry, receipts, validation, dispatch
 ---
 
@@ -50,3 +51,26 @@ Precedent shape: #57 outcome classes, #59 runner primitives.
   supervisor verbatim replay of declared final commands as the acceptance
   proof; this issue is receipt ergonomics/diagnostics only.
 - Exact-string matching only; no fuzzy command matching in v1.
+
+## Resolution
+
+Implemented 2026-10-18 as proposed, with these concrete choices:
+
+- `harnex run --final-gate '<cmd>'` (repeatable) appends to meta
+  `final_gates`; meta is the single transport, so tmux/detached children and
+  dispatch rows carry the gates. At most 20 gates.
+- Receipt `validation` gains `commands_had_failures` (tracked by the session
+  across the whole history, not the 50-command window) and `final_gates`
+  `{declared, observed_pass, observed_fail, missing, status, gates[]}`.
+- Each gate is decided by its last observed run. Matching is exact after
+  unwrapping a single `bash -lc`/`sh -c`-style transport wrapper (not fuzzy).
+- A never-observed gate is `fail` under complete observation and `unknown`
+  under `partial`/`unsupported` observation; status therefore extends the
+  proposal's enum with `unknown`.
+- Acceptance unchanged: `validate --final`, outcome classes and supervisor
+  replay are untouched. Undeclared ⇒ legacy semantics, `status: undeclared`.
+
+Tests: receipt unit tests in `test/harnex/artifact_report_test.rb`, Pi session
+tests in `test/harnex/runtime/session_pi_rpc_test.rb` (including a failure
+outside the retained window), and run flag parsing in
+`test/harnex/commands/run_test.rb`. Docs: `docs/dispatch-telemetry.md`.

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Final gates: `harnex run --final-gate '<cmd>'` (repeatable; or meta
+  `final_gates`) declares final acceptance commands. Receipts gain
+  `validation.commands_had_failures` (whole-history, harness-observed) and
+  `validation.final_gates` (`declared`, `observed_pass`, `observed_fail`,
+  `missing`, `status: pass|fail|unknown|undeclared`, per-gate last exit).
+  With gates declared, `validation.status` reports them, so an exploratory or
+  intermediate failure no longer marks a green final run as `fail`. Matching
+  is exact, after unwrapping a single `bash -lc`/`sh -c` transport wrapper.
+  Without gates, behavior is unchanged. Diagnostics only: acceptance and
+  outcome classes do not change (#68).
+
 ### Changed
 
 - `harnex status` (default current-repo view) now says how many sessions are

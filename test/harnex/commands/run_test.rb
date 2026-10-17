@@ -101,6 +101,27 @@ class RunnerTest < Minitest::Test
     assert_equal "clean_context_rotation", opts[:meta]["orchestration_rotation_reason"]
   end
 
+  def test_final_gate_flags_append_to_meta_final_gates
+    argv = ["pi", "--meta", '{"final_gates":["rake lint"]}', "--final-gate", "rake test", "--final-gate=rake lint"]
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_final_gates!)
+
+    assert_equal ["rake lint", "rake test"], runner.instance_variable_get(:@options)[:meta]["final_gates"]
+  end
+
+  def test_final_gates_reject_malformed_meta_and_blank_commands
+    bad_meta = ["pi", "--meta", '{"final_gates":"rake test"}']
+    runner = Harnex::Runner.new(bad_meta)
+    runner.send(:extract_wrapper_options, bad_meta)
+    assert_raises(OptionParser::InvalidOption) { runner.send(:apply_final_gates!) }
+
+    blank = ["pi", "--final-gate", "  "]
+    runner = Harnex::Runner.new(blank)
+    runner.send(:extract_wrapper_options, blank)
+    assert_raises(OptionParser::InvalidOption) { runner.send(:apply_final_gates!) }
+  end
+
   def test_validate_orchestration_metadata_rejects_unknown_role
     runner = Harnex::Runner.new(["codex", "--orchestration-role", "coordinator"])
     runner.send(:extract_wrapper_options, ["codex", "--orchestration-role", "coordinator"])

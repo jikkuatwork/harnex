@@ -172,6 +172,11 @@ module Harnex
       @observed_commands = []
       @pi_pending_commands = {}
       @pi_unobserved_commands = 0
+      # Final gates and the failure flag cover the whole command history; the
+      # retained @observed_commands window is capped at MAX_COMMANDS (#68).
+      @final_gates = Harnex::ArtifactReport.normalize_final_gates(meta.is_a?(Hash) ? meta["final_gates"] : nil)
+      @final_gate_exits = {}
+      @commands_had_failures = false
       @artifact_claims = {}
       @artifact_claims_loaded = false
       @artifact_report_generated = false
@@ -1193,9 +1198,29 @@ module Harnex
       @observed_commands_mutex.synchronize do
         @observed_commands << observed
         @observed_commands = @observed_commands.last(Harnex::ArtifactReport::MAX_COMMANDS)
+        note_command_exit_locked(command, exit_code)
       end
     rescue ArgumentError, TypeError
       nil
+    end
+
+    # Exact-string gate matching against harness-observed exits; the last
+    # run of a gate decides it. Caller holds @observed_commands_mutex.
+    def note_command_exit_locked(command, exit_code)
+      @commands_had_failures = true unless exit_code.zero?
+      @final_gates.each do |gate|
+        @final_gate_exits[gate] = exit_code if Harnex::ArtifactReport.final_gate_matches?(gate, command)
+      end
+    end
+
+    def final_gates_snapshot
+      @observed_commands_mutex.synchronize do
+        @final_gates.map { |gate| { "cmd" => gate, "exit_code" => @final_gate_exits[gate] } }
+      end
+    end
+
+    def commands_had_failures?
+      @observed_commands_mutex.synchronize { @commands_had_failures }
     end
 
     def pi_command_tool?(message)
@@ -1249,6 +1274,7 @@ module Harnex
           "duration_s" => duration
         }.compact
         @observed_commands = @observed_commands.last(Harnex::ArtifactReport::MAX_COMMANDS)
+        note_command_exit_locked(command, exit_code)
       end
     end
 
@@ -2056,7 +2082,9 @@ module Harnex
         claims: @artifact_claims,
         command_observation: command_observation_status,
         commands_unobserved: unobserved_command_count,
-        stop: @stop_request&.to_h
+        stop: @stop_request&.to_h,
+        final_gates: final_gates_snapshot,
+        commands_had_failures: commands_had_failures?
       )
       @artifact_report_generated = true
       @artifact_report_write_error = nil

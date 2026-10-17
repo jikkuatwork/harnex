@@ -341,6 +341,108 @@ class ArtifactReportTest < Minitest::Test
     end
   end
 
+  # --- #68: final gates separate from command history ---
+
+  def gate_receipt_attributes(commands:, final_gates:, command_observation: "observed", commands_had_failures: nil)
+    {
+      id: "pi-i-68", session_id: "session-gates", generated_at: Time.now.utc,
+      successful: true, outcome_status: "accepted", outcome_summary: "Harnex observed accepted completion.",
+      git: { status: "unavailable" }, commands: commands,
+      turn: { status: "completed", task_complete: true, task_failed: false, accepted: true },
+      usage: { status: "missing" }, claims: {}, command_observation: command_observation,
+      final_gates: final_gates, commands_had_failures: commands_had_failures
+    }
+  end
+
+  def test_declared_final_gates_decide_validation_while_history_flag_keeps_exploratory_failures
+    Dir.mktmpdir("harnex-final-gates") do |dir|
+      path = File.join(dir, "receipt.json")
+      commands = [
+        { "cmd" => "rg -n nothing nowhere/", "exit_code" => 2 },
+        { "cmd" => "rake test", "exit_code" => 0 }
+      ]
+      result = Harnex::ArtifactReport.write_observed(
+        path, **gate_receipt_attributes(commands: commands, final_gates: [{ "cmd" => "rake test", "exit_code" => 0 }])
+      )
+
+      assert result.ok, result.diagnostics.inspect
+      validation = JSON.parse(File.read(path)).fetch("validation")
+      assert_equal "pass", validation["status"]
+      assert_equal true, validation["commands_had_failures"]
+      assert_equal "pass", validation.dig("final_gates", "status")
+      assert_equal [{ "cmd" => "rake test", "exit_code" => 0 }], validation.dig("final_gates", "gates")
+
+      ingested = Harnex::ArtifactReport.ingest(path).fetch("validation")
+      assert_equal true, ingested["commands_had_failures"]
+      assert_equal(
+        { "status" => "pass", "declared" => 1, "observed_pass" => 1, "observed_fail" => 0, "missing" => 0 },
+        ingested["final_gates"]
+      )
+    end
+  end
+
+  def test_failed_or_missing_final_gate_fails_and_partial_observation_reads_unknown
+    failed = Harnex::ArtifactReport.build_observed(**gate_receipt_attributes(
+      commands: [{ "cmd" => "rake test", "exit_code" => 1 }],
+      final_gates: [{ "cmd" => "rake test", "exit_code" => 1 }, { "cmd" => "rake lint", "exit_code" => 0 }]
+    ))
+    assert_equal "fail", failed.dig("validation", "status")
+    assert_equal 1, failed.dig("validation", "final_gates", "observed_fail")
+
+    missing = gate_receipt_attributes(commands: [], final_gates: [{ "cmd" => "rake test", "exit_code" => nil }])
+    assert_equal "fail", Harnex::ArtifactReport.build_observed(**missing).dig("validation", "status")
+    %w[partial unsupported].each do |observation|
+      document = Harnex::ArtifactReport.build_observed(**missing, command_observation: observation)
+      assert_equal "unknown", document.dig("validation", "status"), observation
+      assert_equal 1, document.dig("validation", "final_gates", "missing")
+    end
+  end
+
+  def test_undeclared_final_gates_keep_legacy_validation
+    document = Harnex::ArtifactReport.build_observed(**gate_receipt_attributes(
+      commands: [{ "cmd" => "false", "exit_code" => 1 }, { "cmd" => "true", "exit_code" => 0 }],
+      final_gates: nil
+    ))
+    assert_equal "fail", document.dig("validation", "status")
+    assert_equal true, document.dig("validation", "commands_had_failures")
+    assert_equal({ "declared" => 0, "observed_pass" => 0, "status" => "undeclared" }, document.dig("validation", "final_gates"))
+
+    # The session's whole-history flag wins over the capped command window.
+    windowed = Harnex::ArtifactReport.build_observed(**gate_receipt_attributes(
+      commands: [{ "cmd" => "true", "exit_code" => 0 }], final_gates: nil, commands_had_failures: true
+    ))
+    assert_equal "fail", windowed.dig("validation", "status")
+  end
+
+  def test_final_gate_matching_is_exact_after_unwrapping_a_shell_transport
+    assert Harnex::ArtifactReport.final_gate_matches?("rake test", "rake test")
+    assert Harnex::ArtifactReport.final_gate_matches?("rake test", "/bin/bash -lc 'rake test'")
+    assert Harnex::ArtifactReport.final_gate_matches?("rake test", "sh -c 'rake test'")
+    refute Harnex::ArtifactReport.final_gate_matches?("rake test", "rake test ")
+    refute Harnex::ArtifactReport.final_gate_matches?("rake test", "bash -lc 'rake test && true'")
+    refute Harnex::ArtifactReport.final_gate_matches?("rake test", "python -c 'rake test'")
+    refute Harnex::ArtifactReport.final_gate_matches?("rake test", "bash -lc 'unterminated")
+    assert_equal ["a", "b"], Harnex::ArtifactReport.normalize_final_gates([" a ", "", "b", "a", 7])
+  end
+
+  def test_final_gates_are_validated_when_present
+    document = Harnex::ArtifactReport.build_observed(**gate_receipt_attributes(
+      commands: [], final_gates: [{ "cmd" => "rake test", "exit_code" => 0 }]
+    ))
+    assert_empty Harnex::ArtifactReport.validate_document(document)
+
+    document["validation"]["final_gates"]["status"] = "maybe"
+    document["validation"]["final_gates"]["declared"] = -1
+    document["validation"]["final_gates"]["gates"] = [{ "cmd" => "", "exit_code" => "0" }]
+    document["validation"]["commands_had_failures"] = "no"
+    paths = Harnex::ArtifactReport.validate_document(document).map { |item| item.fetch("path") }
+    assert_includes paths, "$.validation.final_gates.status"
+    assert_includes paths, "$.validation.final_gates.declared"
+    assert_includes paths, "$.validation.final_gates.gates[0].cmd"
+    assert_includes paths, "$.validation.final_gates.gates[0].exit_code"
+    assert_includes paths, "$.validation.commands_had_failures"
+  end
+
   def test_observed_validation_rejects_unknown_command_observation_and_bad_unobserved_count
     Dir.mktmpdir("harnex-observed-enum") do |dir|
       path = File.join(dir, "receipt.json")

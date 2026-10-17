@@ -484,6 +484,42 @@ and accepted/no-change outcome instead of letting an intermediate command exit
 rewrite the harness verdict. Queue policy may impose a stricter command gate by
 inspecting `observed.commands`.
 
+Final gates (#68) separate acceptance from command history. Declare them with
+repeatable `harnex run --final-gate '<cmd>'` (or meta `"final_gates": [...]`,
+which `--final-gate` appends to). The receipt then carries:
+
+```json
+"validation": {
+  "status": "pass",
+  "commands_had_failures": true,
+  "final_gates": {
+    "declared": 1, "observed_pass": 1, "observed_fail": 0, "missing": 0,
+    "status": "pass",
+    "gates": [{ "cmd": "rake test", "exit_code": 0 }]
+  }
+}
+```
+
+- A gate matches an observed command by exact string. A structured adapter's
+  single-shell transport wrapper (`bash -lc '<cmd>'`, `sh -c '<cmd>'`) is
+  unwrapped first; the inner script must still equal the gate exactly.
+- Each gate is decided by its **last** observed run, so an intermediate
+  failure followed by a green final run passes.
+- A gate that never ran is `fail` when command observation was complete, and
+  `unknown` when it was `partial` or `unsupported` (PTY transports), since it
+  may be among the unobserved calls.
+- With gates declared, `validation.status` is the gate status. Without them,
+  `final_gates.status` is `undeclared` and `validation.status` keeps the
+  any-failure semantics above.
+- `commands_had_failures` covers the session's whole command history, not only
+  the retained 50-command window.
+- Dispatch rows keep `commands_had_failures` and the final-gate counts and
+  status, without the gate command text.
+
+This is receipt ergonomics, not proof: `validate --final` and outcome classes
+do not change, and supervisors should still replay declared final commands
+verbatim before accepting work.
+
 Reviewers can write one optional input file at
 `HARNEX_ARTIFACT_CLAIMS_PATH`:
 

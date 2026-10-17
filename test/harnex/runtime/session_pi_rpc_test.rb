@@ -413,6 +413,78 @@ class SessionPiRpcTest < Minitest::Test
     JSON.parse(File.read(Harnex::DispatchHistory.path_for(@tmp)).lines.last)
   end
 
+  # --- #68: final gates against harness-observed exits ---
+
+  def use_final_gates(gates)
+    @session = Harnex::Session.new(
+      adapter: @adapter, command: ["pi", "--mode", "rpc"], repo_root: @tmp,
+      host: "127.0.0.1", id: "pi-jsonl", meta: { "final_gates" => gates }
+    )
+    @session.send(:prepare_output_log)
+    @session.send(:prepare_events_log)
+  end
+
+  def pi_bash(call_id, command, exit_code)
+    capture_io do
+      pi_tool_start(call_id, "bash", { "command" => command })
+      pi_tool_end(call_id, "bash", exit_code: exit_code, is_error: !exit_code.zero?)
+    end
+  end
+
+  def test_final_gate_green_after_exploratory_and_intermediate_failures_validates_pass
+    use_final_gates(["rake test"])
+    pi_bash("c1", "rg -n absent missing/", 2)
+    pi_bash("c2", "rake test", 1)
+    pi_bash("c3", "rake test", 0)
+
+    record = finalized_record
+
+    assert_equal "pass", record.dig("validation", "status")
+    assert_equal true, record.dig("validation", "commands_had_failures")
+    assert_equal(
+      { "status" => "pass", "declared" => 1, "observed_pass" => 1, "observed_fail" => 0, "missing" => 0 },
+      record.dig("validation", "final_gates")
+    )
+    receipt = JSON.parse(File.read(@session.artifact_report_path))
+    assert_equal [{ "cmd" => "rake test", "exit_code" => 0 }], receipt.dig("validation", "final_gates", "gates")
+  end
+
+  def test_final_gate_whose_last_run_fails_validates_fail
+    use_final_gates(["rake test", "ruby -c lib/a.rb"])
+    pi_bash("c1", "rake test", 0)
+    pi_bash("c2", "ruby -c lib/a.rb", 0)
+    pi_bash("c3", "ruby -c lib/a.rb", 1)
+
+    record = finalized_record
+
+    assert_equal "fail", record.dig("validation", "status")
+    assert_equal 1, record.dig("validation", "final_gates", "observed_fail")
+  end
+
+  def test_failure_outside_the_retained_command_window_still_sets_history_flag
+    use_final_gates(["make check"])
+    pi_bash("early", "make broken", 2)
+    Harnex::ArtifactReport::MAX_COMMANDS.times { |index| pi_bash("ok-#{index}", "true #{index}", 0) }
+    pi_bash("gate", "make check", 0)
+
+    record = finalized_record
+
+    assert(record.dig("observed", "commands").all? { |entry| entry["exit_code"].zero? })
+    assert_equal true, record.dig("validation", "commands_had_failures")
+    assert_equal "pass", record.dig("validation", "status")
+  end
+
+  def test_without_final_gates_validation_keeps_any_failure_semantics
+    pi_bash("c1", "false", 1)
+    pi_bash("c2", "true", 0)
+
+    record = finalized_record
+
+    assert_equal "fail", record.dig("validation", "status")
+    assert_equal "undeclared", record.dig("validation", "final_gates", "status")
+    assert_equal true, record.dig("validation", "commands_had_failures")
+  end
+
   def test_pi_bash_success_and_failure_are_observed_with_integer_exits
     pi_tool_start("call_ok", "bash", { "command" => "ruby -c lib/a.rb", "timeout" => 10 })
     pi_tool_end("call_ok", "bash", exit_code: 0, duration_ms: 1500)

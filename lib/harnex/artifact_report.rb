@@ -1,6 +1,7 @@
 require "digest"
 require "fileutils"
 require "json"
+require "shellwords"
 require "time"
 
 module Harnex
@@ -14,11 +15,17 @@ module Harnex
     MAX_STRING_LENGTH = 2_000
     MAX_DIAGNOSTICS = 100
     MAX_CHANGED_PATHS = 200
+    MAX_FINAL_GATES = 20
     RECEIPT_VERSION = 1
     CLAIM_SEVERITIES = %w[P1 P2 P3].freeze
     COMMAND_OBSERVATION_STATUSES = %w[observed partial unsupported].freeze
     GIT_OBSERVATION_STATUSES = %w[observed unavailable].freeze
     USAGE_STATUSES = %w[observed estimated unsupported missing zero].freeze
+    FINAL_GATE_STATUSES = %w[pass fail unknown undeclared].freeze
+    # Shells a structured adapter may wrap a model command in (`bash -lc
+    # '<cmd>'`). Unwrapping that transport layer is not fuzzy matching: the
+    # inner script must still equal the declared gate exactly.
+    FINAL_GATE_SHELLS = %w[sh bash zsh dash].freeze
 
     REPORT_STATUSES = %w[in_progress pass fail blocked unknown].freeze
     VALIDATION_STATUSES = %w[in_progress pass fail not_run unknown].freeze
@@ -252,10 +259,62 @@ module Harnex
       {}
     end
 
+    # Declared final gates as given to `harnex run --final-gate` (or meta
+    # `final_gates`): non-empty, bounded, de-duplicated, order kept.
+    def normalize_final_gates(value)
+      Array(value).filter_map do |gate|
+        next unless gate.is_a?(String)
+
+        text = gate.strip
+        text.empty? ? nil : bounded_string(text)
+      end.uniq.first(MAX_FINAL_GATES)
+    end
+
+    def final_gate_matches?(gate, command)
+      return false unless gate.is_a?(String) && command.is_a?(String)
+      return true if command == gate
+
+      inner = shell_wrapped_script(command)
+      !inner.nil? && inner == gate
+    end
+
+    # gates: [{"cmd" => String, "exit_code" => Integer or nil}], where
+    # exit_code is the harness-observed exit of the gate's LAST run.
+    # A gate never observed fails only when command observation was complete;
+    # otherwise it may be among the unobserved calls and reads unknown.
+    def final_gates_summary(gates, command_observation:)
+      entries = Array(gates).filter_map do |gate|
+        next unless gate.is_a?(Hash) && non_empty_string?(gate["cmd"])
+
+        { "cmd" => bounded_string(gate["cmd"]), "exit_code" => integer_or_nil(gate["exit_code"]) }
+      end.first(MAX_FINAL_GATES)
+      return { "declared" => 0, "observed_pass" => 0, "status" => "undeclared" } if entries.empty?
+
+      passed = entries.count { |entry| entry["exit_code"]&.zero? }
+      failed = entries.count { |entry| entry["exit_code"] && !entry["exit_code"].zero? }
+      missing = entries.count { |entry| entry["exit_code"].nil? }
+      status = if failed.positive?
+                 "fail"
+               elsif missing.positive?
+                 command_observation.to_s == "observed" ? "fail" : "unknown"
+               else
+                 "pass"
+               end
+      {
+        "declared" => entries.length,
+        "observed_pass" => passed,
+        "observed_fail" => failed,
+        "missing" => missing,
+        "status" => status,
+        "gates" => entries
+      }
+    end
+
     def build_observed(
       id:, session_id:, generated_at:, successful:, outcome_status:,
       outcome_summary:, git:, commands:, turn:, usage:, claims:,
-      command_observation:, stop: nil, commands_unobserved: 0
+      command_observation:, stop: nil, commands_unobserved: 0,
+      final_gates: nil, commands_had_failures: nil
     )
       observed_commands = compact_commands(commands).select do |entry|
         non_empty_string?(entry["cmd"]) && entry["exit_code"].is_a?(Integer)
@@ -265,9 +324,21 @@ module Harnex
       turn_payload = compact_observed_turn(turn)
       usage_payload = compact_observed_usage(usage)
       claims_payload = compact_claims(claims)
-      # Commands that ran without structured exit evidence keep an otherwise
-      # clean history from reading as a pass.
-      validation_status = if observed_commands.any? { |entry| !entry["exit_code"].zero? }
+      # The session tracks failures across its whole history; the retained
+      # command window is capped, so it is only the fallback.
+      had_failures = if commands_had_failures.nil?
+                       observed_commands.any? { |entry| !entry["exit_code"].zero? }
+                     else
+                       !!commands_had_failures
+                     end
+      gates = final_gates_summary(final_gates, command_observation: command_observation)
+      # Declared final gates decide validation; exploratory failures before a
+      # green final run stay visible in commands_had_failures (#68). Without
+      # gates, commands that ran without structured exit evidence keep an
+      # otherwise clean history from reading as a pass.
+      validation_status = if gates["status"] != "undeclared"
+                            gates["status"]
+                          elsif had_failures
                             "fail"
                           elsif unobserved.positive?
                             "unknown"
@@ -292,7 +363,9 @@ module Harnex
         "validation" => {
           "status" => validation_status,
           "commands" => observed_commands,
-          "final_reported" => true
+          "final_reported" => true,
+          "commands_had_failures" => had_failures,
+          "final_gates" => gates
         },
         "artifacts" => [],
         "receipt" => {
@@ -468,12 +541,61 @@ module Harnex
       end
 
       validate_commands(value["commands"], diagnostics) if value.key?("commands")
-      if value.key?("final_reported") && !boolean?(value["final_reported"])
+      %w[final_reported commands_had_failures].each do |key|
+        next unless value.key?(key) && !boolean?(value[key])
+
         diagnostics << diagnostic(
           "boolean_required",
-          "$.validation.final_reported",
-          "validation.final_reported must be true or false"
+          "$.validation.#{key}",
+          "validation.#{key} must be true or false"
         )
+      end
+      validate_final_gates(value["final_gates"], diagnostics) if value.key?("final_gates")
+    end
+
+    def validate_final_gates(value, diagnostics)
+      unless value.is_a?(Hash)
+        diagnostics << diagnostic("object_required", "$.validation.final_gates", "validation.final_gates must be an object")
+        return
+      end
+
+      unless FINAL_GATE_STATUSES.include?(value["status"])
+        diagnostics << diagnostic(
+          "enum",
+          "$.validation.final_gates.status",
+          "validation.final_gates.status must be one of #{FINAL_GATE_STATUSES.join(', ')}"
+        )
+      end
+      %w[declared observed_pass observed_fail missing].each do |key|
+        next if !value.key?(key) && !%w[declared observed_pass].include?(key)
+        next if value[key].is_a?(Integer) && value[key] >= 0
+
+        diagnostics << diagnostic(
+          "integer_required",
+          "$.validation.final_gates.#{key}",
+          "validation.final_gates.#{key} must be a non-negative integer"
+        )
+      end
+      return unless value.key?("gates")
+
+      unless value["gates"].is_a?(Array) && value["gates"].length <= MAX_FINAL_GATES
+        diagnostics << diagnostic(
+          "array_required",
+          "$.validation.final_gates.gates",
+          "validation.final_gates.gates must be an array of at most #{MAX_FINAL_GATES} gates"
+        )
+        return
+      end
+      value["gates"].each_with_index do |gate, index|
+        path = "$.validation.final_gates.gates[#{index}]"
+        unless gate.is_a?(Hash)
+          diagnostics << diagnostic("object_required", path, "final gate must be an object")
+          next
+        end
+        validate_required_string(gate, "cmd", "#{path}.cmd", diagnostics)
+        next if gate["exit_code"].nil? || gate["exit_code"].is_a?(Integer)
+
+        diagnostics << diagnostic("integer_required", "#{path}.exit_code", "final gate exit_code must be an integer or null")
       end
     end
 
@@ -1043,8 +1165,32 @@ module Harnex
       payload["status"] = bounded_string_or_nil(value["status"])
       payload["commands"] = compact_commands(value["commands"])
       payload["final_reported"] = !!value["final_reported"] if value.key?("final_reported")
+      payload["commands_had_failures"] = value["commands_had_failures"] if boolean?(value["commands_had_failures"])
+      payload["final_gates"] = compact_final_gates(value["final_gates"])
       payload.delete_if { |_key, item| item.nil? || item == [] }
       payload.empty? ? nil : payload
+    end
+
+    # Dispatch rows keep the counts and status, not the gate command text.
+    def compact_final_gates(value)
+      return nil unless value.is_a?(Hash) && FINAL_GATE_STATUSES.include?(value["status"])
+
+      compact = { "status" => value["status"] }
+      %w[declared observed_pass observed_fail missing].each do |key|
+        compact[key] = value[key] if value[key].is_a?(Integer) && value[key] >= 0
+      end
+      compact
+    end
+
+    def shell_wrapped_script(command)
+      words = Shellwords.split(command)
+      return nil unless words.length == 3
+      return nil unless FINAL_GATE_SHELLS.include?(File.basename(words[0]))
+      return nil unless %w[-c -lc].include?(words[1])
+
+      words[2]
+    rescue ArgumentError
+      nil
     end
 
     def compact_commands(value)
