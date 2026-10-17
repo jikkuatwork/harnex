@@ -49,6 +49,9 @@
   session was not started with `--auto-stop`, and again if its turn settles
   while the wait is blocked, pointing at `--until done`. Events from an
   earlier run of the same id are ignored. Status JSON gains `auto_stop` (#49).
+- Events JSONL `ts` now has millisecond precision (`iso8601(3)`), so teardown
+  races can be measured from the events log (#36/#37 follow-up). Readers that
+  parse ISO-8601 are unaffected; older rows keep whole seconds.
 
 ### Fixed
 

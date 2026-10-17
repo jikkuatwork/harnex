@@ -39,7 +39,8 @@ Every row includes this envelope:
 
 - `schema_version` (Integer): always `1`
 - `seq` (Integer): monotonic per session, starts at `1`
-- `ts` (String): UTC ISO-8601 timestamp
+- `ts` (String): UTC ISO-8601 timestamp with millisecond precision
+  (`2026-05-01T11:30:00.123Z`; rows before 0.16.0 have whole seconds)
 - `id` (String): session ID
 - `type` (String): event type
 

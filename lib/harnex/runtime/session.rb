@@ -3054,7 +3054,9 @@ module Harnex
         event = {
           schema_version: 1,
           seq: @events_log_seq,
-          ts: Time.now.utc.iso8601,
+          # Millisecond precision lets teardown races be measured from the
+          # events log (#36/#37); readers parse it with Time.iso8601.
+          ts: Time.now.utc.iso8601(3),
           id: id,
           type: type
         }.merge(payload)
