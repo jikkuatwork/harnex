@@ -1418,7 +1418,10 @@ class RunnerTest < Minitest::Test
       assert_equal "completed", JSON.parse(File.read(marker)).fetch("outcome")
     ensure
       capture_io { Harnex::Stopper.new(["--id", id, "--repo", repo]).run } rescue nil if id
-      wait_until(5) { Harnex.read_registry(repo, id).nil? } rescue nil if id
+      # The registry goes last, after the dispatch row lands in the repo. Under
+      # full-suite load teardown can exceed 5s; removing the tmpdir earlier
+      # races those writes (ENOTEMPTY).
+      wait_until(20) { Harnex.read_registry(repo, id).nil? } rescue nil if id
     end
   end
 
