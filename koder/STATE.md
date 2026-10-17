@@ -35,3 +35,5 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 2. Continue #56. #76 (`watch --stall-after`) is a P3 follow-up with open
    design questions in the issue.
 3. Publish only when separately authorized (#72).
+4. #77 (P3, from Holm 2026-10-17): one owner-scoped event stream so Claude Code supervisors
+   get #72-style completion and stall lines without per-worker pollers.
