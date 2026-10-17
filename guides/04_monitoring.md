@@ -167,6 +167,10 @@ signal, from any cwd in the same repo:
   `dispatch_end` row.
 - `harnex wait --until done` blocks while the session's pid is alive, up to
   `--timeout`. "No signal yet" from a live worker is never terminal.
+- A bare `harnex wait` (no `--until`) fences process exit. A session started
+  without `--auto-stop` stays alive at its prompt after its turn, so stderr
+  carries a `note:` on entry and again if the turn settles mid-wait; switch
+  to `--until done`. `status --json` exposes `auto_stop`.
 
 A monitor consulting these signals can never classify a healthy mid-run
 worker as dead. If `status` says running, do not dispatch a replacement.

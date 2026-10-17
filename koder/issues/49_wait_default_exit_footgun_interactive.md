@@ -1,11 +1,12 @@
 ---
-status: open
+status: resolved
 priority: P2
+updated: 2026-10-18
 ---
 
 # Issue 49 — `harnex wait` (default exit mode) silently hangs on interactive agents that already completed
 
-**Status**: open
+**Status**: resolved (2026-10-18)
 **Priority**: P2
 **Filed**: 2026-06-01
 **Source incident**: Holm, dispatch `cx-p-500` (Plan 500 / Issue 397)
@@ -68,3 +69,16 @@ completion." The default `harnex wait` does the non-obvious thing for the most
 common agent type (interactive), and fails *silently* (timeout, not error). A
 one-line guard converts a 30-minute silent hang into an immediate course
 correction.
+
+## Resolution
+
+Option 2 landed earlier as `wait --until done` (work fence with an exit-code
+contract). Option 1 landed 2026-10-18: a bare `wait` on a live session that
+was not started with `--auto-stop` prints a stderr `note:` on entry ("already
+reached task_complete …" when it has), and once more if `task_complete` or
+`task_failed` arrives while the wait is blocked. Events older than the
+session's `started_at` (an earlier run that reused the id) are ignored, and
+`--auto-stop` sessions get no hint. Status/registry JSON gains `auto_stop` so
+the waiter can tell. Option 3 (a changed `run` payload) was not needed and was
+left out to keep the run JSON stable. Tests: four `bare_wait` cases in
+`test/harnex/commands/wait_test.rb`.

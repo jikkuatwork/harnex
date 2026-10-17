@@ -550,6 +550,40 @@ class WaiterTest < Minitest::Test
     FileUtils.rm_rf(dispatch_dir) if dispatch_dir
   end
 
+  # --- bare wait hints (#49) ---
+
+  def test_bare_wait_hints_on_entry_and_when_turn_settles_mid_wait
+    run_bare_wait_scenario(auto_stop: false) do |events_path, id|
+      sleep 0.3
+      File.write(events_path, JSON.generate(seq: 9, ts: Time.now.utc.iso8601, id: id, type: "task_complete") + "\n", mode: "a")
+      sleep 0.8
+    end => { err: }
+
+    assert_includes err, "was not started with --auto-stop"
+    assert_includes err, "reached task_complete but is still alive"
+    assert_equal 2, err.scan("Use --until done").length, "entry and mid-wait notes, once each"
+  end
+
+  def test_bare_wait_on_already_settled_session_says_so_once
+    run_bare_wait_scenario(auto_stop: false, settled_before: true) { sleep 0.8 } => { err: }
+
+    assert_includes err, "already reached task_complete and stays alive"
+    assert_equal 1, err.scan("Use --until done").length
+  end
+
+  def test_bare_wait_ignores_settled_events_from_a_previous_run_of_the_id
+    run_bare_wait_scenario(auto_stop: false, stale_settled: true) { sleep 0.8 } => { err: }
+
+    refute_includes err, "already reached"
+    assert_includes err, "was not started with --auto-stop"
+  end
+
+  def test_bare_wait_on_auto_stop_session_prints_no_hint
+    run_bare_wait_scenario(auto_stop: true) { sleep 0.3 } => { err: }
+
+    refute_includes err, "--until done"
+  end
+
   # --- wait-until-state detects process exit ---
 
   def test_until_prompt_returns_1_when_process_exits
@@ -583,5 +617,52 @@ class WaiterTest < Minitest::Test
     end
   ensure
     FileUtils.rm_f(registry_path) if registry_path
+  end
+
+  private
+
+  # Runs a bare `harnex wait` against a live fake session. The block runs in
+  # a thread while wait blocks; afterwards the child is killed and an exit
+  # file written so wait returns. Returns captured stderr.
+  def run_bare_wait_scenario(auto_stop:, settled_before: false, stale_settled: false)
+    prev_grace = ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"]
+    ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"] = "2"
+    repo_root = Dir.pwd
+    id = "bare-wait-#{$$}-#{rand(1_000_000)}"
+    registry_path = Harnex.registry_path(repo_root, id)
+    exit_path = Harnex.exit_status_path(repo_root, id)
+    events_path = Harnex.events_log_path(repo_root, id)
+    FileUtils.mkdir_p(File.dirname(events_path))
+    started_at = Time.now.utc
+    child_pid = spawn("sleep", "10")
+
+    File.write(events_path, "")
+    if stale_settled
+      File.write(events_path, JSON.generate(seq: 1, ts: (started_at - 3600).iso8601, id: id, type: "task_complete") + "\n")
+    end
+    if settled_before
+      File.write(events_path, JSON.generate(seq: 2, ts: started_at.iso8601, id: id, type: "task_complete") + "\n", mode: "a")
+    end
+    Harnex.write_registry(registry_path, {
+      "id" => id, "pid" => child_pid, "host" => "127.0.0.1", "port" => 19_997,
+      "repo_root" => repo_root, "started_at" => started_at.iso8601, "auto_stop" => auto_stop
+    })
+
+    driver = Thread.new do
+      yield events_path, id
+      Process.kill("KILL", child_pid)
+      Process.wait(child_pid)
+      File.write(exit_path, JSON.generate(ok: true, id: id, exit_code: 0, status: "exited"))
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    end
+
+    _out, err = capture_io { assert_equal 0, Harnex::Waiter.new(["--id", id]).run }
+    { err: err }
+  ensure
+    ENV["HARNEX_EXIT_STATUS_GRACE_SECONDS"] = prev_grace
+    reap_thread(driver)
+    reap_process(child_pid)
+    [registry_path, exit_path, events_path].compact.each { |path| FileUtils.rm_f(path) }
   end
 end

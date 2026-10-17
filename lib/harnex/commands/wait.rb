@@ -67,6 +67,8 @@ module Harnex
 
         Gotchas:
           done is the safest work-level fence for monitors.
+          A bare wait returns only on process exit; sessions without
+          --auto-stop stay alive after their turn (stderr notes say so).
           While the session's pid is alive, --until done blocks (up to
           --timeout); "no signal yet" from a live worker is never terminal.
           task_complete/task_failed are event predicates; prompt/busy are live state polls.
@@ -650,6 +652,7 @@ module Harnex
       target_pid = registry["pid"]
       observe(state: "running", pid: target_pid)
       warn("harnex wait: watching session #{@options[:id]} (pid #{target_pid})")
+      hint = exit_wait_hint(repo_root, registry)
 
       loop do
         unless Harnex.alive_pid?(target_pid)
@@ -664,8 +667,66 @@ module Harnex
           return 1
         end
 
+        if hint && (settled = settled_event_type(hint))
+          warn("harnex wait: note: #{@options[:id]} reached #{settled} but is still alive; " \
+               "this wait still returns only on process exit. Use --until done for a work-level fence.")
+          hint = nil
+        end
+
         sleep POLL_INTERVAL
       end
+    end
+
+    # A bare wait fences process exit, but an interactive session stays alive
+    # at its prompt after a turn. Say so on entry, and once more if the turn
+    # settles mid-wait, so a waiter on the wrong predicate learns it before
+    # its timeout (#49). --auto-stop sessions exit on their own: no hint.
+    # Returns the event-scan cursor for the mid-wait check, or nil when done.
+    def exit_wait_hint(repo_root, registry)
+      return nil if registry["auto_stop"] == true
+
+      cursor = {
+        path: Harnex.events_log_path(repo_root, @options[:id]),
+        offset: 0,
+        min_ts: parse_wait_time(registry["started_at"])
+      }
+      if (settled = settled_event_type(cursor))
+        warn("harnex wait: note: #{@options[:id]} already reached #{settled} and stays alive at its prompt; " \
+             "this wait returns only on process exit. Use --until done for a work-level fence.")
+        return nil
+      end
+
+      reason =
+        if registry["auto_stop"] == false
+          "was not started with --auto-stop, so it stays alive after its turn"
+        else
+          "may stay alive at its prompt after its turn unless started with --auto-stop"
+        end
+      warn("harnex wait: note: #{@options[:id]} #{reason}; this wait returns only on process exit. " \
+           "Use --until done for a work-level fence.")
+      cursor
+    end
+
+    def settled_event_type(cursor)
+      path = cursor[:path]
+      return nil unless File.exist?(path) && File.size(path) > cursor[:offset]
+
+      File.open(path, "r") do |f|
+        f.seek(cursor[:offset])
+        f.each_line do |line|
+          # Only whole lines advance the cursor; a partial tail is re-read.
+          break unless line.end_with?("\n")
+
+          cursor[:offset] = f.pos
+          event = parse_event(line)
+          next unless event
+          next if stale_event?(event, cursor[:min_ts])
+
+          type = event_type(event)
+          return type if %w[task_complete task_failed].include?(type)
+        end
+      end
+      nil
     end
 
     # Subprocess death races the parent's DISPATCH-row write; the exit-status

@@ -9,6 +9,10 @@
   "No active harnex sessions" that read as global emptiness when workers run
   in sibling worktrees. `--repo`, `--all` and `--json` output is unchanged
   (#26).
+- A bare `harnex wait` (process-exit fence) prints a stderr `note:` when the
+  session was not started with `--auto-stop`, and again if its turn settles
+  while the wait is blocked, pointing at `--until done`. Events from an
+  earlier run of the same id are ignored. Status JSON gains `auto_stop` (#49).
 
 ### Fixed
 

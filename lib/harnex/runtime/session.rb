@@ -324,7 +324,8 @@ module Harnex
         output_log_path: output_log_path,
         events_log_path: events_log_path,
         artifact_report_path: artifact_report_path,
-        artifact_claims_path: artifact_claims_path
+        artifact_claims_path: artifact_claims_path,
+        auto_stop: @auto_stop
       }
       payload.merge!(log_activity_snapshot)
       payload[:activity] = @activity.snapshot
