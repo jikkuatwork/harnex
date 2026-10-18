@@ -212,6 +212,7 @@ module Harnex
 
   class TerminalWatcher
     TIMEOUT_EXIT_CODE = 124
+    STALLED_EXIT_CODE = 4 # Waiter::DONE_EXIT_STALLED (wait.rb loads after this file)
 
     def initialize(
       id:,
@@ -219,6 +220,7 @@ module Harnex
       until_state: "done",
       max_wait: nil,
       heartbeat: nil,
+      stall_after: nil,
       done_marker: nil,
       fail_marker: nil,
       stop_on_terminal: false,
@@ -230,6 +232,7 @@ module Harnex
       @until_state = until_state.to_s.strip.empty? ? "done" : until_state.to_s
       @max_wait = max_wait
       @heartbeat = heartbeat
+      @stall_after = stall_after
       @done_marker = done_marker
       @fail_marker = fail_marker
       @stop_on_terminal = stop_on_terminal
@@ -252,7 +255,8 @@ module Harnex
         write_marker(@fail_marker, payload, outcome: outcome, exit_code: exit_code)
       end
 
-      stop_session if @stop_on_terminal && outcome != :timeout
+      # Timeouts and stalls are observer verdicts: the worker keeps running.
+      stop_session if @stop_on_terminal && !%i[timeout stalled].include?(outcome)
       exit_code
     end
 
@@ -262,6 +266,7 @@ module Harnex
       argv = ["--id", @id, "--repo", @repo_path, "--until", @until_state]
       argv += ["--timeout", @max_wait.to_s] if @max_wait
       argv += ["--heartbeat", @heartbeat.to_s] if @heartbeat
+      argv += ["--stall-after", @stall_after.to_s] if @stall_after
 
       # Buffer only the one final JSON result for marker classification.
       # Diagnostics (including heartbeats) stream directly to the caller.
@@ -282,6 +287,7 @@ module Harnex
 
     def classify(exit_code, payload)
       return :timeout if exit_code == TIMEOUT_EXIT_CODE || payload["status"].to_s == "timeout"
+      return :stalled if exit_code == STALLED_EXIT_CODE || payload["status"].to_s == "stalled"
       return :success if exit_code.to_i.zero? && (payload.empty? || payload["ok"] != false)
 
       :failed
@@ -343,6 +349,9 @@ module Harnex
           --max-wait DUR       Hard observer cap (examples: 900, 15m, 2h)
           --timeout DUR        Alias for --max-wait
           --heartbeat DUR      Flush observed progress to stderr (default: off)
+          --stall-after DUR    Exit 4 when the session shows no progress for DUR
+                               (Pi/structured: model/tool/turn events in an active
+                               turn; PTY: transcript idle). Observes only.
           --done-marker PATH   Write a JSON marker when work completes successfully
           --fail-marker PATH   Write a JSON marker when work fails
           --stop-on-terminal   Stop the live session after success/failure (not on timeout)
@@ -351,9 +360,13 @@ module Harnex
         `harnex watch` is the safe watcher for existing --tmux or detached
         dispatches. Exit codes follow the `harnex wait --until done` contract:
         0 accepted work, 1 failed, 2 completed-but-proof-rejected, 3 no such
-        session, 124 for --max-wait timeouts.
+        session, 4 stalled (--stall-after), 124 for --max-wait timeouts.
+        Stalls and timeouts write no marker and skip --stop-on-terminal.
 
-        For launch-and-babysit stall recovery, use `harnex run --watch`.
+        For launch-and-babysit stall recovery, use `harnex run --watch`: it
+        nudges with "resume" on output-log idle and is independent of this
+        observer. If both run, set --stall-after here above run's
+        stall-after x (max-resumes + 1).
       TEXT
     end
 
@@ -365,6 +378,7 @@ module Harnex
         until_state: "done",
         max_wait: nil,
         heartbeat: nil,
+        stall_after: nil,
         done_marker: nil,
         fail_marker: nil,
         stop_on_terminal: false,
@@ -387,6 +401,7 @@ module Harnex
         until_state: @options[:until_state],
         max_wait: @options[:max_wait],
         heartbeat: @options[:heartbeat],
+        stall_after: @options[:stall_after],
         done_marker: @options[:done_marker],
         fail_marker: @options[:fail_marker],
         stop_on_terminal: @options[:stop_on_terminal]
@@ -409,6 +424,9 @@ module Harnex
         end
         opts.on("--heartbeat DUR", "Flush progress to stderr") do |value|
           @options[:heartbeat] = Waiter.duration(value, option_name: "--heartbeat")
+        end
+        opts.on("--stall-after DUR", "Exit 4 after DUR without progress") do |value|
+          @options[:stall_after] = Waiter.duration(value, option_name: "--stall-after")
         end
         opts.on("--done-marker PATH", "Write marker on successful completion") { |value| @options[:done_marker] = value }
         opts.on("--fail-marker PATH", "Write marker on failed completion") { |value| @options[:fail_marker] = value }

@@ -183,6 +183,7 @@ worker as dead. If `status` says running, do not dispatch a replacement.
 | `1` | `failed` | Work failed, process failed, or killed |
 | `2` | `rejected_proof` | Completed but proof rejected (`completed_no_activity`, `report_missing`, `report_invalid`, `report_rejected`) |
 | `3` | `no_such_session` | No live, start, event, or terminal signal for the id |
+| `4` | `stalled` | `--stall-after DUR`: no progress for DUR; worker is not stopped |
 | `124` | `timeout` | Observer cap elapsed before a result was obtained; worker is not stopped |
 
 The JSON payload always carries `wait_result` plus the work-state fields
@@ -190,6 +191,32 @@ The JSON payload always carries `wait_result` plus the work-state fields
 process's own exit code is reported as data (`exit_code`), never passed
 through as wait's exit status. Treat `2` as a work-acceptance failure, `3` as
 a coordination error (wrong id or wrong repo), and only `0` as success.
+
+### Stall detection (`--stall-after`)
+
+`harnex watch --stall-after DUR` (and `wait --until done --stall-after DUR`)
+exits `4` once the live session shows no progress for `DUR`. The worker is not
+nudged or stopped, and no done/fail marker is written. The result carries
+`stall: {clock, idle_s, threshold_s}`:
+
+- `clock: activity` (Pi and other structured adapters): seconds since the
+  latest turn start, model event, or tool event. It counts only while a turn
+  is active, so a session idle at its prompt between turns never stalls. A
+  command that prints nothing for longer than `DUR` counts as a stall too,
+  which also catches hung commands, so choose `DUR` above your longest quiet
+  build or test.
+- `clock: output_log` (PTY adapters): seconds since the transcript last
+  changed. This is conservative, because TUIs redraw spinners.
+
+```bash
+harnex watch --id pi-i-NN --until done --stall-after 25m --max-wait 4h
+case $? in 0) ;; 4) echo "stalled: inspect, nudge or stop it" ;; *) echo "not done" ;; esac
+```
+
+This replaces polling `activity.model_idle_s` yourself. `harnex run --watch
+--stall-after` is a separate babysitter that sends `resume` on output-log
+idle. If both run, set watch's `DUR` above run's `stall-after × (max-resumes
++ 1)`.
 
 ## Duplicate-Dispatch Guard
 

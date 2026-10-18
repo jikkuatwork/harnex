@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `harnex watch --stall-after DUR` (and `wait --until done --stall-after DUR`)
+  exits 4 (`wait_result: stalled`) once the live session shows no progress for
+  DUR, leaving the worker running. Pi and other structured adapters use the
+  most recent turn-start/model/tool event during an active turn
+  (`clock: activity`); PTY adapters fall back to transcript idle
+  (`clock: output_log`). Stalls write no marker and skip
+  `--stop-on-terminal`. The predicate (`Harnex::Stall`) is shared for #77
+  (#76).
+
 ## [0.16.0] - 2026-10-18 | 12:55 AM | +04
 
 Owner-authorized local-only release. Owner decision (2026-10-18): Harnex is

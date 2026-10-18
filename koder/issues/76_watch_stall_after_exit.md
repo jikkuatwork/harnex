@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P3
 created: 2026-10-16
 updated: 2026-10-18
@@ -47,3 +47,28 @@ The open questions above are resolved:
    the same as a timeout.
 
 The predicate lives in one shared module so #77's `stalled` event can reuse it.
+
+## Resolution
+
+Implemented 2026-10-18 per the decisions above.
+
+- `harnex watch --stall-after DUR` and `harnex wait --until done --stall-after
+  DUR` (`wait` rejects the flag for other predicates). The status API is polled
+  every `min(max(DUR/4, 0.5s), 15s)`. On a stall the command prints
+  `{status: "stalled", wait_result: "stalled", work_state: "running",
+  stall: {clock, idle_s, threshold_s}}`, exits **4**, and leaves the worker
+  running. Watch writes no marker and skips `--stop-on-terminal`.
+- `Harnex::Stall` (`lib/harnex/stall.rb`) is the shared predicate: `activity`
+  clock = `min(turn_age_s, model_idle_s, tool_idle_s)` during an active turn;
+  `output_log` clock = `log_idle_s` for PTY; nil for settled work or an
+  inactive structured turn. #77 can reuse it.
+- `run --watch` is unchanged; usage and `guides/04_monitoring.md` document the
+  relationship and the exit code.
+
+Verification: `test/harnex/stall_test.rb` and
+`test/harnex/commands/wait_stall_test.rb` (structured stall → 4, below
+threshold → keeps waiting to done, PTY fallback, flag validation, watch with
+no marker and no stop). Live on Pi 1.3.0 (checkout): a dispatch running a
+silent `sleep 45` tripped `watch --stall-after 20s` at 24s (`clock=activity`;
+Pi emits no tool events during a silent command) with the worker still busy;
+a follow-up `watch` returned 0 when the turn completed.

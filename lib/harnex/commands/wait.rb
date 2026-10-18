@@ -20,7 +20,10 @@ module Harnex
     DONE_EXIT_FAILED = 1
     DONE_EXIT_REJECTED_PROOF = 2
     DONE_EXIT_NO_SESSION = 3
+    DONE_EXIT_STALLED = 4
     DONE_EXIT_TIMEOUT = 124
+    # Stall checks poll the live status API; detection lags by at most this.
+    STALL_POLL_MAX_INTERVAL = 15.0
 
     # Outcome classes where the process completed but the work was not
     # accepted: proof was missing, invalid, rejected, or nothing happened.
@@ -49,10 +52,16 @@ module Harnex
           --timeout DUR   Hard observer cap (seconds, or suffix s/m/h; default: unlimited)
           --max-wait DUR  Alias for --timeout
           --heartbeat DUR  Flush observed progress to stderr at this interval (default: off)
+          --stall-after DUR
+                          With --until done: exit 4 when the live session shows no
+                          progress for DUR (Pi/structured: model, tool or turn
+                          events during an active turn; PTY: transcript idle).
+                          Never nudges or stops the worker.
           -h, --help      Show this help
 
         Common patterns:
           #{program_name} --id cx-i-42 --until done --timeout 900
+          #{program_name} --id pi-i-42 --until done --stall-after 25m --timeout 4h
           #{program_name} --id cx-i-42 --until task_complete --timeout 900
           #{program_name} --id cx-i-42 --until prompt --timeout 120
           #{program_name} --id cx-i-42
@@ -63,6 +72,7 @@ module Harnex
           2    completed but proof rejected (completed_no_activity,
                report_missing, report_invalid, report_rejected)
           3    no such session (no live, start, event, or terminal signal)
+          4    stalled: no progress for --stall-after (worker left running)
           124  observer deadline elapsed (does not stop the worker)
 
         Gotchas:
@@ -109,6 +119,7 @@ module Harnex
         repo_path: Dir.pwd,
         timeout: nil,
         heartbeat: nil,
+        stall_after: nil,
         help: false
       }
     end
@@ -123,6 +134,9 @@ module Harnex
       end
 
       raise "--id is required for harnex wait" unless @options[:id]
+      if @options[:stall_after] && @options[:until_state] != "done"
+        raise OptionParser::InvalidOption, "--stall-after requires --until done"
+      end
 
       @started_at = monotonic
       @observation = { "state" => "unknown", "last_event" => "unknown", "seq" => nil }
@@ -501,6 +515,7 @@ module Harnex
       task_complete_seen = false
       observed_live = nil
       session_started_at = nil
+      next_stall_check = nil
 
       loop do
         live = live_session(repo_root)
@@ -513,6 +528,12 @@ module Harnex
         status, offset, task_complete_seen =
           scan_events(events_path, offset, "done", task_complete_seen, start_time, min_ts: session_started_at)
         return status if status
+
+        if @options[:stall_after] && live && (next_stall_check.nil? || monotonic >= next_stall_check)
+          next_stall_check = monotonic + stall_poll_interval
+          stall = Harnex::Stall.stalled(fetch_status_payload(live), @options[:stall_after])
+          return emit_stall(stall, start_time) if stall
+        end
 
         unless live
           if observed_live
@@ -537,6 +558,37 @@ module Harnex
 
         sleep EVENT_POLL_INTERVAL
       end
+    end
+
+    def stall_poll_interval
+      [[@options[:stall_after] / 4.0, 0.5].max, STALL_POLL_MAX_INTERVAL].min
+    end
+
+    # Only a registry row has the live API; start-record liveness cannot be
+    # probed, so a stall stays unobserved there rather than guessed.
+    def fetch_status_payload(live)
+      return nil unless live["host"] && live["port"]
+
+      uri = URI("http://#{live['host']}:#{live['port']}/status")
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{live['token']}" if live["token"]
+      response = Net::HTTP.start(uri.host, uri.port, open_timeout: 1, read_timeout: 2) { |http| http.request(request) }
+      return nil unless response.is_a?(Net::HTTPSuccess)
+
+      JSON.parse(response.body)
+    rescue StandardError
+      nil
+    end
+
+    # The worker is left running: this is an observer verdict, like a timeout.
+    def emit_stall(stall, start_time)
+      waited = (monotonic - start_time).round(1)
+      warn("harnex wait: #{@options[:id]} shows no progress for #{stall['idle_s'].round}s " \
+           "(clock=#{stall['clock']}, threshold #{stall['threshold_s'].round}s); worker left running")
+      puts JSON.generate(ok: false, id: @options[:id], status: "stalled", wait_result: "stalled",
+                         state: "running", process_state: "running", terminal: false, task_complete: false,
+                         done: false, work_state: "running", stall: stall, waited_seconds: waited)
+      DONE_EXIT_STALLED
     end
 
     # Registry row first; when it is not visible from this context, an
@@ -892,6 +944,9 @@ module Harnex
         end
         opts.on("--heartbeat DUR", "Flush progress to stderr") do |value|
           @options[:heartbeat] = self.class.duration(value, option_name: "--heartbeat")
+        end
+        opts.on("--stall-after DUR", "With --until done: exit 4 after DUR without progress") do |value|
+          @options[:stall_after] = self.class.duration(value, option_name: "--stall-after")
         end
         opts.on("-h", "--help", "Show help") { @options[:help] = true }
       end
