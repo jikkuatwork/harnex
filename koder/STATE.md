@@ -24,9 +24,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 - **Owner decision 2026-10-18: local installs only, no RubyGems publication.**
   Release = suite green → `gem build` → `gem install --local` → smoke →
   release record; skip `bin/gem-push`, tag and push.
-- **Codex is unusable on this machine:** its configured OpenAI API key returns
-  `401 invalid_api_key` (`harnex preflight codex` reports it in ~20s). Live
-  Codex verification of final-gate command matching is pending a working key.
+- **Codex is deferred (owner, 2026-10-18): no longer used.** Its local API key
+  returns 401; do not spend effort on Codex verification or Codex-only work.
+  Pi is the dispatch adapter.
 - Pi is **1.3.0** (`pi update` says current). Run `pi update` before Pi work.
 - The `harnex` mise shim needs a directory with a Ruby version (run from a
   project dir; pass `--cwd` for scratch repos).
