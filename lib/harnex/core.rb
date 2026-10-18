@@ -412,6 +412,27 @@ module Harnex
     COMPLETION_OUTCOMES.map { |outcome| completion_marker_path(repo_root, id, outcome) }
   end
 
+  # The external primary that owns dispatches launched from this shell: Pi's
+  # shell tool sets PI_SESSION_ID, Claude Code's Bash sets
+  # CLAUDE_CODE_SESSION_ID (Pi wins if both leaked in). A nested Harnex
+  # worker (HARNEX_ID) is never an eligible owner of its own children, and a
+  # runner the outer launcher already resolved (tmux hand-off) ignores
+  # ambient ids that may be the tmux server's stale environment.
+  def ambient_owner_id(env = ENV)
+    return nil unless env["HARNEX_ID"].to_s.strip.empty?
+    return nil if env["HARNEX_OWNER_RESOLVED"] == "1"
+
+    %w[PI_SESSION_ID CLAUDE_CODE_SESSION_ID].each do |key|
+      value = env[key].to_s.strip
+      return value unless value.empty?
+    end
+    nil
+  end
+
+  def owned_notifications_dir(owner_id)
+    File.join(STATE_DIR, "notifications", Digest::SHA256.hexdigest(owner_id.to_s))
+  end
+
   # Both keys are opaque identities, not paths or reusable dispatch names.
   # Records are retained until the owner reconciles them; normal id reuse and
   # marker cleanup must never delete another attempt's pending delivery.

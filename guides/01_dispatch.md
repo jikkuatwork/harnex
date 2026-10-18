@@ -118,7 +118,8 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
 ```
 
 When `harnex run` is invoked by a Pi shell tool, it captures `PI_SESSION_ID`
-before crossing detached/tmux process boundaries. The session registers a
+(from a Claude Code Bash shell, `CLAUDE_CODE_SESSION_ID`; Pi's wins if both
+are present) before crossing detached/tmux process boundaries. The session registers a
 per-owner, per-attempt record under `$HARNEX_STATE_DIR/notifications/` before
 sending the structured initial prompt, then atomically settles that record at
 the first typed outcome. A nested Harnex worker never implicitly nominates

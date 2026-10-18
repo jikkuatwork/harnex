@@ -341,9 +341,12 @@ module Harnex
     def self.usage(program_name = "harnex watch")
       <<~TEXT
         Usage: #{program_name} --id ID [options]
+               #{program_name} --owner [ID] [--stall-after DUR] [--max-wait DUR]
 
         Options:
-          --id ID              Existing session ID to watch (required)
+          --id ID              Existing session ID to watch
+          --owner [ID]         Stream every dispatch this owner started (see below);
+                               ID defaults to $PI_SESSION_ID or $CLAUDE_CODE_SESSION_ID
           --until done         Watch work-level terminal state (default: done)
           --repo PATH          Resolve session using PATH's repo root (default: current repo)
           --max-wait DUR       Hard observer cap (examples: 900, 15m, 2h)
@@ -362,6 +365,15 @@ module Harnex
         0 accepted work, 1 failed, 2 completed-but-proof-rejected, 3 no such
         session, 4 stalled (--stall-after), 124 for --max-wait timeouts.
         Stalls and timeouts write no marker and skip --stop-on-terminal.
+
+        Owner stream (--owner): runs until killed or --max-wait (exit 124) and
+        prints one JSON line (schema harnex.owner_event.v1, with a readable
+        `msg`) per change: started, done, rejected, failed, stalled (with
+        --stall-after), stopped, timeout. No heartbeats. On start it repeats
+        `started` for running dispatches and delivers results not yet
+        delivered to this owner; a cursor prevents repeats across restarts.
+        Built for Claude Code's Monitor tool, e.g.:
+          #{program_name} --owner --stall-after 25m
 
         For launch-and-babysit stall recovery, use `harnex run --watch`: it
         nudges with "resume" on output-log idle and is independent of this
@@ -382,6 +394,8 @@ module Harnex
         done_marker: nil,
         fail_marker: nil,
         stop_on_terminal: false,
+        owner: nil,
+        owner_flag: false,
         help: false
       }
     end
@@ -392,6 +406,8 @@ module Harnex
         puts self.class.usage
         return 0
       end
+
+      return run_owner_stream if @options[:owner_flag]
 
       raise "--id is required for harnex watch" unless @options[:id]
 
@@ -410,10 +426,35 @@ module Harnex
 
     private
 
+    def run_owner_stream
+      if @options[:id]
+        raise OptionParser::InvalidOption, "--owner and --id are mutually exclusive"
+      end
+      unsupported = { done_marker: "--done-marker", fail_marker: "--fail-marker",
+                      stop_on_terminal: "--stop-on-terminal", heartbeat: "--heartbeat" }
+                    .select { |key, _flag| @options[key] }.values
+      unless unsupported.empty?
+        raise OptionParser::InvalidOption, "#{unsupported.join(', ')} cannot be combined with --owner"
+      end
+
+      owner = @options[:owner].to_s.strip
+      owner = Harnex.ambient_owner_id.to_s if owner.empty?
+      if owner.empty?
+        raise OptionParser::MissingArgument,
+              "--owner ID (no $PI_SESSION_ID or $CLAUDE_CODE_SESSION_ID to default to)"
+      end
+
+      OwnerStream.new(owner_id: owner, stall_after: @options[:stall_after], max_wait: @options[:max_wait]).run
+    end
+
     def parser
       @parser ||= OptionParser.new do |opts|
         opts.banner = "Usage: harnex watch --id ID [options]"
         opts.on("--id ID", "Existing session ID to watch") { |value| @options[:id] = Harnex.normalize_id(value) }
+        opts.on("--owner [ID]", "Stream every dispatch this owner started") do |value|
+          @options[:owner_flag] = true
+          @options[:owner] = value
+        end
         opts.on("--until STATE", "Watch until terminal state") { |value| @options[:until_state] = value }
         opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--max-wait DUR", "Hard observer cap") do |value|

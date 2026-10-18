@@ -279,7 +279,9 @@ module Harnex
 
     def run_in_tmux(cli_name, child_args, repo_root)
       harnex_bin = File.expand_path("../../../bin/harnex", __dir__)
-      tmux_cmd = [harnex_bin, "run", cli_name]
+      # The owner was resolved here, before tmux; the inner runner must not
+      # adopt an ambient id from the tmux server's (possibly stale) env.
+      tmux_cmd = ["env", "HARNEX_OWNER_RESOLVED=1", harnex_bin, "run", cli_name]
       tmux_cmd += ["--id", @options[:id]]
       tmux_cmd += ["--description", @options[:description]] if @options[:description]
       tmux_cmd += ["--host", @options[:host]]
@@ -836,10 +838,10 @@ module Harnex
 
     def apply_telemetry_options!
       explicit = @options[:telemetry]
-      # A nested Harnex worker's PI_SESSION_ID identifies the worker itself,
+      # A nested Harnex worker's session id identifies the worker itself,
       # which is intentionally not an eligible primary consumer. Nested
       # orchestration must name its external primary explicitly.
-      primary = ENV["HARNEX_ID"].to_s.strip.empty? ? ENV["PI_SESSION_ID"].to_s.strip : ""
+      primary = Harnex.ambient_owner_id.to_s
       return if explicit.empty? && primary.empty?
 
       # Capture the invoker before tmux switches to the server environment.

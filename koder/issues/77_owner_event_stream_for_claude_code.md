@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P3
 created: 2026-10-17
 updated: 2026-10-18
@@ -75,3 +75,39 @@ Sources: the #72 owner records (`running` at registration, settled outcome),
 enriched with the dispatch row's #57 class for `error` settlements
 (`timeout`, `stopped_by_caller`), plus live status through `Harnex::Stall`
 for `stalled`, emitted once per episode and re-armed after progress.
+
+## Resolution
+
+Implemented 2026-10-18 per the decisions above.
+
+- `harnex watch --owner [ID] [--stall-after DUR] [--max-wait DUR]`
+  (`lib/harnex/owner_stream.rb`). It rejects `--id`, the markers,
+  `--stop-on-terminal` and `--heartbeat`, and exits 124 at `--max-wait`.
+  Interrupt exits 0.
+- Events and mapping: a `running` record → `started`; `completed` → `done`;
+  `rejected` → `rejected`; `failed`/`error` → the dispatch row's #57 class
+  (`timeout` → `timeout`, `stopped_by_caller` → `stopped`, else `failed`),
+  waiting up to 5s for the row; a dead runner with an unsettled record →
+  `failed` with `reason: runner_gone` (once); `stalled` from `Harnex::Stall`,
+  once per episode and re-armed after progress, for this exact attempt
+  (registry `session_id` must match).
+- Owner identity: `Harnex.ambient_owner_id` (`PI_SESSION_ID`, then
+  `CLAUDE_CODE_SESSION_ID`; none inside a Harnex worker or after the tmux
+  hand-off, which now runs `env HARNEX_OWNER_RESOLVED=1 harnex run ...`).
+- Cursor: `notifications/<sha(owner)>/watch/cursor.json` (delivered session
+  ids, pruned when records vanish). The Pi consumer's top-level records and
+  `consumer/` directory are untouched.
+- The `harnex status --json` consumer fields and the Monitor recipe are
+  documented in `guides/04_monitoring.md`.
+
+Verification: `test/harnex/owner_stream_test.rb` (11 tests, real
+`CompletionNotifier` records) plus owner-resolution tests in `run_test.rb`.
+Live acceptance in a Claude Code session: `Monitor` on
+`harnex watch --owner --stall-after 20s` with three concurrent Pi dispatches
+auto-owned by `CLAUDE_CODE_SESSION_ID` delivered exactly one `started` and one
+terminal line per dispatch (`done` ×2, plus the stopped worker) and one
+`stalled` line per silent session. A live finding fixed in the same change:
+Pi settles a manually stopped turn as `failed`, so `failed` settlements are
+enriched from the row too; the re-run reported `stopped` /
+`stopped_by_caller`. A restarted stream repeated none of the delivered
+results.

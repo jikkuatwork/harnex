@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `harnex watch --owner [ID]`: one owner-scoped stream of compact JSON lines
+  (`harnex.owner_event.v1`, with a readable `msg`) for every dispatch an owner
+  started: `started`, `done`, `rejected`, `failed`, `stalled` (with
+  `--stall-after`), `stopped`, `timeout`. No heartbeats; runs until killed or
+  `--max-wait`. A per-owner cursor delivers each result once across restarts.
+  Built for Claude Code's `Monitor` (#77).
+- `harnex run` from a Claude Code Bash shell records `CLAUDE_CODE_SESSION_ID`
+  as the dispatch owner, as Pi does with `PI_SESSION_ID` (Pi's wins if both
+  are set; explicit `--orchestration-session-id` wins over both). The tmux
+  hand-off marks the owner resolved, so a tmux server's stale environment
+  cannot re-attribute a dispatch.
+- Documented the stable `harnex status --json` fields for status-line and
+  panel consumers.
+
 ## [0.16.1] - 2026-10-18 | 12:41 PM | +04
 
 Owner-authorized local-only release (no RubyGems publication).

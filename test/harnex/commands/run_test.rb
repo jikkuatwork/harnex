@@ -1437,6 +1437,26 @@ class RunnerTest < Minitest::Test
 
   # --tmux flag parsing (issue #20)
 
+  def test_claude_code_session_becomes_the_owner_unless_pi_or_explicit_wins
+    with_env("PI_SESSION_ID" => nil, "HARNEX_ID" => nil, "HARNEX_OWNER_RESOLVED" => nil,
+             "CLAUDE_CODE_SESSION_ID" => "claude-primary-1") do
+      runner = Harnex::Runner.new(["pi"])
+      runner.send(:extract_wrapper_options, ["pi"])
+      runner.send(:apply_telemetry_options!)
+      assert_equal "claude-primary-1", runner.instance_variable_get(:@options).dig(:meta, "orchestration_session_id")
+
+      with_env("PI_SESSION_ID" => "pi-primary-1") do
+        assert_equal "pi-primary-1", Harnex.ambient_owner_id
+      end
+
+      explicit = ["pi", "--orchestration-session-id", "named-primary"]
+      runner = Harnex::Runner.new(explicit)
+      runner.send(:extract_wrapper_options, explicit)
+      runner.send(:apply_telemetry_options!)
+      assert_equal "named-primary", runner.instance_variable_get(:@options).dig(:meta, "orchestration_session_id")
+    end
+  end
+
   def test_pi_primary_identity_survives_tmux_environment_and_explicit_metadata_wins
     with_env("PI_SESSION_ID" => "outer-pi-primary") do
       argv = ["codex", "--id", "tmux-owner", "--tmux", "tmux-owner"]
@@ -1451,7 +1471,9 @@ class RunnerTest < Minitest::Test
       runner.stub(:system, lambda { |*args| captured = args; true }) do
         capture_io { runner.send(:run_in_tmux, "codex", [], Dir.pwd) }
       end
-      inner_argv = Shellwords.split(captured.last).drop(2)
+      shell_words = Shellwords.split(captured.last)
+      assert_equal ["env", "HARNEX_OWNER_RESOLVED=1"], shell_words.first(2), "the tmux hand-off marks the owner resolved"
+      inner_argv = shell_words.drop(4)
       with_env("PI_SESSION_ID" => "stale-tmux-environment") do
         inner = Harnex::Runner.new(inner_argv)
         inner.send(:extract_wrapper_options, inner_argv)
@@ -1469,6 +1491,15 @@ class RunnerTest < Minitest::Test
         nested.send(:extract_wrapper_options, ["pi"])
         nested.send(:apply_telemetry_options!)
         assert_nil nested.instance_variable_get(:@options)[:meta], "a worker must not address completion to itself"
+      end
+
+      # An outer launcher with no owner must not let the tmux server's stale
+      # ambient id claim the dispatch on the inner side.
+      with_env("PI_SESSION_ID" => "stale-tmux-environment", "HARNEX_OWNER_RESOLVED" => "1") do
+        inner = Harnex::Runner.new(["pi"])
+        inner.send(:extract_wrapper_options, ["pi"])
+        inner.send(:apply_telemetry_options!)
+        assert_nil inner.instance_variable_get(:@options)[:meta]
       end
     end
   end

@@ -218,6 +218,40 @@ This replaces polling `activity.model_idle_s` yourself. `harnex run --watch
 idle. If both run, set watch's `DUR` above run's `stall-after × (max-resumes
 + 1)`.
 
+## Owner Stream (Claude Code supervisors)
+
+One long-running command reports every dispatch an owner started, so a
+supervisor does not need a poller per worker:
+
+```bash
+harnex watch --owner --stall-after 25m
+```
+
+- **Owner:** `harnex run` from a Claude Code Bash shell records
+  `CLAUDE_CODE_SESSION_ID` as the dispatch owner (from Pi: `PI_SESSION_ID`).
+  `--owner` with no value resolves the same id. Pass
+  `--orchestration-session-id ID` to `run` and `--owner ID` to the stream to
+  name an owner explicitly.
+- **Output:** one JSON line per change, schema `harnex.owner_event.v1`. Events:
+  `started`, `done`, `rejected`, `failed`, `stalled` (with `--stall-after`;
+  once per episode), `stopped`, `timeout`. Each line carries `id`,
+  `session_id`, `repo`, `ts`, `work_state`, plus `outcome_class`,
+  `receipt_path`, `elapsed_s`, `stall`, `reason` where they apply, and a
+  readable `msg`. No heartbeats, so Claude Code's `Monitor` wakes only when
+  something needs a decision.
+- **Restarts:** a restarted stream re-announces `started` for running
+  dispatches and delivers only results it has not delivered before (cursor
+  under the owner's notifications directory). Delivery is not acceptance:
+  still verify the receipt and artifacts.
+- **Lifetime:** it runs until killed, or until `--max-wait` (exit 124).
+
+A status line or panel can poll `harnex status --all --json`. Each row has
+`id`, `cli`, `description`, `repo_root`, `started_at`, `state`, `work_state`,
+`done`, `task_complete`, `task_failed`, and `degraded`/`live_status`/`source`.
+A live session also has `agent_state`, `log_idle_s`, `auto_stop` and
+`activity` (`turn_active`, `model_idle_s`, `tool_idle_s`, ...). These fields
+are stable for consumers; new fields are additive.
+
 ## Duplicate-Dispatch Guard
 
 `harnex run --attempt-kind retry|fallback` requires
