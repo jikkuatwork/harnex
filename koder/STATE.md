@@ -1,14 +1,17 @@
 # Harnex State
 
-Updated: 2026-10-18 | 02:35 AM | IST
+Updated: 2026-10-18 | 02:15 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.16.0 is installed locally and verified on PATH** from `6602912`.
-  #68 final gates (`--final-gate`, `validation.final_gates`,
+- **0.16.1 is installed locally and verified on PATH** from `4e36512`: #76
+  `watch --stall-after DUR` exits 4 on no progress (Pi activity clock, PTY
+  output-log fallback; shared `Harnex::Stall`). Live-verified on Pi. Record:
+  `koder/releases/0.16.1.md`.
+- 0.16.0 (`6602912`) shipped #68 final gates (`--final-gate`, `validation.final_gates`,
   `commands_had_failures`); #57 process outcome classes + `orchestration
   report` class/family rollup and `--failure-budget` (exit 3); #56
   `harnex preflight ADAPTER` (JSON verdict, `phase=preflight` rows); #26 status
@@ -33,11 +36,12 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future
 
-1. Owner decisions unblock the rest: #76 (`watch --stall-after` clock, PTY
-   behavior, exit code) then #77 (owner-scoped event stream contract for Holm
-   Claude Code supervisors, depends on #76).
-2. Holm can adopt `harnex preflight` before unattended queues and
-   `--final-gate` for receipt diagnostics (check `capabilities.preflight` /
-   `final_gates`).
+1. #77 (owner-scoped event stream for Holm Claude Code supervisors) is no
+   longer blocked on #76: its `stalled` line can reuse `Harnex::Stall`. It
+   still needs an owner call on the command name and line format before
+   implementation.
+2. Holm can adopt `harnex preflight` before unattended queues, `--final-gate`
+   for receipt diagnostics, and `watch --stall-after` instead of polling
+   `activity.model_idle_s` (check `capabilities.preflight` / `final_gates`).
 3. Remaining open issues need product calls (#16, #17, #40, #41 Slice C, #42,
    #58, #59) or are blocked (#43 on #42; #45 deferred).
