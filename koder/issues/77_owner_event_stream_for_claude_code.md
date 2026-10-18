@@ -2,7 +2,7 @@
 status: open
 priority: P3
 created: 2026-10-17
-updated: 2026-10-17
+updated: 2026-10-18
 tags: watch, notifications, claude-code, supervisors
 issue_kind: slice
 type: feature
@@ -47,3 +47,31 @@ has no compact, owner-wide stream to feed either.
 
 No scheduler or queue changes; no change to Pi delivery; no Claude Code plugin code in harnex
 (Holm owns its consumer: a `harnex-dispatch` agent type and a Workers panel).
+
+## Decisions (owner, 2026-10-18)
+
+1. **Command:** `harnex watch --owner [ID]`. It extends the safe watcher from
+   one id to every dispatch the owner started and reuses `--stall-after` (#76)
+   and `--max-wait`. It runs until killed (or `--max-wait`), so it fits Claude
+   Code's `Monitor`. Only event lines go to stdout.
+2. **Line format:** one compact JSON object per lifecycle change
+   (`schema: harnex.owner_event.v1`), with fields plus a ready-to-read `msg`.
+   Events: `started`, `done`, `rejected`, `failed`, `stalled`, `stopped`,
+   `timeout`. No heartbeats.
+3. **Owner identity:** automatic from `CLAUDE_CODE_SESSION_ID`, mirroring the
+   Pi path (`PI_SESSION_ID` keeps precedence when both are present).
+   `--orchestration-session-id` still wins, and a nested Harnex worker never
+   names itself. `watch --owner` with no value resolves the same ambient id.
+   The outer runner marks the owner as resolved before crossing into tmux, so
+   a tmux server's stale environment cannot re-attribute a dispatch.
+4. **Replay:** on start, one `started` line per still-running dispatch, plus
+   every settled result not yet delivered to this owner's stream. A per-owner
+   cursor (`notifications/<owner>/watch/cursor.json`, outside the top-level
+   record files the Pi consumer reads) remembers delivered results, so a
+   restarted stream neither drops nor repeats them. Delivery is not an
+   acknowledgment.
+
+Sources: the #72 owner records (`running` at registration, settled outcome),
+enriched with the dispatch row's #57 class for `error` settlements
+(`timeout`, `stopped_by_caller`), plus live status through `Harnex::Stall`
+for `stalled`, emitted once per episode and re-armed after progress.
