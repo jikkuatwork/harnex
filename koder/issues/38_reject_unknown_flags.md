@@ -1,6 +1,6 @@
 # #38 — `harnex run` rejects unknown long flags
 
-**Status:** Tier 2 landed
+**Status:** resolved (2026-10-18)
 **Priority:** P3
 **Filed:** 2026-05-08
 
@@ -72,3 +72,9 @@ Landed 2026-05-08:
   subcommand parsers.
 - Changing F23 teardown behavior in `koder/issues/37`.
 - Cutting a release or bumping the gem version.
+
+## Resolution
+
+Tier 2 landed in 0.7.x (CHANGELOG: "Closes harnex issue #38"); `harnex run` rejects unknown
+long flags via `KNOWN_FLAGS`. Only the status line was stale; closed during the 2026-10-18 tracker
+check.
