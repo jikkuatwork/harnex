@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] - 2026-10-18 | 01:13 PM | +04
+
+Owner-authorized local-only release (no RubyGems publication).
 
 ### Added
 
