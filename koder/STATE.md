@@ -1,13 +1,18 @@
 # Harnex State
 
-Updated: 2026-10-18 | 02:15 PM | IST
+Updated: 2026-10-18 | 02:50 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.16.1 is installed locally and verified on PATH** from `4e36512`: #76
+- **0.17.0 is installed locally and verified on PATH** from `d53c18c`: #77
+  `harnex watch --owner` (owner-scoped JSON event stream for Claude Code
+  `Monitor`; cursor-tracked replay) and Claude Code owner auto-detection from
+  `CLAUDE_CODE_SESSION_ID`. Live-verified with `Monitor` + Pi. Record:
+  `koder/releases/0.17.0.md`.
+- 0.16.1 (`4e36512`): #76
   `watch --stall-after DUR` exits 4 on no progress (Pi activity clock, PTY
   output-log fallback; shared `Harnex::Stall`). Live-verified on Pi. Record:
   `koder/releases/0.16.1.md`.
@@ -36,12 +41,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future
 
-1. #77 (owner-scoped event stream for Holm Claude Code supervisors) is no
-   longer blocked on #76: its `stalled` line can reuse `Harnex::Stall`. It
-   still needs an owner call on the command name and line format before
-   implementation.
-2. Holm can adopt `harnex preflight` before unattended queues, `--final-gate`
-   for receipt diagnostics, and `watch --stall-after` instead of polling
-   `activity.model_idle_s` (check `capabilities.preflight` / `final_gates`).
+1. Holm can build its #940 consumer on `harnex watch --owner --stall-after
+   25m` (one `Monitor` for the `harnex-dispatch` agent and Workers panel), and
+   adopt `harnex preflight`, `--final-gate` and `watch --stall-after` instead
+   of per-worker pollers (check `capabilities`).
 3. Remaining open issues need product calls (#16, #17, #40, #41 Slice C, #42,
    #58, #59) or are blocked (#43 on #42; #45 deferred).
