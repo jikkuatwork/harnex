@@ -3,8 +3,8 @@ status: open
 priority: P2
 issue_kind: track
 created: 2026-07-15
-updated: 2026-07-15
 tags: conveyor,queue,coordinator,orchestration,runner,determinism
+updated: 2026-10-18
 ---
 
 # Issue 59 — Deterministic conveyor runner: mechanical queue drain, model-only judgment
@@ -114,3 +114,24 @@ scope; this issue is that conductor.
   mitigated by dry-run first and per-slice delivery.
 - **First useful slice**: queue-file schema + `--dry-run` + single-row drain
   with receipt/Git validation and manual continue.
+
+## Decisions (owner, 2026-10-18) — ready for autonomous implementation
+
+1. **Go: plan + first slice.** The next session writes the plan (next
+   monotonic plan id) converging the queue-file contract, then implements the
+   issue's first useful slice: schema, `--dry-run`, and a single-row drain
+   (implement → review → conditional fix up to the cap) with runner-owned
+   receipt and Git identity checks and a **manual continue** between rows. It
+   is opt-in; existing Holm queue flows are untouched.
+2. **Queue file: a JSON sidecar** — a versioned `conveyor.json` beside the
+   queue's `INDEX.md`. It holds rows, phases, adapter/model per phase, brief
+   paths, validation commands, fix-cycle cap, fence/cap durations, stop gates,
+   forbidden actions and the queue-level `dispatch_models` policy. Stdlib JSON,
+   strict validation with field-path diagnostics. The Markdown stays human
+   prose.
+3. **Command: `harnex conveyor <conveyor.json> [--dry-run]`.**
+4. **Composes existing primitives:** `harnex preflight` (#56) before launch;
+   row validation commands become `--final-gate`s (#68); outcome classes and
+   failure budgets (#57); `--stall-after`/owner stream (#76/#77) as fences; Pi
+   as the default worker adapter. Codex is deferred and must not be required.
+   Out-of-policy substitution is impossible (blocks and returns to the owner).

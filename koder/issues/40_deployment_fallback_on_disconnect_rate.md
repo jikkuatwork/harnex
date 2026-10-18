@@ -1,11 +1,12 @@
 ---
-status: open
+status: deferred
 priority: P2
+updated: 2026-10-18
 ---
 
 # Issue 40 — Deployment-fallback on disconnect-rate threshold
 
-**Status**: open
+**Status**: deferred — Codex not used (2026-10-18)
 **Priority**: P2
 **Filed**: 2026-05-09
 **Tier**: B (plan → impl → diff-sanity)
@@ -202,3 +203,9 @@ Default: off (explicit opt-in via flag). When the threshold trips:
   trigger granularity. Q1 (resume across deployments) is the one
   fact-finding question the plan should answer *before* picking the
   telemetry shape.
+
+## Deferred (owner, 2026-10-18)
+
+Codex is no longer used ("Lets defer codex; we are not using it anymore"), so
+this Codex-specific work is deferred, not abandoned. Reopen it with `status:
+open` if Codex dispatch returns. Pi is the dispatch adapter.

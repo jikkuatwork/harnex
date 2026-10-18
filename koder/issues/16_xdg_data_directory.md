@@ -4,6 +4,7 @@ title: "Use platform-agnostic data directory instead of ~/.local/state/"
 status: open
 priority: P2
 created: 2026-03-22
+updated: 2026-10-18
 ---
 
 # Issue 16: Platform-Agnostic Data Directory
@@ -59,3 +60,25 @@ configuration. `~/.config/` implies user-edited config files.
 - `lib/harnex/core.rb` — `HARNEX_STATE_DIR` default
 - `test/` — any tests that reference the default path
 - `README.md` / `GUIDE.md` — doc references to `~/.local/state/harnex`
+
+## Decisions (owner, 2026-10-18) — ready for autonomous implementation
+
+Goal restated: **support macOS as well as Linux.**
+
+1. **Same state path on every OS.** Keep `~/.local/state/harnex` as the default
+   on Linux and macOS (it works on macOS). Honor `$XDG_STATE_HOME` when set
+   (`$XDG_STATE_HOME/harnex`). `HARNEX_STATE_DIR` keeps highest precedence. No
+   migration, no `~/.harnex`, and no change for Holm's Pi extension, which
+   falls back to `~/.local/state/harnex`.
+2. **macOS audit.** Find and replace Linux-only assumptions with portable code:
+   - `/proc/<pid>/stat` in `lib/harnex/core.rb`;
+   - inotify via Fiddle (already falls back to polling; confirm selection);
+   - `ps`/`stat`/`date` flag differences in any shell-outs;
+   - process-group and signal behavior;
+   - tmux usage.
+   Each fix degrades safely where a capability is missing.
+3. **Verification:** this VM has no Mac, so cover macOS paths hermetically
+   (stubbed `RUBY_PLATFORM`/missing `/proc`) and list "not run on real macOS" in
+   the release record. The owner runs the suite on a Mac later.
+4. Update the README/docs path references and `harnex doctor` output to show
+   the resolved state dir and its source (env, XDG or default).

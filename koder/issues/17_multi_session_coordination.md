@@ -4,6 +4,7 @@ title: "Multi-Session Coordination — Parallel Supervisors & Cross-Worktree Awa
 status: open
 priority: P1
 created: 2026-03-29
+updated: 2026-10-18
 ---
 
 # Issue 17: Multi-Session Coordination
@@ -95,3 +96,26 @@ same repo are visually grouped). Currently they appear as unrelated repos.
 
 - Issue 14: pane lookup bugs (added the global fallback for pane)
 - Dispatch skill: worktree section documents current caveats
+
+## Decisions (owner, 2026-10-18) — ready for autonomous implementation
+
+Scope picked by the implementer on the owner's instruction ("pick the sanest
+ones"):
+
+- **A: build.** `harnex send` global fallback. When `--id` is not found in the
+  current repo and `--repo` was not given, search every repo and use the match
+  if exactly one exists (the same rule `pane` uses). With several matches,
+  error and list the candidates (id, repo). An explicit `--repo` never falls
+  back.
+- **C: build.** `harnex status` shows each dispatch's owner (short Pi/Claude
+  session id from the #72/#77 owner records or `meta.orchestration_session_id`)
+  so parallel supervisors can tell whose worker is whose. Display only;
+  `--json` gains an additive `owner_id`.
+- **E: build.** `harnex status --all` groups sessions by Git common dir, so
+  worktrees of one repo appear together (main checkout first). Display only.
+- **B: docs only,** folded into D: a supervisor-namespaced id convention for
+  parallel supervisors.
+- **D: keep worktrees first-class and document them.** Document the
+  dispatch/merge workflow: stop the session, merge from master, keep master's
+  `STATE.md` on conflict, `git worktree remove` + `git branch -d`, then clean
+  orphaned registries (`harnex doctor --sweep`). Holm uses worktrees.

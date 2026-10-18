@@ -1,12 +1,12 @@
 ---
 status: open
 priority: P2
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Issue 41 — Extract `Harnex::Codex::AppServer` module from adapter
 
-**Status**: open — Slices A (`3a9f0bf`) and B (`b820793`) landed; only Slice C (public API doc) remains, which needs a maintainer call on what Harnex promises as stable
+**Status**: open — Slices A/B landed; Slice C decided (owner, 2026-10-18): write it
 **Priority**: P2
 **Filed**: 2026-05-11
 **Tier**: B (plan → impl in thin slices)
@@ -129,3 +129,23 @@ Independent of Slices A/B; can land first if useful.
 - `lib/harnex/adapters/codex_appserver.rb` — Slice A's source.
 - `CLAUDE.md` "Adapter transports" — PTY and JSON-RPC are both
   first-class; this extraction is for the JSON-RPC side only.
+
+## Decision (owner, 2026-10-18) — Slice C ready for autonomous implementation
+
+Write `docs/public_api.md`: the surface Harnex promises to keep stable (no 1.0
+commitment). Everything else is marked internal.
+
+- CLI commands and their stable flags.
+- Env vars consumers rely on: `HARNEX_ID`, `HARNEX_SESSION_CLI`,
+  `HARNEX_SPAWNER_PANE`, `HARNEX_STATE_DIR`, `HARNEX_ARTIFACT_CLAIMS_PATH`, the
+  grace overrides, `PI_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` owner detection.
+- Exit codes:
+  - `wait`/`watch`: 0, 1, 2, 3, 4, 124;
+  - `preflight`: 0, 1;
+  - `orchestration report`: 0, 1, 2, 3.
+- JSON contracts: `harnex.owner_event.v1`, `harnex.preflight.v1`, the dispatch
+  row's `outcome.class` vocabulary, receipt `validation.final_gates`, the
+  `status --json` consumer fields, and doctor `capabilities`.
+
+Rule: additive changes are fine; removals or renames need a changelog entry
+and a capability bump. Closing Slice C closes #41.

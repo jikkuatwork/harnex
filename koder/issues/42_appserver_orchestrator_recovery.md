@@ -1,11 +1,12 @@
 ---
-status: open
+status: deferred
 priority: P1
+updated: 2026-10-18
 ---
 
 # Issue 42 — Durable app-server orchestrator recovery
 
-**Status**: open
+**Status**: deferred — Codex not used (2026-10-18)
 **Priority**: P1
 **Filed**: 2026-05-13
 **Tier**: B (plan -> impl -> verification)
@@ -159,3 +160,9 @@ Add summary-row counters / fields:
 - Whole-process supervision if the Ruby harnex process itself crashes.
   That likely needs a later outer `harnex supervise` layer.
 - Multi-fallback chains or model/provider switching.
+
+## Deferred (owner, 2026-10-18)
+
+Codex is no longer used ("Lets defer codex; we are not using it anymore"), so
+this Codex-specific work is deferred, not abandoned. Reopen it with `status:
+open` if Codex dispatch returns. Pi is the dispatch adapter.

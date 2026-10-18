@@ -1,11 +1,12 @@
 ---
-status: open
+status: deferred
 priority: P1
+updated: 2026-10-18
 ---
 
 # Issue 43 — Throughput-first telemetry v2 (attempt-level + retry/fallback economics)
 
-**Status**: open — blocked on runtime recovery/fallback (#42, plan 30 phases 3–5); see Implementation status
+**Status**: deferred — its remaining work needs a recovery/fallback path (#42, deferred with Codex, 2026-10-18)
 **Priority**: P1
 **Filed**: 2026-05-19
 **Tier**: B (plan -> impl -> verification)
@@ -177,3 +178,9 @@ Add additive summary fields to the dispatch row (or linked child rows if fallbac
 
 This issue intentionally prioritizes **throughput observability** over cosmetic telemetry polish.
 If we cannot reliably measure retry tax + accepted throughput, we cannot reliably optimize routing.
+
+## Deferred (owner, 2026-10-18)
+
+Codex is no longer used ("Lets defer codex; we are not using it anymore"), so
+this issue's remaining runtime work (it waits on the Codex recovery path in #42) is deferred, not abandoned. Reopen it with `status:
+open` if Codex dispatch returns. Pi is the dispatch adapter.

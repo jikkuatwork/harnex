@@ -1,11 +1,12 @@
 ---
-status: open
+status: resolved
 priority: P2
+updated: 2026-10-18
 ---
 
 # Issue 45 — Deferred Pi PTY adapter with stable extension markers
 
-**Status**: open
+**Status**: resolved — not needed (owner, 2026-10-18)
 **Priority**: P2
 **Filed**: 2026-05-23
 **Tier**: C (research -> plan later)
@@ -78,3 +79,9 @@ The adapter should then parse those explicit markers rather than infer readiness
 ## Notes
 
 Do not start this by adding regexes for Pi's current TUI footer. The project already has enough evidence that structured/marker-based integration is more durable.
+
+## Resolution (owner, 2026-10-18)
+
+Closed as not needed: Pi RPC stays the dispatch path and a visible Pi TUI is
+not wanted. The underlying need (telling at a glance whether a pane is stuck)
+is tracked as #78, pane time markers in Harnex's rendered output.

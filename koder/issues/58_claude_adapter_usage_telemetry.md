@@ -1,10 +1,10 @@
 ---
-status: open
+status: deferred
 priority: P2
 issue_kind: slice
 created: 2026-07-15
-updated: 2026-07-15
 tags: claude,adapter,usage,cost,context,telemetry,pty
+updated: 2026-10-18
 ---
 
 > Priority note (2026-07-15): the operator's dispatch-model policy now keeps
@@ -87,3 +87,10 @@ Give the Claude adapter the same telemetry citizenship as Pi/Codex:
 - **First useful slice**: headless `-p --output-format stream-json` dispatches
   for `--auto-stop` workers with usage+model+cost capture, everything else
   `unsupported`.
+
+## Deferred (owner, 2026-10-18)
+
+Claude now runs as the supervisor (Claude Code session; #77 covers its
+owner-scoped event stream), not as a Harnex-dispatched worker. Reopen when
+Claude workers are dispatched through `harnex run claude` again; the first
+slice would still be headless `claude -p --output-format stream-json`.
