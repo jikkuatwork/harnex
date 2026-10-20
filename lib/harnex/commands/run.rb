@@ -1,6 +1,7 @@
 require "json"
 require "optparse"
 require "shellwords"
+require "stringio"
 
 module Harnex
   class Runner
@@ -34,7 +35,7 @@ module Harnex
       --stall-after --max-resumes --preset --context --context-file --context-section
       --meta --meta-file --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
       --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime --fast --legacy-pty
-      --allow-live-parent --final-gate --help
+      --allow-live-parent --final-gate --wait-done --wait-timeout --owner-tag --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
     # Attempt kinds that redo the parent's work; dispatching one while the
@@ -44,7 +45,7 @@ module Harnex
       --id --description --host --port --watch --watch-file --stall-after
       --max-resumes --preset --context --context-file --context-section --meta
       --meta-file --artifact-report --validation-report --on-done --max-runtime --cwd --root --timeout --inbox-ttl
-      --final-gate
+      --final-gate --wait-timeout --owner-tag
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
     def self.usage(program_name = "harnex run")
@@ -73,6 +74,11 @@ module Harnex
                              line starting with TEXT (a heading runs to the next heading
                              of its level or higher; a plain marker line to end of file)
           --auto-stop        Stop after the first accepted task completion from --context
+          --wait-done        With --tmux/--detach: block until the first turn's result
+                             and print it with the launch fields (the worker's reply is
+                             turn_result.final_message). Exit codes of wait --until done
+          --wait-timeout DUR Cap --wait-done (default: none); on 124 the output has
+                             `resume`, the command that keeps waiting
           --on-done CMD      Launch /bin/sh -c CMD once at the first typed work result
           --max-runtime DUR  Fixed worker runtime budget (e.g. 30m); not a watch timeout
           --fast             (codex only) Use Codex service_tier="fast".
@@ -123,6 +129,9 @@ module Harnex
           --orchestration-session-id ID
                              External primary session id for rollups and owned
                              completion delivery (default: shell PI_SESSION_ID)
+          --owner-tag TAG    Own this dispatch as "<owner>/<TAG>" (owner: the session id
+                             below). A Claude subagent shares its parent's session id;
+                             a tag gives it its own `watch --owner --owner-tag TAG` stream
           --orchestration-rotation-reason TEXT
                              Clean rotation/recovery reason for the generation
           --require-attribution
@@ -216,6 +225,9 @@ module Harnex
         fast: false,
         legacy_pty: false,
         final_gates: [],
+        wait_done: false,
+        wait_timeout_s: nil,
+        owner_tag: nil,
         help: false
       }
     end
@@ -231,8 +243,10 @@ module Harnex
       apply_meta_file!
       apply_context_file!
       validate_auto_stop_context!
+      validate_wait_done!
       validate_required_artifact_report!
       apply_telemetry_options!
+      apply_owner_tag!
       apply_final_gates!
       validate_attempt_metadata!
       validate_orchestration_metadata!
@@ -359,6 +373,8 @@ module Harnex
         artifact_claims_path: registry["artifact_claims_path"]
       }
       payload[:description] = @options[:description] if @options[:description]
+      return wait_for_first_result(payload, repo_root) if @options[:wait_done]
+
       puts JSON.generate(payload)
       0
     end
@@ -400,8 +416,33 @@ module Harnex
         artifact_claims_path: registry["artifact_claims_path"]
       }
       payload[:description] = @options[:description] if @options[:description]
+      if @options[:wait_done] && emit_payload
+        return { ok: true, exit_code: wait_for_first_result(payload, repo_root), registry: registry, payload: payload }
+      end
+
       puts JSON.generate(payload) if emit_payload
       { ok: true, exit_code: 0, registry: registry, payload: payload }
+    end
+
+    # One call from launch to the first turn's result: a Claude Code subagent
+    # cannot be woken later, so it blocks here. Exit codes follow
+    # `wait --until done`; a timeout says how to keep waiting.
+    def wait_for_first_result(payload, repo_root)
+      argv = ["--id", @options[:id], "--repo", repo_root, "--until", "done"]
+      argv += ["--timeout", @options[:wait_timeout_s].to_s] if @options[:wait_timeout_s]
+      out = StringIO.new
+      exit_code = Waiter.new(argv, out: out, err: $stderr).run
+      turn = begin
+        JSON.parse(out.string.lines.last.to_s)
+      rescue JSON::ParserError
+        {}
+      end
+      result = payload.merge(ok: turn["ok"] == true, wait_result: turn["wait_result"], turn_result: turn)
+      if exit_code == Waiter::DONE_EXIT_TIMEOUT
+        result[:resume] = "#{Harnex.cli_command} wait --id #{@options[:id]} --repo #{Shellwords.escape(repo_root)} --until done --timeout 9m"
+      end
+      puts JSON.generate(result)
+      exit_code
     end
 
     private
@@ -683,6 +724,22 @@ module Harnex
           @options[:context_section] = required_option_value("--context-section", Regexp.last_match(1))
         when "--auto-stop"
           @options[:auto_stop] = true
+        when "--wait-done"
+          @options[:wait_done] = true
+        when "--owner-tag"
+          index += 1
+          @options[:owner_tag] = required_option_value(arg, argv[index])
+        when /\A--owner-tag=(.+)\z/
+          @options[:owner_tag] = Regexp.last_match(1)
+        when "--wait-timeout"
+          index += 1
+          @options[:wait_timeout_s] = Harnex.parse_duration_seconds(
+            required_option_value(arg, argv[index]), option_name: "--wait-timeout"
+          )
+        when /\A--wait-timeout=(.+)\z/
+          @options[:wait_timeout_s] = Harnex.parse_duration_seconds(
+            Regexp.last_match(1), option_name: "--wait-timeout"
+          )
         when "--on-done"
           index += 1
           @options[:on_done] = required_option_value(arg, argv[index])
@@ -809,13 +866,13 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty", "--allow-live-parent"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty", "--allow-live-parent", "--wait-done"
           nil
         when /\A--tmux=/
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|context-file|context-section|meta|meta-file|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl|final-gate)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|context-file|context-section|meta|meta-file|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl|final-gate|wait-timeout|owner-tag)=/
           nil
         when telemetry_equals_regex
           nil
@@ -838,7 +895,7 @@ module Harnex
           "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--context-file=",
           "--context-section=", "--meta=", "--meta-file=",
           "--artifact-report=", "--validation-report=", "--on-done=", "--max-runtime=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
-          "--final-gate=", *TELEMETRY_EQUALS_PREFIXES
+          "--final-gate=", "--wait-timeout=", "--owner-tag=", *TELEMETRY_EQUALS_PREFIXES
         )
     end
 
@@ -858,6 +915,17 @@ module Harnex
 
       @options[:stall_after_s] = preset[:stall_after_s] unless @options[:stall_after_explicit]
       @options[:max_resumes] = preset[:max_resumes] unless @options[:max_resumes_explicit]
+    end
+
+    def validate_wait_done!
+      if @options[:wait_timeout_s] && !@options[:wait_done]
+        raise OptionParser::InvalidOption, "harnex run: --wait-timeout requires --wait-done"
+      end
+      return unless @options[:wait_done]
+      raise OptionParser::InvalidOption, "harnex run: --wait-done requires --context or --context-file" unless @options[:context]
+      return if @options[:tmux] || @options[:detach]
+
+      raise OptionParser::InvalidOption, "harnex run: --wait-done requires --tmux or --detach"
     end
 
     def validate_auto_stop_context!
@@ -925,6 +993,19 @@ module Harnex
       # a stale PI_SESSION_ID from that server.
       defaults = primary.empty? ? {} : { "orchestration_session_id" => primary }
       @options[:meta] = defaults.merge(@options[:meta] || {}).merge(explicit)
+    end
+
+    # Resolved once, before tmux: the inner runner receives the tagged id in
+    # meta and never re-derives it.
+    def apply_owner_tag!
+      return unless @options[:owner_tag]
+
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      base = metadata["orchestration_session_id"] || Harnex.ambient_owner_id
+      tagged = Harnex.tagged_owner_id(base, @options[:owner_tag])
+      @options[:meta] = metadata.merge("orchestration_session_id" => tagged)
+    rescue ArgumentError => e
+      raise OptionParser::InvalidArgument, "harnex run: --owner-tag: #{e.message}"
     end
 
     # Gates travel in meta so tmux/detached children and dispatch rows carry

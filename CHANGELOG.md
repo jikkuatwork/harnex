@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.19.0] - 2026-10-20 | 06:35 PM | +04
+
+Owner-authorized local-only release (no RubyGems publication). Makes Pi
+(GPT-backed) workers usable as native tools from Claude Code sessions and
+subagents (#85), driven by live Claude-subagent stress runs.
+
+### Added
+
+- `harnex ask "QUESTION"`: one blocking call that hands a question to a Pi
+  worker (read-only tools by default; `--write` to allow edits) and prints its
+  answer. `--model`, `--fallback-model` (one more try on provider capacity),
+  `--effort`, `--file/--section`, `--timeout`, `--json`; stderr names the
+  lane, time and model. A read-only ask records in the global stream, so the
+  repository stays untouched.
+- Turn results carry the worker's reply: `final_message` (at most 4,000
+  characters), `final_message_path` (full text), `final_message_truncated`,
+  plus the lane's `end_sha`, `commits` (since launch), `turn_commits` and
+  `model`, in events, `wait`, `send --wait-done` and owner-stream lines.
+- `harnex run --wait-done [--wait-timeout DUR]`: launch and block until the
+  first turn's result in one call; on 124 the output names the `resume`
+  command.
+- `--owner-tag TAG` on `run` and `watch --owner`: a subagent's own owner
+  (`<session>/<TAG>`), so its stream holds only its lanes and no backlog.
+- `watch --owner --match GLOB` filters lanes by id; `--until-idle` blocks
+  until no matching lane is running and prints every result on the way.
+- `send --stall-after DUR` (with `--wait-done`); `send --wait-done` timeouts
+  print `resume`.
+- Status and stall lines name Pi's running shell commands
+  (`running_commands`; "stalled … while running `sleep 150`").
+- `harnex agents-guide claude`: the operating guide for Claude Code.
+
+### Changed
+
+- `watch --owner --once` prints every event ready in its pass, not only the
+  first.
+- The owner stream delivers each turn's result once and in settle order, even
+  when several turns end between polls (owner records keep a bounded
+  per-turn history). Previously a turn replaced by the next before a poll was
+  lost.
+- `harnex send` to an exited session fails fast (exit 1, `status: "exited"`)
+  instead of spending its whole timeout on lookup.
+- `send --wait-done` output: `status` is the turn's verdict and
+  `delivery_status` the delivery's.
+- `wait --until done` on a session already gone reports `process_state:
+  "exited"` and names a caller's stop `stopped_by_caller`.
+- Stall lines carry `turn` and `elapsed_s`; durations under 10 minutes print
+  as `3m05s`.
+- Durations accept compound forms (`8m30s`, `1h30m`); `--context-section`
+  accepts a heading with its marks (`"## Task"`).
+- A follow-up whose run settled while the send was in flight is sent as a
+  plain prompt, and follow-ups are counted for the turn they joined.
+- `resume` hints name the checkout's `bin/harnex` when running from source.
+
 ## [0.18.0] - 2026-10-20 | 04:41 PM | +04
 
 Owner-authorized local-only release (no RubyGems publication). Closes the

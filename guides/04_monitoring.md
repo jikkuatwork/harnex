@@ -243,9 +243,12 @@ harnex watch --owner --stall-after 25m
   dispatches and delivers only results it has not delivered before (cursor
   under the owner's notifications directory). Delivery is not acceptance:
   still verify the receipt and artifacts.
-- **Turns:** every turn reports its own result. A lane nudged with `harnex
-  send` after it finished or failed reports again when that turn ends; the
-  line carries `turn` and the `msg` names it (`pi-i-NN turn 2 done ...`).
+- **Turns:** every turn reports its own result, once and in order, even when
+  several turns end between two polls. A lane nudged with `harnex send` after
+  it finished or failed reports again when that turn ends; the line carries
+  `turn` and the `msg` names it (`pi-i-NN turn 2 done ...`). Result lines
+  carry the worker's `final_message` (bounded; full text at
+  `final_message_path`).
 - **Lifetime:** it runs until killed, or until `--max-wait` (exit 124).
 
 ### Claude Code subagents: `--once`
@@ -258,12 +261,15 @@ turn, so it must block in a foreground Bash call (10-minute cap per call).
 harnex watch --owner --once --timeout 9m --cursor sub-a --stall-after 25m
 ```
 
-It prints the first undelivered result or stall as one JSON line, advances
-the cursor and exits 0; with nothing new before `--timeout` it prints nothing
-and exits 124, so loop it. It never returns `started`, and a stall episode is
-reported once across calls. A subagent shares its parent's
-`CLAUDE_CODE_SESSION_ID`, so give each consumer its own `--cursor NAME`; the
-parent's stream and the subagent's calls then each see every event.
+It prints every undelivered result or stall that is ready (one JSON line
+each), advances the cursor and exits 0; with nothing new before `--timeout` it
+prints nothing and exits 124, so loop it. It never returns `started`, and a
+stall episode is reported once across calls. A subagent shares its parent's
+`CLAUDE_CODE_SESSION_ID`, so isolate it: launch its lanes with
+`harnex run --owner-tag TAG` and watch `harnex watch --owner --owner-tag TAG`
+(a separate owner, `<parent>/<TAG>`, with no other lanes and no backlog), or
+keep the shared owner with its own `--cursor NAME` and `--match 'pi-TAG-*'`.
+See `harnex agents-guide claude`.
 
 A status line or panel can poll `harnex status --all --json`. Each row has
 `id`, `cli`, `description`, `repo_root`, `started_at`, `state`, `work_state`,

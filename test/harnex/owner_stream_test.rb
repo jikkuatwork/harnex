@@ -166,6 +166,21 @@ class OwnerStreamTest < Minitest::Test
     assert_equal "stalled", stalled["event"]
     assert_equal({ "clock" => "activity", "idle_s" => 1700.0, "threshold_s" => 1500.0 }, stalled["stall"])
     assert_equal "pi-st-1 stalled: no progress for 28m (activity)", stalled["msg"]
+    assert_equal 1, stalled["turn"]
+    refute_nil stalled["elapsed_s"]
+  end
+
+  def test_stall_lines_name_the_command_the_worker_is_running
+    notifier("pi-st-2")
+    payload = lambda do |_record|
+      { "work_state" => "running", "running_commands" => ["sleep 150"], "activity" => {
+        "status" => "observed", "turn_active" => true, "turn_age_s" => 200, "model_idle_s" => 66.6, "tool_idle_s" => 66.6
+      } }
+    end
+    stream(stall_after: 45.0, status_fetcher: payload).scan
+    stalled = lines.find { |line| line["event"] == "stalled" }
+    assert_equal ["sleep 150"], stalled.dig("stall", "running_commands")
+    assert_equal "pi-st-2 stalled: no progress for 1m07s (activity) while running `sleep 150`", stalled["msg"]
   end
 
   def test_foreign_or_malformed_records_are_ignored
@@ -232,6 +247,32 @@ class OwnerStreamTest < Minitest::Test
     assert_empty lines, "a restarted stream does not repeat the turn"
   end
 
+  def test_turns_that_end_between_polls_are_each_delivered_in_order
+    worker = notifier("pi-h-1")
+    s = stream
+    s.scan
+    lines
+    settle(worker, "failed", outcome_class: "provider_capacity")
+    worker.turn_started(2)
+    settle_turn(worker, "completed", 2, outcome_class: "completed_with_activity",
+                final_message: "DONE abc1234")
+    worker.turn_started(3)
+    @now += 10
+    s.scan
+
+    got = lines.map { |line| line.values_at("event", "turn", "outcome_class") }
+    assert_equal [["failed", 1, "provider_capacity"], ["done", 2, "completed_with_activity"]], got
+    record = JSON.parse(File.read(Dir.glob(File.join(Harnex.owned_notifications_dir(@owner), "*.json")).first))
+    assert_equal [1, 2], record["results"].map { |result| result["turn"] }
+    assert_equal "running", record["work_state"]
+
+    settle_turn(worker, "completed", 3, outcome_class: "completed_with_activity")
+    s.scan
+    assert_equal [["done", 3]], lines.map { |line| line.values_at("event", "turn") }
+    stream.scan
+    assert_empty lines, "a restarted stream repeats no turn"
+  end
+
   def test_a_pre_turn_cursor_still_matches_first_turn_results
     worker = notifier("pi-c-1")
     settle(worker, "completed", outcome_class: "completed_with_proof")
@@ -244,7 +285,7 @@ class OwnerStreamTest < Minitest::Test
     assert_empty lines
   end
 
-  def test_once_returns_the_first_result_and_skips_started
+  def test_once_returns_every_ready_result_and_skips_started
     notifier("pi-o-1")
     finished = notifier("pi-o-2")
     settle(finished, "completed", outcome_class: "completed_with_proof")
@@ -252,18 +293,48 @@ class OwnerStreamTest < Minitest::Test
     settle(second, "completed", outcome_class: "completed_with_proof")
 
     assert_equal 0, stream(once: true, sleeper: ->(_s) { flunk "should not sleep" }).run
-    first = only(lines)
-    assert_equal "done", first["event"]
-
-    assert_equal 0, stream(once: true, sleeper: ->(_s) { flunk "should not sleep" }).run
-    second_line = only(lines)
-    assert_equal "done", second_line["event"]
-    refute_equal first["id"], second_line["id"]
+    assert_equal [%w[done pi-o-2], %w[done pi-o-3]], lines.map { |line| line.values_at("event", "id") }.sort
 
     clock = 0.0
     timed = stream(once: true, max_wait: 5, clock: -> { clock }, sleeper: ->(seconds) { clock += seconds })
     assert_equal 124, timed.run
     assert_empty lines, "only running work remains; started never ends a --once call"
+  end
+
+  def test_until_idle_waits_for_every_running_lane
+    first = notifier("pi-u-1")
+    second = notifier("pi-u-2")
+    clock = 0.0
+    sleeps = 0
+    sleeper = lambda do |seconds|
+      clock += seconds
+      sleeps += 1
+      settle(first, "completed", outcome_class: "completed_with_proof") if sleeps == 1
+      settle(second, "completed", outcome_class: "completed_with_proof") if sleeps == 2
+    end
+    assert_equal 0, stream(until_idle: true, max_wait: 60, clock: -> { clock }, sleeper: sleeper).run
+    assert_equal %w[pi-u-1 pi-u-2], lines.map { |line| line["id"] }
+    assert_equal 2, sleeps, "it returned as soon as the last lane settled"
+  end
+
+  def test_match_limits_the_stream_to_the_callers_lanes
+    mine = notifier("pi-s2-x")
+    theirs = notifier("pi-s3-z")
+    settle(theirs, "completed", outcome_class: "completed_with_proof")
+    clock = 0.0
+    filtered = lambda do
+      stream(once: true, cursor: "s2", match: ["pi-s2-*"], max_wait: 5,
+             clock: -> { clock }, sleeper: ->(seconds) { clock += seconds })
+    end
+    assert_equal 124, filtered.call.run
+    assert_empty lines, "another subagent's lane is not delivered"
+
+    settle(mine, "completed", outcome_class: "completed_with_proof")
+    assert_equal 0, filtered.call.run
+    assert_equal ["pi-s2-x"], lines.map { |line| line["id"] }
+
+    assert_equal 0, stream(once: true, cursor: "s2").run
+    assert_equal ["pi-s3-z"], lines.map { |line| line["id"] }, "the filter never consumed the other lane"
   end
 
   def test_named_cursors_deliver_independently
@@ -303,17 +374,34 @@ class OwnerStreamTest < Minitest::Test
     assert_equal "stalled", only(lines)["event"]
   end
 
+  def test_watch_owner_tag_selects_the_tagged_sub_owner
+    captured = nil
+    stub_new = lambda do |**kwargs|
+      captured = kwargs
+      Struct.new(:run).new(0)
+    end
+    with_env("CLAUDE_CODE_SESSION_ID" => "parent-123") do
+      Harnex::OwnerStream.stub(:new, stub_new) do
+        assert_equal 0, Harnex::WatchCommand.new(["--owner", "--owner-tag", "s2", "--once"]).run
+      end
+    end
+    assert_equal "parent-123/s2", captured[:owner_id]
+    assert_raises(OptionParser::InvalidOption) { Harnex::WatchCommand.new(["--id", "x", "--owner-tag", "s2"]).run }
+  end
+
   def test_watch_once_and_cursor_need_owner
     assert_raises(OptionParser::InvalidOption) { Harnex::WatchCommand.new(["--id", "x", "--once"]).run }
+    assert_raises(OptionParser::InvalidOption) { Harnex::WatchCommand.new(["--id", "x", "--match", "pi-*"]).run }
     assert_raises(OptionParser::InvalidArgument) { Harnex::WatchCommand.new(["--owner", "x", "--cursor", "a/b"]).run }
   end
 
   private
 
-  def settle_turn(notifier, outcome, turn, outcome_class: nil, follow_ups: nil)
+  def settle_turn(notifier, outcome, turn, outcome_class: nil, follow_ups: nil, final_message: nil)
     notifier.notify(outcome: outcome, work_state: outcome == "completed" ? "completed" : "failed",
                     outcome_class: outcome_class, artifact_report_status: nil, end_sha: nil,
-                    terminal_signal: "task_complete", turn: turn, follow_ups: follow_ups)
+                    terminal_signal: "task_complete", turn: turn, follow_ups: follow_ups,
+                    final_message: final_message)
   end
 
   def only(list)

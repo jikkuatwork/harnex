@@ -68,6 +68,13 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read and execute /tmp/task-impl-NN.md"
 ```
 
+For a one-shot task, add `--auto-stop --wait-done --wait-timeout 9m`: the
+same command blocks until the first turn's result and prints it with the
+launch fields (`turn_result.final_message` is the worker's reply; on 124 run
+the `resume` command it prints). `harnex ask "QUESTION"` does that for a
+read-only question and prints only the answer. See `harnex agents-guide
+claude` for the Claude Code patterns.
+
 To send a brief file's text itself, use `--context-file PATH`. Add
 `--context-section TEXT` to send only one part: after a Markdown heading that
 starts with TEXT, up to the next heading of the same or a higher level; after a

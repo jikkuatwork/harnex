@@ -170,6 +170,18 @@ harnex stop --id cl-review
 For delegated work, pass the same value to `--id` and `--tmux` so
 `harnex status`, `harnex pane`, logs, and the tmux window name all line up.
 
+From Claude Code, a GPT-backed Pi worker can be called like a tool:
+
+```bash
+# A read-only question; stdout is the worker's answer
+harnex ask "Which module writes dispatch rows, and is the lane case tested?"
+
+# One delegated task, one blocking call, one JSON result (the reply is
+# turn_result.final_message)
+harnex run pi --id pi-i-42 --tmux pi-i-42 --context-file /tmp/task-42.md \
+  --auto-stop --wait-done --wait-timeout 9m
+```
+
 Harnex ships CLI-readable agent guides for this pattern:
 
 - **[Dispatch](guides/01_dispatch.md)** — the fire-and-watch pattern:
@@ -181,6 +193,9 @@ Harnex ships CLI-readable agent guides for this pattern:
 - **[Monitoring](guides/04_monitoring.md)** — completion signals and
   poll/watch patterns
 - **[Naming](guides/05_naming.md)** — session IDs, task files, done markers
+- **[Claude](guides/06_claude.md)** — Claude Code sessions and subagents using
+  GPT-backed Pi workers as tools: `harnex ask`, one-call delegation, parallel
+  lanes, follow-ups
 
 Read them from the installed CLI:
 
@@ -452,6 +467,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
 | `harnex artifact-report init\|validate PATH` | Validate harness-authored `harnex.artifact_report.v1` receipts; `init` remains for legacy/manual documents |
 | `harnex doctor` | Run dependency and retention diagnostics; `--sweep` reports session drift, `--prune --dry-run` previews retention, and `--prune` applies it |
+| `harnex ask "QUESTION"` | Ask a Pi (GPT-backed) worker one read-only question and print its answer (`--write` to let it edit) |
 | `harnex preflight <cli>` | One tiny real dispatch proving boot, files, command exits, receipt, completion and stop (`--commit-check` adds a scratch-repo commit); JSON verdict, non-zero on failure |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |

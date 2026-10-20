@@ -1642,6 +1642,70 @@ class RunnerTest < Minitest::Test
     end
   end
 
+  def test_wait_done_blocks_for_the_first_result_and_names_the_resume_command
+    argv = ["pi", "--id", "pi-q", "--tmux", "pi-q", "--context", "Answer briefly", "--wait-done", "--wait-timeout", "2m"]
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:validate_wait_done!)
+    captured = nil
+    registry = { "pid" => Process.pid, "port" => 43_997 }
+    runner.define_singleton_method(:wait_for_registration) { |_repo| registry }
+    runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
+    waiter_argv = nil
+    fake_waiter = lambda do |args, out:, err:|
+      waiter_argv = args
+      Object.new.tap do |waiter|
+        waiter.define_singleton_method(:run) do
+          out.puts(JSON.generate(ok: false, status: "timeout", wait_result: "timeout"))
+          124
+        end
+      end
+    end
+
+    out = nil
+    Harnex::Waiter.stub(:new, fake_waiter) do
+      runner.stub(:system, lambda { |*args| captured = args; true }) do
+        out, = capture_io { assert_equal 124, runner.send(:run_in_tmux, "pi", [], "/tmp/repo") }
+      end
+    end
+
+    refute_includes Shellwords.split(captured.last), "--wait-done", "the inner runner never blocks"
+    assert_equal %w[--id pi-q --repo /tmp/repo --until done --timeout 120.0], waiter_argv
+    data = JSON.parse(out)
+    assert_equal ["pi-q", "tmux", "timeout"], data.values_at("id", "mode", "wait_result")
+    assert_includes data["resume"], "harnex wait --id pi-q"
+  end
+
+  def test_owner_tag_gives_a_subagent_its_own_owner
+    with_env("CLAUDE_CODE_SESSION_ID" => "parent-123") do
+      runner = Harnex::Runner.new(["pi", "--owner-tag", "s2"])
+      runner.send(:extract_wrapper_options, ["pi", "--owner-tag", "s2"])
+      runner.send(:apply_telemetry_options!)
+      runner.send(:apply_owner_tag!)
+      assert_equal "parent-123/s2", runner.instance_variable_get(:@options)[:meta]["orchestration_session_id"]
+
+      bad = Harnex::Runner.new(["pi", "--owner-tag", "a/b"])
+      bad.send(:extract_wrapper_options, ["pi", "--owner-tag", "a/b"])
+      assert_raises(OptionParser::InvalidArgument) { bad.send(:apply_owner_tag!) }
+    end
+  end
+
+  def test_wait_done_needs_a_first_turn_and_a_detached_session
+    error = assert_raises(OptionParser::InvalidOption) do
+      prepared = Harnex::Runner.new(["pi", "--tmux", "--wait-done"])
+      prepared.send(:extract_wrapper_options, ["pi", "--tmux", "--wait-done"])
+      prepared.send(:validate_wait_done!)
+    end
+    assert_match(/requires --context/, error.message)
+
+    error = assert_raises(OptionParser::InvalidOption) do
+      prepared = Harnex::Runner.new(["pi", "--context", "x", "--wait-done"])
+      prepared.send(:extract_wrapper_options, ["pi", "--context", "x", "--wait-done"])
+      prepared.send(:validate_wait_done!)
+    end
+    assert_match(/--tmux or --detach/, error.message)
+  end
+
   def test_tmux_does_not_consume_following_flag_as_window_name
     runner = Harnex::Runner.new(["codex", "--tmux", "--id", "cx-123"])
     runner.send(:extract_wrapper_options, ["codex", "--tmux", "--id", "cx-123"])

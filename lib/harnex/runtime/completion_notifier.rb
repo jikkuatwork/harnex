@@ -4,6 +4,9 @@ module Harnex
   class CompletionNotifier
     class RegistrationError < StandardError; end
 
+    # Per-turn results kept in the owner record, so a watcher that was away
+    # while several turns ended still receives each one.
+    MAX_RESULTS = 20
     WORK_STATES = {
       "completed" => "completed", "rejected" => "failed",
       "failed" => "failed", "error" => "failed"
@@ -32,6 +35,7 @@ module Harnex
       @mutex = Mutex.new
       @registered = false
       @notified_turn = 0
+      @results = []
     end
 
     # Registration is the stale-marker boundary for a reused repo/id pair.
@@ -54,7 +58,8 @@ module Harnex
     # so `watch --owner` reports a nudged turn too; the marker files and the
     # --on-done hook keep their documented once-per-session contract.
     def notify(outcome:, work_state:, outcome_class:, artifact_report_status:,
-               end_sha:, terminal_signal:, turn: 1, follow_ups: nil)
+               end_sha:, terminal_signal:, turn: 1, follow_ups: nil,
+               final_message: nil, final_message_path: nil, turn_details: nil)
       outcome = outcome.to_s
       work_state = work_state.to_s
       turn = [turn.to_i, 1].max
@@ -82,9 +87,20 @@ module Harnex
         terminal_signal: terminal_signal.to_s, notified_at: now.utc.iso8601
       }
       marker_written = first ? write_marker(path, payload) : false
-      owned = payload.merge(turn: turn)
-      owned[:follow_ups] = follow_ups if follow_ups
-      write_owned_delivery(owned) if @owner_id
+      if @owner_id
+        result = payload.slice(:outcome, :work_state, :outcome_class, :artifact_report_status,
+                               :end_sha, :elapsed_s, :terminal_signal, :notified_at).merge(turn: turn)
+        result[:follow_ups] = follow_ups if follow_ups
+        result[:final_message] = final_message if final_message
+        result[:final_message_path] = final_message_path if final_message_path
+        result.merge!(turn_details.compact) if turn_details.is_a?(Hash)
+        results = @mutex.synchronize do
+          @results << result
+          @results.shift while @results.length > MAX_RESULTS
+          @results.dup
+        end
+        write_owned_delivery(payload.merge(result).merge(results: results))
+      end
       hook_launched = first ? launch_hook(payload) : false
       emit("completion_notification", outcome: outcome, work_state: work_state, turn: turn,
            marker_path: path, marker_written: marker_written,
@@ -99,7 +115,9 @@ module Harnex
       return false unless @owner_id && @mutex.synchronize { @registered }
 
       path = Harnex.owned_notification_path(@owner_id, @session_id)
-      @atomic_write.call(path, owned_identity.merge(work_state: "running", turn: [turn.to_i, 1].max))
+      results = @mutex.synchronize { @results.dup }
+      @atomic_write.call(path, owned_identity.merge(work_state: "running", turn: [turn.to_i, 1].max,
+                                                    turn_started_at: @turn_started_at.utc.iso8601, results: results))
       true
     rescue StandardError => e
       report_error("owned notification turn update failed", "delivery", e)

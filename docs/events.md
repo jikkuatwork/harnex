@@ -60,7 +60,13 @@ Emitted now (Layer 4):
   after a published result starts the next turn, announced by a `work_turn`
   row (`turn`). `harnex send` reports `after_seq`, the newest `seq` before
   its message, so `harnex wait --until done --after-seq N` waits for the turn
-  that message started or joined.
+  that message started or joined. They also carry, when known:
+  `final_message` (the worker's last reply this turn, at most 4,000
+  characters), `final_message_path` (the full text),
+  `final_message_truncated`, `follow_ups` (`{sent, pending}`), and the lane's
+  `end_sha` / `commits` at the turn's end.
+- `queue_update` (Pi): `follow_up` and `steering`, the sizes of Pi's pending
+  queues (counts only, never message text).
 
 ## 5. Stability promise
 

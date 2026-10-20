@@ -471,6 +471,25 @@ class WaiterTest < Minitest::Test
     end
   end
 
+  def test_wait_until_done_reports_a_stopped_exited_session_as_such
+    Dir.mktmpdir("harnex-wait-stopped") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "stopped-worker"
+      events_path = Harnex.events_log_path(repo, id)
+      File.write(events_path, JSON.generate(
+        schema_version: 1, seq: 9, ts: Time.now.utc.iso8601, id: id, type: "task_failed", status: "aborted",
+        stop: { reason: "manual", work_state: "running" }, turn: 1
+      ) + "\n")
+
+      out, = capture_io { assert_equal 1, Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done"]).run }
+      payload = JSON.parse(out)
+      assert_equal ["exited", "exited", true, "stopped_by_caller"],
+                   payload.values_at("state", "process_state", "terminal", "outcome_class")
+    ensure
+      FileUtils.rm_f(events_path) if events_path
+    end
+  end
+
   def test_wait_until_done_after_seq_skips_the_earlier_turn_result
     Dir.mktmpdir("harnex-wait-after-seq") do |repo|
       system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)

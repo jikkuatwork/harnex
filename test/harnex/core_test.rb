@@ -330,6 +330,14 @@ class CoreTest < Minitest::Test
     assert_equal 59876, port
   end
 
+  def test_parse_duration_seconds_accepts_compound_forms
+    assert_equal 510.0, Harnex.parse_duration_seconds("8m30s", option_name: "--timeout")
+    assert_equal 5400.0, Harnex.parse_duration_seconds("1h30m", option_name: "--timeout")
+    assert_equal 90.0, Harnex.parse_duration_seconds("1.5m", option_name: "--timeout")
+    assert_raises(OptionParser::InvalidArgument) { Harnex.parse_duration_seconds("30s5m", option_name: "--timeout") }
+    assert_raises(OptionParser::InvalidArgument) { Harnex.parse_duration_seconds("0m", option_name: "--timeout") }
+  end
+
   # --- parent_pid ---
 
   def test_parent_pid_returns_ppid_for_current_process

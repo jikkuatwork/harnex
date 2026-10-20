@@ -484,22 +484,29 @@ module Harnex
       }
       payload[:turn] = event["turn"] if event["turn"]
       payload[:follow_ups] = event["follow_ups"] if event["follow_ups"]
+      %w[end_sha commits turn_commits model final_message final_message_path final_message_truncated].each do |key|
+        payload[key.to_sym] = event[key] if event.key?(key)
+      end
       exit_code = 0
       if predicate == "done"
         failed = done_event_failed?(event)
-        exit_code = failed ? done_failure_exit_code(event["outcome_class"]) : DONE_EXIT_DONE
+        outcome_class = event["outcome_class"] || stop_outcome_class(event["stop"])
+        exit_code = failed ? done_failure_exit_code(outcome_class) : DONE_EXIT_DONE
+        # A session seen gone by now has exited; one never observed stays
+        # "running", the historical event-match default.
+        exited = @observation["live"] == false
         payload.merge!(
           ok: !failed,
           status: failed ? "failed" : "done",
           wait_result: done_wait_result(exit_code),
-          state: "running",
-          process_state: "running",
-          terminal: false,
+          state: exited ? "exited" : "running",
+          process_state: exited ? "exited" : "running",
+          terminal: exited,
           task_complete: !failed,
           task_failed: failed,
           done: !failed,
           work_state: failed ? "failed" : "completed",
-          outcome_class: event["outcome_class"],
+          outcome_class: outcome_class,
           artifact_report_status: event["artifact_report_status"]
         )
         payload[:last_error] = event["message"] || event["error"] if failed
@@ -507,6 +514,14 @@ module Harnex
       end
       puts JSON.generate(payload)
       exit_code
+    end
+
+    # A turn failed by a caller's stop or the runtime budget carries the
+    # stop provenance, not a class; name it as the dispatch row will.
+    def stop_outcome_class(stop)
+      return nil unless stop.is_a?(Hash)
+
+      { "manual" => "stopped_by_caller", "runtime_budget" => "timeout" }[stop["reason"].to_s]
     end
 
     def done_failure_exit_code(outcome_class)

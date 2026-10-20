@@ -60,6 +60,8 @@ module Harnex
     # Pi tools whose structured results carry an integer exit code.
     PI_COMMAND_TOOLS = %w[bash].freeze
     MAX_PENDING_PI_COMMANDS = 256
+    # Inline cap for a turn's final reply; the full text is in its file.
+    FINAL_MESSAGE_LIMIT = 4000
     class EventCounters
       def initialize
         @counts = {
@@ -169,6 +171,7 @@ module Harnex
       @completion_turn = 1
       @turn_follow_ups_sent = 0
       @pi_follow_up_pending = 0
+      @turn_final_text = nil
       @completion_notifier = completion_notifier || CompletionNotifier.new(
         repo_root: repo_root,
         id: @id,
@@ -351,6 +354,8 @@ module Harnex
       }
       payload.merge!(log_activity_snapshot)
       payload[:activity] = @activity.snapshot
+      running = pi_running_commands
+      payload[:running_commands] = running unless running.empty?
       payload[:stop] = @stop_request&.to_h
       payload[:runtime_budget] = runtime_budget_snapshot
       payload[:description] = description if description
@@ -535,6 +540,7 @@ module Harnex
       dispatch[:model] = meta_hash["model"] if meta_hash["model"] && !dispatch.key?(:model)
       dispatch[:effort] = meta_hash["effort"] if meta_hash["effort"] && !dispatch.key?(:effort)
       queued_into_run = dispatch[:streaming_behavior] == "followUp"
+      dispatch_options = dispatch
 
       turn_id = nil
       after_seq = nil
@@ -543,6 +549,15 @@ module Harnex
           raise "session is stopping or disconnected" if @stop_requested || @session_finalized || @pi_transport_failed
 
           after_seq = current_event_seq
+          # The inbox checked "busy" without this lock; a run that settled
+          # since then is done, so this is a new prompt, not a follow-up.
+          if queued_into_run && @state_machine.state != :busy
+            queued_into_run = false
+            dispatch_options = dispatch.reject { |key, _| key == :streaming_behavior }
+          end
+          # Count the follow-up for the turn it joins before releasing the
+          # lock, so a settlement during the RPC cannot misattribute it.
+          @turn_follow_ups_sent += 1 if queued_into_run
           # A follow-up joins the running turn: Pi delivers it before
           # agent_settled, so that settlement already covers it and nothing
           # is reset here. If Pi has in fact gone idle it starts a new run,
@@ -562,7 +577,7 @@ module Harnex
           end
         end
         begin
-          turn_id = adapter.dispatch(**dispatch)
+          turn_id = adapter.dispatch(**dispatch_options)
         rescue StandardError => e
           @completion_transition_lock.synchronize do
             mark_task_failed(status: "dispatch_error", error: e.message) unless @session_finalized || @stop_requested
@@ -570,7 +585,6 @@ module Harnex
           raise
         end
         @completion_transition_lock.synchronize do
-          @turn_follow_ups_sent += 1 if queued_into_run
           unless @session_finalized
             @state_machine.force_busy! unless adapter.transport == :stdio_jsonl_rpc
             @injected_count += 1
@@ -580,7 +594,7 @@ module Harnex
         end
       end
 
-      emit_send_event(dispatch.fetch(:prompt, text), force: payload[:force])
+      emit_send_event(dispatch_options.fetch(:prompt, text), force: payload[:force])
       {
         ok: true,
         cli: adapter.key,
@@ -789,6 +803,10 @@ module Harnex
         schedule_auto_stop("turn_completed", interrupt: false)
       when "item/completed"
         emit_event("item_completed", item: params["item"])
+        item = params["item"]
+        if item.is_a?(Hash) && item["type"] == "agentMessage" && !item["text"].to_s.strip.empty?
+          @turn_final_text = item["text"].to_s
+        end
         @event_counters.record_item(params["item"])
         record_observed_command(params["item"])
         text = render_item_text(params["item"])
@@ -885,6 +903,7 @@ module Harnex
       event_payload[:artifact_report_path] = artifact_report_path
       event_payload[:turn] = @completion_turn
       event_payload[:follow_ups] = follow_ups_summary if follow_ups_summary
+      event_payload.merge!(final_message_fields).merge!(turn_git_fields)
       emit_event("task_complete", **event_payload)
       publish_completion_notification("task_complete")
       true
@@ -976,6 +995,7 @@ module Harnex
       payload[:diagnostics] = @completion_diagnostics unless @completion_diagnostics.empty?
       payload[:turn] = @completion_turn
       payload[:follow_ups] = follow_ups_summary if follow_ups_summary
+      payload.merge!(final_message_fields).merge!(turn_git_fields)
       emit_event("task_failed", **payload)
       if publish
         enforce_required_artifact_report!
@@ -1281,6 +1301,16 @@ module Harnex
     # result.structuredContent, correlated by toolCallId. Aborts, timeouts,
     # extension-replaced results, and older Pi releases carry no structured
     # exit; those calls are counted as unobserved, never inferred from prose.
+    # Shell commands Pi is running right now (bounded), so a stall report can
+    # say whether the worker waits on a long command or on the model.
+    def pi_running_commands
+      @observed_commands_mutex.synchronize do
+        @pi_pending_commands.values.compact.last(3).map { |command| command[0, 160] }
+      end
+    rescue StandardError
+      []
+    end
+
     def start_pi_command(message)
       call_id = message["toolCallId"].to_s
       args = message["args"]
@@ -1367,6 +1397,9 @@ module Harnex
 
     def capture_pi_assistant_message(message)
       return unless message.is_a?(Hash) && message["role"] == "assistant"
+
+      text = pi_extract_message_text(message).to_s
+      @turn_final_text = text unless text.strip.empty?
 
       reason = message["stopReason"].to_s
       @pi_last_assistant_stop_reason = reason unless reason.empty?
@@ -1560,6 +1593,7 @@ module Harnex
 
         @completion_notification_sent = false
         @turn_follow_ups_sent = 0
+        @turn_final_text = nil
         @completion_turn += 1
       end
       return unless turn
@@ -1580,8 +1614,48 @@ module Harnex
         outcome: outcome, work_state: outcome == "completed" ? "completed" : "failed",
         outcome_class: @completion_outcome_class, artifact_report_status: @completion_report_status,
         end_sha: summary_string(@git_end[:sha]), terminal_signal: terminal_signal,
-        turn: @completion_turn, follow_ups: follow_ups_summary
+        turn: @completion_turn, follow_ups: follow_ups_summary,
+        final_message: final_message_fields[:final_message],
+        final_message_path: final_message_fields[:final_message_path],
+        turn_details: (@last_turn_git_fields || {}).slice(:turn_commits, :model)
       }
+    end
+
+    # The lane's head and commit count since dispatch start, refreshed at the
+    # turn's end so a result names the commit it produced.
+    def turn_git_fields
+      snapshot = refresh_git_end_snapshot
+      return {} if snapshot.nil? || snapshot[:sha].to_s.empty?
+
+      commits = snapshot[:commits]
+      turn_commits = commits && (commits - @commits_at_last_result.to_i)
+      @commits_at_last_result = commits if commits
+      fields = { end_sha: snapshot[:sha], commits: commits, turn_commits: turn_commits }.compact
+      model = adapter.respond_to?(:current_model) ? adapter.current_model.to_s : ""
+      fields[:model] = model unless model.empty?
+      @last_turn_git_fields = fields
+    rescue StandardError
+      {}
+    end
+
+    # #85: the worker's last reply this turn, so a supervisor gets the answer
+    # with the result instead of reading the transcript. Written once per
+    # turn; the inline copy is bounded.
+    def final_message_fields
+      text = @turn_final_text.to_s.strip
+      return {} if text.empty?
+
+      @final_message_written ||= {}
+      path = Harnex.final_message_path(repo_root, id, @completion_turn)
+      unless @final_message_written[@completion_turn] == text
+        File.write(path, text + "\n")
+        @final_message_written[@completion_turn] = text
+      end
+      fields = { final_message: text[0, FINAL_MESSAGE_LIMIT], final_message_path: path }
+      fields[:final_message_truncated] = true if text.length > FINAL_MESSAGE_LIMIT
+      fields
+    rescue StandardError
+      { final_message: text[0, FINAL_MESSAGE_LIMIT] }
     end
 
     # Follow-ups sent into this turn and how many Pi still held when it

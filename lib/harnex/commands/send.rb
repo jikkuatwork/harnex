@@ -1,6 +1,7 @@
 require "json"
 require "net/http"
 require "optparse"
+require "shellwords"
 require "stringio"
 require "uri"
 
@@ -28,6 +29,9 @@ module Harnex
         opts.on("--no-wait", "Return immediately after queueing (HTTP 202). Use for fire-and-forget or when polling delivery separately.") { options[:wait] = false }
         opts.on("--wait-for-idle", "After a successful send, wait for the agent to return to prompt") { options[:wait_for_idle] = true }
         opts.on("--wait-done", "After delivery, block until the turn it started or joined completes or fails (exit codes of wait --until done)") { options[:wait_done] = true }
+        opts.on("--stall-after DUR", "With --wait-done: exit 4 when the turn shows no progress for DUR") do |value|
+          options[:stall_after] = Harnex.parse_duration_seconds(value, option_name: "--stall-after")
+        end
         opts.on("--relay", "Force relay header formatting") { options[:relay] = true }
         opts.on("--no-relay", "Disable automatic relay headers") { options[:relay] = false }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
@@ -115,6 +119,10 @@ module Harnex
       when :timeout
         puts JSON.generate(ok: false, id: @options[:id], status: "timeout", error: "lookup timed out after #{@options[:timeout]}s")
         return 124
+      when :exited
+        puts JSON.generate(ok: false, id: @options[:id], status: "exited",
+                           error: "session #{@options[:id]} has exited; nothing to send to (start a new one with harnex run)")
+        return 1
       end
 
       registry = direct_registry.merge(registry || {})
@@ -266,6 +274,7 @@ module Harnex
       end
 
       argv = ["--id", @options[:id], "--repo", @options[:repo_path], "--until", "done", "--after-seq", after_seq.to_s]
+      argv += ["--stall-after", @options[:stall_after].to_s] if @options[:stall_after]
       if @options[:timeout_explicit]
         remaining = deadline - monotonic_now
         unless remaining.positive?
@@ -277,7 +286,16 @@ module Harnex
       out = StringIO.new
       exit_code = Waiter.new(argv, out: out, err: $stderr).run
       turn = parse_json_body(out.string.lines.last.to_s)
-      puts JSON.generate(result.merge("ok" => turn["ok"] == true, "wait_result" => turn["wait_result"], "turn_result" => turn))
+      # `status` is the turn's verdict; the delivery's own status moves to
+      # delivery_status so a timed-out wait never reads as "delivered".
+      payload = result.merge("ok" => turn["ok"] == true, "status" => turn["wait_result"] || "unknown",
+                             "delivery_status" => result["status"], "wait_result" => turn["wait_result"],
+                             "turn_result" => turn)
+      if exit_code == Waiter::DONE_EXIT_TIMEOUT
+        payload["resume"] = "#{Harnex.cli_command} wait --id #{@options[:id]} --repo #{Shellwords.escape(@options[:repo_path])} " \
+                            "--until done --after-seq #{after_seq} --timeout 9m"
+      end
+      puts JSON.generate(payload)
       exit_code
     end
 
@@ -347,13 +365,20 @@ module Harnex
       warn("[harnex send] #{message}")
     end
 
+    # A session that already exited fails fast (after a short grace for an
+    # id being relaunched) instead of spending the whole --timeout on lookup.
+    EXITED_GRACE_S = 2.0
+
     def wait_for_registry(repo_root, deadline:)
       return nil if @options[:port]
 
+      started = monotonic_now
       loop do
         registry = resolve_registry(repo_root)
         return registry unless registry == :retry
         return :timeout if deadline_reached?(deadline)
+        return :exited if @options[:id] && monotonic_now - started >= EXITED_GRACE_S &&
+                          File.exist?(Harnex.exit_status_path(repo_root, @options[:id]))
 
         sleep 0.1
       end
@@ -492,6 +517,7 @@ module Harnex
       raise "--submit-only cannot be combined with --no-submit" if @options[:submit_only] && !@options[:submit]
       raise "--wait-done cannot be combined with --no-wait" if @options[:wait_done] && !@options[:wait]
       raise "--wait-done cannot be combined with --wait-for-idle" if @options[:wait_done] && @options[:wait_for_idle]
+      raise "--stall-after requires --wait-done" if @options[:stall_after] && !@options[:wait_done]
 
       return unless @options[:submit_only]
       return if @options[:message].nil? && @argv.empty?

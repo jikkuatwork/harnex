@@ -48,22 +48,21 @@ module Harnex
     raise OptionParser::InvalidArgument, "#{option_name} requires a value" if text.empty?
 
     match = text.match(/\A([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)([smhSMH]?)\z/)
-    unless match
+    # Compound forms such as 1h30m or 8m30s: whole numbers, units in order.
+    compound = text.match(/\A(?:(\d+)[hH])?(?:(\d+)[mM])?(?:(\d+)[sS])?\z/) unless match
+    unless match || (compound && compound.captures.any?)
       raise OptionParser::InvalidArgument,
-            "#{option_name} must be a positive duration (examples: 30, 30s, 5m, 2h)"
+            "#{option_name} must be a positive duration (examples: 30, 30s, 5m, 8m30s, 2h)"
     end
 
-    amount = Float(match[1])
-    multiplier =
-      case match[2].downcase
-      when "", "s" then 1.0
-      when "m" then 60.0
-      when "h" then 3600.0
+    seconds =
+      if match
+        amount = Float(match[1])
+        amount * { "" => 1.0, "s" => 1.0, "m" => 60.0, "h" => 3600.0 }.fetch(match[2].downcase)
       else
-        raise OptionParser::InvalidArgument, "#{option_name} has an unsupported duration suffix"
+        hours, minutes, secs = compound.captures.map(&:to_i)
+        (hours * 3600 + minutes * 60 + secs).to_f
       end
-
-    seconds = amount * multiplier
     unless seconds.finite? && seconds.positive?
       raise OptionParser::InvalidArgument, "#{option_name} must be finite and greater than 0"
     end
@@ -429,6 +428,26 @@ module Harnex
     nil
   end
 
+  # How to invoke this harnex in a printed hint: the checkout's bin when
+  # running from source, plain `harnex` for the installed gem.
+  def cli_command
+    lib = File.expand_path("..", __dir__)
+    return "harnex" if Gem.path.any? { |dir| lib.start_with?(File.join(File.expand_path(dir), "")) }
+
+    File.expand_path("../bin/harnex", lib)
+  end
+
+  OWNER_TAG = /\A[A-Za-z0-9._-]{1,64}\z/
+
+  # #85: a subagent shares its parent's session id; a tag gives it its own
+  # owner ("<base>/<tag>"), so its stream holds only the lanes it launched.
+  def tagged_owner_id(base, tag)
+    raise ArgumentError, "owner tag must be 1-64 letters, digits, '.', '_' or '-'" unless tag.to_s.match?(OWNER_TAG)
+
+    base = base.to_s.strip
+    base.empty? ? tag.to_s : "#{base}/#{tag}"
+  end
+
   def owned_notifications_dir(owner_id)
     File.join(STATE_DIR, "notifications", Digest::SHA256.hexdigest(owner_id.to_s))
   end
@@ -445,6 +464,14 @@ module Harnex
     output_dir = File.join(STATE_DIR, "output")
     FileUtils.mkdir_p(output_dir)
     File.join(output_dir, "#{session_file_slug(repo_root, id)}.log")
+  end
+
+  # The worker's final reply for one turn (#85): the full text behind the
+  # bounded `final_message` in events, wait output and owner events.
+  def final_message_path(repo_root, id, turn)
+    output_dir = File.join(STATE_DIR, "output")
+    FileUtils.mkdir_p(output_dir)
+    File.join(output_dir, "#{session_file_slug(repo_root, id)}.turn-#{turn}.md")
   end
 
   def events_log_path(repo_root, id)

@@ -34,7 +34,8 @@ module Harnex
     end
 
     def extract_section(content, section, path)
-      needle = section.to_s.strip
+      # "## Task" and "Task" both name the heading "## Task".
+      needle = section.to_s.strip.sub(/\A\#{1,6}[ \t]+/, "")
       raise Error, "--context-section needs a non-empty heading" if needle.empty?
 
       lines = content.lines

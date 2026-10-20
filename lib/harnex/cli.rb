@@ -39,6 +39,8 @@ module Harnex
         Doctor.new(@argv.drop(1)).run
       when "preflight"
         Preflight.new(@argv.drop(1)).run
+      when "ask"
+        Ask.new(@argv.drop(1)).run
       when "orchestration"
         OrchestrationCommand.new(@argv.drop(1)).run
       when "artifact-report"
@@ -93,6 +95,8 @@ module Harnex
         Doctor.usage
       when "preflight"
         Preflight.usage
+      when "ask"
+        Ask.usage
       when "orchestration"
         OrchestrationCommand.usage
       when "artifact-report"
@@ -120,6 +124,7 @@ module Harnex
           harnex agents-guide [topic]
           harnex doctor
           harnex preflight ADAPTER [options] [--] [cli-args...]
+          harnex ask [options] [--] QUESTION...
           harnex orchestration sample|report [options]
           harnex artifact-report init|validate PATH [options]
           harnex telemetry assert-canonical|reconcile [options]
@@ -143,6 +148,7 @@ module Harnex
           doctor  Run static adapter checks and optional read-only session sweep
           preflight
                   Prove an adapter end to end with one tiny dispatch (JSON verdict)
+          ask     Ask a Pi (GPT-backed) worker one question and print its answer
           orchestration
                   Emit external primary samples and report orchestration tax
           artifact-report
@@ -171,6 +177,7 @@ module Harnex
           harnex agents-guide dispatch
           harnex doctor
           harnex preflight pi --cwd . -- --no-approve
+          harnex ask "Where is the dispatch row written, and is that path tested?"
           harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
           harnex artifact-report validate /path/from-dispatch-row.json --final
           harnex artifact-report init .harnex/reports/legacy-v1.json

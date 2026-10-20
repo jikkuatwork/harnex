@@ -343,6 +343,22 @@ class SenderRelayTest < Minitest::Test
     thread&.join(1)
   end
 
+  def test_send_to_an_exited_session_fails_fast
+    Dir.mktmpdir("harnex-send-exited") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      exit_path = Harnex.exit_status_path(repo, "gone-lane")
+      File.write(exit_path, JSON.generate(ok: true, id: "gone-lane", exit_code: 143, status: "exited"))
+      sender = Harnex::Sender.new(["--id", "gone-lane", "--repo", repo, "--message", "hi", "--timeout", "30"])
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      out, = capture_io { assert_equal 1, sender.run }
+
+      assert_equal "exited", JSON.parse(out)["status"]
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+    ensure
+      FileUtils.rm_f(exit_path) if exit_path
+    end
+  end
+
   def test_expired_message_fails_at_once_with_the_reason
     expired = { id: "abc123", status: "expired",
                 error: "expired undelivered after 120s; agent busy; use --force to inject mid-turn" }

@@ -386,6 +386,38 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal "task_failed", @session.send(:build_summary_outcome, nil)["class"]
   end
 
+  def test_each_turn_result_carries_the_workers_final_reply
+    reply = lambda do |text, ts|
+      { "role" => "assistant", "content" => [{ "type" => "text", "text" => text }], "stopReason" => "stop", "timestamp" => ts }
+    end
+    @session.send(:register_completion_notifier!)
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => reply.call("Looking at the code.", 1) })
+    tool_only = { "role" => "assistant", "content" => [], "stopReason" => "toolUse", "timestamp" => 2 }
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => tool_only })
+    final = reply.call("DONE 3d633fc\nAdded Calc.add with a test.", 3)
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => final })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [final], "willRetry" => false })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    complete = events.reverse.find { |row| row["type"] == "task_complete" }
+    assert_equal "DONE 3d633fc\nAdded Calc.add with a test.", complete["final_message"]
+    assert_equal "DONE 3d633fc\nAdded Calc.add with a test.\n", File.read(complete["final_message_path"])
+    refute complete.key?("final_message_truncated")
+
+    long = "x" * (Harnex::Session::FINAL_MESSAGE_LIMIT + 10)
+    @adapter.define_singleton_method(:dispatch) { |**_kwargs| nil }
+    @adapter.instance_variable_set(:@state, :prompt)
+    @session.inbox.enqueue(text: "next", submit: true, enter_only: false)
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => reply.call(long, 4) })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+    second = events.reverse.find { |row| row["type"] == "task_complete" }
+    assert_equal [2, true, Harnex::Session::FINAL_MESSAGE_LIMIT], [second["turn"], second["final_message_truncated"], second["final_message"].length]
+    assert_equal long, File.read(second["final_message_path"]).chomp
+    refute_equal complete["final_message_path"], second["final_message_path"]
+  end
+
   def test_busy_send_is_delivered_as_a_follow_up_into_the_running_turn
     dispatched = []
     @adapter.define_singleton_method(:dispatch) do |**kwargs|
@@ -413,6 +445,22 @@ class SessionPiRpcTest < Minitest::Test
     queue = events.select { |row| row["type"] == "queue_update" }.map { |row| row["follow_up"] }
     assert_equal [1, 0], queue
     refute events.any? { |row| row.to_s.include?("scope addition") && row["type"] == "queue_update" }
+  end
+
+  def test_a_follow_up_whose_run_settled_meanwhile_is_sent_as_a_prompt
+    dispatched = []
+    @adapter.define_singleton_method(:dispatch) do |**kwargs|
+      dispatched << kwargs
+      nil
+    end
+    @adapter.instance_variable_set(:@state, :busy)
+    # The inbox saw "busy", but the run settled before the session lock.
+    @session.instance_variable_get(:@state_machine).force_prompt!
+    result = @session.inject_via_adapter(text: "late note", submit: true, enter_only: false, follow_up: true)
+
+    assert_equal "prompt", result[:delivery]
+    assert_nil dispatched.last[:streaming_behavior]
+    assert_nil @session.send(:follow_ups_summary)
   end
 
   def test_force_still_steers_and_idle_send_is_a_plain_prompt

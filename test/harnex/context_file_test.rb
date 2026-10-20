@@ -65,6 +65,12 @@ class ContextFileTest < Minitest::Test
     end
   end
 
+  def test_a_section_may_be_named_with_its_heading_marks
+    with_brief("# Brief\n## Task\nDo it.\n## Appendix\nrows\n") do |path|
+      assert_equal "Do it.", Harnex::ContextFile.load(path, section: "## Task")[:text]
+    end
+  end
+
   def test_missing_section_is_refused
     with_brief(HOLM_BRIEF) do |path|
       error = assert_raises(Harnex::ContextFile::Error) { Harnex::ContextFile.load(path, section: "Nope") }

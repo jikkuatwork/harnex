@@ -20,13 +20,18 @@ module Harnex
     MAX_WAIT_EXIT = 124
     CURSOR_NAME = /\A[A-Za-z0-9._-]{1,64}\z/
 
-    # once: (#84) exit 0 after the first event the cursor delivers (a result
-    # or a stall), so one blocking call covers every lane. `started` lines
-    # are skipped there: they repeat on every start and would end each call.
+    # once: (#84) exit 0 after the first pass that delivers anything (results
+    # or stalls; every one ready in that pass), so one blocking call covers
+    # every lane. `started` lines are skipped there: they repeat on every
+    # start and would end each call.
     # cursor: a named cursor, so a parent and its subagent (which share one
     # Claude session id) do not take each other's events.
-    def initialize(owner_id:, stall_after: nil, max_wait: nil, once: false, cursor: nil, out: $stdout, err: $stderr,
-                   clock: nil, wall_clock: nil, sleeper: nil, status_fetcher: nil)
+    # match: lane-id globs; other lanes of the owner are ignored (#85).
+    # until_idle: like once, but keep collecting until no matching lane is
+    # still running, so one call waits for a whole batch of lanes.
+    def initialize(owner_id:, stall_after: nil, max_wait: nil, once: false, cursor: nil, match: nil,
+                   until_idle: false, out: $stdout, err: $stderr, clock: nil, wall_clock: nil, sleeper: nil,
+                   status_fetcher: nil)
       @owner_id = owner_id.to_s
       raise ArgumentError, "owner id is required" if @owner_id.strip.empty?
       if cursor && !cursor.to_s.match?(CURSOR_NAME)
@@ -35,7 +40,10 @@ module Harnex
 
       @stall_after = stall_after
       @max_wait = max_wait
-      @once = once
+      @until_idle = until_idle
+      @once = once || until_idle
+      @busy_lanes = 0
+      @match = Array(match).flat_map { |glob| glob.to_s.split(",") }.map(&:strip).reject(&:empty?)
       @emitted = 0
       @out = out
       @err = err
@@ -53,7 +61,7 @@ module Harnex
       load_cursor
       loop do
         scan
-        return 0 if once_satisfied?
+        return 0 if @until_idle ? @busy_lanes.zero? : once_satisfied?
         if deadline && @clock.call >= deadline
           @err.puts("harnex watch: no owner event within #{duration(@max_wait)}") if @once
           return MAX_WAIT_EXIT
@@ -70,15 +78,19 @@ module Harnex
       load_cursor unless @delivered
       list = records
       seen = list.to_h { |record| [record["session_id"], true] }
-      list.each do |record|
-        break if once_satisfied?
-        next if delivered?(record)
-
+      mine = list.select { |record| matches?(record) }
+      delivered = deliver_results(mine)
+      @busy_lanes = 0
+      mine.each do |record|
         if record["outcome"].to_s.empty?
+          next unless turn_of(record) > delivered.fetch(record["session_id"])
+
           observe_running(record)
+          @busy_lanes += 1 if @running.key?(record["session_id"])
         else
           @running.delete(record["session_id"])
-          settle(record)
+          # A settled lane whose result still waits for its dispatch row.
+          @busy_lanes += 1 if delivered.fetch(record["session_id"]) < results_of(record).map { |r| turn_of(r) }.max.to_i
         end
       end
       @running.select! { |session_id, _| seen[session_id] }
@@ -91,16 +103,53 @@ module Harnex
       @once && @emitted.positive?
     end
 
-    # The cursor keeps one delivery key per dispatch: its latest delivered
-    # turn result (#81), or the runner_gone report for its running turn.
-    def delivered?(record)
-      value = @delivered[record["session_id"]]
-      return false if value.nil?
-      # Any value for a first turn still running is its runner_gone report
-      # (cursors written before #81 stored a timestamp there).
-      return turn_of(record) <= 1 || value == gone_key(record) if record["outcome"].to_s.empty?
+    def matches?(record)
+      @match.empty? || @match.any? { |glob| File.fnmatch?(glob, record["id"].to_s) }
+    end
 
-      value == settled_key(record)
+    # Every turn result not yet delivered, across all lanes in the order
+    # they settled, so a watcher that was away while several turns ended
+    # still gets each one (#85). Returns each dispatch's last delivered turn.
+    def deliver_results(records)
+      delivered = records.to_h { |record| [record["session_id"], delivered_turn(record["session_id"])] }
+      pending = records.flat_map do |record|
+        results = results_of(record)
+        results.filter_map do |result|
+          next if turn_of(result) <= delivered[record["session_id"]]
+
+          final = result.equal?(results.last) && !record["outcome"].to_s.empty?
+          [result["notified_at"].to_s, turn_of(result), record, result, final]
+        end
+      end
+      blocked = {}
+      pending.sort_by { |at, turn, record, _result, _final| [at, record["session_id"], turn] }.each do |_at, turn, record, result, final|
+        session_id = record["session_id"]
+        next if blocked[session_id]
+        next blocked[session_id] = true unless settle(record.merge(result), final: final)
+
+        delivered[session_id] = turn
+      end
+      delivered
+    end
+
+    # Owner records from 0.18.1 keep a bounded `results` history; older ones
+    # hold only their latest settlement at the top level.
+    def results_of(record)
+      history = record["results"]
+      list = history.is_a?(Array) ? history.select { |item| item.is_a?(Hash) && item["outcome"] } : []
+      list = [record] if list.empty? && !record["outcome"].to_s.empty?
+      list.sort_by { |item| turn_of(item) }
+    end
+
+    # The cursor keeps one value per dispatch: the key of its last delivered
+    # turn result ("<notified_at>#N"; turn 1 is the bare notified_at, as
+    # before #81) or the runner_gone report "gone#N" for running turn N.
+    def delivered_turn(session_id)
+      value = @delivered[session_id].to_s
+      return 0 if value.empty?
+
+      number = value[/#(\d+)\z/, 1]
+      number ? number.to_i : 1
     end
 
     def turn_of(record)
@@ -136,7 +185,7 @@ module Harnex
       session_id = record["session_id"]
       state = @running[session_id]
       unless state
-        state = @running[session_id] = { stalled: @stalled.key?(session_id), next_check: nil }
+        state = @running[session_id] = { stalled: @stalled.key?(session_id), next_check: nil, status: nil }
         # A later turn (a nudge) is watched silently; its result is reported.
         if turn_of(record) <= 1 && !@once
           emit("started", record, msg: "#{record['id']} started in #{portable(record['repo_root'])}")
@@ -161,16 +210,28 @@ module Harnex
       return if state[:next_check] && now < state[:next_check]
 
       state[:next_check] = now + [[@stall_after / 4.0, 0.5].max, STALL_POLL_MAX_INTERVAL_S].min
-      stall = Harnex::Stall.stalled(@status_fetcher.call(record), @stall_after)
+      status = @status_fetcher.call(record)
+      stall = Harnex::Stall.stalled(status, @stall_after)
       if stall && !state[:stalled]
         state[:stalled] = true
         remember_stall(record["session_id"], true)
-        emit("stalled", record, stall: stall,
-                                msg: "#{record['id']} stalled: no progress for #{duration(stall['idle_s'])} (#{stall['clock']})")
+        running = status.is_a?(Hash) ? Array(status["running_commands"]).first(3) : []
+        stall = stall.merge("running_commands" => running) unless running.empty?
+        detail = running.empty? ? "" : " while running `#{running.first}`"
+        emit("stalled", record.merge("elapsed_s" => running_elapsed(record)), stall: stall,
+             msg: "#{record['id']} stalled: no progress for #{duration(stall['idle_s'])} (#{stall['clock']})#{detail}")
       elsif stall.nil?
         state[:stalled] = false # progress resumed (or nothing observable): re-arm
         remember_stall(record["session_id"], false)
       end
+    end
+
+    # Seconds since the running turn began (or the dispatch, for turn 1).
+    def running_elapsed(record)
+      since = Time.iso8601((record["turn_started_at"] || record["started_at"]).to_s)
+      [(@wall_clock.call - since).to_i, 0].max
+    rescue ArgumentError
+      nil
     end
 
     # --once runs one process per event, so a stall episode must outlive the
@@ -183,7 +244,10 @@ module Harnex
       save_cursor
     end
 
-    def settle(record)
+    # final: the dispatch's last result once it settled for good; only that
+    # one may take its cause from the dispatch row. Returns false while it
+    # waits for that row.
+    def settle(record, final: true)
       outcome = record["outcome"].to_s
       outcome_class = record["outcome_class"]
       event = { "completed" => "done", "rejected" => "rejected" }[outcome]
@@ -192,8 +256,8 @@ module Harnex
         # settles an interrupted turn as failed). The dispatch row's #57
         # class names the cause; it lands moments after an auto-stop
         # settlement, so wait briefly for it before falling back.
-        row = dispatch_row(record)
-        return if row.nil? && within_row_grace?(record)
+        row = final ? dispatch_row(record) : nil
+        return false if final && row.nil? && within_row_grace?(record)
 
         outcome_class = row&.dig("outcome", "class") || outcome_class
         event = { "timeout" => "timeout", "stopped_by_caller" => "stopped" }.fetch(outcome_class.to_s, "failed")
@@ -201,6 +265,7 @@ module Harnex
 
       emit(event, record, outcome_class: outcome_class, msg: settled_message(event, record, outcome_class))
       deliver(record, settled_key(record))
+      true
     end
 
     def settled_message(event, record, outcome_class)
@@ -222,7 +287,7 @@ module Harnex
         "event" => event,
         "id" => record["id"],
         "session_id" => record["session_id"],
-        "turn" => (turn_of(record) if record.key?("turn")),
+        "turn" => turn_of(record),
         "repo" => portable(record["repo_root"]),
         "ts" => @wall_clock.call.utc.iso8601(3),
         "work_state" => { "started" => "running", "stalled" => "running", "done" => "completed" }.fetch(event, "failed"),
@@ -230,9 +295,13 @@ module Harnex
         "artifact_report_status" => record["artifact_report_status"],
         "receipt_path" => portable(record["receipt_path"]),
         "end_sha" => record["end_sha"],
+        "turn_commits" => (record["turn_commits"] if record["outcome"]),
+        "model" => (record["model"] if record["outcome"]),
         "elapsed_s" => record["elapsed_s"],
         "settled_at" => (record["notified_at"] if record["outcome"]),
         "follow_ups" => record["follow_ups"],
+        "final_message" => (record["final_message"] if record["outcome"]),
+        "final_message_path" => (portable(record["final_message_path"]) if record["outcome"]),
         "stall" => stall,
         "reason" => reason,
         "msg" => msg
@@ -320,6 +389,7 @@ module Harnex
     def duration(seconds)
       value = seconds.to_f.round
       return "#{value}s" if value < 60
+      return format("%dm%02ds", value / 60, value % 60) if value < 600
       return "#{(value / 60.0).round}m" if value < 3600
 
       hours, rest = value.divmod(3600)
