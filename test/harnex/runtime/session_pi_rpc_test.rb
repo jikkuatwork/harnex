@@ -330,6 +330,139 @@ class SessionPiRpcTest < Minitest::Test
     [server_out, client_out, client_in, server_in].each { |io| io.close unless io.closed? rescue nil }
   end
 
+  class TurnRecordingNotifier
+    attr_reader :notified, :turns
+
+    def initialize
+      @notified = []
+      @turns = []
+    end
+
+    def register! = true
+
+    def notify(**snapshot)
+      @notified << snapshot
+      true
+    end
+
+    def turn_started(turn)
+      @turns << turn
+    end
+  end
+
+  def settle_pi_run(session, stop_reason: "stop", error: nil)
+    assistant = { "role" => "assistant", "content" => [], "stopReason" => stop_reason, "timestamp" => rand(1_000_000) }
+    assistant["errorMessage"] = error if error
+    session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+    session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+  end
+
+  def test_exhausted_provider_retries_classify_as_provider_capacity
+    capacity = "high demand: request exceeds the maximum usage size allowed during peak load"
+    assistant = { "role" => "assistant", "content" => [], "stopReason" => "error",
+                  "errorMessage" => capacity, "timestamp" => 77 }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "auto_retry_start", "attempt" => 1, "maxAttempts" => 3,
+                                                "delayMs" => 2000, "errorMessage" => capacity })
+    @session.send(:handle_jsonl_notification, { "type" => "auto_retry_end", "success" => false, "attempt" => 3,
+                                                "finalError" => capacity })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_equal "provider_capacity", failure["outcome_class"]
+    assert_equal capacity, failure["message"]
+    assert_equal "provider_capacity", @session.send(:build_summary_outcome, nil)["class"]
+    assert_equal "provider_capacity", @session.status_payload[:outcome_class]
+
+    # The next run starts clean: a plain error without retries is task_failed.
+    assistant = assistant.merge("errorMessage" => "tool crashed", "timestamp" => 78)
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_nil failure["outcome_class"]
+    assert_equal "task_failed", @session.send(:build_summary_outcome, nil)["class"]
+  end
+
+  def test_busy_send_is_delivered_as_a_follow_up_into_the_running_turn
+    dispatched = []
+    @adapter.define_singleton_method(:dispatch) do |**kwargs|
+      dispatched << kwargs
+      nil
+    end
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @adapter.instance_variable_set(:@state, :busy)
+
+    result = @session.inbox.enqueue(text: "scope addition", submit: true, enter_only: false)
+
+    assert_equal "delivered", result[:status]
+    assert_equal "follow_up", result[:delivery]
+    assert_kind_of Integer, result[:after_seq]
+    assert_equal "followUp", dispatched.last[:streaming_behavior]
+    refute @session.instance_variable_get(:@pi_awaiting_run_start), "a follow-up must not hide the run's own settlement"
+    assert_equal({ pending: 0, delivered_total: 1, expired_total: 0 }, @session.inbox.stats)
+
+    @session.send(:handle_jsonl_notification, { "type" => "queue_update", "steering" => [], "followUp" => ["scope addition"] })
+    @session.send(:handle_jsonl_notification, { "type" => "queue_update", "steering" => [], "followUp" => [] })
+    settle_pi_run(@session)
+    complete = events.reverse.find { |row| row["type"] == "task_complete" }
+    assert_operator complete["seq"], :>, result[:after_seq]
+    assert_equal({ "sent" => 1, "pending" => 0 }, complete["follow_ups"], "the follow-up reached the model")
+    queue = events.select { |row| row["type"] == "queue_update" }.map { |row| row["follow_up"] }
+    assert_equal [1, 0], queue
+    refute events.any? { |row| row.to_s.include?("scope addition") && row["type"] == "queue_update" }
+  end
+
+  def test_force_still_steers_and_idle_send_is_a_plain_prompt
+    dispatched = []
+    @adapter.define_singleton_method(:dispatch) do |**kwargs|
+      dispatched << kwargs
+      nil
+    end
+    @adapter.instance_variable_set(:@state, :busy)
+    @session.instance_variable_get(:@state_machine).force_busy!
+    @session.inbox.enqueue(text: "now", submit: true, enter_only: false, force: true)
+    assert_equal "steer", dispatched.last[:streaming_behavior]
+
+    @adapter.instance_variable_set(:@state, :prompt)
+    @session.instance_variable_get(:@state_machine).force_prompt!
+    result = @session.inbox.enqueue(text: "next", submit: true, enter_only: false)
+    assert_equal "prompt", result[:delivery]
+    assert_nil dispatched.last[:streaming_behavior]
+  end
+
+  def test_each_turn_after_a_published_result_is_notified_with_its_number
+    notifier = TurnRecordingNotifier.new
+    session = Harnex::Session.new(adapter: @adapter, command: ["pi", "--mode", "rpc"], repo_root: @tmp,
+                                  host: "127.0.0.1", id: "pi-turns", completion_notifier: notifier)
+    session.send(:prepare_output_log)
+    session.send(:prepare_events_log)
+    session.send(:register_completion_notifier!)
+    @adapter.define_singleton_method(:dispatch) { |**_kwargs| nil }
+
+    settle_pi_run(session, stop_reason: "error", error: "high demand")
+    assert_equal [1], notifier.notified.map { |call| call[:turn] }
+
+    @adapter.instance_variable_set(:@state, :prompt)
+    nudge = session.inbox.enqueue(text: "Continue the same task", submit: true, enter_only: false)
+    assert_equal [2], notifier.turns
+    settle_pi_run(session)
+
+    assert_equal [[1, "failed"], [2, "completed"]], notifier.notified.map { |call| [call[:turn], call[:outcome]] }
+    rows = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }
+    failed = rows.find { |row| row["type"] == "task_failed" }
+    complete = rows.find { |row| row["type"] == "task_complete" }
+    assert_equal [1, 2], [failed["turn"], complete["turn"]]
+    assert_operator failed["seq"], :<=, nudge[:after_seq]
+    assert_operator complete["seq"], :>, nudge[:after_seq]
+    assert rows.any? { |row| row["type"] == "work_turn" && row["turn"] == 2 }
+
+    session.send(:publish_completion_notification, "finalization")
+    assert_equal 2, notifier.notified.length, "finalization does not repeat a published turn"
+  end
+
   def test_summary_record_includes_cost_and_usage_tool_calls
     @session.send(:emit_started_event)
     @session.send(:emit_git_start_event)

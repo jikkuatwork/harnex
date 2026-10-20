@@ -20,9 +20,10 @@ module Harnex
     BUDGET_UNITS = %w[attempts families].freeze
     # No-work and process failures. Reconstructable proof defects
     # (report_missing/invalid/rejected), caller stops, and unknown terminals
-    # are not fatal unless a caller names them (#57).
+    # are not fatal unless a caller names them (#57). provider_capacity was
+    # task_failed before #82 and stays fatal; pass fatal classes to exempt it.
     DEFAULT_FATAL_CLASSES = %w[
-      completed_no_activity task_failed boot_failure permission_prompt timeout process_failed
+      completed_no_activity task_failed provider_capacity boot_failure permission_prompt timeout process_failed
     ].freeze
 
     module_function

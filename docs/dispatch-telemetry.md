@@ -175,7 +175,10 @@ Harnex-owned `meta` fields are always populated when derivable: `id`,
 These top-level `--meta` keys pass through into `meta` when provided:
 `orchestrator`, `orchestrator_session`, `chain_id`, `parent_dispatch_id`,
 `parent_attempt_id`, `attempt_kind`, `tier`, `phase`, `issue`, `plan`, and
-`task_brief`. Queue-specific keys such as
+`task_brief`. `harnex run --context-file` fills `context_file` (absolute
+path), `context_sha256` (SHA-256 of the text actually sent) and, on
+`started.meta` only, `context_section`; it also defaults `task_brief` to the
+file path. Queue-specific keys such as
 `project_id`, `queue_id`, `entry_id`, `entry_title`, and `intent` are used for
 the top-level `queue` block but are not duplicated into legacy `meta`. Unknown
 top-level keys are kept on `started.meta` but are not copied into the v2 end
@@ -345,7 +348,10 @@ facts prove the delta, not semantic quality or human authorship.
 - **Completion:** `completed_with_proof`, `completed_with_activity`.
 - **Proof defects:** `completed_no_activity`, `report_missing`,
   `report_invalid`, `report_rejected`.
-- **Process:** `task_failed` (the turn failed), `boot_failure` (structured
+- **Process:** `task_failed` (the turn failed), `provider_capacity` (the turn
+  failed after the adapter's own provider retries ran out, from Pi's
+  structured `auto_retry_end success:false`; capacity or rate limits rather
+  than the work), `boot_failure` (structured
   transport died before its first turn), `permission_prompt` (ended on a
   trust/confirmation prompt the adapter recognizes), `timeout` (`--max-runtime`
   stopped running work, or exit 124), `stopped_by_caller` (a manual stop
@@ -372,7 +378,7 @@ initial workers do not join families. Start rows are not counted. An optional
 adds a `failure_budget` verdict and exits 3 once N fatal failures are counted
 (1 is an error, 2 a usage error; a missing `--dispatch` file is an error).
 By default the fatal classes are `completed_no_activity`, `task_failed`,
-`boot_failure`, `permission_prompt`, `timeout`, and `process_failed`; proof
+`provider_capacity`, `boot_failure`, `permission_prompt`, `timeout`, and `process_failed`; proof
 defects, caller stops and `unknown` are not fatal.
 Harnex supplies the ledger only: the caller decides what to do on a breach.
 
@@ -621,6 +627,15 @@ untracked changes relative to the worktree state observed at session start.
 Unchanged pre-existing dirt is not credited to the worker, and harness-owned
 dispatch/receipt paths are excluded. Git failures leave the corresponding
 consolidated fields `null` and omit `git` events.
+
+Git is observed in the repository the agent works in. A lane launched with
+`--cwd <worktree> --root <checkout>`, where the two resolve to different Git
+toplevels, is observed in its `--cwd` worktree: `commit_sha`, `branch`,
+`start_sha`/`end_sha`, `observed.git`, activity and acceptance all describe
+the lane, so supervisor commits on the root never count as the lane's work.
+`--root` still decides where the rows are written. The `git` start event then
+carries `git_root`, and the end row's `root_commit_sha` records the `--root`
+repository's head (it is `null` for every other dispatch).
 
 The `actual` block includes model/effort hints from `--meta`, duration, token
 counts, `agent_session_id`, compatibility `cost_usd`, adapter transport, git

@@ -55,6 +55,12 @@ Emitted now (Layer 4):
 - `exited`: adds
   - `code` (Integer): synthesized numeric exit code
   - `signal` (Integer, optional): present for signaled exits
+- `task_complete` / `task_failed` (structured adapters): add `turn` (Integer),
+  the session's work turn. Turn 1 is the first prompt; a message injected
+  after a published result starts the next turn, announced by a `work_turn`
+  row (`turn`). `harnex send` reports `after_seq`, the newest `seq` before
+  its message, so `harnex wait --until done --after-seq N` waits for the turn
+  that message started or joined.
 
 ## 5. Stability promise
 

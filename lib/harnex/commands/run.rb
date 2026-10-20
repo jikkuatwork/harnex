@@ -31,8 +31,8 @@ module Harnex
 
     KNOWN_FLAGS = %w[
       --id --description --detach --tmux --host --port --watch --watch-file
-      --stall-after --max-resumes --preset --context --meta
-      --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
+      --stall-after --max-resumes --preset --context --context-file --context-section
+      --meta --meta-file --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
       --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime --fast --legacy-pty
       --allow-live-parent --final-gate --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
@@ -42,8 +42,8 @@ module Harnex
     LIVE_PARENT_GUARDED_KINDS = %w[retry fix fallback superseding].freeze
     VALUE_FLAGS = %w[
       --id --description --host --port --watch --watch-file --stall-after
-      --max-resumes --preset --context --meta --artifact-report
-      --validation-report --on-done --max-runtime --cwd --root --timeout --inbox-ttl
+      --max-resumes --preset --context --context-file --context-section --meta
+      --meta-file --artifact-report --validation-report --on-done --max-runtime --cwd --root --timeout --inbox-ttl
       --final-gate
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
@@ -64,12 +64,21 @@ module Harnex
           --preset NAME      Watch preset: impl, plan, gate (requires --watch)
           --watch-file PATH  Auto-send a file-change hook on modification
           --context TEXT     Inject as the initial prompt (prepends session header)
+          --context-file PATH
+                             Read the initial prompt from PATH; refuses an empty result.
+                             Records meta.context_file and meta.context_sha256 (SHA-256
+                             of the text actually sent, i.e. the trimmed section)
+          --context-section TEXT
+                             With --context-file: send only the section after the first
+                             line starting with TEXT (a heading runs to the next heading
+                             of its level or higher; a plain marker line to end of file)
           --auto-stop        Stop after the first accepted task completion from --context
           --on-done CMD      Launch /bin/sh -c CMD once at the first typed work result
           --max-runtime DUR  Fixed worker runtime budget (e.g. 30m); not a watch timeout
           --fast             (codex only) Use Codex service_tier="fast".
                              Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
+          --meta-file PATH   Read --meta JSON from PATH (inline --meta keys win)
           --artifact-report PATH
                              Override the harness-authored observed-state receipt path
           --validation-report PATH
@@ -185,7 +194,10 @@ module Harnex
         preset: nil,
         watch: nil,
         context: nil,
+        context_file: nil,
+        context_section: nil,
         meta: nil,
+        meta_file: nil,
         telemetry: {},
         require_attribution: false,
         artifact_report: nil,
@@ -216,6 +228,8 @@ module Harnex
       end
 
       raise OptionParser::MissingArgument, "cli" if cli_name.nil?
+      apply_meta_file!
+      apply_context_file!
       validate_auto_stop_context!
       validate_required_artifact_report!
       apply_telemetry_options!
@@ -287,7 +301,14 @@ module Harnex
       tmux_cmd += ["--host", @options[:host]]
       tmux_cmd += ["--port", @options[:port].to_s] if @options[:port]
       tmux_cmd += ["--watch-file", @options[:watch]] if @options[:watch]
-      tmux_cmd += ["--context", @options[:context]] if @options[:context]
+      # A brief file travels by path: tmux refuses commands over ~16 KB, and
+      # the inner runner re-reads it under the same rules.
+      if @options[:context_file]
+        tmux_cmd += ["--context-file", File.expand_path(@options[:context_file], @launch_cwd)]
+        tmux_cmd += ["--context-section", @options[:context_section]] if @options[:context_section]
+      elsif @options[:context]
+        tmux_cmd += ["--context", @options[:context]]
+      end
       tmux_cmd << "--auto-stop" if @options[:auto_stop]
       tmux_cmd += ["--on-done", @options[:on_done]] if @options[:on_done]
       tmux_cmd += ["--max-runtime", @options[:max_runtime_s].to_s] if @options[:max_runtime_s]
@@ -332,6 +353,7 @@ module Harnex
         port: registry["port"],
         mode: "tmux",
         window: window_name,
+        tmux_target: registry["tmux_target"],
         output_log_path: Harnex.output_log_path(repo_root, @options[:id]),
         artifact_report_path: registry["artifact_report_path"],
         artifact_claims_path: registry["artifact_claims_path"]
@@ -649,6 +671,16 @@ module Harnex
           @options[:context] = required_option_value(arg, argv[index])
         when /\A--context=(.+)\z/
           @options[:context] = required_option_value("--context", Regexp.last_match(1))
+        when "--context-file"
+          index += 1
+          @options[:context_file] = required_option_value(arg, argv[index])
+        when /\A--context-file=(.+)\z/
+          @options[:context_file] = required_option_value("--context-file", Regexp.last_match(1))
+        when "--context-section"
+          index += 1
+          @options[:context_section] = required_option_value(arg, argv[index])
+        when /\A--context-section=(.+)\z/
+          @options[:context_section] = required_option_value("--context-section", Regexp.last_match(1))
         when "--auto-stop"
           @options[:auto_stop] = true
         when "--on-done"
@@ -681,6 +713,11 @@ module Harnex
           @options[:meta] = parse_meta(required_option_value(arg, argv[index]))
         when /\A--meta=(.+)\z/
           @options[:meta] = parse_meta(required_option_value("--meta", Regexp.last_match(1)))
+        when "--meta-file"
+          index += 1
+          @options[:meta_file] = required_option_value(arg, argv[index])
+        when /\A--meta-file=(.+)\z/
+          @options[:meta_file] = required_option_value("--meta-file", Regexp.last_match(1))
         when *TELEMETRY_FLAGS.keys
           index += 1
           @options[:telemetry][TELEMETRY_FLAGS.fetch(arg)] = required_option_value(arg, argv[index])
@@ -778,7 +815,7 @@ module Harnex
           nil
         when *VALUE_FLAGS
           index += 1
-        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|meta|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl|final-gate)=/
+        when /\A--(?:id|description|host|port|watch|watch-file|stall-after|max-resumes|context|context-file|context-section|meta|meta-file|artifact-report|validation-report|on-done|max-runtime|cwd|root|timeout|inbox-ttl|final-gate)=/
           nil
         when telemetry_equals_regex
           nil
@@ -798,7 +835,8 @@ module Harnex
         arg == "-h" ||
         arg.start_with?(
           "--id=", "--description=", "--tmux=", "--host=", "--port=", "--watch=", "--watch-file=",
-          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--meta=",
+          "--stall-after=", "--max-resumes=", "--preset=", "--context=", "--context-file=",
+          "--context-section=", "--meta=", "--meta-file=",
           "--artifact-report=", "--validation-report=", "--on-done=", "--max-runtime=", "--cwd=", "--root=", "--timeout=", "--inbox-ttl=",
           "--final-gate=", *TELEMETRY_EQUALS_PREFIXES
         )
@@ -834,6 +872,44 @@ module Harnex
     # --artifact-report path is no longer required.
     def validate_required_artifact_report!
       true
+    end
+
+    # Applied before --context validation so --auto-stop sees the file's text.
+    def apply_meta_file!
+      return unless @options[:meta_file]
+
+      path = File.expand_path(@options[:meta_file], @launch_cwd)
+      unless File.file?(path)
+        raise OptionParser::InvalidOption, "harnex run: --meta-file not found: #{@options[:meta_file]}"
+      end
+
+      from_file = parse_meta(File.read(path), option_name: "--meta-file")
+      @options[:meta] = from_file.merge(@options[:meta] || {})
+    end
+
+    # --context-file (#83): the brief's path and the hash of the text actually
+    # sent ride in meta, so the started event and dispatch rows name the brief
+    # that launched the lane. An explicit meta task_brief wins.
+    def apply_context_file!
+      if @options[:context_section] && !@options[:context_file]
+        raise OptionParser::InvalidOption, "harnex run: --context-section requires --context-file"
+      end
+      return unless @options[:context_file]
+      if @options[:context]
+        raise OptionParser::InvalidOption, "harnex run: use --context or --context-file, not both"
+      end
+
+      brief = ContextFile.load(
+        File.expand_path(@options[:context_file], @launch_cwd),
+        section: @options[:context_section]
+      )
+      @options[:context] = brief[:text]
+      provenance = { "context_file" => brief[:path], "context_sha256" => brief[:sha256] }
+      provenance["context_section"] = brief[:section] if brief[:section]
+      metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
+      @options[:meta] = { "task_brief" => brief[:path] }.merge(metadata).merge(provenance)
+    rescue ContextFile::Error => e
+      raise OptionParser::InvalidOption, "harnex run: #{e.message}"
     end
 
     def apply_telemetry_options!
@@ -943,13 +1019,13 @@ module Harnex
       raise OptionParser::InvalidArgument, "#{option_name} must be an existing directory: #{value}"
     end
 
-    def parse_meta(value)
+    def parse_meta(value, option_name: "--meta")
       parsed = JSON.parse(value)
       return parsed if parsed.is_a?(Hash)
 
-      raise OptionParser::InvalidOption, "--meta must be a JSON object"
+      raise OptionParser::InvalidOption, "#{option_name} must be a JSON object"
     rescue JSON::ParserError => e
-      raise OptionParser::InvalidOption, "--meta must be valid JSON: #{e.message}"
+      raise OptionParser::InvalidOption, "#{option_name} must be valid JSON: #{e.message}"
     end
 
     def resolve_artifact_report(repo_root)

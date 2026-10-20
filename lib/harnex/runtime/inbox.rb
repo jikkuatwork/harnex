@@ -48,6 +48,19 @@ module Harnex
         return deliver_now(msg)
       end
 
+      # A busy agent that can queue into its running turn (Pi followUp, #79)
+      # takes the message now: long turns outlive any inbox TTL.
+      if @mutex.synchronize { @queue.empty? } && session_accepts_follow_up?
+        begin
+          result = deliver_now(msg, follow_up: true)
+          return result if msg.status == :delivered
+        rescue StandardError
+          # Fall through to the normal paths
+        end
+        msg.status = :queued
+        msg.error = nil
+      end
+
       # Fast path: prompt ready and queue empty — deliver immediately.
       # Check under lock, then release before calling deliver_now to
       # avoid recursive locking (deliver_now also acquires @mutex).
@@ -117,15 +130,20 @@ module Harnex
 
     private
 
-    def deliver_now(msg)
-      result = @session.inject_via_adapter(
-        text: msg.text,
-        submit: msg.submit,
-        enter_only: msg.enter_only,
-        force: msg.force
-      )
+    def session_accepts_follow_up?
+      @session.respond_to?(:accepts_follow_up?) && @session.accepts_follow_up?
+    rescue StandardError
+      false
+    end
+
+    def deliver_now(msg, follow_up: false)
+      options = { text: msg.text, submit: msg.submit, enter_only: msg.enter_only, force: msg.force }
+      options[:follow_up] = true if follow_up
+      result = @session.inject_via_adapter(**options)
       msg.status = :delivered
       msg.delivered_at = Time.now
+      msg.after_seq = result[:after_seq] if result.is_a?(Hash)
+      msg.delivery = result[:delivery] if result.is_a?(Hash)
       @mutex.synchronize do
         @delivered_total += 1
         @messages[msg.id] = msg
@@ -187,6 +205,7 @@ module Harnex
     def expire_stale_messages_locked(now = Time.now)
       while (msg = @queue.first) && stale_message?(msg, now)
         msg.status = :expired
+        msg.error = "expired undelivered after #{@ttl.round}s; agent busy; use --force to inject mid-turn"
         @queue.shift
         @expired_total += 1
       end

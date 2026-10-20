@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-10-20
 updated: 2026-10-20
@@ -22,3 +22,14 @@ the text after the named heading up to the next heading of the same level, and r
 result. Add `--meta-file PATH` to read the metadata JSON from a file, refusing invalid JSON
 before launch. Record the brief path and a content hash in the started event and the dispatch
 row.
+
+## Decisions (owner, 2026-10-20) — ready for autonomous implementation
+
+Build as written. No open choices.
+
+## Resolution
+
+Shipped in 0.18.0 (local install): `--context-file`, `--context-section`,
+`--meta-file`; `meta.context_file` / `meta.context_sha256` on the started
+event and both dispatch rows. `--tmux` passes the file by path. Verified live
+on a Holm-format brief ("Sent verbatim" marker line).

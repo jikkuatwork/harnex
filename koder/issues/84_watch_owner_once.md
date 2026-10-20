@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P3
 created: 2026-10-20
 updated: 2026-10-20
@@ -23,3 +23,15 @@ every lane the owner launched. Note that a subagent inherits its parent's
 `CLAUDE_CODE_SESSION_ID`, so parent and subagent would share one cursor and take each other's
 events (`lib/harnex/owner_stream.rb` cursor per owner dir). Allow an explicit `--owner <id>` or
 a cursor name. The full answer is still the #59 conveyor runner; this is the small step.
+
+## Decisions (owner, 2026-10-20) — ready for autonomous implementation
+
+Build as written: `--once` exits 0 after the first undelivered owner event and
+124 on `--timeout`/`--max-wait`; add `--cursor NAME` so a parent and its
+subagent can keep separate cursors under one owner.
+
+## Resolution
+
+Shipped in 0.18.0 (local install): `watch --owner --once [--timeout DUR]
+[--cursor NAME]`, with stall episodes kept across calls. Verified live as a
+Claude subagent's only blocking wait.

@@ -147,9 +147,16 @@ module Harnex
         }
       end
 
-      def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false)
+      # Pi queues a `followUp` prompt itself and delivers it when the running
+      # turn ends (before agent_settled), so a busy send never expires (#79).
+      def follow_up_supported?
+        true
+      end
+
+      def build_send_payload(text:, submit:, enter_only:, screen_text:, force: false, follow_up: false)
         state = input_state(nil)
-        if !force && submit && !enter_only && state[:input_ready] != true
+        follow_up = follow_up && !force && state[:state] == "busy"
+        if !force && !follow_up && submit && !enter_only && state[:input_ready] != true
           raise ArgumentError, blocked_message(state, enter_only: enter_only)
         end
 
@@ -158,6 +165,7 @@ module Harnex
 
         dispatch = { prompt: text.to_s }
         dispatch[:streaming_behavior] = "steer" if force && state[:state] == "busy"
+        dispatch[:streaming_behavior] = "followUp" if follow_up
         {
           dispatch: dispatch,
           input_state: state,

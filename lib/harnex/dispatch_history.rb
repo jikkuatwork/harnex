@@ -325,6 +325,8 @@ module Harnex
         status: status,
         terminal_event: terminal_event,
         commit_sha: commit_sha(session.git_start, session.git_end),
+        # #80: the --root repository's head when git was observed in a lane.
+        root_commit_sha: session.respond_to?(:root_commit_sha, true) ? session.__send__(:root_commit_sha) : nil,
         tier: session.__send__(:meta_hash)["tier"],
         events_log_path: session.events_log_path,
         tmux_state: tmux_state(session.__send__(:summary_tmux_session))

@@ -21,6 +21,7 @@ module Harnex
       @hook_command = hook_command.to_s
       @hook_command = nil if @hook_command.empty?
       @started_at = started_at
+      @turn_started_at = started_at
       @clock = clock || -> { Time.now }
       @event_sink = event_sink
       @spawn = spawn || method(:spawn_hook)
@@ -30,7 +31,7 @@ module Harnex
       @stderr = stderr
       @mutex = Mutex.new
       @registered = false
-      @notified = false
+      @notified_turn = 0
     end
 
     # Registration is the stale-marker boundary for a reused repo/id pair.
@@ -49,15 +50,24 @@ module Harnex
       true
     end
 
+    # One result per turn (#81). The owner record is rewritten for every turn
+    # so `watch --owner` reports a nudged turn too; the marker files and the
+    # --on-done hook keep their documented once-per-session contract.
     def notify(outcome:, work_state:, outcome_class:, artifact_report_status:,
-               end_sha:, terminal_signal:)
+               end_sha:, terminal_signal:, turn: 1, follow_ups: nil)
       outcome = outcome.to_s
       work_state = work_state.to_s
+      turn = [turn.to_i, 1].max
       expected = WORK_STATES[outcome]
       raise ArgumentError, "unsupported completion outcome #{outcome.inspect}" unless expected
       raise ArgumentError, "#{outcome.inspect} completion requires work_state #{expected.inspect}" unless work_state == expected
+      first = nil
       return false unless @mutex.synchronize do
-        @registered && !@notified ? (@notified = true) : false
+        next false unless @registered && turn > @notified_turn
+
+        first = @notified_turn.zero?
+        @notified_turn = turn
+        true
       end
 
       now = @clock.call
@@ -68,16 +78,32 @@ module Harnex
         outcome_class: optional_string(outcome_class),
         artifact_report_status: optional_string(artifact_report_status),
         receipt_path: @receipt_path, end_sha: optional_string(end_sha),
-        elapsed_s: elapsed_seconds(now), terminal_signal: terminal_signal.to_s,
-        notified_at: now.utc.iso8601
+        elapsed_s: elapsed_seconds(now, first ? @started_at : @turn_started_at),
+        terminal_signal: terminal_signal.to_s, notified_at: now.utc.iso8601
       }
-      marker_written = write_marker(path, payload)
-      write_owned_delivery(payload) if @owner_id
-      hook_launched = launch_hook(payload)
-      emit("completion_notification", outcome: outcome, work_state: work_state,
+      marker_written = first ? write_marker(path, payload) : false
+      owned = payload.merge(turn: turn)
+      owned[:follow_ups] = follow_ups if follow_ups
+      write_owned_delivery(owned) if @owner_id
+      hook_launched = first ? launch_hook(payload) : false
+      emit("completion_notification", outcome: outcome, work_state: work_state, turn: turn,
            marker_path: path, marker_written: marker_written,
            hook_configured: !@hook_command.nil?, hook_launched: hook_launched)
       true
+    end
+
+    # A message injected after a published result starts the next turn: the
+    # owner record returns to running so the stream watches it again.
+    def turn_started(turn)
+      @turn_started_at = @clock.call
+      return false unless @owner_id && @mutex.synchronize { @registered }
+
+      path = Harnex.owned_notification_path(@owner_id, @session_id)
+      @atomic_write.call(path, owned_identity.merge(work_state: "running", turn: [turn.to_i, 1].max))
+      true
+    rescue StandardError => e
+      report_error("owned notification turn update failed", "delivery", e)
+      false
     end
 
     private
@@ -115,8 +141,9 @@ module Harnex
       text.empty? ? nil : text
     end
 
-    def elapsed_seconds(now)
-      [(now - @started_at).to_i, 0].max
+    # A later turn's elapsed time runs from that turn's start.
+    def elapsed_seconds(now, since = @started_at)
+      [(now - since).to_i, 0].max
     rescue StandardError
       0
     end

@@ -52,6 +52,10 @@ module Harnex
           --timeout DUR   Hard observer cap (seconds, or suffix s/m/h; default: unlimited)
           --max-wait DUR  Alias for --timeout
           --heartbeat DUR  Flush observed progress to stderr at this interval (default: off)
+          --after-seq N   With --until done/task_complete/task_failed: ignore every
+                          event at or before events-log seq N (the after_seq that
+                          `harnex send` reports), so the wait covers the turn that
+                          message started or joined, not an earlier result.
           --stall-after DUR
                           With --until done: exit 4 when the live session shows no
                           progress for DUR (Pi/structured: model, tool or turn
@@ -62,6 +66,7 @@ module Harnex
         Common patterns:
           #{program_name} --id cx-i-42 --until done --timeout 900
           #{program_name} --id pi-i-42 --until done --stall-after 25m --timeout 4h
+          #{program_name} --id pi-i-42 --until done --after-seq 812 --timeout 9m
           #{program_name} --id cx-i-42 --until task_complete --timeout 900
           #{program_name} --id cx-i-42 --until prompt --timeout 120
           #{program_name} --id cx-i-42
@@ -120,6 +125,7 @@ module Harnex
         timeout: nil,
         heartbeat: nil,
         stall_after: nil,
+        after_seq: nil,
         help: false
       }
     end
@@ -136,6 +142,9 @@ module Harnex
       raise "--id is required for harnex wait" unless @options[:id]
       if @options[:stall_after] && @options[:until_state] != "done"
         raise OptionParser::InvalidOption, "--stall-after requires --until done"
+      end
+      if @options[:after_seq] && !(["done"] + EVENT_PREDICATES).include?(@options[:until_state])
+        raise OptionParser::InvalidOption, "--after-seq requires --until done, task_complete, or task_failed"
       end
 
       @started_at = monotonic
@@ -386,6 +395,7 @@ module Harnex
           event = parse_event(line)
           next unless event
           next if stale_event?(event, min_ts)
+          next if before_after_seq?(event)
 
           observe(last_event: event_type(event), seq: event["seq"])
           observe(state: event["state"]) if event_type(event) == "agent_state" && event["state"]
@@ -398,6 +408,15 @@ module Harnex
       end
 
       [nil, offset, task_complete_seen]
+    end
+
+    # #81: events at or before --after-seq belong to an earlier turn. An event
+    # without a seq cannot be placed after it, so it never matches either.
+    def before_after_seq?(event)
+      return false unless @options[:after_seq]
+
+      seq = event["seq"]
+      !seq.is_a?(Integer) || seq <= @options[:after_seq]
     end
 
     def stale_event?(event, min_ts)
@@ -463,6 +482,8 @@ module Harnex
         seq: event["seq"],
         waited_seconds: waited
       }
+      payload[:turn] = event["turn"] if event["turn"]
+      payload[:follow_ups] = event["follow_ups"] if event["follow_ups"]
       exit_code = 0
       if predicate == "done"
         failed = done_event_failed?(event)
@@ -944,6 +965,11 @@ module Harnex
         end
         opts.on("--heartbeat DUR", "Flush progress to stderr") do |value|
           @options[:heartbeat] = self.class.duration(value, option_name: "--heartbeat")
+        end
+        opts.on("--after-seq N", Integer, "Ignore events at or before events-log seq N") do |value|
+          raise OptionParser::InvalidArgument, "--after-seq must be 0 or greater" if value.negative?
+
+          @options[:after_seq] = value
         end
         opts.on("--stall-after DUR", "With --until done: exit 4 after DUR without progress") do |value|
           @options[:stall_after] = self.class.duration(value, option_name: "--stall-after")

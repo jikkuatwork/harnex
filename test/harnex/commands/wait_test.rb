@@ -471,6 +471,51 @@ class WaiterTest < Minitest::Test
     end
   end
 
+  def test_wait_until_done_after_seq_skips_the_earlier_turn_result
+    Dir.mktmpdir("harnex-wait-after-seq") do |repo|
+      system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)
+      id = "after-seq-worker"
+      events_path = Harnex.events_log_path(repo, id)
+      registry_path = Harnex.registry_path(repo, id)
+      child_pid = spawn("sleep", "30")
+      now = Time.now.utc.iso8601
+      File.write(events_path, [
+        { schema_version: 1, seq: 3, ts: now, id: id, type: "task_failed", status: "error",
+          message: "high demand", turn: 1 },
+        { schema_version: 1, seq: 4, ts: now, id: id, type: "send", msg: "Continue" }
+      ].map { |event| JSON.generate(event) + "\n" }.join)
+      Harnex.write_registry(registry_path, {
+        "id" => id, "pid" => child_pid, "host" => "127.0.0.1", "port" => 19_994,
+        "started_at" => (Time.now - 60).iso8601, "repo_root" => repo
+      })
+
+      out, = capture_io do
+        assert_equal 1, Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--timeout", "2"]).run
+      end
+      assert_equal 3, JSON.parse(out)["seq"], "without --after-seq the earlier failure answers"
+
+      appender = Thread.new do
+        sleep 0.3
+        File.write(events_path, JSON.generate(
+          schema_version: 1, seq: 9, ts: Time.now.utc.iso8601, id: id, type: "task_complete",
+          outcome_class: "completed_with_activity", turn: 2
+        ) + "\n", mode: "a")
+      end
+      out, = capture_io do
+        assert_equal 0, Harnex::Waiter.new(["--repo", repo, "--id", id, "--until", "done", "--after-seq", "4", "--timeout", "5"]).run
+      end
+      appender.join
+      payload = JSON.parse(out)
+      assert_equal [9, 2, "done"], payload.values_at("seq", "turn", "wait_result")
+
+      assert_raises(OptionParser::InvalidOption) { Harnex::Waiter.new(["--id", id, "--after-seq", "4"]).run }
+    ensure
+      reap_process(child_pid)
+      FileUtils.rm_f(events_path) if events_path
+      FileUtils.rm_f(registry_path) if registry_path
+    end
+  end
+
   def test_wait_until_done_blocks_via_start_record_when_registry_is_missing
     Dir.mktmpdir("harnex-wait-start-record") do |repo|
       system("git", "init", "-q", repo, out: File::NULL, err: File::NULL)

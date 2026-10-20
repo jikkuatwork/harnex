@@ -51,8 +51,8 @@ module Harnex
         Worker outcome classes (dispatch row outcome.class):
           completed   completed_with_proof completed_with_activity
           proof       completed_no_activity* report_missing report_invalid report_rejected
-          process     task_failed* boot_failure* permission_prompt* timeout*
-                      process_failed* stopped_by_caller
+          process     task_failed* provider_capacity* boot_failure* permission_prompt*
+                      timeout* process_failed* stopped_by_caller
           fallback    unknown
         The budget is a ledger, not a breaker: enforcement stays with the caller.
         Exit codes: 0 report printed (within budget), 1 error, 2 usage error,

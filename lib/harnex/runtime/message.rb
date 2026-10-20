@@ -1,5 +1,6 @@
 module Harnex
-  Message = Struct.new(:id, :text, :submit, :enter_only, :force, :queued_at, :status, :delivered_at, :error, keyword_init: true) do
+  Message = Struct.new(:id, :text, :submit, :enter_only, :force, :queued_at, :status, :delivered_at, :error,
+                       :after_seq, :delivery, keyword_init: true) do
     def to_h
       {
         id: id,
@@ -7,7 +8,9 @@ module Harnex
         queued_at: queued_at&.iso8601,
         delivered_at: delivered_at&.iso8601,
         text_preview: preview_text,
-        error: error
+        error: error,
+        after_seq: after_seq,
+        delivery: delivery
       }
     end
 

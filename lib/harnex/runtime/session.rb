@@ -50,9 +50,12 @@ module Harnex
     PROCESS_OUTCOME_CLASSES = %w[
       boot_failure permission_prompt timeout stopped_by_caller process_failed
     ].freeze
+    # provider_capacity (#82): the turn failed after the provider adapter's
+    # own retries ran out (Pi `auto_retry_end success:false`): capacity or
+    # rate limits, not the work. Structured signal only, never text.
     OUTCOME_CLASSES = (
       %w[completed_with_proof completed_with_activity] + PROOF_REJECTION_CLASSES +
-      %w[task_failed] + PROCESS_OUTCOME_CLASSES + %w[unknown]
+      %w[task_failed provider_capacity] + PROCESS_OUTCOME_CLASSES + %w[unknown]
     ).freeze
     # Pi tools whose structured results carry an integer exit code.
     PI_COMMAND_TOOLS = %w[bash].freeze
@@ -163,6 +166,9 @@ module Harnex
       @completion_notification_registered = false
       @completion_notification_sent = false
       @pending_completion_notification = nil
+      @completion_turn = 1
+      @turn_follow_ups_sent = 0
+      @pi_follow_up_pending = 0
       @completion_notifier = completion_notifier || CompletionNotifier.new(
         repo_root: repo_root,
         id: @id,
@@ -472,11 +478,13 @@ module Harnex
       { ok: true, signal: "exit_sequence_sent" }
     end
 
-    def inject_via_adapter(text:, submit:, enter_only:, force: false)
+    def inject_via_adapter(text:, submit:, enter_only:, force: false, follow_up: false)
       if structured_transport?
-        return inject_via_structured(text: text, submit: submit, enter_only: enter_only, force: force)
+        return inject_via_structured(text: text, submit: submit, enter_only: enter_only, force: force,
+                                     follow_up: follow_up)
       end
 
+      after_seq = current_event_seq
       snapshot = adapter.wait_for_sendable(method(:screen_snapshot), submit: submit, enter_only: enter_only, force: force)
       payload = adapter.build_send_payload(
         text: text,
@@ -496,41 +504,61 @@ module Harnex
       result.merge(
         cli: adapter.key,
         input_state: payload[:input_state],
-        force: payload[:force]
+        force: payload[:force],
+        after_seq: after_seq
       )
         .tap { emit_send_event(text, force: payload[:force]) }
     end
 
-    def inject_via_structured(text:, submit:, enter_only:, force: false)
+    # #79: a structured adapter that can queue a message into the running turn
+    # (Pi's followUp) takes it at once instead of waiting in the inbox TTL.
+    def accepts_follow_up?
+      structured_transport? && adapter.respond_to?(:follow_up_supported?) && adapter.follow_up_supported? &&
+        @state_machine.state == :busy && !@stop_requested && !@session_finalized
+    end
+
+    # The newest events-log seq. Terminal events of a turn injected after this
+    # point always carry a larger seq (`wait --after-seq`, #81).
+    def current_event_seq
+      @events_mutex.synchronize { @events_log_seq }
+    end
+
+    def inject_via_structured(text:, submit:, enter_only:, force: false, follow_up: false)
       if @runtime_budget&.expired?
         stop_for_runtime_budget!
         raise ArgumentError, "session runtime budget is exhausted"
       end
-      payload = adapter.build_send_payload(
-        text: text,
-        submit: submit,
-        enter_only: enter_only,
-        screen_text: nil,
-        force: force
-      )
+      payload_options = { text: text, submit: submit, enter_only: enter_only, screen_text: nil, force: force }
+      payload_options[:follow_up] = true if follow_up
+      payload = adapter.build_send_payload(**payload_options)
       dispatch = payload.fetch(:dispatch).dup
       dispatch[:model] = meta_hash["model"] if meta_hash["model"] && !dispatch.key?(:model)
       dispatch[:effort] = meta_hash["effort"] if meta_hash["effort"] && !dispatch.key?(:effort)
+      queued_into_run = dispatch[:streaming_behavior] == "followUp"
 
       turn_id = nil
+      after_seq = nil
       @inject_mutex.synchronize do
         @completion_transition_lock.synchronize do
           raise "session is stopping or disconnected" if @stop_requested || @session_finalized || @pi_transport_failed
 
-          # Reserve work before the blocking RPC. Steering an active run does
-          # not reset its clocks, but a new prompt cannot reuse old proof.
-          @activity.start_turn
-          if adapter.transport == :stdio_jsonl_rpc
-            begin_pi_run!
-            @pi_awaiting_run_start = true
-          else
-            reset_work_outcome!
-            @state_machine.force_busy!
+          after_seq = current_event_seq
+          # A follow-up joins the running turn: Pi delivers it before
+          # agent_settled, so that settlement already covers it and nothing
+          # is reset here. If Pi has in fact gone idle it starts a new run,
+          # whose agent_start begins the next turn.
+          unless queued_into_run
+            # Reserve work before the blocking RPC. Steering an active run does
+            # not reset its clocks, but a new prompt cannot reuse old proof.
+            @activity.start_turn
+            if adapter.transport == :stdio_jsonl_rpc
+              begin_pi_run!
+              @pi_awaiting_run_start = true
+            else
+              begin_notification_turn!
+              reset_work_outcome!
+              @state_machine.force_busy!
+            end
           end
         end
         begin
@@ -542,6 +570,7 @@ module Harnex
           raise
         end
         @completion_transition_lock.synchronize do
+          @turn_follow_ups_sent += 1 if queued_into_run
           unless @session_finalized
             @state_machine.force_busy! unless adapter.transport == :stdio_jsonl_rpc
             @injected_count += 1
@@ -560,7 +589,9 @@ module Harnex
         newline: false,
         input_state: payload[:input_state],
         force: payload[:force],
-        turn_id: turn_id
+        turn_id: turn_id,
+        after_seq: after_seq,
+        delivery: queued_into_run ? "follow_up" : "prompt"
       }
     end
 
@@ -852,6 +883,8 @@ module Harnex
       event_payload[:outcome_class] = @completion_outcome_class if @completion_outcome_class
       event_payload[:artifact_report_status] = @completion_report_status if @completion_report_status
       event_payload[:artifact_report_path] = artifact_report_path
+      event_payload[:turn] = @completion_turn
+      event_payload[:follow_ups] = follow_ups_summary if follow_ups_summary
       emit_event("task_complete", **event_payload)
       publish_completion_notification("task_complete")
       true
@@ -899,7 +932,7 @@ module Harnex
     def git_activity_observed?(snapshot = nil)
       return false if @git_start[:sha].to_s.empty?
 
-      snapshot ||= Harnex.git_capture_end(repo_root, @git_start)
+      snapshot ||= Harnex.git_capture_end(git_observation_root, @git_start)
       snapshot[:commits].to_i.positive? || Array(snapshot[:changed_paths]).any? ||
         (!snapshot[:sha].to_s.empty? && snapshot[:sha].to_s != @git_start[:sha].to_s)
     end
@@ -941,6 +974,8 @@ module Harnex
       payload[:outcome_class] = outcome_class if outcome_class
       payload[:artifact_report_status] = artifact_report_status if artifact_report_status
       payload[:diagnostics] = @completion_diagnostics unless @completion_diagnostics.empty?
+      payload[:turn] = @completion_turn
+      payload[:follow_ups] = follow_ups_summary if follow_ups_summary
       emit_event("task_failed", **payload)
       if publish
         enforce_required_artifact_report!
@@ -1067,7 +1102,10 @@ module Harnex
           error_message: message["errorMessage"]
         )
       when "queue_update"
-        nil
+        # Counts only: the queue holds message text. A follow-up still
+        # pending when the run settles never reached the model.
+        @pi_follow_up_pending = Array(message["followUp"]).length
+        emit_event("queue_update", follow_up: @pi_follow_up_pending, steering: Array(message["steering"]).length)
       when "auto_retry_start", "auto_retry_end"
         payload = message.reject { |k, _| k == "type" }
         @pi_last_retry_error = message["finalError"].to_s if event_type == "auto_retry_end" && message["success"] == false
@@ -1297,6 +1335,7 @@ module Harnex
     end
 
     def begin_pi_run!
+      begin_notification_turn!
       @activity.start_turn
       reset_work_outcome!
       reset_pi_run_outcome!
@@ -1345,7 +1384,8 @@ module Harnex
       when "error", "aborted", "length"
         error = @pi_last_assistant_error || @pi_last_retry_error
         error = "Pi agent settled with stopReason=#{reason}" if error.to_s.empty?
-        mark_task_failed(status: reason, error: error)
+        capacity = reason == "error" && !@pi_last_retry_error.to_s.empty?
+        mark_task_failed(status: reason, error: error, outcome_class: capacity ? "provider_capacity" : nil)
       when nil, ""
         mark_task_failed(
           status: "missing_final_message",
@@ -1512,6 +1552,22 @@ module Harnex
       false
     end
 
+    # #81: work that starts after this turn's result was published is the
+    # next turn, so its own result is published (and reaches the owner) too.
+    def begin_notification_turn!
+      turn = @completion_notification_mutex.synchronize do
+        next nil unless @completion_notification_sent
+
+        @completion_notification_sent = false
+        @turn_follow_ups_sent = 0
+        @completion_turn += 1
+      end
+      return unless turn
+
+      emit_event("work_turn", turn: turn)
+      @completion_notifier.turn_started(turn) if @completion_notifier.respond_to?(:turn_started)
+    end
+
     def deliver_completion_notification(snapshot)
       @completion_notification_sent = true
       @pending_completion_notification = nil
@@ -1523,8 +1579,17 @@ module Harnex
       {
         outcome: outcome, work_state: outcome == "completed" ? "completed" : "failed",
         outcome_class: @completion_outcome_class, artifact_report_status: @completion_report_status,
-        end_sha: summary_string(@git_end[:sha]), terminal_signal: terminal_signal
+        end_sha: summary_string(@git_end[:sha]), terminal_signal: terminal_signal,
+        turn: @completion_turn, follow_ups: follow_ups_summary
       }
+    end
+
+    # Follow-ups sent into this turn and how many Pi still held when it
+    # settled (0 means every one reached the model).
+    def follow_ups_summary
+      return nil unless @turn_follow_ups_sent.positive?
+
+      { sent: @turn_follow_ups_sent, pending: @pi_follow_up_pending }
     end
 
     def completion_notification_outcome(terminal_signal)
@@ -1743,16 +1808,49 @@ module Harnex
 
     def emit_git_start_event
       @git_start = Harnex.git_capture_start(
-        repo_root,
+        git_observation_root,
         exclude_paths: git_observation_excluded_paths
       )
       return if @git_start.empty?
 
-      emit_event("git", phase: "start", sha: @git_start[:sha], branch: @git_start[:branch])
+      payload = { phase: "start", sha: @git_start[:sha], branch: @git_start[:branch] }
+      payload[:git_root] = git_observation_root if git_lane?
+      emit_event("git", **payload)
+    end
+
+    # #80: a lane launched with --cwd <worktree> --root <checkout> commits in
+    # its own repository. Git is observed there (SHAs, branch, activity,
+    # receipt); --root still decides where telemetry rows land, and its head
+    # is kept as root_commit_sha.
+    def git_observation_root
+      return @git_observation_root if defined?(@git_observation_root)
+
+      root_top = canonical_git_toplevel(repo_root)
+      lane_top = child_cwd && canonical_git_toplevel(child_cwd)
+      @git_observation_root = lane_top && lane_top != root_top ? lane_top : repo_root
+    end
+
+    def git_lane?
+      git_observation_root != repo_root
+    end
+
+    def canonical_git_toplevel(path)
+      top = DispatchHistory.git_toplevel(path.to_s)
+      top && File.realpath(top)
+    rescue StandardError
+      nil
+    end
+
+    def root_commit_sha
+      return nil unless git_lane?
+
+      @root_commit_sha ||= Harnex.git_output(repo_root, "rev-parse", "HEAD")
+    rescue StandardError
+      nil
     end
 
     def git_observation_excluded_paths
-      git_root = DispatchHistory.find_git_root(repo_root)
+      git_root = DispatchHistory.find_git_root(git_observation_root)
       return [] unless git_root
 
       root = File.expand_path(git_root)
@@ -1769,7 +1867,8 @@ module Harnex
       @context_summary = normalized_context_summary(summary)
       emit_event("usage", **@usage_summary)
 
-      @git_end = Harnex.git_capture_end(repo_root, @git_start)
+      @git_end = Harnex.git_capture_end(git_observation_root, @git_start)
+      root_commit_sha
       return if @git_end.empty?
 
       emit_event(
@@ -2105,7 +2204,7 @@ module Harnex
     def refresh_git_end_snapshot
       return @git_end = {} if @git_start[:sha].to_s.empty?
 
-      snapshot = Harnex.git_capture_end(repo_root, @git_start)
+      snapshot = Harnex.git_capture_end(git_observation_root, @git_start)
       @git_end = snapshot unless snapshot.empty?
       @git_end
     end
@@ -2348,6 +2447,8 @@ module Harnex
         issue: passthrough["issue"],
         plan: passthrough["plan"],
         task_brief: passthrough["task_brief"],
+        context_file: passthrough["context_file"],
+        context_sha256: passthrough["context_sha256"],
         repo: repo_root,
         branch: @git_start[:branch],
         start_sha: @git_start[:sha],
@@ -2512,7 +2613,9 @@ module Harnex
       base_class, report_status = summary_proof_classification
       outcome_class = refine_terminal_outcome_class(base_class)
       # Status/source derive from the proof verdict, not the refined label.
-      proof_failure = %w[completed_no_activity report_missing report_invalid report_rejected task_failed].include?(base_class)
+      proof_failure = %w[
+        completed_no_activity report_missing report_invalid report_rejected task_failed provider_capacity
+      ].include?(base_class)
       harness_receipt = artifact_payload&.dig("receipt", "author") == "harnex"
       status = receipt_outcome["status"]
       status = nil if status == "accepted" && proof_failure

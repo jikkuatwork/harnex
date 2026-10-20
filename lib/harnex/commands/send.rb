@@ -1,6 +1,7 @@
 require "json"
 require "net/http"
 require "optparse"
+require "stringio"
 require "uri"
 
 module Harnex
@@ -26,12 +27,16 @@ module Harnex
         opts.on("--force", "Send even if the agent is not at a prompt") { options[:force] = true }
         opts.on("--no-wait", "Return immediately after queueing (HTTP 202). Use for fire-and-forget or when polling delivery separately.") { options[:wait] = false }
         opts.on("--wait-for-idle", "After a successful send, wait for the agent to return to prompt") { options[:wait_for_idle] = true }
+        opts.on("--wait-done", "After delivery, block until the turn it started or joined completes or fails (exit codes of wait --until done)") { options[:wait_done] = true }
         opts.on("--relay", "Force relay header formatting") { options[:relay] = true }
         opts.on("--no-relay", "Disable automatic relay headers") { options[:relay] = false }
         opts.on("--port PORT", Integer, "Send directly to a specific port") { |value| options[:port] = value }
         opts.on("--token TOKEN", "Auth token for --port mode") { |value| options[:token] = value }
         opts.on("--host HOST", "Override the host when --port is used") { |value| options[:host] = value }
-        opts.on("--timeout SECS", Float, "How long to wait for lookup, delivery, or idle wait (default: #{DEFAULT_TIMEOUT.to_i})") { |value| options[:timeout] = value }
+        opts.on("--timeout SECS", Float, "How long to wait for lookup, delivery, or idle wait (default: #{DEFAULT_TIMEOUT.to_i}; --wait-done is uncapped unless given)") do |value|
+          options[:timeout] = value
+          options[:timeout_explicit] = true
+        end
         opts.on("--verbose", "Print lookup and delivery details to stderr") { options[:verbose] = true }
         opts.on("-h", "--help", "Show help") { options[:help] = true }
       end
@@ -43,10 +48,19 @@ module Harnex
         Common patterns:
           #{program_name} --id cx-i-42 --message "Read /tmp/task-impl-42.md" --wait-for-idle --timeout 900
           #{program_name} --id cx-i-42 --message "Continue with the current task." --force
+          #{program_name} --id pi-i-42 --message "Continue the same task from where you stopped" --wait-done --timeout 540
           #{program_name} --id "$HARNEX_ID" --message "Worker finished; tests passed."
 
         Gotchas:
           --wait-for-idle is a turn fence, not proof that the whole task is done.
+          Every delivery reports after_seq: `harnex wait --id ID --until done --after-seq N`
+            waits for the turn that message started or joined, never an earlier result.
+            --wait-done does both in one call; on timeout (124) resume with that wait.
+          A busy Pi session takes the message at once as a follow-up (delivery:
+            "follow_up"), delivered when its current turn ends; --force steers mid-turn.
+          Other adapters queue until the agent is at a prompt. If it is not delivered
+            within --timeout the message is withdrawn and send exits 124; one that
+            expires in the inbox (--inbox-ttl) exits 1 with status "expired".
           Use --no-wait for fire-and-forget delivery only when another monitor owns completion.
           Long prompts are more reliable when written to a file and referenced by path.
           Messages between harnex sessions get relay headers unless --no-relay is used.
@@ -65,10 +79,12 @@ module Harnex
         force: false,
         wait: true,
         wait_for_idle: false,
+        wait_done: false,
         port: nil,
         token: nil,
         host: DEFAULT_HOST,
         timeout: DEFAULT_TIMEOUT,
+        timeout_explicit: false,
         verbose: false,
         help: false
       }
@@ -156,6 +172,8 @@ module Harnex
         exit_code = result["ok"] ? 0 : (result["state"] == "exited" ? 1 : 124)
       end
 
+      return wait_for_turn_done(result, deadline) if exit_code == 0 && @options[:wait_done]
+
       puts JSON.generate(result)
       exit_code
     rescue TimeoutError => e
@@ -179,29 +197,88 @@ module Harnex
       uri = URI("#{base}/messages/#{message_id}")
 
       loop do
-        return({ "ok" => false, "status" => "timeout", "error" => timeout_message("delivery") }) if deadline_reached?(deadline)
+        break if deadline_reached?(deadline)
 
-        request = Net::HTTP::Get.new(uri)
-        request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
-        response = Net::HTTP.start(
-          uri.host,
-          uri.port,
-          open_timeout: http_timeout(deadline, cap: 1.0),
-          read_timeout: http_timeout(deadline, cap: 2.0)
-        ) { |http| http.request(request) }
-        parsed = parse_json_body(response.body)
+        parsed = fetch_message(registry, uri, deadline)
         status = parsed["status"]
 
         return parsed if %w[delivered failed].include?(status)
-        return parsed.merge("status" => "timeout", "error" => timeout_message("delivery")) if deadline_reached?(deadline)
+        # #79: an expired or dropped message is lost; say so at once instead
+        # of polling until our own deadline.
+        return parsed.merge("ok" => false, "error" => parsed["error"] || "message #{status} undelivered") if %w[expired dropped].include?(status)
+        break if deadline_reached?(deadline)
 
         verbose("delivery status=#{status || 'unknown'}")
         sleep 0.25
-      rescue StandardError => e
-        return({ "ok" => false, "status" => "timeout", "error" => timeout_message("delivery") }) if deadline_reached?(deadline)
+      rescue StandardError
+        break if deadline_reached?(deadline)
 
         sleep 0.25
       end
+      withdraw_undelivered(registry, message_id)
+    end
+
+    def fetch_message(registry, uri, deadline)
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      response = Net::HTTP.start(
+        uri.host,
+        uri.port,
+        open_timeout: http_timeout(deadline, cap: 1.0),
+        read_timeout: http_timeout(deadline, cap: 2.0)
+      ) { |http| http.request(request) }
+      parse_json_body(response.body)
+    end
+
+    # The sender gave up: take the message back so it cannot land later,
+    # unannounced, in a turn the caller no longer expects (#79).
+    def withdraw_undelivered(registry, message_id)
+      timeout = { "ok" => false, "status" => "timeout", "message_id" => message_id, "error" => timeout_message("delivery") }
+      base = "http://#{registry.fetch('host')}:#{registry.fetch('port')}"
+      request = Net::HTTP::Delete.new(URI("#{base}/inbox/#{message_id}"))
+      request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      response = Net::HTTP.start(registry.fetch("host"), registry.fetch("port"), open_timeout: 1, read_timeout: 2) do |http|
+        http.request(request)
+      end
+      if response.is_a?(Net::HTTPSuccess)
+        return timeout.merge(
+          "withdrawn" => true,
+          "error" => "not delivered within #{@options[:timeout]}s: agent busy; message withdrawn " \
+                     "(use --force to inject mid-turn, or a longer --timeout)"
+        )
+      end
+
+      # Not queued any more: it may have been delivered at the last moment.
+      parsed = fetch_message(registry, URI("#{base}/messages/#{message_id}"), monotonic_now + 2.0)
+      %w[delivered failed expired].include?(parsed["status"]) ? parsed : timeout
+    rescue StandardError
+      timeout
+    end
+
+    # #81: block until the turn this message started (or joined) settles.
+    # The payload keeps after_seq so a caller whose --timeout ran out can
+    # resume with `harnex wait --until done --after-seq N`.
+    def wait_for_turn_done(result, deadline)
+      after_seq = result["after_seq"]
+      unless after_seq.is_a?(Integer)
+        puts JSON.generate(result.merge("ok" => false, "error" => "the session reported no after_seq; use harnex wait --until done"))
+        return 1
+      end
+
+      argv = ["--id", @options[:id], "--repo", @options[:repo_path], "--until", "done", "--after-seq", after_seq.to_s]
+      if @options[:timeout_explicit]
+        remaining = deadline - monotonic_now
+        unless remaining.positive?
+          puts JSON.generate(result.merge("ok" => false, "wait_result" => "timeout", "error" => timeout_message("turn wait")))
+          return 124
+        end
+        argv += ["--timeout", remaining.round(3).to_s]
+      end
+      out = StringIO.new
+      exit_code = Waiter.new(argv, out: out, err: $stderr).run
+      turn = parse_json_body(out.string.lines.last.to_s)
+      puts JSON.generate(result.merge("ok" => turn["ok"] == true, "wait_result" => turn["wait_result"], "turn_result" => turn))
+      exit_code
     end
 
     def wait_for_idle_state(registry, deadline)
@@ -413,6 +490,8 @@ module Harnex
 
     def validate_modes!
       raise "--submit-only cannot be combined with --no-submit" if @options[:submit_only] && !@options[:submit]
+      raise "--wait-done cannot be combined with --no-wait" if @options[:wait_done] && !@options[:wait]
+      raise "--wait-done cannot be combined with --wait-for-idle" if @options[:wait_done] && @options[:wait_for_idle]
 
       return unless @options[:submit_only]
       return if @options[:message].nil? && @argv.empty?

@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P1
 created: 2026-10-20
 updated: 2026-10-20
@@ -29,3 +29,18 @@ worktree) for start/end SHA, branch, receipt claims and acceptance. Keep `--root
 telemetry rows are written. If both are useful, record both under distinct keys
 (`root_commit_sha`, `cwd_commit_sha`), and make the default `commit_sha` the `--cwd` one. #64
 (observed-state receipts) is the parent; this is the worktree case it misses.
+
+## Decisions (owner, 2026-10-20) — ready for autonomous implementation
+
+As the issue asks: when the git toplevel of `--cwd` differs from that of
+`--root`, observe git in the `--cwd` repository for start/end SHA, branch,
+receipt claims, activity and acceptance. `commit_sha` is the lane's; record
+`root_commit_sha` alongside it. `--root` still decides where telemetry rows are
+written.
+
+## Resolution
+
+Shipped in 0.18.0 (local install). Git is observed in the `--cwd` toplevel
+when it differs from `--root`; the end row adds `root_commit_sha`. Live: the
+dispatch row credited the lane commit, and the supervisor's master commit was
+recorded only as `root_commit_sha`.

@@ -293,6 +293,92 @@ class RunnerTest < Minitest::Test
     assert_includes Harnex::Runner.usage, "--meta JSON"
   end
 
+  def prepared_runner(argv)
+    runner = Harnex::Runner.new(argv)
+    runner.send(:extract_wrapper_options, argv)
+    runner.send(:apply_meta_file!)
+    runner.send(:apply_context_file!)
+    runner.instance_variable_get(:@options)
+  end
+
+  def test_context_file_section_becomes_context_with_provenance_meta
+    Dir.mktmpdir do |dir|
+      brief = File.join(dir, "brief.md")
+      File.write(brief, "# Brief\n\nSent verbatim as the harnex --context.\n\nDo the task.\n")
+      opts = prepared_runner(["pi", "--context-file", brief, "--context-section", "Sent verbatim", "--meta", '{"phase":"implement"}'])
+
+      assert_equal "Do the task.", opts[:context]
+      assert_equal brief, opts[:meta]["context_file"]
+      assert_equal brief, opts[:meta]["task_brief"]
+      assert_equal "Sent verbatim", opts[:meta]["context_section"]
+      assert_equal Digest::SHA256.hexdigest("Do the task."), opts[:meta]["context_sha256"]
+      assert_equal "implement", opts[:meta]["phase"]
+    end
+  end
+
+  def test_context_file_keeps_explicit_task_brief
+    Dir.mktmpdir do |dir|
+      brief = File.join(dir, "brief.md")
+      File.write(brief, "Do it.\n")
+      opts = prepared_runner(["pi", "--context-file=#{brief}", "--meta", '{"task_brief":"row 7"}'])
+
+      assert_equal "row 7", opts[:meta]["task_brief"]
+      assert_equal brief, opts[:meta]["context_file"]
+    end
+  end
+
+  def test_context_file_refuses_empty_extraction_and_conflicts
+    Dir.mktmpdir do |dir|
+      brief = File.join(dir, "brief.md")
+      File.write(brief, "# Brief\n\nSent verbatim as the harnex --context.\n\n")
+
+      error = assert_raises(OptionParser::InvalidOption) do
+        prepared_runner(["pi", "--context-file", brief, "--context-section", "Sent verbatim"])
+      end
+      assert_match(/empty/, error.message)
+
+      error = assert_raises(OptionParser::InvalidOption) do
+        prepared_runner(["pi", "--context", "x", "--context-file", brief])
+      end
+      assert_match(/not both/, error.message)
+
+      error = assert_raises(OptionParser::InvalidOption) do
+        prepared_runner(["pi", "--context-section", "Task"])
+      end
+      assert_match(/requires --context-file/, error.message)
+    end
+  end
+
+  def test_meta_file_is_merged_under_inline_meta_and_validated
+    Dir.mktmpdir do |dir|
+      meta = File.join(dir, "meta.json")
+      File.write(meta, '{"phase":"implement","issue":"83"}')
+      opts = prepared_runner(["pi", "--meta-file", meta, "--meta", '{"issue":"84"}'])
+
+      assert_equal({ "phase" => "implement", "issue" => "84" }, opts[:meta])
+
+      File.write(meta, "{not json")
+      error = assert_raises(OptionParser::InvalidOption) { prepared_runner(["pi", "--meta-file", meta]) }
+      assert_match(/--meta-file must be valid JSON/, error.message)
+
+      error = assert_raises(OptionParser::InvalidOption) { prepared_runner(["pi", "--meta-file", File.join(dir, "nope.json")]) }
+      assert_match(/--meta-file not found/, error.message)
+    end
+  end
+
+  def test_context_file_flags_do_not_become_the_cli_name
+    Dir.mktmpdir do |dir|
+      brief = File.join(dir, "brief.md")
+      File.write(brief, "x\n")
+      argv = ["--tmux", "--context-file", brief, "--context-section", "x", "pi"]
+      runner = Harnex::Runner.new(argv)
+      cli_name, = runner.send(:extract_wrapper_options, argv)
+
+      assert_equal "pi", cli_name
+      assert_nil runner.instance_variable_get(:@options)[:tmux_name]
+    end
+  end
+
   def test_usage_documents_auto_stop
     assert_includes Harnex::Runner.usage, "--auto-stop"
     assert_includes Harnex::Runner.usage, "--on-done CMD"
@@ -1527,6 +1613,33 @@ class RunnerTest < Minitest::Test
     budget_index = inner_argv.index("--max-runtime")
     refute_nil budget_index
     assert_equal "120.0", inner_argv.fetch(budget_index + 1)
+  end
+
+  def test_tmux_passes_a_context_file_by_path_and_reports_the_target
+    Dir.mktmpdir do |dir|
+      brief = File.join(dir, "brief.md")
+      File.write(brief, "Sent verbatim as the harnex --context.\n\n#{'x' * 40_000}\n")
+      argv = ["pi", "--id", "pi-big", "--tmux", "pi-big", "--context-file", brief, "--context-section", "Sent verbatim"]
+      runner = Harnex::Runner.new(argv)
+      runner.send(:extract_wrapper_options, argv)
+      runner.send(:apply_context_file!)
+      captured = nil
+      registry = { "pid" => Process.pid, "port" => 43_998, "tmux_target" => "harnex:pi-big" }
+      runner.define_singleton_method(:wait_for_registration) { |_repo| registry }
+      runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
+
+      out = nil
+      runner.stub(:system, lambda { |*args| captured = args; true }) do
+        out, = capture_io { assert_equal 0, runner.send(:run_in_tmux, "pi", [], Dir.pwd) }
+      end
+
+      inner_argv = Shellwords.split(captured.last)
+      refute_includes inner_argv, "--context"
+      assert_equal brief, inner_argv.fetch(inner_argv.index("--context-file") + 1)
+      assert_equal "Sent verbatim", inner_argv.fetch(inner_argv.index("--context-section") + 1)
+      assert_operator captured.last.bytesize, :<, 4_000, "the brief text stays out of the tmux command"
+      assert_equal "harnex:pi-big", JSON.parse(out)["tmux_target"]
+    end
   end
 
   def test_tmux_does_not_consume_following_flag_as_window_name

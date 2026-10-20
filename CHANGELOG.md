@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.18.0] - 2026-10-20 | 04:41 PM | +04
+
+Owner-authorized local-only release (no RubyGems publication). Closes the
+subagent-orchestration gaps found by Holm Queues 159/160 (#79-#84).
+
+### Added
+
+- `harnex run --context-file PATH [--context-section TEXT]` sends a brief from
+  disk, or only the part after a heading (to the next heading of its level)
+  or a plain marker line (to end of file), and refuses an empty result.
+  `--meta-file PATH` reads `--meta` JSON from a file (inline `--meta` keys
+  win). The brief path and SHA-256 of the sent text land in
+  `meta.context_file` / `meta.context_sha256` (#83).
+- `harnex watch --owner --once [--timeout DUR] [--cursor NAME]`: print the
+  first undelivered result or stall, advance the cursor, exit 0 (124 on
+  timeout). One blocking call covers every lane an owner launched; named
+  cursors keep a parent and its subagent apart (#84).
+- Per-turn completion (#81): `harnex send` reports `after_seq`;
+  `harnex wait --until done --after-seq N` waits for the turn after that point;
+  `harnex send --wait-done` does both in one call. `task_complete` /
+  `task_failed` events carry `turn`, and the owner stream reports every turn's
+  result (a nudged turn included) instead of one per session.
+- `provider_capacity` outcome class: a Pi turn that fails after Pi's own
+  provider retries ran out (`auto_retry_end success:false`). In status JSON,
+  dispatch rows, the owner stream and `orchestration report`; fatal by default
+  for `--failure-budget`, as `task_failed` was (#82).
+- Turn results carry `follow_ups: {sent, pending}` when follow-ups joined the
+  turn (from Pi's `queue_update` counts; `pending: 0` means each reached the
+  model), and owner events add `settled_at`. A later turn's `elapsed_s` runs
+  from that turn's start. `harnex run --tmux` prints `tmux_target`.
+
+### Changed
+
+- A send to a busy Pi session is handed to Pi at once as a follow-up
+  (`delivery: "follow_up"`), delivered when the current turn ends, instead of
+  waiting in the 120 s inbox and expiring unread. Other adapters: an expired
+  message makes `send` exit 1 with `status: "expired"`, and a send that times
+  out withdraws its queued message before exiting 124 (#79).
+- Worktree lanes (`--cwd` in a different Git toplevel than `--root`) are
+  observed in the lane: `commit_sha`, branch, receipt, activity and acceptance
+  describe the lane; the end row adds `root_commit_sha` (#80).
+- `run --tmux --context-file` hands the brief to the inner runner by path,
+  so long briefs no longer hit tmux's command-length limit.
+
 ## [0.17.0] - 2026-10-18 | 01:13 PM | +04
 
 Owner-authorized local-only release (no RubyGems publication).

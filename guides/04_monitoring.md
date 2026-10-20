@@ -243,7 +243,27 @@ harnex watch --owner --stall-after 25m
   dispatches and delivers only results it has not delivered before (cursor
   under the owner's notifications directory). Delivery is not acceptance:
   still verify the receipt and artifacts.
+- **Turns:** every turn reports its own result. A lane nudged with `harnex
+  send` after it finished or failed reports again when that turn ends; the
+  line carries `turn` and the `msg` names it (`pi-i-NN turn 2 done ...`).
 - **Lifetime:** it runs until killed, or until `--max-wait` (exit 124).
+
+### Claude Code subagents: `--once`
+
+A subagent cannot be woken by a background notification after it ends its
+turn, so it must block in a foreground Bash call (10-minute cap per call).
+`--once` makes one call cover every lane the owner launched:
+
+```bash
+harnex watch --owner --once --timeout 9m --cursor sub-a --stall-after 25m
+```
+
+It prints the first undelivered result or stall as one JSON line, advances
+the cursor and exits 0; with nothing new before `--timeout` it prints nothing
+and exits 124, so loop it. It never returns `started`, and a stall episode is
+reported once across calls. A subagent shares its parent's
+`CLAUDE_CODE_SESSION_ID`, so give each consumer its own `--cursor NAME`; the
+parent's stream and the subagent's calls then each see every event.
 
 A status line or panel can poll `harnex status --all --json`. Each row has
 `id`, `cli`, `description`, `repo_root`, `started_at`, `state`, `work_state`,

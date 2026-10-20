@@ -66,6 +66,8 @@ class DispatchRowSchemaTest < Minitest::Test
     agent_version
     branch
     chain_id
+    context_file
+    context_sha256
     description
     end_sha
     ended_at
@@ -217,6 +219,7 @@ class DispatchRowSchemaTest < Minitest::Test
     events_log_path
     id
     record_type
+    root_commit_sha
     schema_version
     session_id
     started_at

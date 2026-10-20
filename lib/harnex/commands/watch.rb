@@ -342,11 +342,18 @@ module Harnex
       <<~TEXT
         Usage: #{program_name} --id ID [options]
                #{program_name} --owner [ID] [--stall-after DUR] [--max-wait DUR]
+               #{program_name} --owner [ID] --once [--timeout DUR] [--cursor NAME]
 
         Options:
           --id ID              Existing session ID to watch
           --owner [ID]         Stream every dispatch this owner started (see below);
                                ID defaults to $PI_SESSION_ID or $CLAUDE_CODE_SESSION_ID
+          --once               With --owner: print the first undelivered result or
+                               stall, advance the cursor and exit 0 (124 on timeout)
+          --cursor NAME        With --owner: keep a separate named cursor. A Claude
+                               Code subagent inherits its parent's
+                               $CLAUDE_CODE_SESSION_ID, so both own the same lanes;
+                               give each consumer its own cursor
           --until done         Watch work-level terminal state (default: done)
           --repo PATH          Resolve session using PATH's repo root (default: current repo)
           --max-wait DUR       Hard observer cap (examples: 900, 15m, 2h)
@@ -374,6 +381,14 @@ module Harnex
         delivered to this owner; a cursor prevents repeats across restarts.
         Built for Claude Code's Monitor tool, e.g.:
           #{program_name} --owner --stall-after 25m
+        Each turn reports its own result: a lane nudged with `harnex send`
+        reports again when that turn ends (the line carries `turn`).
+
+        --once is for a caller that must block in one foreground command (a
+        Claude Code subagent cannot be woken later): one call waits on every
+        lane the owner launched and returns the next result or stall. It never
+        returns `started`. Loop it, e.g.:
+          #{program_name} --owner --once --timeout 9m --cursor sub-a
 
         For launch-and-babysit stall recovery, use `harnex run --watch`: it
         nudges with "resume" on output-log idle and is independent of this
@@ -396,6 +411,8 @@ module Harnex
         stop_on_terminal: false,
         owner: nil,
         owner_flag: false,
+        once: false,
+        cursor: nil,
         help: false
       }
     end
@@ -408,6 +425,7 @@ module Harnex
       end
 
       return run_owner_stream if @options[:owner_flag]
+      raise OptionParser::InvalidOption, "--once and --cursor require --owner" if @options[:once] || @options[:cursor]
 
       raise "--id is required for harnex watch" unless @options[:id]
 
@@ -444,7 +462,13 @@ module Harnex
               "--owner ID (no $PI_SESSION_ID or $CLAUDE_CODE_SESSION_ID to default to)"
       end
 
-      OwnerStream.new(owner_id: owner, stall_after: @options[:stall_after], max_wait: @options[:max_wait]).run
+      cursor = @options[:cursor]
+      if cursor && !cursor.match?(OwnerStream::CURSOR_NAME)
+        raise OptionParser::InvalidArgument, "--cursor must be 1-64 letters, digits, '.', '_' or '-'"
+      end
+
+      OwnerStream.new(owner_id: owner, stall_after: @options[:stall_after], max_wait: @options[:max_wait],
+                      once: @options[:once], cursor: cursor).run
     end
 
     def parser
@@ -455,6 +479,8 @@ module Harnex
           @options[:owner_flag] = true
           @options[:owner] = value
         end
+        opts.on("--once", "With --owner: exit after the first delivered event") { @options[:once] = true }
+        opts.on("--cursor NAME", "With --owner: use a named cursor") { |value| @options[:cursor] = value }
         opts.on("--until STATE", "Watch until terminal state") { |value| @options[:until_state] = value }
         opts.on("--repo PATH", "Resolve session using PATH's repo root") { |value| @options[:repo_path] = value }
         opts.on("--max-wait DUR", "Hard observer cap") do |value|

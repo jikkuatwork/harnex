@@ -299,6 +299,114 @@ class SenderRelayTest < Minitest::Test
     assert_equal 1, deadlines.uniq.length
   end
 
+  # A queued-delivery inbox: POST /send answers 202, GET /messages/:id walks
+  # message_states, DELETE /inbox/:id answers delete_code.
+  def with_inbox_server(message_states:, delete_code: 200)
+    server = TCPServer.new("127.0.0.1", 0)
+    states = message_states.dup
+    deletes = []
+    thread = Thread.new do
+      loop do
+        client = server.accept
+        request_line = client.gets("\r\n")
+        break unless request_line
+
+        method, path, = request_line.split(" ")
+        length = 0
+        while (line = client.gets("\r\n"))
+          break if line.strip.empty?
+
+          key, value = line.split(":", 2)
+          length = value.to_i if key.casecmp?("Content-Length")
+        end
+        client.read(length) if length.positive?
+        code, body =
+          if method == "POST"
+            [202, { ok: true, status: "queued", message_id: "abc123" }]
+          elsif method == "DELETE"
+            deletes << path
+            [delete_code, { ok: delete_code == 200 }]
+          else
+            state = states.length > 1 ? states.shift : states.first
+            [200, state]
+          end
+        payload = JSON.generate(body)
+        client.write("HTTP/1.1 #{code} X\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+        client.close
+      rescue IOError, Errno::EBADF
+        break
+      end
+    end
+    yield server.addr[1], deletes
+  ensure
+    server.close if server && !server.closed?
+    thread&.join(1)
+  end
+
+  def test_expired_message_fails_at_once_with_the_reason
+    expired = { id: "abc123", status: "expired",
+                error: "expired undelivered after 120s; agent busy; use --force to inject mid-turn" }
+    with_inbox_server(message_states: [{ id: "abc123", status: "queued" }, expired]) do |port, _deletes|
+      sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hi", "--timeout", "30"])
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      out, = capture_io { assert_equal 1, sender.run }
+      data = JSON.parse(out)
+
+      assert_equal "expired", data["status"]
+      assert_includes data["error"], "use --force to inject mid-turn"
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+    end
+  end
+
+  def test_timed_out_message_is_withdrawn_so_it_cannot_land_later
+    with_inbox_server(message_states: [{ id: "abc123", status: "queued" }]) do |port, deletes|
+      sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "hi", "--timeout", "0.6"])
+      out, = capture_io { assert_equal 124, sender.run }
+      data = JSON.parse(out)
+
+      assert_equal ["timeout", true], data.values_at("status", "withdrawn")
+      assert_includes data["error"], "message withdrawn"
+      assert_equal ["/inbox/abc123"], deletes
+    end
+  end
+
+  def test_wait_done_waits_for_the_turn_after_the_reported_seq
+    with_send_server(status_states: ["prompt"]) do |port|
+      seen = nil
+      fake_waiter = lambda do |argv, out:, err:|
+        seen = argv
+        Struct.new(:run).new(nil).tap do |waiter|
+          waiter.define_singleton_method(:run) do
+            out.puts(JSON.generate(ok: true, wait_result: "done", seq: 12, turn: 2))
+            0
+          end
+        end
+      end
+      sender = Harnex::Sender.new(["--id", "target", "--port", port.to_s, "--message", "Continue", "--wait-done"])
+      sender.define_singleton_method(:with_http_retry) do |deadline:, &_block|
+        AcceptedResponse.new("200", JSON.generate(ok: true, status: "delivered", after_seq: 7, delivery: "prompt")).tap do |response|
+          response.define_singleton_method(:is_a?) { |klass| klass == Net::HTTPSuccess || super(klass) }
+        end
+      end
+
+      out = nil
+      Harnex::Waiter.stub(:new, fake_waiter) do
+        out, = capture_io { assert_equal 0, sender.run }
+      end
+      data = JSON.parse(out)
+
+      assert_equal %w[--after-seq 7], seen.each_cons(2).find { |flag, _| flag == "--after-seq" }
+      refute_includes seen, "--timeout", "an implicit send --timeout does not cap the turn wait"
+      assert_equal [true, "done", 7], data.values_at("ok", "wait_result", "after_seq")
+      assert_equal 2, data.dig("turn_result", "turn")
+    end
+  end
+
+  def test_wait_done_rejects_conflicting_modes
+    assert_raises(RuntimeError) { Harnex::Sender.new(["--id", "t", "--message", "x", "--wait-done", "--no-wait"]).run }
+    assert_raises(RuntimeError) { Harnex::Sender.new(["--id", "t", "--message", "x", "--wait-done", "--wait-for-idle"]).run }
+  end
+
   def test_run_returns_timeout_for_queued_delivery_when_timeout_is_short
     sender = Harnex::Sender.new(["--id", "target", "--message", "hello", "--timeout", "1"])
     registry = { "host" => "127.0.0.1", "port" => 40123, "session_id" => "peer-session" }

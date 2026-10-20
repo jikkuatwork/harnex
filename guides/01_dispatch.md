@@ -68,6 +68,16 @@ harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read and execute /tmp/task-impl-NN.md"
 ```
 
+To send a brief file's text itself, use `--context-file PATH`. Add
+`--context-section TEXT` to send only one part: after a Markdown heading that
+starts with TEXT, up to the next heading of the same or a higher level; after a
+plain marker line (e.g. `Sent verbatim as the harnex --context.`), to the end
+of the file. An empty result is refused before launch. `--meta-file PATH`
+reads `--meta` JSON from a file and refuses invalid JSON (inline `--meta`
+keys win). The brief's path and the SHA-256 of the sent text are recorded as
+`meta.context_file` / `meta.context_sha256` on the started event and dispatch
+rows.
+
 For one-shot context dispatches that should clean themselves up, add
 `--auto-stop`. It requires `--context` and does not keep the session alive for
 later reuse. On Codex app-server, a turn launched from `--context` is accepted
@@ -226,6 +236,31 @@ an idle state; it is not a full work-completion signal.
 ```bash
 harnex send --id pi-i-NN --message "Run the acceptance test." --wait-for-idle --timeout 900
 ```
+
+Sending to a busy worker:
+
+- **Pi:** the message is handed to Pi at once as a follow-up (`delivery:
+  "follow_up"`) and delivered when the current turn ends. It cannot expire.
+  `--force` steers it into the turn now instead.
+- **Other adapters:** it queues until the agent is at a prompt. If it is not
+  delivered within `--timeout`, send withdraws it and exits 124; if it
+  expires in the inbox (`run --inbox-ttl`), send exits 1 with `status:
+  "expired"`. Either way the caller knows the note was not delivered.
+
+Every delivery reports `after_seq`. To wait for the turn a message started
+(for example after nudging a turn that failed on provider capacity), wait
+after that point so the earlier failure cannot answer:
+
+```bash
+harnex send --id pi-i-NN --message "Continue the same task from where you stopped" \
+  --wait-done --timeout 540
+# on exit 124, resume with the after_seq it printed:
+harnex wait --id pi-i-NN --until done --after-seq 812 --timeout 540
+```
+
+`--wait-done` uses the `wait --until done` exit codes (0 done, 1 failed, 2
+proof rejected, 4 stalled, 124 timeout). Without `--timeout` it waits for
+the turn without a cap.
 
 Messages sent from one harnex session to another include a relay header:
 
