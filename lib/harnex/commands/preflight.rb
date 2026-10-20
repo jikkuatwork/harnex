@@ -62,7 +62,6 @@ module Harnex
                               Registration deadline (default: #{DEFAULT_REGISTRATION_TIMEOUT_S.to_i}s)
           --model NAME        Passed to `harnex run --model`
           --effort LEVEL      Passed to `harnex run --effort`
-          --legacy-pty        (codex only) Probe the legacy PTY adapter
           --id ID             Dispatch id (default: pf-<adapter>-<random>)
           -h, --help          Show this help
 
@@ -74,7 +73,7 @@ module Harnex
 
         Common patterns:
           #{program_name} pi --cwd ~/repo -- --no-approve
-          #{program_name} codex --cwd ~/repo --commit-check -- -c model=gpt-5.5
+          #{program_name} pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol -- --no-approve
           #{program_name} pi --cwd ~/repo && harnex run pi --cwd ~/repo --context "..."
 
         Gotchas:
@@ -100,7 +99,6 @@ module Harnex
         registration_timeout_s: DEFAULT_REGISTRATION_TIMEOUT_S,
         model: nil,
         effort: nil,
-        legacy_pty: false,
         id: nil,
         help: false
       }
@@ -245,7 +243,6 @@ module Harnex
       ]
       argv += ["--model", @options[:model]] if @options[:model]
       argv += ["--effort", @options[:effort]] if @options[:effort]
-      argv << "--legacy-pty" if @options[:legacy_pty]
       argv += ["--"] + child_args unless child_args.empty?
       stdout, stderr, status = Open3.capture3(*argv, chdir: cwd)
       payload = begin
@@ -543,7 +540,6 @@ module Harnex
           @options[:registration_timeout_s] = Harnex.parse_duration_seconds(value(argv, index += 1, arg), option_name: arg)
         when "--model" then @options[:model] = value(argv, index += 1, arg)
         when "--effort" then @options[:effort] = value(argv, index += 1, arg)
-        when "--legacy-pty" then @options[:legacy_pty] = true
         when "--id" then @options[:id] = value(argv, index += 1, arg)
         else
           raise OptionParser::InvalidOption, arg if arg.start_with?("-")

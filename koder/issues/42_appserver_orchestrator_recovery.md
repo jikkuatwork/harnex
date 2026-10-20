@@ -1,7 +1,7 @@
 ---
-status: deferred
+status: closed
 priority: P1
-updated: 2026-10-18
+updated: 2026-10-20
 ---
 
 # Issue 42 — Durable app-server orchestrator recovery
@@ -166,3 +166,9 @@ Add summary-row counters / fields:
 Codex is no longer used ("Lets defer codex; we are not using it anymore"), so
 this Codex-specific work is deferred, not abandoned. Reopen it with `status:
 open` if Codex dispatch returns. Pi is the dispatch adapter.
+
+## Closed (2026-10-20) — Codex removed
+
+The owner went exclusively Pi + GPT models and Codex support was removed in
+0.20.0, so this Codex-specific work will not be done. Pi-side equivalents, if
+ever needed, start as new issues.

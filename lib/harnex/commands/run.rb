@@ -34,7 +34,7 @@ module Harnex
       --id --description --detach --tmux --host --port --watch --watch-file
       --stall-after --max-resumes --preset --context --context-file --context-section
       --meta --meta-file --artifact-report --validation-report --cwd --root --timeout --inbox-ttl
-      --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime --fast --legacy-pty
+      --require-artifact-report --require-attribution --auto-stop --on-done --max-runtime
       --allow-live-parent --final-gate --wait-done --wait-timeout --owner-tag --help
     ].concat(TELEMETRY_FLAGS.keys).freeze
 
@@ -81,8 +81,6 @@ module Harnex
                              `resume`, the command that keeps waiting
           --on-done CMD      Launch /bin/sh -c CMD once at the first typed work result
           --max-runtime DUR  Fixed worker runtime budget (e.g. 30m); not a watch timeout
-          --fast             (codex only) Use Codex service_tier="fast".
-                             Default Codex runs force service_tier="flex".
           --meta JSON        Attach parsed JSON metadata to the started event
           --meta-file PATH   Read --meta JSON from PATH (inline --meta keys win)
           --artifact-report PATH
@@ -140,17 +138,12 @@ module Harnex
           --root DIR         Override harnex session/root attribution without changing child cwd
           --timeout SECS     Max seconds to wait for detached registration (default: #{DEFAULT_TIMEOUT})
           --inbox-ttl SECS   Expire queued inbox messages after SECS (default: #{Inbox::DEFAULT_TTL})
-          --legacy-pty       (codex only) Use the legacy PTY adapter instead of
-                             the JSON-RPC `app-server` adapter. Long-term
-                             supported fallback for interactive/TUI use; JSON-RPC
-                             remains the default for autonomous dispatches.
           -h, --help         Show this help
 
         Notes:
           Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
           Bare `--watch` enables the babysitter.
-          --auto-stop requires --context. Structured Codex turns only count as
-          accepted completion after command/tool activity or a Git delta.
+          --auto-stop requires --context (or --context-file).
           --on-done CMD is trusted local shell input. Do not put secrets in CMD;
           command lines may be visible to local process inspection.
           --max-runtime is opt-in and never resets on prompts/retries/activity.
@@ -159,8 +152,8 @@ module Harnex
           optional claims to HARNEX_ARTIFACT_CLAIMS_PATH; claims never accept work.
           Explicit --stall-after/--max-resumes values override --preset defaults.
           --final-gate is receipt diagnostics, not proof: replay the gate commands
-          yourself before accepting work. Only adapters that observe command exits
-          (codex app-server, pi) can pass a gate; PTY dispatches report unknown.
+          yourself before accepting work. Only Pi observes command exits, so only
+          Pi dispatches can pass a gate; PTY dispatches report unknown.
           CLIs with smart prompt detection: #{Adapters.known.join(', ')}
           Any other CLI name is launched with generic wrapping.
           Wrapper options may appear before or after <cli>.
@@ -169,7 +162,7 @@ module Harnex
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md"
           #{program_name} pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
           #{program_name} pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
-          #{program_name} codex --cwd /tmp/public-bundle --id eval-001 --context "Read README.md and write OUTPUT.md" --auto-stop
+          #{program_name} pi --cwd ../wt-42 --root . --id pi-i-42 --tmux pi-i-42 --context-file /tmp/task-42.md --auto-stop --wait-done --wait-timeout 9m
           #{program_name} pi --id pi-r-64 --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH' --auto-stop
           #{program_name} pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution --context "Implement SP-4"
           #{program_name} claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
@@ -182,8 +175,6 @@ module Harnex
           Pi RPC requires Pi >= 0.80.4 (`harnex doctor --adapter pi`). Prefer
             provider/model for Harnex --model, and explicitly pass child
             --approve or --no-approve for deterministic project trust.
-          Codex JSON-RPC: pass model as `-c model=NAME`, not `-m NAME`. The
-            legacy PTY adapter (--legacy-pty) accepts `-m`.
       TEXT
     end
 
@@ -222,8 +213,6 @@ module Harnex
         tmux_name: nil,
         timeout: DEFAULT_TIMEOUT,
         inbox_ttl: default_inbox_ttl,
-        fast: false,
-        legacy_pty: false,
         final_gates: [],
         wait_done: false,
         wait_timeout_s: nil,
@@ -258,8 +247,8 @@ module Harnex
       @options[:id] ||= Harnex.generate_id(repo_root)
       validate_unique_id!(repo_root)
       validate_live_parent_guard!(repo_root)
-      effective_child_args = apply_context(apply_codex_service_tier(cli_name, child_args))
-      adapter = Harnex.build_adapter(cli_name, effective_child_args, legacy_pty: @options[:legacy_pty])
+      effective_child_args = apply_context(child_args)
+      adapter = Harnex.build_adapter(cli_name, effective_child_args)
       @options[:detach] = true if @options[:tmux]
       validate_watch_mode!
       resolve_watch_preset!
@@ -338,8 +327,6 @@ module Harnex
       tmux_cmd += ["--cwd", @options[:cwd]] if @options[:cwd]
       tmux_cmd += ["--root", @options[:root]] if @options[:root]
       tmux_cmd += ["--inbox-ttl", @options[:inbox_ttl].to_s]
-      tmux_cmd << "--fast" if @options[:fast]
-      tmux_cmd += ["--legacy-pty"] if @options[:legacy_pty]
       tmux_cmd += ["--"] + child_args unless child_args.empty?
 
       window_name = @options[:tmux_name] || @options[:id]
@@ -553,7 +540,7 @@ module Harnex
     end
 
     def adapter_repo_path(cli_name, child_args)
-      Harnex.build_adapter(cli_name, child_args, legacy_pty: @options[:legacy_pty]).infer_repo_path(child_args)
+      Harnex.build_adapter(cli_name, child_args).infer_repo_path(child_args)
     end
 
     def resolve_run_root(cli_name, child_args)
@@ -758,8 +745,6 @@ module Harnex
           @options[:allow_live_parent] = true
         when "--require-attribution"
           @options[:require_attribution] = true
-        when "--fast"
-          @options[:fast] = true
         when "--final-gate"
           index += 1
           @options[:final_gates] << required_option_value(arg, argv[index])
@@ -810,8 +795,6 @@ module Harnex
           @options[:inbox_ttl] = Float(required_option_value(arg, argv[index]))
         when /\A--inbox-ttl=(.+)\z/
           @options[:inbox_ttl] = Float(required_option_value("--inbox-ttl", Regexp.last_match(1)))
-        when "--legacy-pty"
-          @options[:legacy_pty] = true
         else
           reject_unknown_long_flag!(arg) if unknown_long_flag?(arg)
           if cli_name.nil?
@@ -866,7 +849,7 @@ module Harnex
         case arg
         when "--"
           return false
-        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--fast", "--legacy-pty", "--allow-live-parent", "--wait-done"
+        when "-h", "--help", "--detach", "--tmux", "--auto-stop", "--require-artifact-report", "--require-attribution", "--allow-live-parent", "--wait-done"
           nil
         when /\A--tmux=/
           nil
@@ -1063,25 +1046,6 @@ module Harnex
 
     def blank_value?(value)
       value.nil? || value.to_s.strip.empty?
-    end
-
-    def apply_codex_service_tier(cli_name, child_args)
-      return child_args unless cli_name.to_s == "codex"
-      return child_args if child_service_tier_config?(child_args)
-
-      child_args + ["-c", "service_tier=\"#{@options[:fast] ? 'fast' : 'flex'}\""]
-    end
-
-    def child_service_tier_config?(child_args)
-      child_args.each_with_index.any? do |arg, index|
-        text = arg.to_s
-        text.start_with?("service_tier=") ||
-          text.start_with?("service_tier.") ||
-          text == "-c" && child_args[index + 1].to_s.start_with?("service_tier") ||
-          text == "--config" && child_args[index + 1].to_s.start_with?("service_tier") ||
-          text.start_with?("-cservice_tier") ||
-          text.start_with?("--config=service_tier")
-      end
     end
 
     def parse_non_negative_integer(value, option_name:)

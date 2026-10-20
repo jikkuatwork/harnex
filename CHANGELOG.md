@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.20.0] - 2026-10-20 | 09:55 PM | +04
+
+Owner-authorized local-only release (no RubyGems publication). Harnex is now
+Pi + GPT only: Codex support is removed (owner decision 2026-10-20: "we are
+going to be exclusively pi & gpt models").
+
+### Removed
+
+- The `codex` (PTY) and `codex app-server` (JSON-RPC) adapters, the
+  `stdio_jsonrpc` session transport, the app-server client, and their
+  fixtures and tests. `harnex run codex` is no longer special-cased (it would
+  wrap a `codex` binary as a generic PTY CLI).
+- `harnex run --fast` and `--legacy-pty`; Codex service-tier forcing;
+  `harnex preflight --legacy-pty`; `docs/codex-appserver.md`.
+- `harnex doctor` Codex checks: it now checks Pi by default and only Pi
+  (`--adapter pi|all`).
+- Issues #40, #42 and #43 (Codex recovery/fallback/throughput work) closed.
+
+### Changed
+
+- Shared session behavior previously tested through Codex (receipts and
+  claims, completion-notification ordering, boot-failure classification,
+  stop sequencing, auto-stop, status fields, usage pricing, `preflight`
+  end to end) is now tested through Pi or adapter-neutral fakes.
+- Dispatch-row schema fields are unchanged; `agent.service_tier`,
+  `actual.rate_limits` and Codex error details stay `null` for new rows.
+- `harnex doctor` capabilities add `ask`, `final_message` and `owner_tag`.
+- Docs, guides, recipes and repo instructions are Pi-only; session ids use
+  `pi-<role>-<tag>`.
+
 ## [0.19.0] - 2026-10-20 | 06:35 PM | +04
 
 Owner-authorized local-only release (no RubyGems publication). Makes Pi

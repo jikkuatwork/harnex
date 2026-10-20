@@ -8,7 +8,7 @@ module Harnex
     module_function
 
     # Seconds since the session last showed progress, with the clock used:
-    #   activity    - structured adapters (Pi, Codex app-server): the most
+    #   activity    - the structured Pi adapter: the most
     #                 recent of turn start, model event, or tool event, and
     #                 only while a turn is active;
     #   output_log  - PTY adapters: seconds since the transcript last changed.

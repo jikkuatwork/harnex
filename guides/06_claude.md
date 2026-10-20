@@ -101,8 +101,10 @@ you stopped" the same way. On 124, resume with
   the same value for `--id` and `--tmux`.
 - **Give each lane its own worktree** (`--cwd <worktree> --root <checkout>`).
   Harnex then credits the lane's own commits, never yours on the root.
-- **Verify before you report success.** `done` means the worker settled with
-  observed activity. Check `final_message`, the commit and the tests yourself.
+- **Verify before you report success.** `done` means the worker's turn
+  settled without error; it is not acceptance (add `--require-artifact-report`
+  to reject turns with no command, tool or Git activity). Check
+  `final_message`, `turn_commits` and the tests yourself.
 - **Clean up.** `--auto-stop` ends a one-shot lane. Otherwise stop it with
   `harnex stop --id X` once you have its result.
 - **Avoid follow-forever readers.** `harnex events --id X` follows the stream;

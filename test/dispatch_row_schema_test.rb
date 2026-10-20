@@ -1,4 +1,5 @@
 require_relative "test_helper"
+require_relative "support/transcript_usage_adapter"
 require "json"
 
 class DispatchRowSchemaTest < Minitest::Test
@@ -254,10 +255,10 @@ class DispatchRowSchemaTest < Minitest::Test
       init_git_repo(repo)
 
       id = "schema-worker"
-      adapter = build_stubbed_codex_adapter("codex-test-1.0.0")
+      adapter = TranscriptUsageAdapter.new(version: "usage-cli-test-1.0.0")
       session = Harnex::Session.new(
         adapter: adapter,
-        command: [RbConfig.ruby, "-e", codex_summary_script],
+        command: [RbConfig.ruby, "-e", TranscriptUsageAdapter.summary_script],
         repo_root: repo,
         host: "127.0.0.1",
         id: id,
@@ -301,7 +302,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal id, record.fetch("id")
       assert_match(/\A\h{16}\z/, record.fetch("session_id"))
       assert_equal "schema row", record.fetch("description")
-      assert_equal "codex", record.fetch("cli")
+      assert_equal "usage-cli", record.fetch("cli")
       assert_equal "completed", record.fetch("status")
       assert_kind_of Integer, record.fetch("duration_s")
       assert_equal "1", record.fetch("tier")
@@ -329,8 +330,8 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_equal "schema row", meta.fetch("description")
       assert_equal "harnex", meta.fetch("harness")
       assert_kind_of String, meta.fetch("harness_version")
-      assert_equal "codex", meta.fetch("agent")
-      assert_equal "codex-test-1.0.0", meta.fetch("agent_version")
+      assert_equal "usage-cli", meta.fetch("agent")
+      assert_equal "usage-cli-test-1.0.0", meta.fetch("agent_version")
       assert_equal "openai", meta.fetch("agent_provider")
       assert_kind_of String, meta.fetch("host")
       assert_kind_of String, meta.fetch("platform")
@@ -351,7 +352,7 @@ class DispatchRowSchemaTest < Minitest::Test
       assert_kind_of String, meta.fetch("ended_at")
 
       agent = record.fetch("agent")
-      assert_equal "codex", agent.fetch("cli")
+      assert_equal "usage-cli", agent.fetch("cli")
       assert_equal "openai", agent.fetch("provider")
       assert_equal "gpt-5.3-codex", agent.fetch("model_requested")
       assert_equal "gpt-5.3-codex", agent.fetch("model_effective")
@@ -399,7 +400,7 @@ class DispatchRowSchemaTest < Minitest::Test
 
       usage = record.fetch("usage")
       assert_equal "observed", usage.fetch("status")
-      # Plan 33 Phase 2: price-table cost. PTY-scraped codex input excludes
+      # Plan 33 Phase 2: price-table cost. This transcript's input excludes
       # cached, so cached prices additively:
       # 104,158 * 1.75 + 250,880 * 0.175 + 2,709 * 14.00 = 264,106.5 per-1M
       assert_in_delta 0.2641065, usage.fetch("cost_usd"), 1e-6
@@ -481,8 +482,8 @@ class DispatchRowSchemaTest < Minitest::Test
 
       id = "schema-headless"
       session = Harnex::Session.new(
-        adapter: build_stubbed_codex_adapter("codex-test-1.0.0"),
-        command: [RbConfig.ruby, "-e", codex_summary_script],
+        adapter: TranscriptUsageAdapter.new(version: "usage-cli-test-1.0.0"),
+        command: [RbConfig.ruby, "-e", TranscriptUsageAdapter.summary_script],
         repo_root: repo,
         host: "127.0.0.1",
         id: id
@@ -630,19 +631,6 @@ class DispatchRowSchemaTest < Minitest::Test
 
   def last_dispatch_end_row(repo)
     JSON.parse(File.read(File.join(repo, ".harnex", "dispatch.jsonl")).lines.last)
-  end
-
-  def build_stubbed_codex_adapter(version)
-    adapter = Harnex::Adapters::Codex.new
-    adapter.define_singleton_method(:agent_version) { version }
-    adapter
-  end
-
-  def codex_summary_script
-    <<~RUBY
-      puts "Token usage: total=106,867 input=104,158 (+ 250,880 cached) output=2,709 (reasoning 870)"
-      puts "To continue this session, run codex resume 019ddf05-0f03-7d70-904f-23db7f00640f"
-    RUBY
   end
 
   def init_git_repo(repo)

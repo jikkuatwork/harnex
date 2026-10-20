@@ -39,7 +39,6 @@ module Harnex
     RELIABILITY_FIELDS = %w[
       adapter_close real_disconnections stream_interruptions stalls force_resumes compactions recovered
     ].freeze
-    SUCCESSFUL_TURN_STATUSES = %w[completed success succeeded].freeze
     PROOF_REJECTION_CLASSES = %w[
       completed_no_activity report_missing report_invalid report_rejected
     ].freeze
@@ -205,7 +204,6 @@ module Harnex
       @git_end = {}
       @usage_summary = {}
       @context_summary = {}
-      @rpc_context_telemetry = nil
       @ended_at = nil
       @exit_reason = nil
       @last_error = nil
@@ -237,7 +235,6 @@ module Harnex
       @output_buffer.force_encoding(Encoding::BINARY)
       @state_machine = SessionState.new(adapter)
       @inbox = Inbox.new(self, @state_machine, ttl: inbox_ttl)
-      @rate_limits = nil
       @parent_harnex_id = ENV["HARNEX_ID"].to_s.strip
       @parent_harnex_id = nil if @parent_harnex_id.empty?
     end
@@ -566,14 +563,8 @@ module Harnex
             # Reserve work before the blocking RPC. Steering an active run does
             # not reset its clocks, but a new prompt cannot reuse old proof.
             @activity.start_turn
-            if adapter.transport == :stdio_jsonl_rpc
-              begin_pi_run!
-              @pi_awaiting_run_start = true
-            else
-              begin_notification_turn!
-              reset_work_outcome!
-              @state_machine.force_busy!
-            end
+            begin_pi_run!
+            @pi_awaiting_run_start = true
           end
         end
         begin
@@ -586,7 +577,6 @@ module Harnex
         end
         @completion_transition_lock.synchronize do
           unless @session_finalized
-            @state_machine.force_busy! unless adapter.transport == :stdio_jsonl_rpc
             @injected_count += 1
             @last_injected_at = Time.now
             refresh_registry
@@ -633,7 +623,7 @@ module Harnex
     end
 
     def structured_transport?
-      %i[stdio_jsonrpc stdio_jsonl_rpc].include?(adapter.transport)
+      adapter.transport == :stdio_jsonl_rpc
     end
 
     def run_structured
@@ -753,106 +743,7 @@ module Harnex
     end
 
     def handle_structured_notification(message)
-      case adapter.transport
-      when :stdio_jsonrpc
-        handle_rpc_notification(message)
-      when :stdio_jsonl_rpc
-        handle_jsonl_notification(message)
-      end
-    end
-
-    def handle_rpc_notification(message)
-      @completion_transition_lock.synchronize do
-        return if @stop_requested || @session_finalized
-
-        handle_rpc_notification_locked(message)
-      end
-    end
-
-    def handle_rpc_notification_locked(message)
-      @activity.observe_rpc(message)
-      method = message["method"]
-      params = message["params"] || {}
-
-      case method
-      when "thread/started"
-        @rpc_thread_id = params.dig("thread", "id")
-      when "turn/started"
-        reset_work_outcome!
-        @turn_started_seen = true
-        @state_machine.force_busy!
-        emit_event("turn_started", turnId: params.dig("turn", "id"))
-      when "turn/completed"
-        @state_machine.force_prompt!
-        turn = params["turn"] || {}
-        status = turn["status"]
-        turn_id = turn["id"] || params["turnId"]
-        payload = { turnId: turn_id }
-        payload[:status] = status if status
-        payload[:tokenUsage] = params["tokenUsage"] if params["tokenUsage"].is_a?(Hash)
-        if successful_turn_status?(status)
-          record_successful_completion(payload)
-        else
-          mark_task_failed(
-            turn_id: turn_id,
-            status: status,
-            error: extract_turn_error_message(turn),
-            codex_error_info: extract_turn_error_info(turn)
-          )
-        end
-        schedule_auto_stop("turn_completed", interrupt: false)
-      when "item/completed"
-        emit_event("item_completed", item: params["item"])
-        item = params["item"]
-        if item.is_a?(Hash) && item["type"] == "agentMessage" && !item["text"].to_s.strip.empty?
-          @turn_final_text = item["text"].to_s
-        end
-        @event_counters.record_item(params["item"])
-        record_observed_command(params["item"])
-        text = render_item_text(params["item"])
-        record_synthesized(text) if text
-      when "thread/compacted"
-        emit_event("compaction", **params)
-      when "thread/tokenUsage/updated"
-        # Schema: ThreadTokenUsageUpdatedNotification carries
-        # `tokenUsage: { last, total, modelContextWindow? }` where each
-        # breakdown has camelCase {input,output,cachedInput,reasoningOutput,total}Tokens.
-        # Snapshot cumulative `total` for usage and aggregate `last` separately
-        # as conservative active-context pressure.
-        if params["tokenUsage"].is_a?(Hash)
-          @token_usage = params["tokenUsage"]
-          record_rpc_context_sample(@token_usage)
-        end
-      when "thread/status/changed"
-        # State machine reflects RPC state; no event needed.
-        nil
-      when "account/rateLimits/updated"
-        @rate_limits = params
-      when "error"
-        message = extract_error_notification_message(params)
-        @last_error = message unless message.to_s.empty?
-        @state_machine.force_busy!
-        emit_event(
-          "error",
-          source: "error_notification",
-          message: message,
-          codex_error_info: extract_error_notification_info(params),
-          will_retry: params["willRetry"],
-          threadId: params["threadId"],
-          turnId: params["turnId"]
-        )
-        emit_event("throttle_429", source: "error_notification", message: message) if throttle_429?(message, params)
-        signal_rpc_done! if params["turnId"].to_s.empty?
-      end
-    rescue StandardError => e
-      warn("harnex: rpc notification handler error: #{e.message}")
-    end
-
-    def successful_turn_status?(status)
-      text = status.to_s
-      return true if text.empty?
-
-      SUCCESSFUL_TURN_STATUSES.include?(text)
+      handle_jsonl_notification(message) if adapter.transport == :stdio_jsonl_rpc
     end
 
     def record_successful_completion(payload)
@@ -909,11 +800,9 @@ module Harnex
       true
     end
 
+    # Pi turns are accepted as settled unless the caller demands a receipt.
     def completion_gate_required?
-      return true if require_artifact_report
-      return false unless adapter.transport == :stdio_jsonrpc
-
-      @auto_stop || (adapter.respond_to?(:initial_prompt) && !adapter.initial_prompt.to_s.empty?)
+      require_artifact_report
     end
 
     def assess_completion_proof
@@ -975,7 +864,7 @@ module Harnex
       @completion_transition_lock.synchronize { mark_task_failed_locked(**attributes) }
     end
 
-    def mark_task_failed_locked(turn_id: nil, status: nil, error: nil, codex_error_info: nil, outcome_class: nil, artifact_report_status: nil, diagnostics: nil, publish: true)
+    def mark_task_failed_locked(turn_id: nil, status: nil, error: nil, outcome_class: nil, artifact_report_status: nil, diagnostics: nil, publish: true)
       @last_completed_at = nil if outcome_class
       @activity.settle
       @last_failed_at = Time.now
@@ -989,7 +878,6 @@ module Harnex
       payload[:stop] = @stop_request.to_h if @stop_request
       payload[:turnId] = turn_id if turn_id
       payload[:message] = error unless error.to_s.empty?
-      payload[:codex_error_info] = codex_error_info if codex_error_info
       payload[:outcome_class] = outcome_class if outcome_class
       payload[:artifact_report_status] = artifact_report_status if artifact_report_status
       payload[:diagnostics] = @completion_diagnostics unless @completion_diagnostics.empty?
@@ -1002,40 +890,6 @@ module Harnex
         terminal_signal = @last_failed_status == "dispatch_error" ? "dispatch_error" : "task_failed"
         publish_completion_notification(terminal_signal)
       end
-    end
-
-    def extract_error_notification_message(params)
-      error = params["error"]
-      if error.is_a?(Hash)
-        error["message"] || error.dig("error", "message") || params["message"]
-      else
-        params["message"]
-      end
-    end
-
-    def extract_error_notification_info(params)
-      error = params["error"]
-      error.is_a?(Hash) ? error["codexErrorInfo"] : nil
-    end
-
-    def throttle_429?(message, params)
-      return true if message.to_s.match?(/\b429\b|rate limit/i)
-
-      error = params["error"]
-      error.is_a?(Hash) && error.values.any? { |value| value.to_s.match?(/\b429\b|rate limit/i) }
-    end
-
-    def extract_turn_error_message(turn)
-      error = turn["error"]
-      return error["message"] if error.is_a?(Hash)
-      return error if error.is_a?(String)
-
-      nil
-    end
-
-    def extract_turn_error_info(turn)
-      error = turn["error"]
-      error.is_a?(Hash) ? error["codexErrorInfo"] : nil
     end
 
     def handle_jsonl_notification(message)
@@ -1166,20 +1020,15 @@ module Harnex
     end
 
     def handle_structured_disconnect(error)
-      if adapter.transport == :stdio_jsonl_rpc
-        @completion_transition_lock.synchronize { handle_rpc_disconnect(error) }
-      else
-        handle_rpc_disconnect(error)
-      end
+      @completion_transition_lock.synchronize { handle_rpc_disconnect(error) }
     end
 
     def handle_rpc_disconnect(error)
       return if @session_finalized
 
       msg = error.is_a?(Hash) ? error["message"] : error&.message
-      pi = adapter.transport == :stdio_jsonl_rpc
       expected_cleanup = error.nil? && (@stop_requested || runtime_budget_stop?) && !@pi_transport_failed
-      if expected_cleanup || (!pi && normal_auto_stop_disconnect?(msg))
+      if expected_cleanup
         signal_rpc_done!
         return
       end
@@ -1189,16 +1038,14 @@ module Harnex
       end
       @last_error = msg.to_s unless msg.to_s.empty?
       @state_machine.force_busy!
-      if pi
-        return if @pi_transport_failed
+      return if @pi_transport_failed
 
-        @pi_transport_failed = true
-        @pi_idle_stop = false
-        mark_task_failed(
-          status: "disconnected", error: msg,
-          outcome_class: "task_failed", artifact_report_status: "rejected"
-        )
-      end
+      @pi_transport_failed = true
+      @pi_idle_stop = false
+      mark_task_failed(
+        status: "disconnected", error: msg,
+        outcome_class: "task_failed", artifact_report_status: "rejected"
+      )
       emit_event("disconnected", source: "transport", message: msg) rescue nil
       if adapter.respond_to?(:terminate_subprocess)
         Thread.new do
@@ -1208,10 +1055,6 @@ module Harnex
         end
       end
       signal_rpc_done!
-    end
-
-    def normal_auto_stop_disconnect?(message)
-      message.to_s.empty? && @auto_stop_fired && (task_complete? || task_failed?)
     end
 
     def dispatch_initial_prompt
@@ -1226,51 +1069,6 @@ module Harnex
       return if prompt.to_s.empty?
 
       inject_via_structured(text: prompt, submit: true, enter_only: false, force: false)
-    end
-
-    def render_item_text(item)
-      return nil unless item.is_a?(Hash)
-
-      case item["type"]
-      when "agentMessage"
-        item["text"]
-      when "mcpToolCall", "dynamicToolCall"
-        name = item["tool"] || "tool"
-        args = item["arguments"]
-        "tool: #{name}#{args ? " #{summarize(args)}" : ""}"
-      when "commandExecution"
-        "command: #{item["command"]}"
-      else
-        item["text"]
-      end
-    end
-
-    def record_observed_command(item)
-      return unless item.is_a?(Hash) && item["type"] == "commandExecution"
-
-      command = item["command"]
-      command = Shellwords.join(command.map(&:to_s)) if command.is_a?(Array)
-      command = command.to_s
-      exit_code = item["exitCode"]
-      exit_code = item["exit_code"] if exit_code.nil?
-      exit_code = Integer(exit_code)
-      return if command.empty?
-
-      duration = item["duration_s"]
-      duration = item["durationMs"].to_f / 1000.0 if duration.nil? && item["durationMs"]
-      observed = {
-        "cmd" => command,
-        "exit_code" => exit_code,
-        "status" => item["status"],
-        "duration_s" => duration
-      }.compact
-      @observed_commands_mutex.synchronize do
-        @observed_commands << observed
-        @observed_commands = @observed_commands.last(Harnex::ArtifactReport::MAX_COMMANDS)
-        note_command_exit_locked(command, exit_code)
-      end
-    rescue ArgumentError, TypeError
-      nil
     end
 
     # Exact-string gate matching against harness-observed exits; the last
@@ -2309,7 +2107,6 @@ module Harnex
 
     def command_observation_status
       case adapter.transport
-      when :stdio_jsonrpc then "observed"
       when :stdio_jsonl_rpc
         if unobserved_command_count.zero?
           "observed"
@@ -2983,7 +2780,8 @@ module Harnex
         turn_count: @injected_count,
         tool_calls: summary_tool_calls(counters),
         commands_executed: counters[:commands_executed],
-        rate_limits: @rate_limits,
+        # No adapter reports provider rate-limit payloads; kept for the schema.
+        rate_limits: nil,
         output_lines: output_measurements[:lines],
         output_bytes: output_measurements[:bytes],
         event_records: @events_log_seq,
@@ -3036,7 +2834,6 @@ module Harnex
 
     def summary_agent_session_id
       @usage_summary[:agent_session_id] ||
-        @rpc_thread_id ||
         (adapter.thread_id if adapter.respond_to?(:thread_id))
     end
 
@@ -3051,28 +2848,7 @@ module Harnex
     end
 
     def summary_service_tier
-      summary_string(meta_hash["service_tier"]) || service_tier_from_command
-    end
-
-    def service_tier_from_command
-      command.each_with_index do |arg, index|
-        text = arg.to_s
-        if text == "-c" || text == "--config"
-          parsed = parse_service_tier_config(command[index + 1])
-          return parsed if parsed
-        end
-        parsed = parse_service_tier_config(text)
-        return parsed if parsed
-      end
-      nil
-    end
-
-    def parse_service_tier_config(value)
-      text = value.to_s
-      match = text.match(/(?:\A|=)service_tier=\\?"?([^"\s]+)\\?"?/)
-      return nil unless match
-
-      summary_string(match[1])
+      summary_string(meta_hash["service_tier"])
     end
 
     def legacy_summary_event_counters
@@ -3175,47 +2951,14 @@ module Harnex
       end
     end
 
-    # Structured adapters emit usage directly (JSON-RPC token snapshots,
-    # Pi RPC stats). PTY adapters parse transcript tails when supported.
+    # Pi RPC reports usage directly (session stats); PTY adapters parse
+    # transcript tails when supported.
     def collect_session_summary
-      if adapter.transport == :stdio_jsonrpc
-        summary_from_token_usage
-      elsif adapter.respond_to?(:collect_session_summary)
+      if adapter.respond_to?(:collect_session_summary)
         adapter.collect_session_summary
       else
         adapter.parse_session_summary(transcript_tail)
       end
-    end
-
-    def summary_from_token_usage
-      summary = {}
-      if @token_usage.is_a?(Hash) && @token_usage["total"].is_a?(Hash)
-        total = @token_usage["total"]
-        summary.merge!(
-          input_tokens: total["inputTokens"],
-          output_tokens: total["outputTokens"],
-          reasoning_tokens: total["reasoningOutputTokens"],
-          cached_tokens: total["cachedInputTokens"],
-          total_tokens: total["totalTokens"]
-        )
-      end
-      summary[:context] = @rpc_context_telemetry.snapshot if @rpc_context_telemetry
-      summary
-    end
-
-    def record_rpc_context_sample(token_usage)
-      return unless adapter.context_telemetry_supported?
-
-      @rpc_context_telemetry ||= ContextTelemetry.new(
-        status: "estimated",
-        source: adapter.context_telemetry_source
-      )
-      last = token_usage["last"]
-      last = {} unless last.is_a?(Hash)
-      @rpc_context_telemetry.record(
-        tokens: last["totalTokens"],
-        window_tokens: token_usage["modelContextWindow"]
-      )
     end
 
     def transcript_tail

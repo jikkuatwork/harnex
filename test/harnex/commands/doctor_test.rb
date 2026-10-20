@@ -9,7 +9,7 @@ class DoctorTest < Minitest::Test
   def test_parse_version_from_canonical_output
     doctor = Harnex::Doctor.new
     assert_equal Gem::Version.new("0.128.0"),
-      doctor.send(:parse_version, "codex-cli 0.128.0\n")
+      doctor.send(:parse_version, "pi 0.128.0\n")
   end
 
   def test_parse_version_returns_nil_for_garbage
@@ -18,17 +18,17 @@ class DoctorTest < Minitest::Test
   end
 
   def test_min_version_constants
-    assert_equal Gem::Version.new("0.128.0"), Harnex::Doctor::MIN_CODEX_VERSION
     assert_equal Gem::Version.new("0.80.4"), Harnex::Doctor::MIN_PI_VERSION
   end
 
-  def test_pi_adapter_selection_runs_pi_check_only
-    doctor = Harnex::Doctor.new(["--adapter", "pi"])
-    doctor.stub(:check_pi, { name: "pi", ok: true, found: "0.84.1" }) do
-      doctor.stub(:check_codex, -> { flunk("codex check should not run") }) do
+  def test_pi_is_the_default_and_only_adapter_check
+    [[], ["--adapter", "pi"], ["--adapter", "all"]].each do |argv|
+      doctor = Harnex::Doctor.new(argv)
+      doctor.stub(:check_pi, { name: "pi", ok: true, found: "0.84.1" }) do
         out, = capture_io { assert_equal 0, doctor.run }
         payload = JSON.parse(out)
-        assert_equal ["pi"], payload.fetch("checks").map { |check| check.fetch("name") }
+        assert_equal ["pi"], payload.fetch("checks").map { |check| check.fetch("name") }, argv.inspect
+        assert_equal [1, 1, 1], payload.fetch("capabilities").values_at("ask", "final_message", "owner_tag")
       end
     end
   end
@@ -55,7 +55,7 @@ class DoctorTest < Minitest::Test
     error = assert_raises(OptionParser::InvalidArgument) do
       Harnex::Doctor.new(["--adapter", "unknown"]).run
     end
-    assert_includes error.message, "codex, pi, all"
+    assert_includes error.message, "pi, all"
   end
 
   def test_sweep_payload_reports_active_orphan_and_stale_entries
@@ -77,7 +77,7 @@ class DoctorTest < Minitest::Test
     File.write(File.join(events_dir, "#{stale_slug}.jsonl"), "{}\n")
 
     doctor = Harnex::Doctor.new(["--sweep"])
-    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+    doctor.stub(:check_pi, { name: "pi", ok: true }) do
       doctor.stub(:capture, ["cx-live\tcx-live\t#{Process.pid}\ncx-orphan\tcx-orphan\t123\n", success_status]) do
         out, status = capture_io { assert_equal 0, doctor.run }
         payload = JSON.parse(out)
@@ -99,7 +99,7 @@ class DoctorTest < Minitest::Test
     File.write(old, "old")
 
     doctor = Harnex::Doctor.new
-    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+    doctor.stub(:check_pi, { name: "pi", ok: true }) do
       out, = capture_io { assert_equal 0, doctor.run }
       payload = JSON.parse(out)
 
@@ -114,7 +114,7 @@ class DoctorTest < Minitest::Test
     old = old_retention_file("events", "old.jsonl")
 
     doctor = Harnex::Doctor.new(["--prune", "--dry-run"])
-    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+    doctor.stub(:check_pi, { name: "pi", ok: true }) do
       out, = capture_io { assert_equal 0, doctor.run }
       payload = JSON.parse(out)
 
@@ -129,7 +129,7 @@ class DoctorTest < Minitest::Test
     old = old_retention_file("output", "old.log")
 
     doctor = Harnex::Doctor.new(["--prune"])
-    doctor.stub(:check_codex, { name: "codex", ok: true }) do
+    doctor.stub(:check_pi, { name: "pi", ok: true }) do
       out, = capture_io { assert_equal 0, doctor.run }
       payload = JSON.parse(out)
 

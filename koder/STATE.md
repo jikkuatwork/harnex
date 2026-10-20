@@ -1,27 +1,26 @@
 # Harnex State
 
-Updated: 2026-10-20 | 06:40 PM | +04
+Updated: 2026-10-20 | 10:05 PM | +04
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.19.0 is installed locally and verified on PATH** (#85): Pi/GPT workers
-  as native tools for Claude Code — `harnex ask`, `run --wait-done`,
-  `final_message` on every turn result, `--owner-tag`, `watch --until-idle` /
-  `--match`, per-turn owner history. Two rounds of Claude-subagent stress tests
-  drove it. Record: `koder/releases/0.19.0.md`. Earlier today: 0.18.0
-  (#79-#84, `koder/releases/0.18.0.md`).
-- Owner skills now live in `~/Projects/pi/.pi/skills` (new `harnex` skill
-  there, linked into `~/.claude/skills` and `~/.pi/agent/skills`; stale
-  Codex-era `dispatch`/`chain-implement` Claude copies removed).
-- Suite: 959 runs / 4,532 assertions, no failures.
+- **0.20.0 is installed locally and verified on PATH: harnex is Pi + GPT
+  only.** Codex adapters, the JSON-RPC transport, `--fast`/`--legacy-pty` and
+  Codex docs/tests are gone; shared behavior is tested through Pi. Record:
+  `koder/releases/0.20.0.md`. Same day: 0.19.0 (#85, Pi/GPT workers as native
+  Claude tools — `ask`, `run --wait-done`, `final_message`, `--owner-tag`,
+  `--until-idle`) and 0.18.0 (#79-#84).
+- Owner skills live in `~/Projects/pi/.pi/skills` (`harnex` skill added,
+  `koder-pattern` ported to Pi-only; linked for Claude and Pi).
+- Suite: 787 runs / 3,916 assertions, no failures.
 
 ## Present
 
-- **Owner direction (2026-10-20): exclusively Pi + GPT models.** Codex is to be
-  dropped from harnex (adapters, flags, docs, tests); next step.
+- **Owner direction (2026-10-20): exclusively Pi + GPT models.** Do not
+  reintroduce Codex; design and verify against Pi.
 - **Releases are local only** (no RubyGems, tag or push): suite green →
   version/CHANGELOG → `gem build` → `gem install --local` → installed smoke →
   `koder/releases/<v>.md` → STATE.
@@ -31,9 +30,10 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-1. **Drop Codex** from harnex (adapters, `--fast`/`--legacy-pty`, docs, tests,
-   issues #40 #42 #43), then a local release.
-2. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
-3. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
-4. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +
+1. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
+2. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
+3. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +
    first slice; it also owns `--retry-on capacity` from #82).
+4. Open questions for the owner: point Pi's `holm-app` skill at Holm's
+   canonical `knowledge-base/skills/app` (Claude already uses it); link the
+   untracked `feedback` skill for Pi.

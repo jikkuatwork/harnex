@@ -22,7 +22,7 @@ session using existing primitives.
 ### 1. Spawn the worker
 
 ```bash
-harnex run codex --id worker-42 --tmux worker-42
+harnex run pi --id worker-42 --tmux worker-42
 harnex send --id worker-42 --message "Read and execute /tmp/task-42.md"
 ```
 

@@ -4,15 +4,8 @@ module Harnex
   # Observed protocol activity, not output/log freshness. Retains timestamps
   # only: thinking, messages, tool arguments and results never enter this object.
   class ActivityTracker
-    MODEL_ITEMS = %w[agentMessage reasoning].freeze
-    TOOL_ITEMS = %w[commandExecution mcpToolCall dynamicToolCall fileChange webSearch].freeze
-    MODEL_DELTAS = %w[
-      item/agentMessage/delta item/reasoning/textDelta item/reasoning/summaryTextDelta
-    ].freeze
-    TOOL_DELTAS = %w[item/commandExecution/outputDelta item/mcpToolCall/progress].freeze
-
     def initialize(transport:, monotonic_clock: nil, wall_clock: nil)
-      @source = { stdio_jsonl_rpc: "pi_rpc", stdio_jsonrpc: "codex_app_server" }[transport]
+      @source = { stdio_jsonl_rpc: "pi_rpc" }[transport]
       @clock = monotonic_clock || -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @wall_clock = wall_clock || -> { Time.now }
       @mutex = Mutex.new
@@ -47,32 +40,6 @@ module Harnex
             model_activity_locked
           end
         when "tool_execution_start", "tool_execution_update", "tool_execution_end"
-          @last_tool = stamp
-        end
-      end
-    end
-
-    def observe_rpc(message)
-      return unless @source == "codex_app_server"
-
-      method = message["method"]
-      params = message["params"] || {}
-      @mutex.synchronize do
-        case method
-        when "turn/started"
-          start_turn_locked
-        when "turn/completed"
-          @turn_active = @model_active = false
-        when "item/started", "item/completed"
-          type = params.dig("item", "type")
-          if MODEL_ITEMS.include?(type)
-            model_activity_locked(finished: method == "item/completed")
-          elsif TOOL_ITEMS.include?(type)
-            @last_tool = stamp
-          end
-        when *MODEL_DELTAS
-          model_activity_locked unless params["delta"].to_s.empty?
-        when *TOOL_DELTAS
           @last_tool = stamp
         end
       end

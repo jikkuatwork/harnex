@@ -7,8 +7,8 @@ scraping the TUI:
 harnex run pi  ->  pi --mode rpc  ->  LF-delimited JSON objects on stdio
 ```
 
-Pi RPC is JSONL, not JSON-RPC 2.0. Codex uses `codex app-server` JSON-RPC;
-Harnex presents the same run/send/wait/events control surface over both.
+Pi RPC is JSONL, not JSON-RPC 2.0. Harnex presents the same
+run/send/wait/events control surface over it as over its PTY adapters.
 
 ## Compatibility
 
@@ -35,11 +35,11 @@ with Pi 0.80.4-0.83.x and avoids printing the final message twice on 0.84+.
 ## Dispatch
 
 ```bash
-harnex run pi --id cx-i-42 --tmux cx-i-42 \
+harnex run pi --id pi-i-42 --tmux pi-i-42 \
   --context "Implement issue 42 and run tests" --auto-stop
 
-harnex wait --id cx-i-42 --until task_complete --timeout 3600
-harnex events --id cx-i-42
+harnex wait --id pi-i-42 --until task_complete --timeout 3600
+harnex events --id pi-i-42
 ```
 
 `--context` is sent as an RPC `prompt` command; it is not passed as a Pi
@@ -49,7 +49,7 @@ Harnex model and effort flags are active controls, not telemetry-only labels:
 
 ```bash
 harnex run pi \
-  --model anthropic/claude-sonnet-4-5 --effort high \
+  --model foundry-zyt/gpt-6.1-sol --effort high \
   --context "Review the change" --auto-stop
 ```
 
@@ -66,7 +66,7 @@ Pass Pi startup flags after `--`:
 
 ```bash
 harnex run pi --context "Implement X" --auto-stop -- \
-  --no-session --no-extensions --model anthropic/claude-sonnet-4-5
+  --no-session --no-extensions --model foundry-zyt/gpt-6.1-sol
 ```
 
 When both Harnex `--model` and a Pi child `--model` are supplied, the Harnex

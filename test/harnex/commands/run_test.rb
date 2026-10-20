@@ -22,10 +22,10 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_rejects_single_dash_flag_as_value
-    runner = Harnex::Runner.new(["codex", "--host", "-v"])
+    runner = Harnex::Runner.new(["pi", "--host", "-v"])
 
     error = assert_raises(OptionParser::MissingArgument) do
-      runner.send(:extract_wrapper_options, ["codex", "--host", "-v"])
+      runner.send(:extract_wrapper_options, ["pi", "--host", "-v"])
     end
 
     assert_match(/--host/, error.message)
@@ -37,50 +37,40 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_parses_inbox_ttl
-    runner = Harnex::Runner.new(["--inbox-ttl", "45", "codex"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["--inbox-ttl", "45", "codex"])
+    runner = Harnex::Runner.new(["--inbox-ttl", "45", "pi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["--inbox-ttl", "45", "pi"])
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert_equal 45.0, runner.instance_variable_get(:@options)[:inbox_ttl]
   end
 
   def test_extract_wrapper_options_parses_auto_stop
-    runner = Harnex::Runner.new(["codex", "--context", "do work", "--auto-stop"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--context", "do work", "--auto-stop"])
+    runner = Harnex::Runner.new(["pi", "--context", "do work", "--auto-stop"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--context", "do work", "--auto-stop"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert opts[:auto_stop]
   end
 
   def test_extract_wrapper_options_parses_on_done_forms_and_preserves_child_boundary
     command = "printf '%s' \"$HARNEX_OUTCOME\""
-    argv = ["codex", "--on-done", command, "--", "--on-done", "child"]
+    argv = ["pi", "--on-done", command, "--", "--on-done", "child"]
     runner = Harnex::Runner.new(argv)
     cli_name, forwarded = runner.send(:extract_wrapper_options, argv)
-    assert_equal ["codex", ["--on-done", "child"], command],
+    assert_equal ["pi", ["--on-done", "child"], command],
       [cli_name, forwarded, runner.instance_variable_get(:@options)[:on_done]]
 
-    equals = Harnex::Runner.new(["codex", "--on-done=#{command}"])
+    equals = Harnex::Runner.new(["pi", "--on-done=#{command}"])
     equals.send(:extract_wrapper_options, equals.instance_variable_get(:@argv))
     assert_equal command, equals.instance_variable_get(:@options)[:on_done]
   end
 
-  def test_extract_wrapper_options_parses_fast
-    runner = Harnex::Runner.new(["codex", "--fast"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--fast"])
-    opts = runner.instance_variable_get(:@options)
-
-    assert_equal "codex", cli_name
-    assert_equal [], forwarded
-    assert opts[:fast]
-  end
-
   def test_extract_wrapper_options_parses_orchestration_flags
     argv = [
-      "codex",
+      "pi",
       "--orchestration-run-id", "orch-1",
       "--orchestration-generation-id", "gen-1",
       "--orchestration-role", "worker",
@@ -92,7 +82,7 @@ class RunnerTest < Minitest::Test
     runner.send(:apply_telemetry_options!)
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert_equal "orch-1", opts[:meta]["orchestration_run_id"]
     assert_equal "gen-1", opts[:meta]["orchestration_generation_id"]
@@ -133,8 +123,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_validate_orchestration_metadata_rejects_unknown_role
-    runner = Harnex::Runner.new(["codex", "--orchestration-role", "coordinator"])
-    runner.send(:extract_wrapper_options, ["codex", "--orchestration-role", "coordinator"])
+    runner = Harnex::Runner.new(["pi", "--orchestration-role", "coordinator"])
+    runner.send(:extract_wrapper_options, ["pi", "--orchestration-role", "coordinator"])
     runner.send(:apply_telemetry_options!)
 
     error = assert_raises(OptionParser::InvalidOption) do
@@ -144,104 +134,21 @@ class RunnerTest < Minitest::Test
     assert_match(/--orchestration-role/, error.message)
   end
 
-  def test_codex_service_tier_defaults_to_flex
-    runner = Harnex::Runner.new(["codex"])
-    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex"])
-
-    assert_equal ["-c", "service_tier=\"flex\""],
-      runner.send(:apply_codex_service_tier, cli_name, child_args)
-  end
-
-  def test_codex_fast_sets_fast_service_tier
-    runner = Harnex::Runner.new(["codex", "--fast"])
-    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--fast"])
-
-    assert_equal ["-c", "service_tier=\"fast\""],
-      runner.send(:apply_codex_service_tier, cli_name, child_args)
-  end
-
-  def test_codex_service_tier_respects_explicit_child_config
-    runner = Harnex::Runner.new(["codex", "--", "-c", "service_tier=\"fast\""])
-    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--", "-c", "service_tier=\"fast\""])
-
-    assert_equal ["-c", "service_tier=\"fast\""],
-      runner.send(:apply_codex_service_tier, cli_name, child_args)
-  end
-
-  def test_codex_service_tier_respects_explicit_equals_child_config
-    runner = Harnex::Runner.new(["codex", "--", "--config=service_tier=\"fast\""])
-    cli_name, child_args = runner.send(:extract_wrapper_options, ["codex", "--", "--config=service_tier=\"fast\""])
-
-    assert_equal ["--config=service_tier=\"fast\""],
-      runner.send(:apply_codex_service_tier, cli_name, child_args)
-  end
-
-  def test_cli_defaults_codex_app_server_to_flex_service_tier
-    assert_codex_service_tier_argv([], "flex")
-  end
-
-  def test_cli_fast_uses_fast_service_tier
-    assert_codex_service_tier_argv(["--fast"], "fast")
-  end
-
-  def test_ack_only_completion_gate_covers_flex_and_fast_service_tiers
-    [[[], "flex"], [["--fast"], "fast"]].each do |wrapper_args, expected_tier|
-      Dir.mktmpdir("harnex-ack-only-#{expected_tier}") do |repo|
-        init_test_repo(repo)
-        bin_dir = File.join(repo, "bin")
-        FileUtils.mkdir_p(bin_dir)
-        write_ack_only_codex_stub(File.join(bin_dir, "codex"))
-        argv_path = File.join(repo, "argv.json")
-        env = {
-          "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
-          "HARNEX_STUB_ARGV_PATH" => argv_path
-        }
-
-        _stdout, stderr, status = Open3.capture3(
-          env,
-          Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
-          "run", "codex", *wrapper_args,
-          "--id", "ack-only-#{expected_tier}-#{$$}",
-          "--context", "execute the task",
-          "--auto-stop",
-          chdir: repo
-        )
-
-        assert_equal 1, status.exitstatus, stderr
-        assert_equal ["app-server", "-c", "service_tier=\"#{expected_tier}\""], JSON.parse(File.read(argv_path))
-        row = last_dispatch_row(repo)
-        assert_equal expected_tier, row.dig("agent", "service_tier")
-        assert_equal "completed_no_activity", row.dig("outcome", "class")
-        assert_equal "rejected", row.dig("outcome", "status")
-        assert_equal "harnex_observed_state", row.dig("outcome", "source")
-        assert_equal 0, row.dig("actual", "commands_executed")
-        assert_equal false, row.dig("actual", "task_complete")
-      end
-    end
-  end
-
-  def test_non_codex_does_not_get_service_tier
-    runner = Harnex::Runner.new(["claude"])
-    cli_name, child_args = runner.send(:extract_wrapper_options, ["claude"])
-
-    assert_equal [], runner.send(:apply_codex_service_tier, cli_name, child_args)
-  end
-
   def test_extract_wrapper_options_allows_known_auto_stop_before_separator
-    runner = Harnex::Runner.new(["codex", "--auto-stop", "--", "echo", "hi"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--auto-stop", "--", "echo", "hi"])
+    runner = Harnex::Runner.new(["pi", "--auto-stop", "--", "echo", "hi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--auto-stop", "--", "echo", "hi"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal ["echo", "hi"], forwarded
     assert opts[:auto_stop]
   end
 
   def test_extract_wrapper_options_rejects_unknown_long_flag_before_separator
-    runner = Harnex::Runner.new(["codex", "--until", "task_complete", "--", "echo", "hi"])
+    runner = Harnex::Runner.new(["pi", "--until", "task_complete", "--", "echo", "hi"])
 
     error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:extract_wrapper_options, ["codex", "--until", "task_complete", "--", "echo", "hi"])
+      runner.send(:extract_wrapper_options, ["pi", "--until", "task_complete", "--", "echo", "hi"])
     end
 
     assert_match(/--until/, error.message)
@@ -249,18 +156,18 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_forwards_agent_flags_after_separator
-    runner = Harnex::Runner.new(["codex", "--", "--until", "task_complete", "echo", "hi"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--", "--until", "task_complete", "echo", "hi"])
+    runner = Harnex::Runner.new(["pi", "--", "--until", "task_complete", "echo", "hi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--", "--until", "task_complete", "echo", "hi"])
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal ["--until", "task_complete", "echo", "hi"], forwarded
   end
 
   def test_extract_wrapper_options_rejects_unknown_long_flag_without_separator
-    runner = Harnex::Runner.new(["codex", "--foo-bar"])
+    runner = Harnex::Runner.new(["pi", "--foo-bar"])
 
     error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:extract_wrapper_options, ["codex", "--foo-bar"])
+      runner.send(:extract_wrapper_options, ["pi", "--foo-bar"])
     end
 
     assert_match(/--foo-bar/, error.message)
@@ -272,7 +179,7 @@ class RunnerTest < Minitest::Test
       Gem.ruby,
       "-I#{File.expand_path('../../../lib', __dir__)}",
       File.expand_path("../../../bin/harnex", __dir__),
-      "run", "codex", "--until", "task_complete", "--", "echo", "hi"
+      "run", "pi", "--until", "task_complete", "--", "echo", "hi"
     )
 
     refute status.success?
@@ -281,8 +188,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_auto_stop_requires_context
-    runner = Harnex::Runner.new(["codex", "--auto-stop"])
-    runner.send(:extract_wrapper_options, ["codex", "--auto-stop"])
+    runner = Harnex::Runner.new(["pi", "--auto-stop"])
+    runner.send(:extract_wrapper_options, ["pi", "--auto-stop"])
 
     error = assert_raises(OptionParser::InvalidOption) { runner.send(:validate_auto_stop_context!) }
 
@@ -385,67 +292,13 @@ class RunnerTest < Minitest::Test
     assert_includes Harnex::Runner.usage, "trusted local shell"
   end
 
-  def test_usage_documents_fast
-    assert_includes Harnex::Runner.usage, "--fast"
-  end
-
-  def test_auto_stop_ack_only_turn_exits_nonzero_when_interrupt_never_answers
-    Dir.mktmpdir("harnex-autostop-run") do |repo|
-      init_test_repo(repo)
-      bin_dir = File.join(repo, "bin")
-      FileUtils.mkdir_p(bin_dir)
-      write_hanging_interrupt_codex_stub(File.join(bin_dir, "codex"))
-
-      id = "autostop-hang-#{$$}"
-      stdout_path = File.join(repo, "stdout.log")
-      stderr_path = File.join(repo, "stderr.log")
-      env = {
-        "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
-        "HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS" => "1"
-      }
-
-      pid = spawn(
-        env,
-        Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
-        "run", "codex",
-        "--id", id,
-        "--context", "finish quickly",
-        "--auto-stop",
-        chdir: repo,
-        pgroup: true,
-        out: stdout_path,
-        err: stderr_path
-      )
-
-      status = wait_for_child(pid, timeout: 10.0)
-      assert status, "harnex run did not exit; stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
-      assert_equal 1, status.exitstatus, "stderr=#{File.exist?(stderr_path) ? File.read(stderr_path) : ''}"
-      assert File.exist?(dispatch_stream_path(repo)), "dispatch end row was not written"
-
-      row = last_dispatch_row(repo)
-      assert_equal id, row.dig("meta", "id")
-      assert_equal false, row.dig("actual", "task_complete")
-      assert_equal "completed_no_activity", row.dig("outcome", "class")
-      assert_equal "failure", row.dig("actual", "exit")
-
-      with_env("PATH" => env["PATH"]) do
-        out, = capture_io { assert_equal 0, Harnex::Doctor.new(["--sweep"]).run }
-        sweep = JSON.parse(out).fetch("sweep")
-        assert_empty sweep.fetch("harnex_sessions").select { |session| session["id"] == id }
-        assert_empty sweep.fetch("orphan_tmux").select { |window| [window["session"], window["window"]].include?(id) }
-      end
-    ensure
-      terminate_process_group(pid) if pid
-    end
-  end
-
   # #65: the mirror flag is removed, not silently ignored, so a stale caller
   # fails loudly instead of believing it has a second copy of its telemetry.
   def test_summary_out_flag_is_rejected_as_unknown
     refute_includes Harnex::Runner.usage, "--summary-out"
 
     ["--summary-out", "--summary-out=tmp/dispatch.jsonl"].each do |flag|
-      argv = ["codex", flag]
+      argv = ["pi", flag]
       argv << "tmp/dispatch.jsonl" unless flag.include?("=")
 
       error = assert_raises(OptionParser::InvalidOption, flag) do
@@ -476,30 +329,30 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_parses_meta_json
-    runner = Harnex::Runner.new(["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
+    runner = Harnex::Runner.new(["pi", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--meta", '{"predicted":{"input_tokens":[1,2]},"issue":"23"}'])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert_equal({ "predicted" => { "input_tokens" => [1, 2] }, "issue" => "23" }, opts[:meta])
   end
 
   def test_extract_wrapper_options_rejects_invalid_meta_json
-    runner = Harnex::Runner.new(["codex", "--meta", "{"])
+    runner = Harnex::Runner.new(["pi", "--meta", "{"])
 
     error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:extract_wrapper_options, ["codex", "--meta", "{"])
+      runner.send(:extract_wrapper_options, ["pi", "--meta", "{"])
     end
 
     assert_match(/--meta must be valid JSON/, error.message)
   end
 
   def test_extract_wrapper_options_rejects_meta_json_array
-    runner = Harnex::Runner.new(["codex", "--meta", "[]"])
+    runner = Harnex::Runner.new(["pi", "--meta", "[]"])
 
     error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:extract_wrapper_options, ["codex", "--meta", "[]"])
+      runner.send(:extract_wrapper_options, ["pi", "--meta", "[]"])
     end
 
     assert_match(/--meta must be a JSON object/, error.message)
@@ -507,7 +360,7 @@ class RunnerTest < Minitest::Test
 
   def test_telemetry_flags_override_meta_regardless_of_order
     argv = [
-      "codex",
+      "pi",
       "--project-id", "harnex",
       "--queue-id", "queue-005",
       "--entry-id=SP-4",
@@ -533,7 +386,7 @@ class RunnerTest < Minitest::Test
 
   def test_attempt_linkage_flags_override_meta_and_validate_kind
     argv = [
-      "codex", "--parent-dispatch-id", "dispatch-1", "--parent-attempt-id=attempt-1",
+      "pi", "--parent-dispatch-id", "dispatch-1", "--parent-attempt-id=attempt-1",
       "--attempt-kind", "retry", "--meta", '{"attempt_kind":"bad","parent_attempt_id":"old"}'
     ]
     runner = Harnex::Runner.new(argv)
@@ -546,16 +399,16 @@ class RunnerTest < Minitest::Test
     assert_equal "attempt-1", meta.fetch("parent_attempt_id")
     assert_equal "retry", meta.fetch("attempt_kind")
 
-    invalid = Harnex::Runner.new(["codex", "--attempt-kind", "unknown"])
-    invalid.send(:extract_wrapper_options, ["codex", "--attempt-kind", "unknown"])
+    invalid = Harnex::Runner.new(["pi", "--attempt-kind", "unknown"])
+    invalid.send(:extract_wrapper_options, ["pi", "--attempt-kind", "unknown"])
     invalid.send(:apply_telemetry_options!)
     error = assert_raises(OptionParser::InvalidOption) { invalid.send(:validate_attempt_metadata!) }
     assert_match(/--attempt-kind must be one of/, error.message)
   end
 
   def test_fallback_attempt_kind_is_public
-    runner = Harnex::Runner.new(["codex", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
-    runner.send(:extract_wrapper_options, ["codex", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
+    runner = Harnex::Runner.new(["pi", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
+    runner.send(:extract_wrapper_options, ["pi", "--attempt-kind", "fallback", "--parent-dispatch-id", "dispatch-1"])
     runner.send(:apply_telemetry_options!)
 
     runner.send(:validate_attempt_metadata!)
@@ -566,8 +419,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_require_attribution_rejects_missing_fields
-    runner = Harnex::Runner.new(["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
-    runner.send(:extract_wrapper_options, ["codex", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
+    runner = Harnex::Runner.new(["pi", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
+    runner.send(:extract_wrapper_options, ["pi", "--require-attribution", "--project-id", "harnex", "--phase", "implement"])
     runner.send(:apply_telemetry_options!)
 
     error = assert_raises(OptionParser::InvalidOption) { runner.send(:validate_required_attribution!) }
@@ -579,11 +432,11 @@ class RunnerTest < Minitest::Test
 
   def test_require_attribution_accepts_complete_metadata
     runner = Harnex::Runner.new([
-      "codex", "--require-attribution", "--project-id", "harnex",
+      "pi", "--require-attribution", "--project-id", "harnex",
       "--phase", "implement", "--intent", "queue-work", "--entry-id", "SP-4"
     ])
     runner.send(:extract_wrapper_options, [
-      "codex", "--require-attribution", "--project-id", "harnex",
+      "pi", "--require-attribution", "--project-id", "harnex",
       "--phase", "implement", "--intent", "queue-work", "--entry-id", "SP-4"
     ])
     runner.send(:apply_telemetry_options!)
@@ -773,32 +626,32 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_parses_artifact_report
-    runner = Harnex::Runner.new(["codex", "--artifact-report", "tmp/report.json"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--artifact-report", "tmp/report.json"])
+    runner = Harnex::Runner.new(["pi", "--artifact-report", "tmp/report.json"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--artifact-report", "tmp/report.json"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert_equal "tmp/report.json", opts[:artifact_report]
   end
 
   def test_extract_wrapper_options_parses_validation_report_alias
-    runner = Harnex::Runner.new(["codex", "--validation-report=tmp/validation.json"])
-    runner.send(:extract_wrapper_options, ["codex", "--validation-report=tmp/validation.json"])
+    runner = Harnex::Runner.new(["pi", "--validation-report=tmp/validation.json"])
+    runner.send(:extract_wrapper_options, ["pi", "--validation-report=tmp/validation.json"])
 
     assert_equal "tmp/validation.json", runner.instance_variable_get(:@options)[:artifact_report]
   end
 
   def test_require_artifact_report_uses_the_default_receipt_path
-    runner = Harnex::Runner.new(["codex", "--require-artifact-report"])
-    runner.send(:extract_wrapper_options, ["codex", "--require-artifact-report"])
+    runner = Harnex::Runner.new(["pi", "--require-artifact-report"])
+    runner.send(:extract_wrapper_options, ["pi", "--require-artifact-report"])
 
     assert_equal true, runner.send(:validate_required_artifact_report!)
     assert_nil runner.instance_variable_get(:@options)[:artifact_report]
   end
 
   def test_extract_wrapper_options_parses_required_artifact_report
-    argv = ["codex", "--artifact-report", "tmp/report.json", "--require-artifact-report"]
+    argv = ["pi", "--artifact-report", "tmp/report.json", "--require-artifact-report"]
     runner = Harnex::Runner.new(argv)
     runner.send(:extract_wrapper_options, argv)
 
@@ -832,7 +685,7 @@ class RunnerTest < Minitest::Test
 
   def test_retry_and_fallback_attempt_kinds_require_parent_dispatch_id
     %w[retry fallback].each do |kind|
-      runner = guard_runner(["codex", "--attempt-kind", kind])
+      runner = guard_runner(["pi", "--attempt-kind", kind])
 
       error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, Dir.pwd) }
       assert_match(/--attempt-kind #{kind} requires --parent-dispatch-id/, error.message)
@@ -842,7 +695,7 @@ class RunnerTest < Minitest::Test
   def test_retry_dispatch_refused_while_parent_is_live
     Dir.mktmpdir("harnex-guard-live") do |repo|
       registry_path = write_live_registry(repo, "cx-t-96")
-      runner = guard_runner(["codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-96"])
+      runner = guard_runner(["pi", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-96"])
 
       error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, repo) }
       assert_match(/refusing retry dispatch/, error.message)
@@ -858,7 +711,7 @@ class RunnerTest < Minitest::Test
       registry_path = write_live_registry(repo, "cx-i-96")
 
       %w[fix fallback superseding].each do |kind|
-        runner = guard_runner(["codex", "--attempt-kind", kind, "--parent-dispatch-id", "cx-i-96"])
+        runner = guard_runner(["pi", "--attempt-kind", kind, "--parent-dispatch-id", "cx-i-96"])
         error = assert_raises(RuntimeError) { runner.send(:validate_live_parent_guard!, repo) }
         assert_match(/refusing #{kind} dispatch/, error.message)
       end
@@ -870,7 +723,7 @@ class RunnerTest < Minitest::Test
   def test_review_dispatch_allowed_while_parent_is_live
     Dir.mktmpdir("harnex-guard-review") do |repo|
       registry_path = write_live_registry(repo, "cx-i-97")
-      runner = guard_runner(["codex", "--attempt-kind", "review", "--parent-dispatch-id", "cx-i-97"])
+      runner = guard_runner(["pi", "--attempt-kind", "review", "--parent-dispatch-id", "cx-i-97"])
 
       runner.send(:validate_live_parent_guard!, repo)
     ensure
@@ -880,7 +733,7 @@ class RunnerTest < Minitest::Test
 
   def test_retry_dispatch_allowed_when_parent_is_not_running
     Dir.mktmpdir("harnex-guard-dead") do |repo|
-      runner = guard_runner(["codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-98"])
+      runner = guard_runner(["pi", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-98"])
 
       runner.send(:validate_live_parent_guard!, repo)
     end
@@ -890,7 +743,7 @@ class RunnerTest < Minitest::Test
     Dir.mktmpdir("harnex-guard-override") do |repo|
       registry_path = write_live_registry(repo, "cx-t-99")
       runner = guard_runner([
-        "codex", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-99", "--allow-live-parent"
+        "pi", "--attempt-kind", "retry", "--parent-dispatch-id", "cx-t-99", "--allow-live-parent"
       ])
 
       runner.send(:validate_live_parent_guard!, repo)
@@ -923,8 +776,8 @@ class RunnerTest < Minitest::Test
 
   def test_resolve_artifact_report_expands_path_and_creates_parent
     Dir.mktmpdir("harnex-artifact-report-repo") do |repo|
-      runner = Harnex::Runner.new(["codex", "--artifact-report", "reports/worker.json"])
-      runner.send(:extract_wrapper_options, ["codex", "--artifact-report", "reports/worker.json"])
+      runner = Harnex::Runner.new(["pi", "--artifact-report", "reports/worker.json"])
+      runner.send(:extract_wrapper_options, ["pi", "--artifact-report", "reports/worker.json"])
 
       path = runner.send(:resolve_artifact_report, repo)
 
@@ -935,11 +788,11 @@ class RunnerTest < Minitest::Test
 
   def test_extract_wrapper_options_parses_cwd_before_cli
     Dir.mktmpdir("harnex-run-cwd") do |cwd|
-      runner = Harnex::Runner.new(["--cwd", cwd, "codex"])
-      cli_name, forwarded = runner.send(:extract_wrapper_options, ["--cwd", cwd, "codex"])
+      runner = Harnex::Runner.new(["--cwd", cwd, "pi"])
+      cli_name, forwarded = runner.send(:extract_wrapper_options, ["--cwd", cwd, "pi"])
       opts = runner.instance_variable_get(:@options)
 
-      assert_equal "codex", cli_name
+      assert_equal "pi", cli_name
       assert_equal [], forwarded
       assert_equal cwd, opts[:cwd]
     end
@@ -947,10 +800,10 @@ class RunnerTest < Minitest::Test
 
   def test_extract_wrapper_options_rejects_missing_cwd_directory
     missing = File.join(Dir.tmpdir, "harnex-missing-cwd-#{$$}")
-    runner = Harnex::Runner.new(["codex", "--cwd", missing])
+    runner = Harnex::Runner.new(["pi", "--cwd", missing])
 
     error = assert_raises(OptionParser::InvalidArgument) do
-      runner.send(:extract_wrapper_options, ["codex", "--cwd", missing])
+      runner.send(:extract_wrapper_options, ["pi", "--cwd", missing])
     end
 
     assert_match(/--cwd must be an existing directory/, error.message)
@@ -961,10 +814,10 @@ class RunnerTest < Minitest::Test
       cwd = File.join(root, "bundle")
       child_cd = File.join(root, "child-cd")
       FileUtils.mkdir_p([cwd, child_cd])
-      runner = Harnex::Runner.new(["codex", "--cwd", cwd, "--", "--cd", child_cd])
-      cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--cwd", cwd, "--", "--cd", child_cd])
+      runner = Harnex::Runner.new(["pi", "--cwd", cwd, "--", "--cd", child_cd])
+      cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--cwd", cwd, "--", "--cd", child_cd])
 
-      assert_equal "codex", cli_name
+      assert_equal "pi", cli_name
       assert_equal ["--cd", child_cd], forwarded
       assert_equal cwd, runner.send(:resolve_run_root, cli_name, forwarded)
     end
@@ -1339,62 +1192,62 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_bare_watch_enables_babysitter
-    runner = Harnex::Runner.new(["codex", "--watch"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch"])
+    runner = Harnex::Runner.new(["pi", "--watch"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--watch"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert opts[:watch_enabled]
     assert_nil opts[:watch]
   end
 
   def test_extract_wrapper_options_legacy_watch_path_with_space_is_preserved
-    runner = Harnex::Runner.new(["codex", "--watch", "NOTES.md"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch", "NOTES.md"])
+    runner = Harnex::Runner.new(["pi", "--watch", "NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--watch", "NOTES.md"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     refute opts[:watch_enabled]
     assert_equal "NOTES.md", opts[:watch]
   end
 
   def test_extract_wrapper_options_legacy_watch_equals_path_is_preserved
-    runner = Harnex::Runner.new(["codex", "--watch=NOTES.md"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch=NOTES.md"])
+    runner = Harnex::Runner.new(["pi", "--watch=NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--watch=NOTES.md"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     refute opts[:watch_enabled]
     assert_equal "NOTES.md", opts[:watch]
   end
 
   def test_extract_wrapper_options_watch_file_sets_file_hook_path
-    runner = Harnex::Runner.new(["codex", "--watch-file", "NOTES.md"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["codex", "--watch-file", "NOTES.md"])
+    runner = Harnex::Runner.new(["pi", "--watch-file", "NOTES.md"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["pi", "--watch-file", "NOTES.md"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert_equal "NOTES.md", opts[:watch]
   end
 
   def test_extract_wrapper_options_allows_babysitter_and_file_hook_together
-    runner = Harnex::Runner.new(["--watch", "--watch-file", "NOTES.md", "codex"])
-    cli_name, forwarded = runner.send(:extract_wrapper_options, ["--watch", "--watch-file", "NOTES.md", "codex"])
+    runner = Harnex::Runner.new(["--watch", "--watch-file", "NOTES.md", "pi"])
+    cli_name, forwarded = runner.send(:extract_wrapper_options, ["--watch", "--watch-file", "NOTES.md", "pi"])
     opts = runner.instance_variable_get(:@options)
 
-    assert_equal "codex", cli_name
+    assert_equal "pi", cli_name
     assert_equal [], forwarded
     assert opts[:watch_enabled]
     assert_equal "NOTES.md", opts[:watch]
   end
 
   def test_extract_wrapper_options_parses_stall_after_and_max_resumes
-    runner = Harnex::Runner.new(["codex", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
-    runner.send(:extract_wrapper_options, ["codex", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
+    runner = Harnex::Runner.new(["pi", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
+    runner.send(:extract_wrapper_options, ["pi", "--watch", "--stall-after", "5m", "--max-resumes", "2"])
     opts = runner.instance_variable_get(:@options)
 
     assert_equal 300.0, opts[:stall_after_s]
@@ -1402,10 +1255,10 @@ class RunnerTest < Minitest::Test
   end
 
   def test_extract_wrapper_options_rejects_negative_max_resumes
-    runner = Harnex::Runner.new(["codex", "--max-resumes", "-1"])
+    runner = Harnex::Runner.new(["pi", "--max-resumes", "-1"])
 
     assert_raises(OptionParser::InvalidArgument) do
-      runner.send(:extract_wrapper_options, ["codex", "--max-resumes", "-1"])
+      runner.send(:extract_wrapper_options, ["pi", "--max-resumes", "-1"])
     end
   end
 
@@ -1417,29 +1270,29 @@ class RunnerTest < Minitest::Test
     }
 
     expectations.each do |preset, (stall_after_s, max_resumes)|
-      options = resolve_watch_options(["codex", "--watch", "--preset", preset])
+      options = resolve_watch_options(["pi", "--watch", "--preset", preset])
       assert_equal stall_after_s, options[:stall_after_s]
       assert_equal max_resumes, options[:max_resumes]
     end
   end
 
   def test_resolve_watch_preset_keeps_explicit_stall_after
-    options = resolve_watch_options(["codex", "--watch", "--preset", "impl", "--stall-after", "20m"])
+    options = resolve_watch_options(["pi", "--watch", "--preset", "impl", "--stall-after", "20m"])
     assert_equal 20 * 60.0, options[:stall_after_s]
     assert_equal 1, options[:max_resumes]
   end
 
   def test_resolve_watch_preset_rejects_unknown_name
-    runner = Harnex::Runner.new(["codex", "--watch", "--preset", "foo"])
-    runner.send(:extract_wrapper_options, ["codex", "--watch", "--preset", "foo"])
+    runner = Harnex::Runner.new(["pi", "--watch", "--preset", "foo"])
+    runner.send(:extract_wrapper_options, ["pi", "--watch", "--preset", "foo"])
 
     error = assert_raises(RuntimeError) { runner.send(:resolve_watch_preset!) }
     assert_equal 'harnex run: unknown --preset "foo" (valid: impl, plan, gate)', error.message
   end
 
   def test_resolve_watch_preset_requires_watch_mode
-    runner = Harnex::Runner.new(["codex", "--preset", "impl"])
-    runner.send(:extract_wrapper_options, ["codex", "--preset", "impl"])
+    runner = Harnex::Runner.new(["pi", "--preset", "impl"])
+    runner.send(:extract_wrapper_options, ["pi", "--preset", "impl"])
 
     error = assert_raises(RuntimeError) { runner.send(:resolve_watch_preset!) }
     assert_equal "harnex run: --preset requires --watch", error.message
@@ -1466,8 +1319,8 @@ class RunnerTest < Minitest::Test
       "repo_root" => repo_root
     })
 
-    runner = Harnex::Runner.new(["codex", "--id", id])
-    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+    runner = Harnex::Runner.new(["pi", "--id", id])
+    runner.send(:extract_wrapper_options, ["pi", "--id", id])
 
     error = assert_raises(RuntimeError) { runner.send(:validate_unique_id!, repo_root) }
     assert_match(/already active/, error.message)
@@ -1480,8 +1333,8 @@ class RunnerTest < Minitest::Test
     repo_root = Dir.pwd
     id = "unique-test-#{$$}"
 
-    runner = Harnex::Runner.new(["codex", "--id", id])
-    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+    runner = Harnex::Runner.new(["pi", "--id", id])
+    runner.send(:extract_wrapper_options, ["pi", "--id", id])
 
     # Should not raise
     runner.send(:validate_unique_id!, repo_root)
@@ -1492,7 +1345,7 @@ class RunnerTest < Minitest::Test
       init_test_repo(repo)
       bin_dir = File.join(repo, "bin")
       FileUtils.mkdir_p(bin_dir)
-      write_live_completion_codex_stub(File.join(bin_dir, "codex"))
+      write_live_completion_pi_stub(File.join(bin_dir, "pi"))
       id = "on-done-live-#{$$}-#{rand(1_000_000)}"
       sentinel = File.join(repo, "hook-sentinel.txt")
       hook = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" > #{Shellwords.shellescape(sentinel)}"
@@ -1500,7 +1353,7 @@ class RunnerTest < Minitest::Test
 
       stdout, stderr, status = Open3.capture3(
         env, Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}",
-        File.expand_path("../../../bin/harnex", __dir__), "run", "codex", "--detach",
+        File.expand_path("../../../bin/harnex", __dir__), "run", "pi", "--detach",
         "--id", id, "--context", "complete and remain alive", "--on-done", hook, chdir: repo
       )
       assert status.success?, stderr
@@ -1545,7 +1398,7 @@ class RunnerTest < Minitest::Test
 
   def test_pi_primary_identity_survives_tmux_environment_and_explicit_metadata_wins
     with_env("PI_SESSION_ID" => "outer-pi-primary") do
-      argv = ["codex", "--id", "tmux-owner", "--tmux", "tmux-owner"]
+      argv = ["pi", "--id", "tmux-owner", "--tmux", "tmux-owner"]
       runner = Harnex::Runner.new(argv)
       runner.send(:extract_wrapper_options, argv)
       runner.send(:apply_telemetry_options!)
@@ -1555,7 +1408,7 @@ class RunnerTest < Minitest::Test
       runner.define_singleton_method(:wait_for_registration) { |_repo| registry }
       runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
       runner.stub(:system, lambda { |*args| captured = args; true }) do
-        capture_io { runner.send(:run_in_tmux, "codex", [], Dir.pwd) }
+        capture_io { runner.send(:run_in_tmux, "pi", [], Dir.pwd) }
       end
       shell_words = Shellwords.split(captured.last)
       assert_equal ["env", "HARNEX_OWNER_RESOLVED=1"], shell_words.first(2), "the tmux hand-off marks the owner resolved"
@@ -1592,7 +1445,7 @@ class RunnerTest < Minitest::Test
 
   def test_tmux_forwards_on_done_as_one_exact_argument
     command = "printf '%s %s\\n' \"$HARNEX_ID\" \"$HARNEX_OUTCOME\" >> /tmp/harnex wake"
-    argv = ["codex", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command, "--max-runtime", "2m"]
+    argv = ["pi", "--id", "tmux-hook", "--tmux", "tmux-hook", "--on-done", command, "--max-runtime", "2m"]
     runner = Harnex::Runner.new(argv)
     runner.send(:extract_wrapper_options, argv)
     captured = nil
@@ -1603,7 +1456,7 @@ class RunnerTest < Minitest::Test
     runner.define_singleton_method(:annotate_tmux_registry) { |value| value }
 
     runner.stub(:system, lambda { |*args| captured = args; true }) do
-      capture_io { assert_equal 0, runner.send(:run_in_tmux, "codex", [], Dir.pwd) }
+      capture_io { assert_equal 0, runner.send(:run_in_tmux, "pi", [], Dir.pwd) }
     end
 
     inner_argv = Shellwords.split(captured.last)
@@ -1707,8 +1560,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_tmux_does_not_consume_following_flag_as_window_name
-    runner = Harnex::Runner.new(["codex", "--tmux", "--id", "cx-123"])
-    runner.send(:extract_wrapper_options, ["codex", "--tmux", "--id", "cx-123"])
+    runner = Harnex::Runner.new(["pi", "--tmux", "--id", "cx-123"])
+    runner.send(:extract_wrapper_options, ["pi", "--tmux", "--id", "cx-123"])
     opts = runner.instance_variable_get(:@options)
 
     assert opts[:tmux], "tmux should be enabled"
@@ -1717,8 +1570,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_tmux_does_not_consume_detach_flag
-    runner = Harnex::Runner.new(["codex", "--tmux", "--detach"])
-    runner.send(:extract_wrapper_options, ["codex", "--tmux", "--detach"])
+    runner = Harnex::Runner.new(["pi", "--tmux", "--detach"])
+    runner.send(:extract_wrapper_options, ["pi", "--tmux", "--detach"])
     opts = runner.instance_variable_get(:@options)
 
     assert opts[:tmux]
@@ -1727,18 +1580,18 @@ class RunnerTest < Minitest::Test
   end
 
   def test_tmux_rejects_unknown_double_dash_flag
-    runner = Harnex::Runner.new(["codex", "--tmux", "--name", "cx-p-322"])
+    runner = Harnex::Runner.new(["pi", "--tmux", "--name", "cx-p-322"])
 
     error = assert_raises(OptionParser::InvalidOption) do
-      runner.send(:extract_wrapper_options, ["codex", "--tmux", "--name", "cx-p-322"])
+      runner.send(:extract_wrapper_options, ["pi", "--tmux", "--name", "cx-p-322"])
     end
 
     assert_match(/--name/, error.message)
   end
 
   def test_tmux_still_accepts_positional_window_name
-    runner = Harnex::Runner.new(["codex", "--tmux", "mywindow"])
-    runner.send(:extract_wrapper_options, ["codex", "--tmux", "mywindow"])
+    runner = Harnex::Runner.new(["pi", "--tmux", "mywindow"])
+    runner.send(:extract_wrapper_options, ["pi", "--tmux", "mywindow"])
     opts = runner.instance_variable_get(:@options)
 
     assert opts[:tmux]
@@ -1746,8 +1599,8 @@ class RunnerTest < Minitest::Test
   end
 
   def test_tmux_equals_syntax_unaffected
-    runner = Harnex::Runner.new(["codex", "--tmux=mywindow"])
-    runner.send(:extract_wrapper_options, ["codex", "--tmux=mywindow"])
+    runner = Harnex::Runner.new(["pi", "--tmux=mywindow"])
+    runner.send(:extract_wrapper_options, ["pi", "--tmux=mywindow"])
     opts = runner.instance_variable_get(:@options)
 
     assert opts[:tmux]
@@ -1769,8 +1622,8 @@ class RunnerTest < Minitest::Test
     }
     Harnex.write_registry(path, payload.reject { |key, _| key == "registry_path" })
 
-    runner = Harnex::Runner.new(["codex", "--id", id])
-    runner.send(:extract_wrapper_options, ["codex", "--id", id])
+    runner = Harnex::Runner.new(["pi", "--id", id])
+    runner.send(:extract_wrapper_options, ["pi", "--id", id])
 
     discovery = { target: "%31", session_name: "harnex", window_name: "cx-31" }
     original_tmux_lookup = Harnex.method(:tmux_pane_for_pid)
@@ -1889,201 +1742,31 @@ class RunnerTest < Minitest::Test
     [out, err, result_path, id]
   end
 
-  def write_live_completion_codex_stub(path)
+  def write_live_completion_pi_stub(path)
     File.write(path, <<~'RUBY')
       #!/usr/bin/env ruby
       require "json"
-      if ARGV == ["--version"]; puts "codex 0.128.0"; exit 0; end
-      abort "expected app-server" unless ARGV.first == "app-server"
+      if ARGV == ["--version"]; puts "1.3.0"; exit 0; end
+      abort "expected --mode rpc" unless ARGV.first(2) == ["--mode", "rpc"]
       STDOUT.sync = true
+      emit = ->(payload) { puts JSON.generate(payload) }
       STDIN.each_line do |line|
         msg = JSON.parse(line)
-        case msg["method"]
-        when "initialize" then puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        when "thread/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-live" } })
-        when "turn/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-live" } })
-          puts JSON.generate(jsonrpc: "2.0", method: "item/completed", params: { item: {
-            id: "cmd-live", type: "commandExecution", command: "ruby -e true", status: "completed", exitCode: 0
-          } })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
-            thread: { id: "thr-live" }, turn: { id: "trn-live", status: "completed" }
-          })
-        when "turn/interrupt"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {}); exit 0
-        end
-      end
-    RUBY
-    File.chmod(0o755, path)
-  end
-
-  def write_hanging_interrupt_codex_stub(path)
-    File.write(path, <<~'RUBY')
-      #!/usr/bin/env ruby
-      require "json"
-
-      if ARGV == ["--version"]
-        puts "codex 0.128.0"
-        exit 0
-      end
-
-      abort "expected app-server" unless ARGV.first == "app-server"
-
-      STDOUT.sync = true
-
-      STDIN.each_line do |line|
-        msg = JSON.parse(line)
-        case msg["method"]
-        when "initialize"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        when "initialized"
-          nil
-        when "thread/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-test" } })
-        when "turn/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-test" } })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
-            thread: { id: "thr-test" },
-            turn: { id: "trn-test", status: "completed" }
-          })
-        when "turn/interrupt"
-          loop { sleep 1 }
-        end
-      end
-    RUBY
-    File.chmod(0o755, path)
-  end
-
-  def assert_codex_service_tier_argv(wrapper_args, expected_tier)
-    Dir.mktmpdir("harnex-service-tier-run") do |repo|
-      bin_dir = File.join(repo, "bin")
-      FileUtils.mkdir_p(bin_dir)
-      write_service_tier_codex_stub(File.join(bin_dir, "codex"))
-
-      argv_path = File.join(repo, "argv.json")
-      env = {
-        "PATH" => "#{bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
-        "HARNEX_STUB_ARGV_PATH" => argv_path,
-        "HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS" => "1"
-      }
-
-      _stdout, stderr, status = Open3.capture3(
-        env,
-        Gem.ruby, "-I#{File.expand_path('../../../lib', __dir__)}", File.expand_path("../../../bin/harnex", __dir__),
-        "run", "codex", *wrapper_args,
-        "--id", "service-tier-#{expected_tier}-#{$$}",
-        "--context", "finish quickly",
-        "--auto-stop",
-        chdir: repo
-      )
-
-      assert status.success?, stderr
-      assert_equal ["app-server", "-c", "service_tier=\"#{expected_tier}\""], JSON.parse(File.read(argv_path))
-    end
-  end
-
-  def write_ack_only_codex_stub(path)
-    File.write(path, <<~'RUBY')
-      #!/usr/bin/env ruby
-      require "json"
-
-      if ARGV == ["--version"]
-        puts "codex 0.128.0"
-        exit 0
-      end
-
-      File.write(ENV.fetch("HARNEX_STUB_ARGV_PATH"), JSON.generate(ARGV))
-      abort "expected app-server" unless ARGV.first == "app-server"
-      STDOUT.sync = true
-
-      STDIN.each_line do |line|
-        msg = JSON.parse(line)
-        case msg["method"]
-        when "initialize"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        when "initialized"
-          nil
-        when "thread/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-ack" } })
-        when "turn/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-ack" } })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/started", params: {
-            thread: { id: "thr-ack" }, turn: { id: "trn-ack", status: "in_progress" }
-          })
-          puts JSON.generate(jsonrpc: "2.0", method: "item/completed", params: {
-            threadId: "thr-ack", turnId: "trn-ack",
-            item: { id: "msg-ack", type: "agentMessage", text: "Got it—I will execute the task now.", phase: "final_answer" }
-          })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
-            thread: { id: "thr-ack" }, turn: { id: "trn-ack", status: "completed" }
-          })
-        when "turn/interrupt"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-          exit 0
-        end
-      end
-    RUBY
-    File.chmod(0o755, path)
-  end
-
-  def write_service_tier_codex_stub(path)
-    File.write(path, <<~'RUBY')
-      #!/usr/bin/env ruby
-      require "json"
-
-      if ARGV == ["--version"]
-        puts "codex 0.128.0"
-        exit 0
-      end
-
-      File.write(ENV.fetch("HARNEX_STUB_ARGV_PATH"), JSON.generate(ARGV))
-      abort "expected app-server" unless ARGV.first == "app-server"
-
-      STDOUT.sync = true
-
-      STDIN.each_line do |line|
-        msg = JSON.parse(line)
-        case msg["method"]
-        when "initialize"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        when "initialized"
-          nil
-        when "thread/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { thread: { id: "thr-tier" } })
-        when "turn/start"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: { turn: { id: "trn-tier" } })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/started", params: {
-            thread: { id: "thr-tier" },
-            turn: { id: "trn-tier", status: "in_progress" }
-          })
-          puts JSON.generate(jsonrpc: "2.0", method: "item/completed", params: {
-            threadId: "thr-tier",
-            turnId: "trn-tier",
-            item: {
-              id: "cmd-tier",
-              type: "commandExecution",
-              command: "ruby -e true",
-              status: "completed",
-              exitCode: 0
-            }
-          })
-          puts JSON.generate(jsonrpc: "2.0", method: "turn/completed", params: {
-            thread: { id: "thr-tier" },
-            turn: { id: "trn-tier", status: "completed" },
-            tokenUsage: {
-              total: {
-                inputTokens: 1,
-                outputTokens: 1,
-                reasoningOutputTokens: 0,
-                cachedInputTokens: 0,
-                totalTokens: 2
-              }
-            }
-          })
-        when "turn/interrupt"
-          puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-          exit 0
+        respond = ->(data = {}) { emit.call(type: "response", id: msg["id"], command: msg["type"], success: true, data: data) }
+        case msg["type"]
+        when "get_state" then respond.call(isStreaming: false, sessionId: "pi-live")
+        when "get_session_stats" then respond.call(sessionId: "pi-live")
+        when "prompt"
+          respond.call(disposition: "started")
+          emit.call(type: "agent_start")
+          emit.call(type: "tool_execution_start", toolCallId: "cmd-live", toolName: "bash", args: { command: "ruby -e true" })
+          emit.call(type: "tool_execution_end", toolCallId: "cmd-live", toolName: "bash",
+                    result: { structuredContent: { exit_code: 0 } }, isError: false)
+          assistant = { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop", timestamp: 1 }
+          emit.call(type: "message_end", message: assistant)
+          emit.call(type: "agent_end", messages: [assistant], willRetry: false)
+          emit.call(type: "agent_settled")
+        when "abort" then respond.call; exit 0
         end
       end
     RUBY

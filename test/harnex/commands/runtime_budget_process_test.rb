@@ -85,24 +85,6 @@ class RuntimeBudgetProcessTest < Minitest::Test
     assert_equal true, row.dig("runtime_budget", "enforced")
   end
 
-  def test_runtime_budget_includes_codex_initialize_handshake
-    File.write(File.join(@bin, "codex"), <<~'RUBY')
-      #!/usr/bin/env ruby
-      if ARGV.include?("--version")
-        puts "0.147.0"
-        exit
-      end
-      File.write("child.pid", Process.pid.to_s)
-      STDIN.each_line { |line| File.write("initialize.request", line); sleep 60 }
-    RUBY
-    File.chmod(0o755, File.join(@bin, "codex"))
-    status, row = run_case(["codex", "--max-runtime", "0.3s", "--context", "test"])
-    assert File.file?(File.join(@repo, "initialize.request")), "must reach real handshake"
-    assert_equal 124, status.exitstatus
-    assert_equal "runtime_budget", row.dig("stop", "reason")
-    assert_equal "rejected", row.dig("outcome", "status")
-  end
-
   def test_runtime_budget_terminates_a_worker_descendant
     status, row = run_fixture("descendant")
     assert_equal 124, status.exitstatus

@@ -9,9 +9,10 @@ and internals.
 ### `harnex run` — Start an agent
 
 ```bash
-harnex run codex
-harnex run claude --id review
-harnex run codex -- --cd ~/other/repo
+harnex run pi
+harnex run pi --id pi-i-13 --tmux pi-i-13 --model foundry-zyt/gpt-6.1-sol
+harnex run pi --cwd ../wt-13 --root . -- --no-approve
+harnex run claude --id cl-r-13 --tmux cl-r-13
 ```
 
 | Flag                | What it does                                                        |
@@ -28,18 +29,32 @@ harnex run codex -- --cd ~/other/repo
 | `--preset NAME`     | Watch preset (`impl`, `plan`, `gate`), requires `--watch`           |
 | `--watch-file PATH` | Auto-send a file-change hook (`--watch PATH`/`--watch=PATH` legacy) |
 | `--context TXT`     | Give the agent a task on startup                                    |
+| `--context-file PATH` | Read the startup task from a file (refuses an empty result)       |
+| `--context-section TXT` | With `--context-file`, send only the section starting at TXT    |
 | `--auto-stop`       | With `--context`, stop after accepted task completion               |
+| `--wait-done`       | With `--tmux`/`--detach`, block and print the first turn's result   |
+| `--wait-timeout DUR` | Cap `--wait-done`; on 124 the output names a `resume` command      |
+| `--model NAME`      | Pi model (`provider/model`), verified over RPC before the prompt    |
+| `--effort LEVEL`    | Pi thinking level, verified over RPC before the prompt              |
+| `--cwd DIR`         | Run the agent from DIR (e.g. a worktree lane)                       |
+| `--root DIR`        | Override root attribution without changing the child cwd            |
+| `--owner-tag TAG`   | Own the dispatch as `<owner>/TAG` for `watch --owner --owner-tag`   |
 | `--meta JSON`       | Attach bounded caller metadata                                      |
 | `--phase TEXT`      | First-class phase attribution (optionally repo-allowlisted)          |
 | `--artifact-report PATH` | Override the harness-authored v1 receipt destination            |
 | `--require-artifact-report` | Compatibility strict flag; default receipt path is sufficient |
-| `--fast`            | For Codex, use `service_tier="fast"` instead of default `flex`      |
 | `--timeout SEC`     | Wait budget for detached registration                               |
 
-Codex app-server auto-stop rejects completion with no structured command/tool
-activity or Git delta as `completed_no_activity`. Every transport gets a
-harness-authored observed-state receipt; optional worker claims never determine
-acceptance, and receipt-write failure is fail-closed.
+A Pi turn is accepted when it settles. With `--require-artifact-report` it must
+also show structured command/tool activity or a Git delta, or it is rejected as
+`completed_no_activity`. PTY adapters stop on prompt return. Every transport
+gets a harness-authored observed-state receipt; optional worker claims never
+determine acceptance, and receipt-write failure is fail-closed.
+
+`--wait-done` prints the launch fields plus `turn_result` (`outcome_class`,
+`model`, `commits`, `turn_commits`, and `final_message`, the worker's last reply)
+and uses the `wait --until done` exit codes. Pass Pi startup flags after `--`;
+unattended runs should choose Pi project trust with `--approve` or `--no-approve`.
 
 ### `harnex doctor` — Preflight, drift, and retention
 
@@ -50,10 +65,23 @@ harnex doctor --prune --dry-run
 harnex doctor --prune
 ```
 
-Plain output includes adapter prerequisites and events/output/receipt retention status.
-`--sweep` adds read-only live-session/tmux drift diagnostics. `--prune --dry-run`
+Output is JSON: the Pi RPC prerequisite (Pi >= 0.80.4; `--adapter pi|all`),
+events/output/receipt retention status, and versioned `capabilities`. `--sweep`
+adds read-only live-session/tmux drift diagnostics. `--prune --dry-run`
 previews age/size-cap deletions; `--prune` applies them while preserving current
 and live-session files. See [docs/configuration.md](docs/configuration.md).
+
+### `harnex preflight` — Prove an adapter end to end
+
+```bash
+harnex preflight pi --cwd ~/repo -- --no-approve
+harnex preflight pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol -- --no-approve
+```
+
+Spends one real model turn (two with `--commit-check`, which commits in a
+throwaway scratch repo) and prints a JSON verdict: registration, boot,
+permission, task read, workspace write, command exit, receipt, claims,
+completion, and stop. Exits 0 only when every required check passes.
 
 ### `harnex artifact-report` — Validate receipts and legacy proof
 
@@ -79,16 +107,22 @@ harnex send --id worker --message "implement plan A"
 | `--id ID`         | Which agent to talk to                 |
 | `--message`       | The message text                       |
 | `--wait-for-idle` | Block until agent finishes processing  |
+| `--wait-done`     | Block until the turn settles; print its result |
 | `--repo PATH`     | Resolve session from a repo root       |
 | `--cli CLI`       | Filter by CLI type                     |
-| `--submit-only`   | Just press Enter (no new text)         |
-| `--no-submit`     | Type the text but don't press Enter    |
+| `--submit-only`   | Just press Enter (PTY adapters only)   |
+| `--no-submit`     | Type without Enter (PTY adapters only) |
 | `--force`         | Send even if the agent looks busy      |
 | `--no-wait`       | Don't wait for delivery confirmation   |
 | `--relay`         | Force relay header formatting          |
 | `--no-relay`      | Suppress automatic relay headers       |
 | `--port` / `--token` | Send directly to a known API port  |
 | `--timeout`       | Overall wait budget                    |
+
+A busy Pi worker takes the message at once as a follow-up
+(`delivery: "follow_up"`) and runs it when the current turn ends;
+`--force` steers it into the running turn instead. Other adapters queue
+it until the agent is at a prompt.
 
 ### `harnex stop` — Ask an agent to stop
 
@@ -97,15 +131,17 @@ harnex stop --id worker
 harnex stop --id worker --timeout 5
 ```
 
-Sends the adapter-specific stop sequence. Retries transient
-failures for up to the given timeout.
+Pi: aborts any running turn over RPC and terminates the
+`pi --mode rpc` process. PTY adapters get their native exit
+sequence (`/exit` for Claude, Ctrl+C for OpenCode). Retries
+transient failures for up to the given timeout.
 
 ### `harnex status` — See running agents
 
 ```
-ID      CLI    PID    PORT   AGE  IDLE  STATE   REPO   DESC
-worker  codex  12345  43123  36s  12s   prompt  ~/...  -
-review  claude 12346  43124   8s  -     busy    ~/...  -
+ID       CLI     PID    PORT   AGE  IDLE  STATE   REPO   DESC
+pi-i-13  pi      12345  43123  36s  12s   prompt  ~/...  -
+cl-r-13  claude  12346  43124   8s  -     busy    ~/...  -
 ```
 
 Text mode includes an `IDLE` column derived from `log_idle_s` (`-` means no
@@ -123,9 +159,44 @@ Use `--all` for all repos.
 ### `harnex wait` — Wait for an agent to finish
 
 ```bash
-harnex wait --id worker
-harnex wait --id worker --until prompt --timeout 300
+harnex wait --id pi-i-13
+harnex wait --id pi-i-13 --until done --timeout 900
+harnex wait --id pi-i-13 --until done --after-seq 812 --timeout 9m
 ```
+
+`--until done` is the work-level fence: 0 accepted, 1 failed, 2 completed but
+proof rejected, 3 no such session, 4 stalled (`--stall-after`), 124 observer
+timeout (the worker keeps running). `--after-seq` (from `harnex send` output)
+waits for the turn that message started, not an earlier result.
+
+### `harnex watch` — Monitor dispatches
+
+```bash
+harnex watch --id pi-i-13 --until done --max-wait 90m
+harnex watch --owner --stall-after 25m
+harnex watch --owner --once --timeout 9m --owner-tag sub-a
+harnex watch --owner --until-idle --timeout 90m
+```
+
+`--id` watches one existing `--tmux`/detached session with the `wait --until
+done` exit codes and optional `--done-marker` / `--fail-marker` files.
+`--owner` streams one JSON line (`harnex.owner_event.v1`) per change for every
+dispatch the calling Claude Code or Pi session launched; results carry
+`final_message`. `--once` prints what is ready and exits (124 when nothing is
+new); `--until-idle` keeps printing until no lane is running. `--owner-tag`
+narrows to lanes launched with `run --owner-tag`.
+
+### `harnex ask` — Ask a Pi worker one question
+
+```bash
+harnex ask "Which module parses the dispatch rows, and is it tested?"
+harnex ask --model foundry-zyt/gpt-6.1-sol --file /tmp/review.md --timeout 9m
+```
+
+Runs a Pi worker in a tmux window with read-only tools, prints its answer on
+stdout, and stops it. `--write` allows edits and commands; `--json` prints the
+full result. Exit codes: 0 answered, 1 failed, 2 proof rejected or usage
+error, 124 timeout (the worker keeps running).
 
 ### `harnex history` — List completed dispatches
 
@@ -169,8 +240,10 @@ Use `--wait-for-idle` instead of separate send + sleep + wait:
 
 ```bash
 # Replaces: send → sleep 5 → wait --until prompt
-harnex send --id cx-1 --message "implement the plan" --wait-for-idle --timeout 600
+harnex send --id pi-i-13 --message "implement the plan" --wait-for-idle --timeout 600
 ```
+
+With Pi, `--wait-done` returns the result of the turn the message started.
 
 ### Agents talking to each other
 
@@ -182,49 +255,56 @@ relay header automatically:
 implement A
 ```
 
-Messages queue when the agent is busy and auto-deliver when ready.
+Messages to a busy agent queue (Pi: become follow-ups) and
+auto-deliver when ready.
 
 ### Background agents
 
 **tmux** (observable):
 
 ```bash
-harnex run codex --id worker --tmux cx-w1
+harnex run pi --id pi-i-13 --tmux pi-i-13
 ```
 
 **Headless** (no terminal):
 
 ```bash
-harnex run codex --id worker --detach
+harnex run pi --id pi-i-13 --detach
 ```
 
 ### Supervisor pattern
 
-One agent manages others:
+One agent manages others, one worktree lane per worker:
 
 ```bash
-harnex run codex --id impl-1 --tmux cx-p1 -- --cd ~/wt-a
-harnex run codex --id impl-2 --tmux cx-p2 -- --cd ~/wt-b
+harnex run pi --id pi-i-1 --tmux pi-i-1 --cwd ~/wt-a --root ~/repo
+harnex run pi --id pi-i-2 --tmux pi-i-2 --cwd ~/wt-b --root ~/repo
 
-harnex send --id impl-1 --message "implement feature A" --wait-for-idle --timeout 600
-harnex send --id impl-2 --message "implement feature B" --wait-for-idle --timeout 600
+harnex send --id pi-i-1 --message "implement feature A" --wait-for-idle --timeout 600
+harnex send --id pi-i-2 --message "implement feature B" --wait-for-idle --timeout 600
 
-harnex run claude --id review --tmux cl-r1
-harnex send --id review --message "review changes" --wait-for-idle --timeout 300
+harnex run claude --id cl-r-1 --tmux cl-r-1
+harnex send --id cl-r-1 --message "review changes" --wait-for-idle --timeout 300
 ```
+
+With `--context ... --auto-stop` on each lane, a Claude Code or Pi supervisor
+can collect every result with `harnex watch --owner --until-idle`.
 
 ### Context on startup
 
 ```bash
-harnex run codex --id impl-1 --tmux cx-p1 \
-  --context "Implement the auth feature. Commit when done." \
-  -- --cd ~/repo/worktree
+harnex run pi --id pi-i-1 --tmux pi-i-1 --cwd ~/repo/worktree --root ~/repo \
+  --context "Implement the auth feature. Commit when done."
+
+harnex run pi --id pi-i-1 --tmux pi-i-1 \
+  --context-file koder/briefs/1.md --context-section "## Task" \
+  --auto-stop --wait-done --wait-timeout 9m
 ```
 
 ### File watching
 
 ```bash
-harnex run codex --id worker --watch-file ./tmp/status.jsonl
+harnex run pi --id pi-i-13 --watch-file ./tmp/status.jsonl
 ```
 
 Agent gets notified when the file changes. File doesn't need to
@@ -287,7 +367,7 @@ Schema details and compatibility guarantees are in [docs/events.md](docs/events.
          ├── Waiter        block until session exits
          ├── Stopper       send stop sequence
          │
-         ├── Session       PTY lifecycle, HTTP server, registry
+         ├── Session       PTY or Pi RPC lifecycle, HTTP server, registry
          ├── SessionState  state machine (prompt/busy/blocked)
          ├── Inbox         per-session message queue
          ├── Message       queued message struct
@@ -295,12 +375,13 @@ Schema details and compatibility guarantees are in [docs/events.md](docs/events.
          ├── FileChangeHook   inotify file watcher
          └── LinuxInotify     raw inotify via Fiddle
 
+ lib/harnex/adapters.rb   registry: claude, opencode, pi; anything else → generic
  lib/harnex/adapters/
-   ├── base.rb     adapter interface
-   ├── generic.rb  fallback adapter for any CLI
-   ├── codex.rb    codex-specific behavior
-   ├── opencode.rb opencode-specific behavior
-   └── claude.rb   claude-specific behavior
+   ├── base.rb      adapter interface (PTY transport by default)
+   ├── claude.rb    Claude Code PTY behavior
+   ├── generic.rb   PTY fallback for any CLI
+   ├── opencode.rb  OpenCode PTY behavior
+   └── pi.rb        Pi JSONL RPC adapter (`pi --mode rpc`, default worker)
 ```
 
 ## Session Lifecycle
@@ -311,12 +392,13 @@ preferred interactive mode because it keeps the peer's work observable.
 
 Headless/background execution (`--detach`) should still be treated as opt-in.
 
-When you run `harnex run codex --id worker`:
+When you run `harnex run pi --id pi-i-13`:
 
 ```
  1. Parse wrapper options, build adapter
- 2. Validate the target binary before spawn
- 3. Spawn the agent CLI under a PTY (pseudoterminal)
+ 2. Validate the target binary before spawn (Pi: version >= 0.80.4)
+ 3. Spawn the agent: Pi as `pi --mode rpc` over stdio pipes;
+      other CLIs under a PTY (pseudoterminal)
  4. Generate a random bearer token for API auth
  5. Pick a port:
       hash(repo_root + id) % port_span + base_port
@@ -330,11 +412,12 @@ When you run `harnex run codex --id worker`:
       and open events file:
       ~/.local/state/harnex/events/<repo_hash>--<id>.jsonl
  8. Start background threads:
-      - PTY reader (screen buffer)
-      - State machine (adapter parses screen for state)
+      - PTY reader (screen buffer) or Pi JSONL reader (RPC events)
+      - State machine (adapter parses screen, or Pi events, for state)
       - Inbox delivery (queue -> inject when prompt)
-      - File watcher (if --watch was given)
- 9. Relay terminal I/O between user and agent
+      - File watcher (if --watch-file was given)
+ 9. PTY: relay terminal I/O between user and agent;
+      Pi: send the --context prompt and print a synthesized transcript
 10. On exit: clean up registry, write exit status
 ```
 
@@ -351,6 +434,9 @@ The screen text includes raw terminal escape sequences. The
 adapter's `normalized_screen_text` strips ANSI and OSC codes
 before parsing.
 
+Pi does not run under a PTY: its adapter speaks JSONL over stdio
+and takes state from RPC events (see the Pi adapter below).
+
 ## Adapter Contract
 
 Each adapter in `lib/harnex/adapters/` implements:
@@ -363,50 +449,23 @@ Each adapter in `lib/harnex/adapters/` implements:
 | `inject_exit(writer)`     | Send adapter-specific stop text |
 | `infer_repo_path(argv)`   | Extract repo path from CLI args |
 | `wait_for_sendable(...)`  | Wait strategy before sending    |
-| `transport`                | PTY, JSON-RPC, or JSONL RPC     |
-| `validate_runtime!`        | Optional version/capability gate |
+| `transport`               | `:pty` (PTY) or `:stdio_jsonl_rpc` (JSONL RPC) |
+| `validate_runtime!`       | Optional version gate (Pi >= 0.80.4) |
 
 ### Input States
 
-The adapter reads the screen and returns a state hash:
+PTY adapters read the screen and return a state hash; Pi reports
+`prompt`, `busy`, or `disconnected` from RPC events:
 
 | State                    | `input_ready` | Meaning               |
 |--------------------------|---------------|-----------------------|
 | `prompt`                 | `true`        | Ready for input       |
-| `session`                | `nil`         | Agent is working      |
+| `busy`                   | `false`       | Pi turn in progress   |
 | `workspace-trust-prompt` | `false`       | Needs Enter to confirm|
 | `confirmation`           | `false`       | Modal confirmation    |
 | `unknown`                | `nil`         | Can't determine       |
 
-### Codex Adapter (default — JSON-RPC `app-server`)
-
-- `transport :stdio_jsonrpc` — speaks JSON-RPC 2.0 over the
-  subprocess's stdin/stdout, one JSON object per line.
-- Launches `codex app-server` (Codex CLI ≥ 0.128.0; verify with
-  `harnex doctor`).
-- Notifications (`turn/started`, `turn/completed`, `item/completed`,
-  `error`, `thread/compacted`, …) fan into the events log.
-  `task_complete` is the harnex-side event for `turn/completed`.
-- **Approval mediation**: Codex's app-server protocol delegates
-  sandbox/approval decisions to the JSON-RPC client via server-to-
-  client requests. Harnex auto-approves `applyPatchApproval`,
-  `execCommandApproval`, `item/commandExecution/requestApproval`, and
-  `item/fileChange/requestApproval`, so autonomous workers can run
-  shell commands, write files, commit, and invoke package managers
-  under Codex's default sandbox without any bypass flag. Other
-  server-to-client requests (permissions, user-input, dynamic-tool,
-  auth-refresh) currently fall through to `-32601` until use cases
-  appear.
-- Disconnect is detected from JSON-RPC error responses, subprocess
-  EOF, parse errors, or a server `error` notification — no screen
-  regex required.
-- Synthesized transcript: `item/completed` text payloads stream to
-  both the output log and STDOUT so tmux/pane workflows continue to
-  work without a real PTY.
-- See `docs/codex-appserver.md` for the full mapping table and
-  troubleshooting.
-
-### Pi Adapter (JSONL RPC)
+### Pi Adapter (default — JSONL RPC)
 
 - `transport :stdio_jsonl_rpc` launches `pi --mode rpc` and speaks Pi's
   strict LF-delimited JSONL protocol. It is not JSON-RPC 2.0.
@@ -423,18 +482,16 @@ The adapter reads the screen and returns a state hash:
 - Harnex `--model` and `--effort` become Pi `--model` / `--thinking`
   startup flags and are verified with `get_state`; a model mismatch or clamped
   effort is rejected before prompting without persisting an RPC model switch
-  into Pi's user defaults. Forced busy sends use `streamingBehavior=steer`.
+  into Pi's user defaults.
+- Busy sends become Pi follow-ups (`streamingBehavior=followUp`), delivered
+  when the current turn ends; forced busy sends use `streamingBehavior=steer`.
+- `task_complete` carries `final_message` (the last assistant reply, up to
+  4,000 characters, full text at `final_message_path`).
+- `--tmux` shows Harnex's synthesized RPC transcript, not Pi's native TUI.
 - RPC requests have a 30-second response bound. Stderr is continuously drained
   into a bounded diagnostic tail, and subprocess status comes from Open3's wait
   thread instead of racing it with another `waitpid`.
 - See `docs/pi-rpc.md` for trust policy, telemetry, and compatibility details.
-
-#### Codex Adapter (legacy PTY — `--legacy-pty`, long-term fallback)
-
-- Launches with `--no-alt-screen` for inline screen output
-- Detects prompt by looking for `›` prefix in recent lines
-- Multi-step submit: types text, then sends Enter after a
-  75ms delay (lets the UI process the input)
 
 ### Claude Adapter
 
@@ -452,7 +509,7 @@ The adapter reads the screen and returns a state hash:
 - Stop sequence sends a double Ctrl+C to match OpenCode's native
   terminal shutdown path (interrupt first, force-quit second if
   needed).
-- Multi-step submit mirrors Claude/Codex PTY behavior: text first,
+- Multi-step submit mirrors Claude's PTY behavior: text first,
   then Enter with a short delay.
 
 ## State Machine
@@ -478,7 +535,8 @@ The adapter reads the screen and returns a state hash:
 - Uses a Mutex + ConditionVariable for thread-safe access
 - `wait_for_prompt(timeout)` blocks until state == `:prompt`
 - State is updated by the PTY reader thread calling the
-  adapter's `input_state` on each screen change
+  adapter's `input_state` on each screen change; for Pi, by
+  RPC lifecycle events (`agent_start` busy, `agent_settled` prompt)
 
 ## Inbox and Message Queue
 
@@ -509,6 +567,9 @@ Each session has an `Inbox` with a background delivery thread:
 
 Poll status with `GET /messages/:id`.
 
+A send to a busy Pi worker skips the queue: it is handed to Pi at once
+as a follow-up (`delivery: "follow_up"`), so it cannot expire.
+
 ## HTTP API
 
 All endpoints are on `127.0.0.1:<port>`. Every request needs
@@ -523,13 +584,13 @@ Returns JSON:
   "ok": true,
   "session_id": "abc123",
   "repo_root": "/path/to/repo",
-  "cli": "codex",
-  "id": "worker",
+  "cli": "pi",
+  "id": "pi-i-13",
   "description": "implement auth module",
   "pid": 12345,
   "host": "127.0.0.1",
   "port": 43123,
-  "command": ["codex", "--no-alt-screen"],
+  "command": ["pi", "--mode", "rpc"],
   "started_at": "2026-03-13T20:45:00Z",
   "last_injected_at": null,
   "injected_count": 0,
@@ -616,7 +677,8 @@ Every session also writes a repo-keyed transcript:
 ~/.local/state/harnex/output/<repo_hash>--<normalized_id>.log
 ```
 
-- PTY output is appended as bytes are read
+- PTY output is appended as bytes are read; Pi sessions append
+  the synthesized RPC transcript
 - The transcript is opened in append mode, so reusing an ID
   does not wipe prior output
 - `output_log_path` is exposed via `status --json` and
@@ -668,6 +730,7 @@ Defaults: base `43000`, span `4000` (range 43000–46999).
 Harnex uses Ruby threads, not processes:
 
 - **PTY reader** — reads agent output into screen buffer
+  (Pi: **JSONL reader** for RPC events, plus a stderr drain)
 - **State poller** — feeds screen to adapter for state
 - **Inbox delivery** — dequeues messages when prompt detected
 - **HTTP server** — one thread per connection
@@ -686,6 +749,7 @@ guides/02_chain.md
 guides/03_buddy.md
 guides/04_monitoring.md
 guides/05_naming.md
+guides/06_claude.md
 ```
 
 The files are exposed through the CLI:
@@ -694,6 +758,7 @@ The files are exposed through the CLI:
 harnex agents-guide
 harnex agents-guide dispatch
 harnex agents-guide monitoring
+harnex agents-guide claude
 ```
 
 ### What's in the guides
@@ -709,6 +774,7 @@ The agent guides cover:
 - Buddy monitoring for unattended work
 - Completion signals, event/log/pane monitoring, and wall-clock caps
 - Session ID, task file, and done marker naming conventions
+- Claude Code sessions and subagents using Pi workers as tools
 
 Older releases shipped `harnex skills install`; that installer was removed in
 0.6.1. Agents now discover harnex directly with `harnex --help` and
@@ -716,8 +782,9 @@ Older releases shipped `harnex skills install`; that installer was removed in
 
 ## Known Limitations
 
-- Adapter prompt detection is heuristic-based. It works well
-  but can misread unusual screen output.
+- PTY prompt detection is heuristic-based. It works well
+  but can misread unusual screen output. Pi state comes from
+  RPC events, not the screen.
 - No read-only HTTP output endpoint for local dashboards (use
   `harnex pane --follow` or `harnex logs --follow` instead).
 - File watching: inotify on Linux, stat-polling fallback on
@@ -729,5 +796,5 @@ Older releases shipped `harnex skills install`; that installer was removed in
 
 - Ruby 3.x standard library only
 - No gems required
-- Uses: `io/console`, `pty`, `socket`, `json`, `net/http`,
+- Uses: `io/console`, `pty`, `open3`, `socket`, `json`, `net/http`,
   `digest`, `fileutils`, `shellwords`, `fiddle` (for inotify)

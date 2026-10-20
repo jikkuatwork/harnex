@@ -2,8 +2,8 @@ require_relative "../../test_helper"
 require "open3"
 require "shellwords"
 
-# #56: preflight drives the real `harnex run` path against a stub Codex
-# app-server that follows the preflight prompt (or misbehaves on purpose).
+# #56: preflight drives the real `harnex run` path against a stub Pi RPC
+# process that follows the preflight prompt (or misbehaves on purpose).
 class PreflightTest < Minitest::Test
   LIB = File.expand_path("../../../lib", __dir__)
   BIN = File.expand_path("../../../bin/harnex", __dir__)
@@ -16,7 +16,7 @@ class PreflightTest < Minitest::Test
     FileUtils.mkdir_p([@repo, @task_root, @bin])
     git(@repo, "init", "-q")
     git(@repo, "commit", "-q", "--allow-empty", "-m", "base")
-    write_obedient_codex_stub(File.join(@bin, "codex"))
+    write_obedient_pi_stub(File.join(@bin, "pi"))
   end
 
   def teardown
@@ -147,7 +147,7 @@ class PreflightTest < Minitest::Test
 
   def test_usage_errors
     assert_raises(OptionParser::MissingArgument) { Harnex::Preflight.new([], out: StringIO.new).run }
-    assert_raises(OptionParser::InvalidOption) { Harnex::Preflight.new(%w[codex --bogus], out: StringIO.new).run }
+    assert_raises(OptionParser::InvalidOption) { Harnex::Preflight.new(%w[pi --bogus], out: StringIO.new).run }
     out = StringIO.new
     assert_equal 0, Harnex::Preflight.new(["--help"], out: out).run
     assert_includes out.string, "harnex preflight ADAPTER"
@@ -169,7 +169,7 @@ class PreflightTest < Minitest::Test
 
   private
 
-  def preflight(adapter: "codex", mode: "obey", extra: [], cwd: @repo, child: [])
+  def preflight(adapter: "pi", mode: "obey", extra: [], cwd: @repo, child: [])
     env = {
       "PATH" => "#{@bin}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', '')}",
       "HARNEX_STUB_MODE" => mode,
@@ -215,40 +215,49 @@ class PreflightTest < Minitest::Test
     out.strip
   end
 
-  # Follows the numbered preflight prompt like a compliant model would, and
-  # reports each shell command the way Codex does: wrapped in `bash -lc`.
-  def write_obedient_codex_stub(path)
+  # Follows the numbered preflight prompt like a compliant model would and
+  # reports each shell command the way Pi 1.3.0 does: a bash tool call whose
+  # result carries the exit code in structuredContent.
+  def write_obedient_pi_stub(path)
     File.write(path, <<~'RUBY')
       #!/usr/bin/env ruby
       require "fileutils"
       require "json"
-      require "shellwords"
-      if ARGV == ["--version"]; puts "codex 0.147.0"; exit 0; end
-      abort "expected app-server" unless ARGV.first == "app-server"
+      if ARGV == ["--version"]; puts "1.3.0"; exit 0; end
+      abort "expected --mode rpc" unless ARGV.first(2) == ["--mode", "rpc"]
       STDOUT.sync = true
       mode = ENV.fetch("HARNEX_STUB_MODE", "obey")
-      emit = ->(payload) { puts JSON.generate(payload.merge(jsonrpc: "2.0")) }
+      emit = ->(payload) { puts JSON.generate(payload) }
+      respond = ->(msg, data = {}) { emit.call(type: "response", id: msg["id"], command: msg["type"], success: true, data: data) }
+      settle = lambda do |stop_reason, error = nil|
+        assistant = { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: stop_reason, timestamp: 1 }
+        assistant[:errorMessage] = error if error
+        emit.call(type: "message_end", message: assistant)
+        emit.call(type: "agent_end", messages: [assistant], willRetry: false)
+        emit.call(type: "agent_settled")
+      end
       STDIN.each_line do |line|
         msg = JSON.parse(line)
-        case msg["method"]
-        when "initialize" then emit.call(id: msg["id"], result: {})
-        when "thread/start" then emit.call(id: msg["id"], result: { thread: { id: "thr-pf" } })
-        when "turn/start"
-          emit.call(id: msg["id"], result: { turn: { id: "trn-pf" } })
+        case msg["type"]
+        when "get_state"
+          respond.call(msg, { isStreaming: false, model: { provider: "stub", id: "stub-model" }, sessionId: "pi-stub" })
+        when "set_model", "set_thinking_level" then respond.call(msg)
+        when "get_session_stats" then respond.call(msg, { sessionId: "pi-stub", tokens: { input: 1, output: 1, total: 2 } })
+        when "abort" then respond.call(msg); exit 0
+        when "prompt"
+          respond.call(msg, { disposition: "started" })
+          emit.call(type: "agent_start")
           next if mode == "hang"
 
           # A real turn takes seconds; an instant one would finish (and
           # auto-stop) before `harnex run --detach` polls the registry.
           sleep 1
           if mode == "auth_fail"
-            emit.call(method: "turn/completed", params: { thread: { id: "thr-pf" }, turn: {
-              id: "trn-pf", status: "failed",
-              error: { message: "unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-****abcd1234" }
-            } })
+            settle.call("error", "unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-****abcd1234")
             next
           end
 
-          text = msg.dig("params", "input", 0, "text").to_s
+          text = msg["message"].to_s
           task = text[/Read the task file: (.+)$/, 1]
           out = text[/, to: (.+)$/, 1]
           token = File.read(task).strip rescue nil
@@ -260,15 +269,12 @@ class PreflightTest < Minitest::Test
           text.scan(/Run this exact shell command: (.+)$/).flatten.each_with_index do |command, index|
             next if mode == "no_claims" && command.include?("HARNEX_ARTIFACT_CLAIMS_PATH")
 
+            emit.call(type: "tool_execution_start", toolCallId: "cmd-#{index}", toolName: "bash", args: { command: command })
             system("sh", "-c", command, out: File::NULL)
-            emit.call(method: "item/completed", params: { item: {
-              id: "cmd-#{index}", type: "commandExecution", status: "completed",
-              command: Shellwords.join(["/bin/bash", "-lc", command]), exitCode: $?.exitstatus
-            } })
+            emit.call(type: "tool_execution_end", toolCallId: "cmd-#{index}", toolName: "bash",
+                      result: { structuredContent: { exit_code: $?.exitstatus } }, isError: !$?.success?)
           end
-          emit.call(method: "turn/completed", params: { thread: { id: "thr-pf" }, turn: { id: "trn-pf", status: "completed" } })
-        when "turn/interrupt"
-          emit.call(id: msg["id"], result: {}); exit 0
+          settle.call("stop")
         end
       end
     RUBY

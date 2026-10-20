@@ -16,7 +16,6 @@ Common prefixes:
 | Prefix | Meaning |
 | --- | --- |
 | `pi` | Pi worker (default) |
-| `cx` | Codex worker |
 | `cl` | Claude worker |
 | `buddy` | Buddy monitor |
 

@@ -77,7 +77,7 @@ lib/harnex/cli.rb                Top-level command dispatch
 lib/harnex/commands/             Command implementations (run, send, wait, stop, status, logs, pane, agents-guide)
 guides/                           Agent-facing CLI guide topics
 lib/harnex/runtime/              Session, state machine, inbox, API server
-lib/harnex/adapters/             Adapter base + generic/codex/claude adapters
+lib/harnex/adapters/             Adapter base + pi (RPC) and generic/claude/opencode (PTY)
 lib/harnex/watcher.rb            File watcher (auto-selects backend)
 lib/harnex/watcher/inotify.rb    Linux inotify via Fiddle
 lib/harnex/watcher/polling.rb    Cross-platform stat-based fallback
@@ -118,27 +118,19 @@ May override:
 - `wait_for_sendable_state?(state, submit:, enter_only:)` — whether a state is sendable
 - `wait_for_sendable(screen_snapshot_fn, submit:, enter_only:, force:)` — orchestrate send-readiness waiting
 
-## Adapter transports — PTY and JSON-RPC are both first-class
+## Workers and transports — Pi + GPT only
 
-Adapters interface with the wrapped CLI over **PTY**, **JSON-RPC**, or
-both. Neither is a legacy fallback; they serve different needs.
+The owner works exclusively with **Pi workers backed by GPT models**
+(e.g. `foundry-zyt/gpt-6.1-sol`); Claude Code (or Pi) supervises. Codex
+support was removed in 0.20.0 — do not reintroduce it.
 
-- **PTY** is the broad-compatibility transport. Most CLIs only ship a
-  TUI, so PTY is the default path for any new harness adapter (claude,
-  opencode, aider, cursor, etc.). It is also the right choice whenever
-  the user wants to *see* the TUI live in tmux.
-- **JSON-RPC** is the structured transport, offered by harnesses that
-  ship one (e.g. `codex app-server`). When available it gives cleaner
-  state detection, structured task-complete signals, and approval
-  mediation without text scraping.
+- **Pi RPC** (`pi --mode rpc`, JSONL) is the structured transport and the
+  only worker path that matters: typed turn settlement, command-exit
+  observation, follow-ups, provider retries, usage/cost.
+- **PTY** stays as the broad-compatibility path for wrapping other TUIs
+  (claude, opencode, generic) and is permanent, but new work targets Pi.
 
-Each harness adapter ideally supports both: PTY for visibility and
-broad compat, JSON-RPC for autonomous dispatch when the harness
-exposes it. Many harnesses have no JSON-RPC; that's fine — PTY covers
-them. The PTY path is **permanent** and is not slated for removal.
-
-The current flag `--legacy-pty` is a misnomer kept for backwards
-compatibility; rename is queued for post-freeze followup.
+Design, test and live-verify against Pi first.
 
 ## If you are running inside harnex
 
@@ -166,21 +158,21 @@ capture as the primary way to collect the answer.
 
 ### Worker ID naming
 
-Use `cx-<role>-<issue-or-tag>` for `--id` / `--tmux` so peer sessions are
+Use `pi-<role>-<issue-or-tag>` for `--id` / `--tmux` so peer sessions are
 self-describing in `harnex status`, tmux windows, and DISPATCH rows.
 Single-letter role codes:
 
-- `i` — implement (e.g. `cx-i-35` implements issue #35)
-- `r` — review (`cx-r-35` reviews the implementation)
-- `p` — plan (`cx-p-35`)
-- `f` — fix (`cx-f-35`)
-- `t` — test (`cx-t-35`)
-- `a` — audit (`cx-a-35`)
-- `d` — docs (`cx-d-35`)
+- `i` — implement (e.g. `pi-i-35` implements issue #35)
+- `r` — review (`pi-r-35` reviews the implementation)
+- `p` — plan (`pi-p-35`)
+- `f` — fix (`pi-f-35`)
+- `t` — test (`pi-t-35`)
+- `a` — audit (`pi-a-35`)
+- `d` — docs (`pi-d-35`)
 
-For non-issue work, substitute a short tag: `cx-a-jsonrpc`,
-`cx-d-readme`. If parallel workers share a role on the same issue,
-disambiguate with a tag suffix (`cx-i-35-tier1`, `cx-i-35-tier2`),
+For non-issue work, substitute a short tag: `pi-a-telemetry`,
+`pi-d-readme`. If parallel workers share a role on the same issue,
+disambiguate with a tag suffix (`pi-i-35-tier1`, `pi-i-35-tier2`),
 not a bare letter.
 
 ## Long-running work: spawn a buddy

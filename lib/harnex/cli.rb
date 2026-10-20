@@ -167,7 +167,7 @@ module Harnex
         Examples:
           harnex run pi
           harnex run aider --id blue-cat
-          harnex run codex -- --cd /path/to/repo
+          harnex run pi --tmux pi-i-42 --id pi-i-42 --context-file /tmp/task-42.md
           harnex status
           harnex watch --id main --until done --max-wait 15m
           harnex logs --id main --follow

@@ -1,4 +1,5 @@
 require_relative "../../test_helper"
+require_relative "../../support/transcript_usage_adapter"
 
 require "rbconfig"
 require "timeout"
@@ -166,11 +167,11 @@ class SessionTest < Minitest::Test
           system("git", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "session", out: File::NULL, err: File::NULL)
         end
         puts "Token usage: total=106,867 input=104,158 (+ 250,880 cached) output=2,709 (reasoning 870)"
-        puts "To continue this session, run codex resume 019ddf05-0f03-7d70-904f-23db7f00640f"
+        puts "To continue this session, run usage-cli resume 019ddf05-0f03-7d70-904f-23db7f00640f"
       RUBY
 
       session = build_session(
-        adapter: Harnex::Adapters::Codex.new,
+        adapter: TranscriptUsageAdapter.new,
         command: [RbConfig.ruby, "-e", code, repo],
         repo_root: repo,
         description: "dispatch telemetry",
@@ -229,7 +230,7 @@ class SessionTest < Minitest::Test
       assert_equal "dispatch telemetry", record.dig("meta", "description")
       assert_equal "harnex", record.dig("meta", "harness")
       assert_equal Harnex::VERSION, record.dig("meta", "harness_version")
-      assert_equal "codex", record.dig("meta", "agent")
+      assert_equal "usage-cli", record.dig("meta", "agent")
       assert_equal repo, record.dig("meta", "repo")
       assert_equal "23", record.dig("meta", "issue")
       assert_equal "27", record.dig("meta", "plan")
@@ -453,8 +454,8 @@ class SessionTest < Minitest::Test
     events_log&.close unless events_log&.closed?
   end
 
-  def test_jsonrpc_inject_stop_interrupts_then_terminates_subprocess
-    adapter = Harnex::Adapters::CodexAppServer.new
+  def test_structured_inject_stop_interrupts_then_terminates_subprocess
+    adapter = Harnex::Adapters::Pi.new
     calls = Queue.new
 
     adapter.define_singleton_method(:interrupt) { |turn_id: nil| calls << [:interrupt, turn_id] }
@@ -471,7 +472,7 @@ class SessionTest < Minitest::Test
   end
 
   def test_inject_stop_is_idempotent
-    adapter = Harnex::Adapters::CodexAppServer.new
+    adapter = Harnex::Adapters::Pi.new
     calls = Queue.new
 
     adapter.define_singleton_method(:interrupt) { |turn_id: nil| calls << [:interrupt, turn_id] }
@@ -489,8 +490,8 @@ class SessionTest < Minitest::Test
     refute wait_for_queue(calls, timeout: 0.1)
   end
 
-  def test_auto_stop_jsonrpc_fires_after_first_task_complete
-    adapter = Harnex::Adapters::CodexAppServer.new
+  def test_auto_stop_structured_fires_after_first_settled_turn
+    adapter = Harnex::Adapters::Pi.new
     calls = Queue.new
     session = build_session(command: adapter.build_command, adapter: adapter, auto_stop: true)
     session.send(:prepare_events_log)
@@ -498,23 +499,18 @@ class SessionTest < Minitest::Test
       calls << [:stop, turn_id, interrupt, context]
       { ok: true, signal: "test_stop" }
     end
+    settle = lambda do |ts|
+      assistant = { "role" => "assistant", "content" => [], "stopReason" => "stop", "timestamp" => ts }
+      session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+      session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+      session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+    end
 
-    session.send(:handle_rpc_notification, {
-      "method" => "turn/completed",
-      "params" => { "turn" => { "id" => "trn-1", "status" => "completed" } }
-    })
-
+    settle.call(1)
     assert_equal [:stop, nil, false, { reason: "completion", origin: "auto_stop" }], Timeout.timeout(2) { calls.pop }
-    failed = File.readlines(session.events_log_path).map { |line| JSON.parse(line) }.find { |event| event["type"] == "task_failed" }
-    assert_equal "completed_no_activity", failed.fetch("status")
-    assert_equal "completed_no_activity", failed.fetch("outcome_class")
-    refute session.task_complete?
+    assert session.task_complete?
 
-    session.send(:handle_rpc_notification, {
-      "method" => "turn/completed",
-      "params" => { "turn" => { "id" => "trn-2", "status" => "completed" } }
-    })
-
+    settle.call(2)
     refute wait_for_queue(calls, timeout: 0.1)
   ensure
     events_log = session&.instance_variable_get(:@events_log)
@@ -589,11 +585,11 @@ class SessionTest < Minitest::Test
   end
 
   def test_usage_status_distinguishes_observed_zero_estimated_unsupported_and_missing
-    observed = build_session(adapter: Harnex::Adapters::Codex.new)
+    observed = build_session(adapter: priced_adapter)
     observed.instance_variable_set(:@usage_summary, { input_tokens: 12, cost_usd: 0.3 })
     assert_equal "observed", observed.send(:build_summary_usage).fetch("status")
 
-    zero = build_session(adapter: Harnex::Adapters::Codex.new)
+    zero = build_session(adapter: priced_adapter)
     zero.instance_variable_set(:@usage_summary, {
       input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
       cached_tokens: 0, total_tokens: 0, cost_usd: 0.0
@@ -613,11 +609,11 @@ class SessionTest < Minitest::Test
     assert_equal "caller_estimate", estimated_usage.fetch("cost_source")
 
     assert_equal "unsupported", build_session.send(:build_summary_usage).fetch("status")
-    assert_equal "missing", build_session(adapter: Harnex::Adapters::Codex.new).send(:build_summary_usage).fetch("status")
+    assert_equal "missing", build_session(adapter: priced_adapter).send(:build_summary_usage).fetch("status")
   end
 
-  def test_usage_price_table_computes_cost_for_observed_codex_tokens
-    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+  def test_usage_price_table_computes_cost_for_observed_tokens
+    session = build_session(adapter: priced_adapter, meta: { "model" => "gpt-5.3-codex" })
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000_000, output_tokens: 100_000, reasoning_tokens: 40_000,
       cached_tokens: 400_000, total_tokens: 1_100_000
@@ -625,34 +621,30 @@ class SessionTest < Minitest::Test
 
     usage = session.send(:build_summary_usage)
     assert_equal "observed", usage.fetch("status")
-    # PTY-scraped codex input excludes cached — cached prices additively:
+    # Input that excludes cached tokens prices cached tokens additively:
     # 1M * 1.75 + 400k * 0.175 + 100k * 14.00 = 3_220_000 per-1M units
     assert_in_delta 3.22, usage.fetch("cost_usd"), 1e-9
     assert_equal "price_table", usage.fetch("cost_source")
     assert_match(/\A\d{4}-\d{2}-\d{2}\z/, usage.fetch("cost_price_as_of"))
   end
 
-  def test_usage_price_table_uses_appserver_reported_model
-    adapter = Harnex::Adapters::CodexAppServer.new
-    adapter.instance_variable_set(:@current_model, "gpt-5.3-codex")
-    session = build_session(adapter: adapter)
+  def test_usage_price_table_uses_the_adapter_reported_model
+    session = build_session(adapter: priced_adapter(includes_cached: true, model: "gpt-5.3-codex"))
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000
     })
 
     usage = session.send(:build_summary_usage)
-    # App-server input includes cached — billable input = input - cached:
+    # Input that includes cached tokens: billable input = input - cached:
     # 600k * 1.75 + 400k * 0.175 + 100k * 14.00 = 2_520_000 per-1M units
     assert_in_delta 2.52, usage.fetch("cost_usd"), 1e-9
     assert_equal "price_table", usage.fetch("cost_source")
   end
 
-  def test_usage_price_table_uses_appserver_effective_service_tier
-    adapter = Harnex::Adapters::CodexAppServer.new
-    adapter.instance_variable_set(:@current_model, "gpt-5.5")
+  def test_usage_price_table_uses_the_declared_service_tier
     session = build_session(
-      adapter: adapter,
-      command: ["codex", "app-server", "-c", "service_tier=\"flex\""]
+      adapter: priced_adapter(includes_cached: true, model: "gpt-5.5"),
+      meta: { "service_tier" => "flex" }
     )
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000
@@ -660,7 +652,7 @@ class SessionTest < Minitest::Test
     session.instance_variable_set(:@context_summary, { peak_tokens: 100_000 })
 
     usage = session.send(:build_summary_usage)
-    # App-server input includes cached and flex prices apply:
+    # Input includes cached and flex prices apply:
     # 600k * 2.50 + 400k * 0.25 + 100k * 15.00 = 3_100_000 per-1M units
     assert_in_delta 3.1, usage.fetch("cost_usd"), 1e-9
     assert_equal "price_table", usage.fetch("cost_source")
@@ -668,11 +660,9 @@ class SessionTest < Minitest::Test
   end
 
   def test_usage_price_table_leaves_context_tiered_model_unpriced_without_context
-    adapter = Harnex::Adapters::CodexAppServer.new
-    adapter.instance_variable_set(:@current_model, "gpt-5.5")
     session = build_session(
-      adapter: adapter,
-      command: ["codex", "app-server", "-c", "service_tier=\"flex\""]
+      adapter: priced_adapter(includes_cached: true, model: "gpt-5.5"),
+      meta: { "service_tier" => "flex" }
     )
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000, output_tokens: 100, cached_tokens: 400
@@ -685,7 +675,7 @@ class SessionTest < Minitest::Test
   end
 
   def test_usage_price_table_leaves_unknown_model_unpriced
-    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-unknown-model" })
+    session = build_session(adapter: priced_adapter, meta: { "model" => "gpt-unknown-model" })
     session.instance_variable_set(:@usage_summary, { input_tokens: 100, output_tokens: 10 })
 
     usage = session.send(:build_summary_usage)
@@ -696,7 +686,7 @@ class SessionTest < Minitest::Test
   end
 
   def test_usage_price_table_never_overwrites_provider_reported_cost
-    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+    session = build_session(adapter: priced_adapter, meta: { "model" => "gpt-5.3-codex" })
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 1_000_000, output_tokens: 100_000, cached_tokens: 400_000, cost_usd: 9.99
     })
@@ -708,7 +698,7 @@ class SessionTest < Minitest::Test
   end
 
   def test_usage_price_table_prices_zero_status_to_zero_cost
-    session = build_session(adapter: Harnex::Adapters::Codex.new, meta: { "model" => "gpt-5.3-codex" })
+    session = build_session(adapter: priced_adapter, meta: { "model" => "gpt-5.3-codex" })
     session.instance_variable_set(:@usage_summary, {
       input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0
     })
@@ -721,7 +711,7 @@ class SessionTest < Minitest::Test
 
   def test_usage_price_table_skips_estimated_status
     session = build_session(
-      adapter: Harnex::Adapters::Codex.new,
+      adapter: priced_adapter,
       meta: {
         "model" => "gpt-5.3-codex",
         "usage" => { "status" => "estimated", "input_tokens" => 500, "output_tokens" => 100 }
@@ -745,9 +735,9 @@ class SessionTest < Minitest::Test
     assert_equal 0, unsupported.fetch("missing_samples")
     assert_nil unsupported.fetch("latest_sample_status")
 
-    missing = build_session(adapter: Harnex::Adapters::CodexAppServer.new).send(:build_summary_context)
+    missing = build_session(adapter: Harnex::Adapters::Pi.new).send(:build_summary_context)
     assert_equal "missing", missing.fetch("status")
-    assert_equal "codex_thread_token_usage_last", missing.fetch("source")
+    assert_equal "pi_get_session_stats", missing.fetch("source")
     assert_nil missing.fetch("terminal_tokens")
     assert_nil missing.fetch("peak_percent")
     assert_equal 0, missing.fetch("samples")
@@ -1034,6 +1024,26 @@ class SessionTest < Minitest::Test
   end
 
   private
+
+  # A usage-reporting adapter for the pricing pipeline (the role the removed
+  # Codex adapters played): OpenAI prices, cached-token semantics as given.
+  class PricedAdapter < Harnex::Adapters::Base
+    def initialize(includes_cached:, model:)
+      super("priced", [])
+      @includes_cached = includes_cached
+      @model = model
+    end
+
+    def base_command = ["priced"]
+    def provider = "openai"
+    def usage_telemetry_supported? = true
+    def usage_input_includes_cached? = @includes_cached
+    def current_model = @model
+  end
+
+  def priced_adapter(includes_cached: false, model: nil)
+    PricedAdapter.new(includes_cached: includes_cached, model: model)
+  end
 
   def build_session(command: ["ruby"], adapter: nil, repo_root: Dir.pwd, description: nil, meta: nil, artifact_report_path: nil, require_artifact_report: false, inbox_ttl: Harnex::Inbox::DEFAULT_TTL, auto_stop: false)
     adapter ||= Harnex::Adapters::Generic.new(command.first.to_s)

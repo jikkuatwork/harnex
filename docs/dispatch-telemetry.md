@@ -44,7 +44,7 @@ alongside the work it describes.
 ## CLI flags
 
 ```text
-harnex run codex --meta '{"model":"gpt-5.3-codex","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
+harnex run pi --meta '{"model":"foundry-zyt/gpt-6.1-sol","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
 harnex run pi --context 'Implement the task; Harnex writes the final receipt'
 harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
@@ -217,16 +217,19 @@ routing details; legacy `meta.agent*` and `actual.model` stay for compatibility:
 ```json
 {
   "agent": {
-    "cli": "codex",
-    "provider": "openai",
-    "model_requested": "gpt-5.3-codex",
-    "model_effective": "gpt-5.3-codex",
+    "cli": "pi",
+    "provider": "foundry-zyt",
+    "model_requested": "foundry-zyt/gpt-6.1-sol",
+    "model_effective": "gpt-6.1-sol",
     "reasoning_effort": "high",
-    "service_tier": "flex",
-    "adapter_transport": "stdio_jsonrpc"
+    "service_tier": null,
+    "adapter_transport": "stdio_jsonl_rpc"
   }
 }
 ```
+
+`service_tier` is copied from `--meta` and is otherwise null; older rows may
+carry an adapter-set value.
 
 The top-level `reliability` block is always emitted and should be preferred over
 legacy `actual.disconnections` for reliability analytics:
@@ -319,18 +322,12 @@ last valid terminal and peak values intact while setting
 `latest_sample_status: "missing"`. Null never means zero.
 
 `context.status` is `observed` for Pi's dedicated
-`get_session_stats.contextUsage` signal, `estimated` for Codex app-server,
-`missing` when a supported source yielded no valid occupancy, or `unsupported`
-when the adapter has no active-context source. `source` is
-`pi_get_session_stats` or `codex_thread_token_usage_last` for those structured
-adapters and is null for unsupported adapters. Pi's percentage is adapter
-reported. Codex's `tokenUsage.last.totalTokens` is the latest model-reported
-active context size, but it excludes local items appended after that response;
-Harnex therefore labels it estimated and derives
-`terminal_percent = last.totalTokens / modelContextWindow * 100`. That is
-full-window pressure, not Codex TUI's baseline-adjusted “context left” display.
-No prompt, transcript, message, tool payload, or compaction summary is copied
-into this block.
+`get_session_stats.contextUsage` signal, `missing` when a supported source
+yielded no valid occupancy, or `unsupported` when the adapter has no
+active-context source (`estimated` appears only in older rows). `source` is
+`pi_get_session_stats` for Pi and null for unsupported adapters. Pi's
+percentage is adapter reported. No prompt, transcript, message, tool payload,
+or compaction summary is copied into this block.
 
 `attribution.status` is `complete` when `project_id`, `phase`, `intent`, and a
 work id are present; `partial` when any attribution is known but that contract
@@ -456,7 +453,7 @@ A generated receipt contains:
     "version": 1,
     "author": "harnex",
     "generated_at": "2026-08-03T05:00:00Z",
-    "id": "cx-r-64",
+    "id": "pi-r-64",
     "session_id": "8d8f3f07c8fc343d"
   },
   "outcome": {
@@ -503,9 +500,8 @@ A generated receipt contains:
 (`start_sha != end_sha`, commit count/path/LOC evidence) from an observed
 `no_change` result. `start_dirty`, `end_dirty`, and `worktree_changed` expose
 worktree caveats while unchanged pre-session dirt is excluded from the delta.
-Codex app-server `commandExecution` items and Pi RPC built-in `bash` tool
-calls contribute bounded command text, integer exit code, status, and optional
-duration. Pi commands require an integer `result.structuredContent.exit_code`
+Pi RPC built-in `bash` tool calls contribute bounded command text, integer
+exit code, status, and optional duration. Pi commands require an integer `result.structuredContent.exit_code`
 correlated by `toolCallId`; Pi bash calls without one (abort, timeout,
 extension override, older Pi, still running at teardown) are counted in
 `observed.commands_unobserved` and mark `command_observation` as `partial`
@@ -597,14 +593,14 @@ not a required worker step for new dispatches.
 
 ## Autonomous completion gate
 
-For Codex app-server runs launched with `--context`, provider turn completion
-is not by itself accepted work completion. Harnex emits `task_complete` only
-when it has at least one structured command/tool/file-change item or a Git
-delta. If both are absent, it emits `task_failed` with
+A Pi turn counts as accepted work completion once it settles
+(`agent_settled`) without a final `error`, `aborted`, or `length` stop reason.
+With `--require-artifact-report`, Harnex also requires at least one structured
+command/tool call or a Git delta (PTY adapters can satisfy it only with a Git
+delta). If both are absent, it emits `task_failed` with
 `outcome_class=completed_no_activity`, writes a rejected observed receipt, and
-normalizes auto-stop to non-zero. This applies equally to
-`service_tier=flex` and `service_tier=fast` and deliberately ignores final
-answer text and claims. Intentional no-op work must still perform observable
+normalizes auto-stop to non-zero. The gate deliberately ignores final answer
+text and claims. Intentional no-op work must still perform observable
 inspection/validation; a model assertion of `no_change` cannot self-approve.
 
 PTY transports do not expose equivalent completion-item metadata, so their
@@ -614,13 +610,11 @@ without guessing.
 
 ## Actuals
 
-At process exit, harnex collects usage through the active adapter. JSON-RPC
-Codex sessions read cumulative `thread/tokenUsage/updated` data, Pi RPC sessions
-read `get_session_stats`, and PTY adapters parse the last 16 KB of transcript
-when they support a parser. Adapters without a parser emit nullable usage
-fields. Separately, Pi aggregates bounded `contextUsage` samples and Codex
-aggregates `tokenUsage.last` plus `modelContextWindow`; neither source is
-substituted with cumulative usage when active occupancy is unavailable.
+At process exit, harnex collects usage through the active adapter. Pi RPC
+sessions read `get_session_stats`, and PTY adapters parse the last 16 KB of
+transcript when they support a parser. Adapters without a parser emit nullable
+usage fields. Separately, Pi aggregates bounded `contextUsage` samples; they are
+never substituted with cumulative usage when active occupancy is unavailable.
 
 Git actuals capture the start/end SHA plus committed, staged, unstaged, and
 untracked changes relative to the worktree state observed at session start.
@@ -641,11 +635,12 @@ The `actual` block includes model/effort hints from `--meta`, duration, token
 counts, `agent_session_id`, compatibility `cost_usd`, adapter transport, git
 deltas, exit reason, task completion state, signal/exit code, last error,
 operational counters (`stalls`, `force_resumes`, `disconnections`,
-`compactions`, `turn_count`, `tool_calls`, `commands_executed`), rate-limit
-payloads, output/event volume measurements, and output/events log paths. New
-additive attempt counters are `attempts_total`, `attempts_succeeded`,
-`attempts_failed`, `retry_count`, `throttle_429_count`, `disconnect_count`, and
-`fallback_triggered`. Throughput values are populated only for a
+`compactions`, `turn_count`, `tool_calls`, `commands_executed`), `rate_limits`
+(always null now; only older rows carry payloads), output/event volume
+measurements, and output/events log paths. New additive attempt counters are
+`attempts_total`, `attempts_succeeded`, `attempts_failed`, `retry_count`,
+`throttle_429_count` (no current producer, so 0 in new rows), `disconnect_count`,
+and `fallback_triggered`. Throughput values are populated only for a
 harness-accepted outcome: `throughput_tokens_per_s` and
 `throughput_successes_per_h`; `retry_tax_pct` is `0.0` when no retry occurred
 and `null` until a retry source can measure attributable wasted tokens.
@@ -677,8 +672,8 @@ jq -s 'map(select(.actual.attempts_total > 0))
 - `failure`: wrapped process exited non-zero, the observed-activity gate emitted
   `task_failed`, or Harnex could not write/validate the receipt.
 - `timeout`: wrapped process exited with code `124`.
-- `boot_failure`: JSON-RPC app-server exited within the startup window before a
-  turn was observed.
+- `boot_failure`: the structured Pi RPC transport exited within the startup
+  window (5 s) before a turn was observed.
 - `disconnected`: wrapped process exited `0` but no session summary was parsed.
 
 Canonical dispatch-stream writes remain best-effort. Receipt

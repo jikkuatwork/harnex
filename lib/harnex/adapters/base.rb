@@ -24,25 +24,21 @@ module Harnex
         @extra_args = extra_args.dup
       end
 
-      # Default transport. Structured adapters override to :stdio_jsonrpc
-      # (Codex app-server) or :stdio_jsonl_rpc (Pi RPC); Session#run uses
-      # this to pick the I/O path.
+      # Default transport. The structured Pi adapter overrides it to
+      # :stdio_jsonl_rpc; Session#run uses this to pick the I/O path.
       def transport
         :pty
       end
 
       # Vendor of the underlying agent — populates DISPATCH meta.agent_provider.
-      # Subclasses override (claude → "anthropic", codex → "openai").
+      # Subclasses override (claude → "anthropic").
       def provider
         nil
       end
 
       # Whether the usage this adapter captures reports input_tokens
       # INCLUSIVE of cached_tokens. Depends on the capture path, not just
-      # the provider: codex app-server JSON reports cached as a subset of
-      # input, while the codex TUI line the PTY adapter scrapes shows
-      # non-cached input with cached as a separate additive count. Feeds
-      # Pricing.compute (plan 33 Phase 2).
+      # the provider. Feeds Pricing.compute (plan 33 Phase 2).
       def usage_input_includes_cached?
         false
       end

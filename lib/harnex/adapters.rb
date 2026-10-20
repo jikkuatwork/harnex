@@ -1,7 +1,5 @@
 require_relative "adapters/base"
 require_relative "adapters/generic"
-require_relative "adapters/codex"
-require_relative "adapters/codex_appserver"
 require_relative "adapters/claude"
 require_relative "adapters/opencode"
 require_relative "adapters/pi"
@@ -18,20 +16,8 @@ module Harnex
       !key.to_s.strip.empty?
     end
 
-    # Phase 3 flipped the default — `codex` resolves to CodexAppServer.
-    # Legacy PTY adapter is reachable via `legacy_pty: true` (driven by
-    # `harnex run codex --legacy-pty`); kept as a long-term supported
-    # fallback for interactive/TUI use cases.
-    def codex_appserver_enabled?
-      true
-    end
-
-    def build(key, extra_args = [], legacy_pty: false)
+    def build(key, extra_args = [])
       key_str = key.to_s
-      if key_str == "codex"
-        return legacy_pty ? Codex.new(extra_args) : CodexAppServer.new(extra_args)
-      end
-
       adapter_class = registry[key_str]
       return adapter_class.new(extra_args) if adapter_class
 
@@ -41,7 +27,6 @@ module Harnex
     def registry
       @registry ||= {
         "claude" => Claude,
-        "codex" => Codex,
         "opencode" => Opencode,
         "pi" => Pi
       }

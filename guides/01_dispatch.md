@@ -17,7 +17,7 @@ Inside a harnex-managed session, these environment variables are available:
 
 | Variable | Meaning |
 | --- | --- |
-| `HARNEX_SESSION_CLI` | Wrapped CLI name, such as `pi`, `codex`, or `claude` |
+| `HARNEX_SESSION_CLI` | Wrapped CLI name, such as `pi` or `claude` |
 | `HARNEX_ID` | Current harnex session ID |
 | `HARNEX_SESSION_REPO_ROOT` | Repo root for the session |
 | `HARNEX_SESSION_ID` | Internal harnex instance ID |
@@ -86,14 +86,13 @@ keys win). The brief's path and the SHA-256 of the sent text are recorded as
 rows.
 
 For one-shot context dispatches that should clean themselves up, add
-`--auto-stop`. It requires `--context` and does not keep the session alive for
-later reuse. On Codex app-server, a turn launched from `--context` is accepted
-only after structured command/tool activity or a Git delta. Optional claims and
-final prose cannot satisfy that observed-activity gate. A prose-only acknowledgment emits
-`completed_no_activity`, is
-visible as `task_failed` before teardown, and exits non-zero. This keeps
-parallel orchestration compact without converting agent turn completion into
-accepted work completion:
+`--auto-stop`. It requires `--context` (or `--context-file`) and does not keep
+the session alive for later reuse. A Pi turn is accepted when it settles. With
+`--require-artifact-report` it must also show command/tool activity or a Git
+delta; optional claims and final prose cannot satisfy that gate, and a
+prose-only acknowledgment emits `completed_no_activity`, is visible as
+`task_failed` before teardown, and exits non-zero. This keeps parallel
+orchestration compact:
 
 ```bash
 for i in 1 2 3; do
@@ -105,14 +104,15 @@ wait
 ```
 
 Before an unattended queue run, prove the plumbing with one tiny real
-dispatch per adapter you may use: the chosen adapter and one declared fallback.
-Both must be inside your dispatch-model policy; an out-of-policy adapter is a
-launch blocker, not a fallback. `preflight` exits non-zero on any failed check
+dispatch for the chosen worker and one declared fallback (with Pi, a fallback
+`--model`). Both must be inside your dispatch-model policy; an out-of-policy
+fallback is a launch blocker, not a fallback. `preflight` exits non-zero on any failed check
 (boot, registration, trust prompt, task read, workspace write, command exit,
 receipt, claims, completion, stop) and names the failure class:
 
 ```bash
-harnex preflight pi --cwd "$REPO" && harnex preflight codex --cwd "$REPO" \
+harnex preflight pi --cwd "$REPO" \
+  && harnex preflight pi --cwd "$REPO" --model "$FALLBACK_MODEL" \
   && harnex run pi --id pi-i-NN --tmux pi-i-NN --context "Read and execute /tmp/task-NN.md" --auto-stop
 ```
 
@@ -163,7 +163,7 @@ wrapped agent from that directory and associate session metadata/default
 telemetry with it:
 
 ```bash
-harnex run codex --cwd /tmp/leximaze_eval_run_001 \
+harnex run pi --cwd /tmp/leximaze_eval_run_001 \
   --id lm-run-001 \
   --context "Read README.md and write RESPONSES.jsonl and OUTPUT.md" \
   --auto-stop
@@ -217,17 +217,11 @@ phase names before spawn.
 
 Pi runs use structured RPC (`pi --mode rpc`) and require Pi >= 0.80.4; gate
 unattended work with `harnex doctor --adapter pi`. Harnex `--model` / `--effort`
-apply verified Pi startup controls before the prompt. Pass other Pi startup
-flags after `--` (e.g. `harnex run pi --context "..." -- --model
-anthropic/claude-sonnet-4-5 --thinking high`).
+apply verified Pi startup controls before the prompt (e.g. `--model
+foundry-zyt/gpt-6.1-sol --effort high`). Pass other Pi startup flags after
+`--` (e.g. `harnex run pi --context "..." -- --no-approve`).
 Since RPC cannot display Pi's trust prompt, explicitly pass child `--approve`
 for reviewed project-local resources or `--no-approve` to ignore them.
-
-Codex flag forms differ between transports. The default JSON-RPC adapter
-(`codex app-server`) does not accept `-m`/`--model`; pass the model as
-`-c model="<name>"` instead. The legacy PTY adapter (`harnex run codex
---legacy-pty`) still accepts `-m`. Codex app-server runs also default to
-`service_tier="flex"`; add `--fast` to use `service_tier="fast"`.
 
 ## Send
 

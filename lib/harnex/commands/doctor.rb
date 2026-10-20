@@ -3,21 +3,18 @@ require "optparse"
 
 module Harnex
   class Doctor
-    MIN_CODEX_VERSION = Gem::Version.new("0.128.0")
     MIN_PI_VERSION = Harnex::Adapters::Pi::MIN_RPC_VERSION
-    SUPPORTED_ADAPTERS = %w[codex pi].freeze
+    SUPPORTED_ADAPTERS = %w[pi].freeze
 
     def self.usage
       <<~TEXT
-        Usage: harnex doctor [--adapter codex|pi|all] [--sweep] [--prune [--dry-run]]
+        Usage: harnex doctor [--adapter pi|all] [--sweep] [--prune [--dry-run]]
 
-        Runs static preflight checks for harnex adapter dependencies. Codex is
-        checked by default for backwards compatibility; select Pi explicitly
-        after installing or upgrading it.
+        Runs static preflight checks for harnex adapter dependencies (Pi).
 
         Options:
           --adapter NAME
-                       Check codex, pi, or all (repeatable; default: codex)
+                       Check pi or all (default: pi)
           --sweep      Include a read-only report of harnex/tmux session drift
           --prune      Apply bounded harnex events/output/receipt retention pruning
           --dry-run    Preview --prune candidates without deleting
@@ -62,7 +59,7 @@ module Harnex
         return 0
       end
 
-      checks = selected_adapters.map { |name| name == "pi" ? check_pi : check_codex }
+      checks = selected_adapters.map { |_name| check_pi }
       retention = retention_payload
       summary = {
         ok: checks.all? { |c| c[:ok] } && retention.fetch(:ok, true),
@@ -79,7 +76,10 @@ module Harnex
           pi_command_proof: 1,
           final_gates: 1,
           outcome_classes: 1,
-          preflight: 1
+          preflight: 1,
+          ask: 1,
+          final_message: 1,
+          owner_tag: 1
         }
       }
       summary[:sweep] = sweep_payload if @options[:sweep]
@@ -91,8 +91,8 @@ module Harnex
 
     def parser
       @parser ||= OptionParser.new do |opts|
-        opts.banner = "Usage: harnex doctor [--adapter codex|pi|all] [--sweep] [--prune [--dry-run]]"
-        opts.on("--adapter NAME", "Check codex, pi, or all (repeatable)") { |value| @options[:adapters] << value.to_s.downcase }
+        opts.banner = "Usage: harnex doctor [--adapter pi|all] [--sweep] [--prune [--dry-run]]"
+        opts.on("--adapter NAME", "Check pi or all") { |value| @options[:adapters] << value.to_s.downcase }
         opts.on("--sweep", "Include read-only session drift diagnostics") { @options[:sweep] = true }
         opts.on("--prune", "Apply retention pruning") { @options[:prune] = true }
         opts.on("--dry-run", "Preview --prune candidates without deleting") { @options[:dry_run] = true }
@@ -115,7 +115,7 @@ module Harnex
 
     def selected_adapters
       requested = @options[:adapters]
-      return ["codex"] if requested.empty?
+      return ["pi"] if requested.empty?
       return SUPPORTED_ADAPTERS if requested.include?("all")
 
       requested.uniq
@@ -134,30 +134,6 @@ module Harnex
       end
     rescue Harnex::Config::ConfigError => e
       { ok: false, error: e.message }
-    end
-
-    def check_codex
-      result = { name: "codex", required: ">= #{MIN_CODEX_VERSION}" }
-
-      version_output, status = capture("codex --version")
-      if status.nil?
-        return result.merge(ok: false, error: "codex CLI not found on PATH")
-      end
-      unless status.success?
-        return result.merge(ok: false, error: "codex --version failed: #{version_output.strip}")
-      end
-
-      version = parse_version(version_output)
-      if version.nil?
-        return result.merge(ok: false, found: version_output.strip, error: "could not parse codex version output")
-      end
-
-      if version < MIN_CODEX_VERSION
-        return result.merge(ok: false, found: version.to_s,
-                            error: "codex #{version} < required #{MIN_CODEX_VERSION}; upgrade with `npm i -g @openai/codex` or your platform package manager")
-      end
-
-      result.merge(ok: true, found: version.to_s)
     end
 
     def check_pi

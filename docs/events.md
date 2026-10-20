@@ -132,12 +132,12 @@ New event types:
 Example telemetry sequence:
 
 ```json
-{"schema_version":1,"seq":1,"ts":"2026-05-01T11:30:00Z","id":"cx-i-372","type":"started","pid":12345,"meta":{"issue":"23","plan":"27","predicted":{"input_tokens":[200000,800000]}}}
-{"schema_version":1,"seq":2,"ts":"2026-05-01T11:30:00Z","id":"cx-i-372","type":"git","phase":"start","sha":"a8114695c1f0","branch":"main"}
-{"schema_version":1,"seq":3,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"usage","input_tokens":104158,"output_tokens":2709,"reasoning_tokens":870,"cached_tokens":250880,"total_tokens":106867,"agent_session_id":"019ddf05-0f03-7d70-904f-23db7f00640f"}
-{"schema_version":1,"seq":4,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"git","phase":"end","sha":"abc1234567","loc_added":312,"loc_removed":65,"files_changed":7,"commits":1}
-{"schema_version":1,"seq":5,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"summary","path":"/home/u/proj/.harnex/dispatch.jsonl","exit":"success"}
-{"schema_version":1,"seq":6,"ts":"2026-05-01T11:42:13Z","id":"cx-i-372","type":"exited","code":0,"reason":"success"}
+{"schema_version":1,"seq":1,"ts":"2026-05-01T11:30:00Z","id":"pi-i-372","type":"started","pid":12345,"meta":{"issue":"23","plan":"27","predicted":{"input_tokens":[200000,800000]}}}
+{"schema_version":1,"seq":2,"ts":"2026-05-01T11:30:00Z","id":"pi-i-372","type":"git","phase":"start","sha":"a8114695c1f0","branch":"main"}
+{"schema_version":1,"seq":3,"ts":"2026-05-01T11:42:13Z","id":"pi-i-372","type":"usage","input_tokens":104158,"output_tokens":2709,"reasoning_tokens":870,"cached_tokens":250880,"total_tokens":106867,"agent_session_id":"019ddf05-0f03-7d70-904f-23db7f00640f"}
+{"schema_version":1,"seq":4,"ts":"2026-05-01T11:42:13Z","id":"pi-i-372","type":"git","phase":"end","sha":"abc1234567","loc_added":312,"loc_removed":65,"files_changed":7,"commits":1}
+{"schema_version":1,"seq":5,"ts":"2026-05-01T11:42:13Z","id":"pi-i-372","type":"summary","path":"/home/u/proj/.harnex/dispatch.jsonl","exit":"success"}
+{"schema_version":1,"seq":6,"ts":"2026-05-01T11:42:13Z","id":"pi-i-372","type":"exited","code":0,"reason":"success"}
 ```
 
 Events files are runtime logs, not the durable dispatch summary. Their age and

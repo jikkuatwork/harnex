@@ -2,7 +2,7 @@
 
 Run multiple AI coding agents from your terminal and coordinate them.
 
-Harnex wraps Claude Code, OpenAI Codex, Pi, OpenCode, or any terminal CLI in a
+Harnex wraps Pi, Claude Code, OpenCode, or any terminal CLI in a
 local harness so you can launch agents, send them tasks, inspect panes,
 transcripts, and events, and stop them cleanly -- all from the command line.
 
@@ -11,9 +11,8 @@ gem install harnex
 ```
 
 Harnex itself requires **Ruby 3.x** and uses only the Ruby standard
-library. Install the CLIs you want to wrap separately; Codex JSON-RPC
-support requires Codex CLI **0.128.0 or newer**, Pi structured RPC requires
-Pi **0.80.4 or newer**, and tmux-backed workflows require `tmux`.
+library. Install the CLIs you want to wrap separately; Pi structured RPC
+requires Pi **0.80.4 or newer**, and tmux-backed workflows require `tmux`.
 
 Then ask the CLI what to do next:
 
@@ -23,22 +22,21 @@ harnex --help
 harnex agents-guide
 ```
 
-Run the matching static check after installing or upgrading an agent CLI:
+Run the static check after installing or upgrading Pi:
 
 ```bash
-harnex doctor --adapter codex
-harnex doctor --adapter pi
+harnex doctor
 ```
 
-These verify the local structured-transport version prerequisites without
-starting a model turn.
+It verifies the local Pi RPC version prerequisite without starting a model
+turn.
 
 Before an unattended run, `harnex preflight` proves an adapter end to end with
 one tiny real dispatch (one model turn) and prints a JSON verdict:
 
 ```bash
 harnex preflight pi --cwd ~/repo
-harnex preflight codex --cwd ~/repo --commit-check
+harnex preflight pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol
 ```
 
 `harnex agents-guide` is the agent-facing reference for dispatch, chain,
@@ -81,7 +79,7 @@ enclosing git root's `.harnex/dispatch.jsonl`; a non-git directory uses the
 global `~/.local/state/harnex/dispatch.jsonl` fallback:
 
 ```bash
-harnex run codex --cwd /tmp/leximaze_eval_run_001 \
+harnex run pi --cwd /tmp/leximaze_eval_run_001 \
   --id lm-run-001 \
   --context "Read README.md and write RESPONSES.jsonl and OUTPUT.md" \
   --auto-stop
@@ -119,28 +117,17 @@ an explicit working-directory/root selector for automation.
 
 | Agent | Support |
 |-------|---------|
+| Pi (default worker) | JSONL RPC adapter (`pi --mode rpc`, Pi >= 0.80.4) with settled completion, typed failures, tool/retry events, extension-UI auto-cancel, and session stats telemetry |
 | Claude Code | PTY adapter with prompt detection, stop sequence, workspace trust, and vim mode handling |
-| OpenAI Codex | JSON-RPC `codex app-server` adapter by default; PTY mode remains supported for TUI/interactive use via `--legacy-pty` |
-| Pi | JSONL RPC adapter (`pi --mode rpc`, Pi >= 0.80.4) with settled completion, typed failures, tool/retry events, extension-UI auto-cancel, and session stats telemetry |
 | OpenCode | PTY adapter with native Ctrl+C stop handling and OpenCode-specific prompt/readiness heuristics |
 | Any terminal CLI | Generic PTY wrapping with local API, logs, status, and best-effort prompt detection |
-
-`harnex run codex` uses JSON-RPC by default. That path provides
-structured task-completion events, approval mediation, and token usage
-capture. Default JSON-RPC Codex does not accept `-m` / `--model`; pass
-model settings as child CLI config, for example `harnex run codex -- -c model=NAME`.
-Harnex forces Codex app-server `service_tier="flex"` unless you opt into
-`service_tier="fast"` with `harnex run codex --fast`.
-Use `harnex run codex --legacy-pty` when you specifically want Codex's
-terminal UI or PTY-only Codex flags. The flag name is historical; the PTY path
-is still supported.
 
 `harnex run pi` launches `pi --mode rpc` and sends `--context` as a structured
 `prompt` command (not a CLI positional argument). Harnex `--model` / `--effort`
 flags become Pi `--model` / `--thinking` startup controls and are verified over
 RPC before the prompt; use a deterministic `provider/model` value. Pass other
 Pi startup flags after the separator, for example:
-`harnex run pi --context "Implement X" -- --model anthropic/claude-sonnet-4-5 --thinking high`.
+`harnex run pi --model foundry-zyt/gpt-6.1-sol --effort high --context "Implement X" -- --no-approve`.
 For unattended runs, explicitly choose Pi project trust with child
 `--approve` or `--no-approve`; Harnex never auto-trusts repository code.
 See [docs/pi-rpc.md](docs/pi-rpc.md) for lifecycle, compatibility, and failure
@@ -240,14 +227,13 @@ For file-change hooks, use `--watch-file PATH`. The older
 `--watch PATH`/`--watch=PATH` form is still accepted for compatibility, while
 bare `--watch` means babysitter mode.
 
-For one-shot startup prompts, add `--auto-stop`. It requires `--context`.
-A Codex app-server turn launched from `--context` only counts as accepted
-autonomous work when structured command/tool activity or a Git delta proves
-activity. Optional receipt claims cannot satisfy this gate. An acknowledgment-only turn emits
+For one-shot startup prompts, add `--auto-stop`. It requires `--context` (or
+`--context-file`). A Pi turn is accepted when it settles. With
+`--require-artifact-report` it must also show command/tool activity or a Git
+delta; an acknowledgment-only turn then emits
 `outcome.class=completed_no_activity`, makes `watch --until done` return
-non-zero, and auto-stops with a non-zero verdict instead of reporting success.
-PTY adapters still stop on prompt return because they do not expose equivalent
-structured activity signals.
+non-zero, and auto-stops with a non-zero verdict. PTY adapters stop on prompt
+return because they do not expose structured activity signals.
 
 ## Completion and waiting
 
@@ -263,7 +249,7 @@ Choose the wait/watch predicate that matches how you launched the worker:
 - `harnex wait --id ID` waits for the wrapped process to exit. This is right
   for already-exited sessions and terminal-summary recovery, but interactive
   agents can stay open after finishing a turn.
-- For structured Pi RPC and Codex app-server sessions, use
+- For structured Pi RPC sessions, use
   `harnex wait --id ID --until task_complete --timeout SECS` when you need the
   exact successful-turn event instead of terminal-exit fallback. Use
   `--until task_failed` to wait specifically for a failed structured turn.
@@ -443,7 +429,7 @@ EOF
 
 Every spawned session gets `$HARNEX_SPAWNER_PANE` — the tmux pane ID
 of whoever ran `harnex run`. The buddy can report back to a plain
-Claude Code session, a Codex session, or any tmux pane:
+Claude Code session, a Pi session, or any tmux pane:
 
 ```bash
 tmux send-keys -t "$HARNEX_SPAWNER_PANE" "worker-42 finished" Enter
@@ -480,8 +466,8 @@ gem uninstall harnex
 ```
 
 If you installed harnex skills with an older release, those copies are no
-longer used. Remove stale `~/.claude/skills/harnex-*` or
-`~/.codex/skills/harnex-*` entries manually if you want to clean them up.
+longer used. Remove stale `~/.claude/skills/harnex-*` entries manually if you
+want to clean them up.
 
 ## Going deeper
 

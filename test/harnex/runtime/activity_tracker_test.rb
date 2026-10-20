@@ -128,18 +128,4 @@ class ActivityTrackerTest < Minitest::Test
     assert_nil snapshot[:last_tool_activity_at]
   end
 
-  def test_codex_model_and_tool_notifications_use_the_same_clock_contract
-    codex = tracker(:stdio_jsonrpc)
-    codex.observe_rpc("method" => "turn/started")
-    codex.observe_rpc("method" => "item/reasoning/textDelta", "params" => { "delta" => "hidden" })
-    advance(4)
-    codex.observe_rpc("method" => "item/completed", "params" => { "item" => { "type" => "reasoning" } })
-    advance(2)
-    codex.observe_rpc("method" => "item/commandExecution/outputDelta", "params" => { "delta" => "output" })
-    assert_equal 2.0, codex.snapshot[:model_idle_s]
-    assert_equal 0.0, codex.snapshot[:tool_idle_s]
-    codex.observe_rpc("method" => "turn/completed")
-    assert_equal false, codex.snapshot[:turn_active]
-    refute_includes codex.inspect, "hidden"
-  end
 end

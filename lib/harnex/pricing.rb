@@ -40,16 +40,11 @@ module Harnex
   # provider, so the caller passes `input_includes_cached:` (sourced from
   # `Adapters::Base#usage_input_includes_cached?`):
   #
-  # - codex app-server (input_includes_cached: true): the JSON
-  #   TokenUsageBreakdown reports cachedInputTokens as a subset of
-  #   inputTokens and reasoningOutputTokens as a subset of outputTokens
-  #   (verified against test/fixtures/codex_schema/v2 and a live captured
-  #   row: input 3,084,697 + output 17,705 == total 3,102,402 exactly).
+  # - input_includes_cached: true: cached tokens are a subset of input.
   #   Billable input = input - cached.
-  # - codex PTY (false): the scraped TUI line `input=X (+ Y cached)` shows
-  #   NON-cached input with cached as a separate additive count (fixture:
-  #   total 106,867 == input 104,158 + output 2,709, cached 250,880 > input).
-  #   Billable input = input; cached prices additively at the cached rate.
+  # - false: input is NON-cached; cached prices additively at the cached
+  #   rate. (Pi reports provider cost directly, so this table is only the
+  #   fallback for rows without a provider-reported cost.)
   # - anthropic (false): the Messages API reports input_tokens EXCLUSIVE of
   #   cache reads (cache_read_input_tokens is a separate field). Cache
   #   WRITES (cache_creation_input_tokens, billed at 1.25x input) have no

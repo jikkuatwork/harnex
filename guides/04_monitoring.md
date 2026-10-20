@@ -84,9 +84,9 @@ first require `harnex doctor --adapter pi` to report `ok: true` and
 `capabilities.runtime_budget: 1` (available in Harnex 0.14.0+), then opt in:
 
 ```bash
-harnex run pi --id cx-i-NN --tmux cx-i-NN \
+harnex run pi --id pi-i-NN --tmux pi-i-NN \
   --context "Read the task brief" --auto-stop --max-runtime 30m
-harnex watch --id cx-i-NN --max-wait 5m --heartbeat 60s
+harnex watch --id pi-i-NN --max-wait 5m --heartbeat 60s
 ```
 
 `--max-runtime` is a fixed monotonic budget in the session-owning runner. It is
@@ -125,7 +125,7 @@ independently. Without this option there is no runtime cap.
 Stops record bounded caller-declared labels, separately from work acceptance:
 
 ```bash
-harnex stop --id cx-i-NN --reason manual --origin cli
+harnex stop --id pi-i-NN --reason manual --origin cli
 ```
 
 Reasons are `manual`, `completion`, `runtime_budget`; origins are `api`, `cli`,
@@ -199,7 +199,7 @@ exits `4` once the live session shows no progress for `DUR`. The worker is not
 nudged or stopped, and no done/fail marker is written. The result carries
 `stall: {clock, idle_s, threshold_s}`:
 
-- `clock: activity` (Pi and other structured adapters): seconds since the
+- `clock: activity` (Pi, the structured adapter): seconds since the
   latest turn start, model event, or tool event. It counts only while a turn
   is active, so a session idle at its prompt between turns never stalls. A
   command that prints nothing for longer than `DUR` counts as a stall too,
@@ -286,13 +286,13 @@ named parent is still running in the same repo is refused. Wait for the parent
 (`harnex wait --id <parent> --until done`) or stop it first. Pass
 `--allow-live-parent` only for intentional parallelism (e.g. isolated
 worktrees). `--attempt-kind review` is exempt: a completed parent may still
-sit at a live prompt while its work is reviewed. For structured sessions (Pi
-RPC and Codex app-server), `harnex wait --until task_complete` remains the exact
-accepted-turn fence. Pi reaches that fence only at `agent_settled`; an earlier
-`agent_end` can still be followed by retry, compaction recovery, or queued work.
-Final Pi `error`, `aborted`, and `length` stop reasons emit `task_failed`.
-Codex acknowledgment-only auto-stop turns are typed
-`completed_no_activity` and fail this fence without transcript parsing. Harnex
+sit at a live prompt while its work is reviewed. For structured Pi RPC
+sessions, `harnex wait --until task_complete` remains the exact accepted-turn
+fence. Pi reaches that fence only at `agent_settled`; an earlier `agent_end` can
+still be followed by retry, compaction recovery, or queued work. Final Pi
+`error`, `aborted`, and `length` stop reasons emit `task_failed`. With
+`--require-artifact-report`, an acknowledgment-only turn is typed
+`completed_no_activity` and fails this fence without transcript parsing. Harnex
 writes the observed-state receipt before publishing `task_complete`; optional
 worker claims never make an inactive turn pass. Harnex still does not judge
 semantic quality, so verify the expected artifact or tests afterward.

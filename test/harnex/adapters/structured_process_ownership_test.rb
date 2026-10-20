@@ -50,7 +50,7 @@ class StructuredProcessOwnershipTest < Minitest::Test
     FileUtils.rm_rf(@dir)
   end
 
-  { pi: Harnex::Adapters::Pi, codex: Harnex::Adapters::CodexAppServer }.each do |name, klass|
+  { pi: Harnex::Adapters::Pi }.each do |name, klass|
     define_method("test_#{name}_spawn_callback_precedes_protocol_io") do
       build_adapter(klass, "stall")
       callbacks = Queue.new
@@ -64,10 +64,8 @@ class StructuredProcessOwnershipTest < Minitest::Test
       refute_equal Process.getpgrp, pgid
       refute request_written, "owner must learn the PID before handshake/state writes"
       wait_file("request")
-      assert @starter.alive?, "Codex must still be waiting for initialize" if name == :codex
       assert @adapter.terminate_subprocess(term_grace_seconds: 0.1, kill_grace_seconds: 1)
       assert @starter.join(3), "termination must release the blocked handshake"
-      assert_instance_of StandardError, @startup_error if name == :codex
       assert callbacks.empty?, "one callback per spawn"
     end
 
@@ -114,12 +112,7 @@ class StructuredProcessOwnershipTest < Minitest::Test
       client_in, server_out = IO.pipe
       observed = []
       @adapter.on_spawn { |pid| observed << pid }
-      server = Thread.new do
-        if name == :codex
-          msg = JSON.parse(server_in.gets)
-          server_out.puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        end
-      end
+      server = Thread.new {}
       @adapter.start_rpc(read_io: client_in, write_io: client_out)
       assert_equal [nil], observed
       refute @adapter.terminate_subprocess(term_grace_seconds: 0, kill_grace_seconds: 0)
@@ -135,12 +128,7 @@ class StructuredProcessOwnershipTest < Minitest::Test
       server_in, client_out = IO.pipe
       client_in, server_out = IO.pipe
       @adapter.on_spawn { |pid| assert_equal 4242, pid }
-      server = Thread.new do
-        if name == :codex
-          msg = JSON.parse(server_in.gets)
-          server_out.puts JSON.generate(jsonrpc: "2.0", id: msg["id"], result: {})
-        end
-      end
+      server = Thread.new {}
       @adapter.start_rpc(read_io: client_in, write_io: client_out, pid: 4242)
       calls = []
       Process.stub(:kill, ->(signal, target) { calls << [signal, target]; raise Errno::ESRCH }) do
@@ -156,36 +144,6 @@ class StructuredProcessOwnershipTest < Minitest::Test
       Process.stub(:kill, ->(*_args) { raise Errno::ESRCH }) { @adapter&.close rescue nil }
       @adapter = nil
     end
-  end
-
-  def test_codex_fallback_publishes_new_owned_child_before_blocked_handshake
-    build_adapter(Harnex::Adapters::CodexAppServer, "idle")
-    @adapter.start_rpc
-    prior_pid = @adapter.pid
-    @adapter.instance_variable_set(:@thread_id, "fixture-thread")
-    dir = File.join(@dir, "fallback")
-    Dir.mkdir(dir)
-    callbacks = Queue.new
-    @adapter.on_spawn do |pid|
-      callbacks << [pid, @adapter.pid, Process.getpgid(pid), File.exist?(File.join(dir, "request"))]
-    end
-    @starter = Thread.new do
-      @adapter.switch_deployment(deployment_config: { command: [RbConfig.ruby, "-e", CHILD, dir, "stall"] })
-    rescue StandardError => error
-      @startup_error = error
-    end
-    pid, adapter_pid, pgid, request_written = Timeout.timeout(3) { callbacks.pop }
-    refute_equal prior_pid, pid
-    assert_equal pid, adapter_pid
-    assert_equal pid, pgid
-    refute_equal Process.getpgrp, pgid
-    refute request_written
-    wait_file("fallback/request")
-    assert @adapter.terminate_subprocess(term_grace_seconds: 0.1, kill_grace_seconds: 1)
-    assert @starter.join(3), "fallback initialize must be released by owned-group termination"
-    assert_instance_of StandardError, @startup_error
-    refute alive?(prior_pid)
-    refute alive?(pid)
   end
 
   private
