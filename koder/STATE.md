@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-20 | 10:05 PM | +04
+Updated: 2026-10-22 | 02:07 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -30,10 +30,14 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-1. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
-2. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
-3. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +
+1. **#86 GPT subagents in Claude Code** (owner's next session): build the
+   `gpt` agent type (Haiku bridge in `~/Projects/pi`, linked into
+   `~/.claude/agents/`) and stress-test it with parallel subagents; then
+   `harnex mcp`; then `--worktree` lane shorthand + capacity retry/fallback.
+2. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
+3. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
+4. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +
    first slice; it also owns `--retry-on capacity` from #82).
-4. Open questions for the owner: point Pi's `holm-app` skill at Holm's
+5. Open questions for the owner: point Pi's `holm-app` skill at Holm's
    canonical `knowledge-base/skills/app` (Claude already uses it); link the
    untracked `feedback` skill for Pi.
