@@ -144,3 +144,20 @@ Friction found:
 - RubyGems publication, tags and pushes (local installs only).
 - Changing the low-level `run`/`send`/`wait`/`watch` contracts beyond
   defaults (`--no-approve`). They stay for queue and koder workflows.
+
+## Progress log
+
+- **0.22.0, lanes** (`r1-0.22.0`):
+  - 9/10 pass; leftovers 8 → 0; Claude S3 252s → 101s.
+  - Remaining: the Bash `gpt` relay ran a task itself (S4); Pi doc hunting
+    was driven by its AGENTS.md `--id`/`--tmux` directive.
+- **0.23.0, MCP** (`r2-0.23.0`, four routes, 5 scenarios):
+  - 20/20 pass, 0 doc lookups. Pi calls: S2 17 → 10–11, S3 25 → 11–17.
+  - Remaining: a `git merge` by hand left worktrees (S3/claude); 124
+    continuations counted as errors.
+- **0.24.0:** hand-merge sweep, progress detail, model-failure footer, S6/S7
+  scenarios. Evals: `r3-0.24.0`.
+
+Bar revision: call budgets are measured against the minimal path. S3 is 3
+delegates + 1 result + up to 3 lands (landing one by one with checks
+between is good practice); S5 is delegate + reply + land.
