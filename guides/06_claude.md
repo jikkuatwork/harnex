@@ -24,7 +24,7 @@ keeps going; `harnex result NAME` keeps waiting).
 
 ```bash
 harnex ask "Which module writes dispatch rows, and is the lane case tested?"
-harnex ask --model foundry-zyt/gpt-6.1-sol --file /tmp/review.md
+harnex ask --model openai/gpt-5.1 --file /tmp/review.md
 ```
 
 The worker reads the repository with read-only tools, answers, and stops.
