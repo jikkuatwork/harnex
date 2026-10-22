@@ -1,5 +1,6 @@
 require "fileutils"
 require "json"
+require "net/http"
 require "open3"
 require "shellwords"
 require "time"
@@ -99,6 +100,36 @@ module Harnex
       !registry.nil? && Harnex.alive_pid?(registry["pid"])
     end
 
+    # The live worker's activity snapshot (see ActivityTracker), or nil.
+    def activity(lane)
+      registry = Harnex.read_registry(lane["run_root"], lane["name"])
+      return nil unless registry && Harnex.alive_pid?(registry["pid"])
+
+      uri = URI("http://#{registry['host']}:#{registry['port']}/status")
+      request = Net::HTTP::Get.new(uri)
+      request["Authorization"] = "Bearer #{registry['token']}" if registry["token"]
+      response = Net::HTTP.start(uri.host, uri.port, open_timeout: 0.5, read_timeout: 0.5) { |http| http.request(request) }
+      response.is_a?(Net::HTTPSuccess) ? JSON.parse(response.body)["activity"] : nil
+    rescue StandardError
+      nil
+    end
+
+    # "wc: working 2m10s · 7 tool calls · now bash (12s)"
+    def progress_line(lane)
+      line = "#{lane['name']}: working #{duration(lane['launched_at'])}"
+      act = activity(lane)
+      return line unless act.is_a?(Hash)
+
+      line += " · #{act['tool_calls']} tool call#{act['tool_calls'] == 1 ? '' : 's'}" if act["tool_calls"].to_i.positive?
+      if act["current_tool"]
+        line + " · now #{act['current_tool']} (#{act['current_tool_s'].to_i}s)"
+      elsif act["model_active"]
+        line + " · thinking"
+      else
+        line
+      end
+    end
+
     # ---- git ---------------------------------------------------------------
 
     def git(dir, *args)
@@ -159,6 +190,37 @@ module Harnex
       branch = lane["branch"]
       git(lane["repo_root"], "branch", force ? "-D" : "-d", branch) if branch
       [true, nil]
+    end
+
+    # Lanes whose branch the caller merged by hand: once harnex/NAME is in
+    # HEAD and the worktree is clean, the lane is landed; tidy it (#87).
+    def sweep_merged(root)
+      return [] unless root
+
+      tidied = all.select { |lane| lane["repo_root"] == root && sweepable?(lane) }
+      tidied.each do |lane|
+        removed, = remove_worktree(lane)
+        next unless removed
+
+        lane["state"] = "landed"
+        lane["landed_at"] = now
+        lane["landed_by"] = "merged outside harnex land"
+        save(lane)
+      end
+      tidied.map { |lane| lane["name"] }
+    end
+
+    def sweepable?(lane)
+      return false unless %w[done failed].include?(lane["state"]) && lane["branch"] && lane["base_sha"]
+
+      tip = head_sha(lane["worktree"] || lane["repo_root"])
+      branch_tip, _err, ok = git(lane["repo_root"], "rev-parse", "--verify", "--quiet", lane["branch"])
+      return false unless ok && branch_tip != lane["base_sha"]
+      return false if lane["worktree"] && File.directory?(lane["worktree"]) && (dirty_paths(lane["worktree"]).any? || tip != branch_tip)
+      return false if live?(lane)
+
+      _out, _err, merged = git(lane["repo_root"], "merge-base", "--is-ancestor", lane["branch"], "HEAD")
+      merged
     end
 
     def relative(root, path)
@@ -371,17 +433,47 @@ module Harnex
                "#{dirty.empty? ? '' : ", #{dirty.length} uncommitted file#{dirty.length == 1 ? '' : 's'}"}"
       end
       if exit_code.zero?
-        if lane["branch"]
-          out << "next: review `git diff HEAD...#{lane['branch']}`, then `harnex land #{name}`; " \
-                 "more work: `harnex reply #{name} \"...\"`; drop it: `harnex discard #{name}`"
+        if lane["branch"] && commit_count(lane).zero? && dirty.empty?
+          out << "next: no commits to merge; `harnex land #{name}` removes the worktree; " \
+                 "more work: `harnex reply #{name} \"...\"`"
+        elsif lane["branch"]
+          out << "next: review `git diff HEAD...#{lane['branch']}`, then `harnex land #{name}` (merges and removes " \
+                 "the worktree and branch; use it instead of git merge); more work: `harnex reply #{name} \"...\"`; " \
+                 "drop it: `harnex discard #{name}`"
         else
           out << "worked in place in #{lane['cwd']}; more work: `harnex reply #{name} \"...\"`"
         end
       else
-        out << "next: `harnex reply #{name} \"Continue the same task from where you stopped\"`" \
+        retry_model = model_problem?(lane) ? other_model(lane) : nil
+        out << "next: `harnex reply #{name} \"Continue the same task from where you stopped\"" \
+               "#{retry_model ? " --model #{retry_model}" : ''}`" \
+               "#{retry_model ? ' (keeps the task; another model)' : ''}" \
                "#{lane['branch'] ? " or `harnex discard #{name}`" : ''}"
       end
       out
+    end
+
+    def commit_count(lane)
+      count, _err, ok = git(lane["worktree"] || lane["cwd"], "rev-list", "--count", "#{lane['base_sha']}..HEAD")
+      ok ? count.to_i : 0
+    end
+
+    MODEL_PROBLEM = /model_not_found|model not found|rate.?limit|capacity|overloaded|quota|429|\b404\b|unknown model|provider/i
+
+    def model_problem?(lane)
+      lane["outcome"].to_s == "provider_capacity" || lane["last_error"].to_s.match?(MODEL_PROBLEM)
+    end
+
+    # Pi's default model, unless that is the one that just failed.
+    def other_model(lane)
+      settings = JSON.parse(File.read(File.join(ENV["PI_CODING_AGENT_DIR"] || File.expand_path("~/.pi/agent"), "settings.json")))
+      default = [settings["defaultProvider"], settings["defaultModel"]].compact.join("/")
+      failed = lane["requested_model"].to_s
+      return nil if default.empty? || failed.empty? || failed.end_with?(settings["defaultModel"].to_s)
+
+      default
+    rescue StandardError
+      nil
     end
 
     def duration(since)

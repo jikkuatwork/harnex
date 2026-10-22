@@ -79,6 +79,26 @@ class ActivityTrackerTest < Minitest::Test
     refute_includes @tracker.inspect, "not-retained"
   end
 
+  def test_current_tool_name_and_count_without_arguments
+    pi("agent_start")
+    pi("tool_execution_start", toolName: "read", args: { "path" => "secret.txt" })
+    pi("tool_execution_end", toolName: "read")
+    pi("tool_execution_start", toolName: "bash", args: { "command" => "TOKEN=abc bin/test" })
+    advance(12)
+    current = @tracker.snapshot
+    assert_equal "bash", current[:current_tool]
+    assert_equal 12.0, current[:current_tool_s]
+    assert_equal 2, current[:tool_calls]
+    refute_includes @tracker.inspect, "TOKEN=abc"
+    refute_includes @tracker.inspect, "secret.txt"
+
+    pi("tool_execution_end", toolName: "bash")
+    assert_nil @tracker.snapshot[:current_tool]
+    pi("agent_settled")
+    pi("agent_start")
+    assert_equal 0, @tracker.snapshot[:tool_calls]
+  end
+
   def test_quiet_generation_is_active_until_settlement_then_new_turn_resets_clocks
     pi("agent_start")
     pi("message_start", message: { "role" => "assistant" })

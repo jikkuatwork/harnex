@@ -176,6 +176,42 @@ class LanesTest < Minitest::Test
     refute File.exist?(File.join(@repo, ".harnex", "worktrees", "b"))
   end
 
+  def test_a_lane_merged_by_hand_is_tidied_by_the_next_harnex_call
+    respond([done, 0, commit_work("hand.rb", "hand")], [done, 0])
+    cli(Harnex::Delegate, ["--worktree", "byhand", "Add hand.rb"])
+    cli(Harnex::Delegate, ["--worktree", "empty", "Do nothing"])
+    git("merge", "--no-edit", "harnex/byhand")
+
+    out = StringIO.new
+    Harnex::LanesCommand.new([], out: out).run
+    refute File.exist?(File.join(@repo, ".harnex", "worktrees", "byhand"))
+    refute_includes git("branch"), "harnex/byhand"
+    assert_equal "landed", Harnex::Lanes.resolve("byhand")["state"]
+    assert File.directory?(File.join(@repo, ".harnex", "worktrees", "empty")), "a lane without commits is not merged work"
+    assert_includes out.string, "empty"
+  end
+
+  def test_a_model_failure_suggests_retrying_on_pis_default_model
+    pi_dir = File.join(@tmp, "pi-agent")
+    FileUtils.mkdir_p(pi_dir)
+    File.write(File.join(pi_dir, "settings.json"), JSON.generate("defaultProvider" => "foundry-zyt", "defaultModel" => "gpt-6.1-sol"))
+    ENV["PI_CODING_AGENT_DIR"] = pi_dir
+    respond([{ ok: false, turn_result: { ok: false, outcome_class: "failed", last_error: "API error (404): Model not found" } }, 1])
+    code, out, = cli(Harnex::Delegate, ["--worktree", "badmodel", "--model", "foundry-zyt/gpt-9", "Task"])
+    assert_equal 1, code
+    assert_includes out, "FAILED"
+    assert_includes out, "--model foundry-zyt/gpt-6.1-sol` (keeps the task; another model)"
+  ensure
+    ENV.delete("PI_CODING_AGENT_DIR")
+  end
+
+  def test_a_lane_without_commits_says_there_is_nothing_to_merge
+    respond([done("Nothing needed changing."), 0])
+    _code, out, = cli(Harnex::Delegate, ["--worktree", "noop", "Check things"])
+    assert_includes out, "no commits to merge; `harnex land noop` removes the worktree"
+    assert_equal 0, cli(Harnex::Land, ["noop"]).first
+  end
+
   def test_discard_drops_the_worktree_and_branch
     respond([done, 0, commit_work("x.rb", "x")])
     cli(Harnex::Delegate, ["--worktree", "nope", "X"])

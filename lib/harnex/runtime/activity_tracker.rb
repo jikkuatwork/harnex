@@ -1,8 +1,9 @@
 require "time"
 
 module Harnex
-  # Observed protocol activity, not output/log freshness. Retains timestamps
-  # only: thinking, messages, tool arguments and results never enter this object.
+  # Observed protocol activity, not output/log freshness. Retains timestamps,
+  # tool names and a tool count only: thinking, messages, tool arguments and
+  # results never enter this object.
   class ActivityTracker
     def initialize(transport:, monotonic_clock: nil, wall_clock: nil)
       @source = { stdio_jsonl_rpc: "pi_rpc" }[transport]
@@ -39,8 +40,15 @@ module Harnex
           if %w[text_delta thinking_delta toolcall_delta].include?(event["type"]) && !event["delta"].to_s.empty?
             model_activity_locked
           end
-        when "tool_execution_start", "tool_execution_update", "tool_execution_end"
+        when "tool_execution_start"
           @last_tool = stamp
+          @tool_calls = @tool_calls.to_i + 1
+          @current_tool = [message["toolName"].to_s, @last_tool]
+        when "tool_execution_update"
+          @last_tool = stamp
+        when "tool_execution_end"
+          @last_tool = stamp
+          @current_tool = nil
         end
       end
     end
@@ -60,7 +68,11 @@ module Harnex
           last_model_activity_at: @last_model&.last,
           model_idle_s: age(@last_model, now),
           last_tool_activity_at: @last_tool&.last,
-          tool_idle_s: age(@last_tool, now)
+          tool_idle_s: age(@last_tool, now),
+          # #87: what the worker is doing now, for progress lines.
+          current_tool: @turn_active ? @current_tool&.first : nil,
+          current_tool_s: @turn_active && @current_tool ? age(@current_tool.last, now) : nil,
+          tool_calls: @source ? @tool_calls.to_i : nil
         }
       end
     end
@@ -73,7 +85,8 @@ module Harnex
       @turn_active = true
       @turn_start = stamp
       @model_active = false
-      @model_start = @last_model = @last_tool = nil
+      @model_start = @last_model = @last_tool = @current_tool = nil
+      @tool_calls = 0
     end
 
     def model_activity_locked(finished: false)

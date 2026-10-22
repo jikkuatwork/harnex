@@ -37,6 +37,7 @@ module Harnex
         @out.puts self.class.usage
         return 0
       end
+      Lanes.sweep_merged(Lanes.main_root(Dir.pwd))
       lanes = names.empty? ? Lanes.pending : names.map { |name| Lanes.resolve(name) }
       if lanes.empty?
         @out.puts "no lanes waiting to be collected (see `harnex lanes`)"

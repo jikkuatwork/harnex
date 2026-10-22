@@ -83,6 +83,7 @@ module Harnex
       root = Lanes.main_root(workdir)
       raise OptionParser::InvalidArgument, "--worktree needs a git repository (#{workdir} is not in one)" if @options[:worktree] && root.nil?
 
+      Lanes.sweep_merged(root)
       root ||= workdir
       name = Lanes.validate_name!(@options[:worktree] || @options[:name] || Lanes.generate_name(root, task))
       ensure_free!(root, name)

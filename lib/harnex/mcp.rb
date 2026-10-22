@@ -1,5 +1,6 @@
 require "json"
 require "open3"
+require "securerandom"
 
 module Harnex
   # `harnex mcp` (#87): a stdio MCP server (newline-delimited JSON-RPC 2.0)
@@ -16,7 +17,8 @@ module Harnex
     INSTRUCTIONS = <<~TEXT.freeze
       Harnex hands work to Pi workers (GPT models by default); each runs in a visible tmux window.
       ask: a read-only answer from another model. delegate: a worker does a task; give it a worktree for
-      anything that edits, review the diff, then land. For parallel work call delegate with wait=false for each
+      anything that edits, review the diff, then land (land merges and removes the worktree and branch; use it
+      instead of merging lane branches by hand). For parallel work call delegate with wait=false for each
       task, then result. reply: a follow-up to the same worker, which keeps its context. Briefs must be
       self-contained: the worker has not seen this conversation. Every result ends with a "── NAME:" footer
       naming the lane's state and next steps.
@@ -173,9 +175,10 @@ module Harnex
       def call_tool(id, params)
         name = params["name"].to_s
         args = params["arguments"].is_a?(Hash) ? params["arguments"] : {}
+        args = name_lanes(name, args)
         argv = argv_for(name, args)
         token = params.dig("_meta", "progressToken")
-        text, exit_code = run_cli(id, argv, args["cwd"], token, progress_label(name, args))
+        text, exit_code = run_cli(id, argv, args["cwd"], token, progress_source(name, args))
         respond(id, "content" => [{ "type" => "text", "text" => text }], "isError" => error_exit?(exit_code))
       rescue ArgumentError => e
         respond(id, "content" => [{ "type" => "text", "text" => e.message }], "isError" => true)
@@ -193,7 +196,7 @@ module Harnex
         wait = ["--timeout", ((args["wait_minutes"] || DEFAULT_WAIT_MINUTES).to_f * 60).round.to_s]
         case name
         when "ask"
-          argv = ["ask"] + wait + opt(args, "model") + opt(args, "effort") + opt(args, "fallback_model", "--fallback-model")
+          argv = ["ask"] + wait + opt(args, "id") + opt(args, "model") + opt(args, "effort") + opt(args, "fallback_model", "--fallback-model")
           argv << "--write" if args["write"] == true
           argv + ["--", required(args, "question")]
         when "delegate"
@@ -230,9 +233,46 @@ module Harnex
         value
       end
 
-      def progress_label(name, args)
-        lane = args["worktree"] || args["name"] || Array(args["names"]).join(", ")
-        lane.to_s.empty? ? "harnex #{name}" : "harnex #{name} #{lane}"
+      # Name lanes up front so progress can follow them while the call runs.
+      def name_lanes(tool, args)
+        args = args.dup
+        case tool
+        when "delegate"
+          if args["worktree"].to_s.empty? && args["name"].to_s.empty?
+            root = Lanes.main_root(work_dir(args)) || work_dir(args)
+            args["name"] = Lanes.generate_name(root, args["task"])
+          end
+        when "ask"
+          args["id"] ||= "pi-ask-#{SecureRandom.hex(2)}"
+        end
+        args
+      end
+
+      def work_dir(args)
+        args["cwd"].to_s.strip.empty? ? Dir.pwd : File.expand_path(args["cwd"])
+      end
+
+      # Returns a lambda giving the current progress message.
+      def progress_source(tool, args)
+        names = case tool
+                when "delegate" then [args["worktree"] || args["name"]]
+                when "ask" then [args["id"]]
+                when "reply" then [args["name"]]
+                when "result" then Array(args["names"])
+                else []
+                end.compact.map(&:to_s).reject(&:empty?)
+        dir = work_dir(args)
+        lambda do |elapsed|
+          lanes = names.empty? && tool == "result" ? Lanes.pending(from: dir) : names.filter_map { |n| lane_or_nil(n, dir) }
+          lines = lanes.map { |lane| Lanes.progress_line(lane) }
+          lines.empty? ? "harnex #{tool}: working (#{elapsed / 60}m#{format('%02d', elapsed % 60)}s)" : lines.join("; ")
+        end
+      end
+
+      def lane_or_nil(name, dir)
+        Lanes.resolve(name, from: dir)
+      rescue OptionParser::InvalidArgument
+        nil
       end
 
       # Runs the CLI verb in its own process group (so a cancel stops only the
@@ -252,7 +292,7 @@ module Harnex
           until wait.join(@progress_interval)
             ticks += 1
             elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round
-            progress(token, ticks, "#{label}: working (#{elapsed / 60}m#{format('%02d', elapsed % 60)}s)") if token
+            progress(token, ticks, progress_text(label, elapsed)) if token
           end
           cancelled = cancelled?(id)
           untrack(id)
@@ -262,6 +302,12 @@ module Harnex
           text = [text, errors].reject(&:empty?).join("\n") if !status.success? || text.empty?
           return [cancelled ? "cancelled; the worker keeps running (see the lanes tool)" : text, status.exitstatus]
         end
+      end
+
+      def progress_text(source, elapsed)
+        source.call(elapsed)
+      rescue StandardError
+        "harnex: working (#{elapsed}s)"
       end
 
       def progress(token, value, message)

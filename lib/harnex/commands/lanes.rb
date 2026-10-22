@@ -31,6 +31,7 @@ module Harnex
         return 0
       end
 
+      Lanes.sweep_merged(Lanes.main_root(Dir.pwd))
       lanes = selected
       if @argv.include?("--json")
         @out.puts JSON.generate(lanes.map { |lane| lane.merge("live" => Lanes.live?(lane)) })
@@ -64,8 +65,10 @@ module Harnex
 
     def state(lane)
       return lane["state"] unless lane["state"] == "running"
+      return "finished, uncollected" unless Lanes.live?(lane)
 
-      Lanes.live?(lane) ? "working" : "finished, uncollected"
+      detail = Lanes.progress_line(lane)[/ · (now .*|thinking)\z/, 1]
+      detail ? "working (#{detail})" : "working"
     end
 
     def next_step(lane)

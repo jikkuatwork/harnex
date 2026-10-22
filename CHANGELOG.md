@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.24.0] - 2026-10-22 | 03:51 PM | IST
+
+Owner-authorized local-only release (#87): fixes from the 0.23.0 agent evals.
+
+### Added
+
+- **What a worker is doing now.** The live activity snapshot records the
+  current tool's name and the turn's tool-call count. Tool arguments are
+  still never retained.
+  - MCP progress shows it: `wc: working 2m10s · 7 tool calls · now bash (12s)`.
+  - So does `harnex lanes`: `working (now bash 12s)`.
+  - MCP names ask and delegate lanes up front so progress can follow them.
+- **Hand merges are tidied.** A lane whose branch was merged by hand (into
+  HEAD, worktree clean, at least one commit) is marked landed, and its
+  worktree and branch are removed on the next `delegate`, `result` or
+  `lanes`.
+- **Clearer next steps in the footer.**
+  - Model and provider failures suggest retrying on Pi's default model:
+    `harnex reply NAME "Continue..." --model provider/model` keeps the task
+    through the lane's Pi session.
+  - Lanes with no commits say there is nothing to merge.
+  - Done lanes say `land` merges and cleans up (instead of `git merge`); the
+    MCP instructions say the same.
+- **Evals:**
+  - two new scenarios: S6 (check on a running worker) and S7 (recover from
+    a broken model);
+  - the exit-124 continuation no longer counts as a tool error.
+
 ## [0.23.0] - 2026-10-22 | 03:28 PM | IST
 
 Owner-authorized local-only release (#87).

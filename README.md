@@ -1,49 +1,56 @@
 # Harnex
 
-Run multiple AI coding agents from your terminal and coordinate them.
+Pi workers (GPT models by default) as tools for you and your coding agents.
 
-Harnex wraps Pi, Claude Code, OpenCode, or any terminal CLI in a
-local harness so you can launch agents, send them tasks, inspect panes,
-transcripts, and events, and stop them cleanly -- all from the command line.
+Harnex runs Pi workers in visible tmux windows and hands their results back
+in one call: ask another model a question, delegate a task into its own git
+worktree and land it, run several workers in parallel, and follow up with a
+worker that keeps its context. Claude Code and Pi get the same verbs as
+native MCP tools. Underneath, it is a local harness for Pi, Claude Code,
+OpenCode or any terminal CLI: launch, send, watch, inspect and stop.
 
 ```bash
 gem install harnex
+harnex doctor            # checks Pi (structured RPC needs Pi 0.80.4+) and tmux
+harnex mcp install       # optional: native tools for Claude Code and Pi
 ```
 
-Harnex itself requires **Ruby 3.x** and uses only the Ruby standard
-library. Install the CLIs you want to wrap separately; Pi structured RPC
-requires Pi **0.80.4 or newer**, and tmux-backed workflows require `tmux`.
+Harnex itself requires **Ruby 3.x** and uses only the Ruby standard library.
 
-Then ask the CLI what to do next:
+## For agents (and people): lanes
 
 ```bash
-harnex
-harnex --help
-harnex agents-guide
+harnex ask "Which module writes dispatch rows, and is the lane case tested?"
+
+harnex delegate --worktree word-count "Add TextKit.word_count(text) with a test; run bin/test"
+git diff HEAD...harnex/word-count          # review
+harnex land word-count                     # merge, remove the worktree and branch
+
+harnex reply word-count "Also add TextKit.char_count(text)"   # same worker, same context
+
+harnex delegate --no-wait --worktree a "Task A"
+harnex delegate --no-wait --worktree b "Task B"
+harnex result                              # each result as it lands
+harnex lanes                               # what is open and what each needs
 ```
 
-Run the static check after installing or upgrading Pi:
+Every command prints the worker's reply and a `── NAME:` footer: state, time,
+model, cost, commits and the next commands. Exit codes: 0 done, 1 failed, 124
+still working (`harnex result NAME` keeps waiting; the default wait is 9
+minutes, under a 10-minute agent tool cap).
 
-```bash
-harnex doctor
-```
+- **MCP:** `harnex mcp install` registers `harnex mcp` for Claude Code (user
+  scope) and Pi. The tools `ask`, `delegate`, `result`, `reply`, `land`,
+  `discard` and `lanes` then appear natively. Long calls report progress;
+  Claude Code moves them to the background after two minutes.
+- **Guides:** `harnex agents-guide claude` is the agent-facing guide;
+  `harnex --help` lists everything.
 
-It verifies the local Pi RPC version prerequisite without starting a model
-turn.
+## Low-level control
 
-Before an unattended run, `harnex preflight` proves an adapter end to end with
-one tiny real dispatch (one model turn) and prints a JSON verdict:
+Before an unattended run, `harnex preflight pi --cwd ~/repo` proves the Pi
+adapter end to end with one tiny real dispatch and prints a JSON verdict.
 
-```bash
-harnex preflight pi --cwd ~/repo
-harnex preflight pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol
-```
-
-`harnex agents-guide` is the agent-facing reference for dispatch, chain,
-buddy, monitoring, and naming patterns. It is packaged in the gem; no skills
-or project-local docs are required.
-
-## What it does
 
 ```bash
 # Start a visible one-shot worker, give it a task, and stop on completion
@@ -441,6 +448,13 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 
 | Command | What it does |
 |---------|-------------|
+| `harnex ask "QUESTION"` | A read-only answer from a Pi worker (`--write` lets it edit); `harnex reply ID` follows up |
+| `harnex delegate [--worktree NAME] TASK` | A worker does the task; prints its reply and a lane footer (`--no-wait` for parallel lanes) |
+| `harnex result [NAME...]` | Wait for lanes and print each result as it lands |
+| `harnex reply NAME MESSAGE` | Follow-up to a lane's worker, which keeps its context |
+| `harnex land NAME` / `harnex discard NAME` | Merge a worktree lane and clean up / drop it |
+| `harnex lanes` | Your lanes and the next step for each |
+| `harnex mcp [install]` | The lane verbs as MCP tools for Claude Code and Pi |
 | `harnex run <cli>` | Start an agent (`--tmux` visible, `--detach` background, `--watch` built-in monitoring) |
 | `harnex send --id <id>` | Send a message (queues if busy, `--wait-for-idle` to block until the turn returns idle) |
 | `harnex stop --id <id>` | Send the agent's native exit sequence |
@@ -453,7 +467,6 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 | `harnex wait --id <id>` | Block until process exit by default; use `--until done` for unattended work completion or `--until task_complete` for exact structured turn completion |
 | `harnex artifact-report init\|validate PATH` | Validate harness-authored `harnex.artifact_report.v1` receipts; `init` remains for legacy/manual documents |
 | `harnex doctor` | Run dependency and retention diagnostics; `--sweep` reports session drift, `--prune --dry-run` previews retention, and `--prune` applies it |
-| `harnex ask "QUESTION"` | Ask a Pi (GPT-backed) worker one read-only question and print its answer (`--write` to let it edit) |
 | `harnex preflight <cli>` | One tiny real dispatch proving boot, files, command exits, receipt, completion and stop (`--commit-check` adds a scratch-repo commit); JSON verdict, non-zero on failure |
 | `harnex guide` | Getting started walkthrough |
 | `harnex agents-guide` | Agent-facing dispatch, chain, buddy, monitoring, and naming guides |

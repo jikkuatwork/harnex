@@ -74,7 +74,9 @@ class MCPServerTest < Minitest::Test
     serve(call(3, "land", { "names" => %w[a b] }))
     assert_equal %w[land a b], argv
     serve(call(4, "ask", { "question" => "Why?", "fallback_model" => "m2" }))
-    assert_equal ["ask", "--timeout", "1500", "--fallback-model", "m2", "--", "Why?"], argv
+    assert_equal ["ask", "--timeout", "1500"], argv.first(3)
+    assert_match(/\Api-ask-\h{4}\z/, argv[argv.index("--id") + 1], "named up front so progress can follow it")
+    assert_equal ["--fallback-model", "m2", "--", "Why?"], argv.last(4)
   end
 
   def test_progress_notifications_while_the_call_runs
@@ -82,7 +84,7 @@ class MCPServerTest < Minitest::Test
     progress = replies.select { |r| r["method"] == "notifications/progress" }
     refute_empty progress
     assert(progress.all? { |p| p.dig("params", "progressToken") == "tok" })
-    assert_match(/harnex delegate: working/, progress.first.dig("params", "message"))
+    assert_match(/working/, progress.first.dig("params", "message"))
     assert_equal 7, replies.last["id"]
   end
 

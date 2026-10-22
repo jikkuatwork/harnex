@@ -125,6 +125,25 @@ SCENARIOS = {
         Checks.expect(repo, 'TextKit.word_count("a b  c")', 3) +
         Checks.expect(repo, 'TextKit.char_count("a b  c")', 3)
     }
+  },
+  "S6" => {
+    title: "check on a running worker",
+    prompt: "Start a GPT worker, without waiting for it, that runs `BENCH_SECONDS=120 bin/slow-bench` and reports " \
+            "the score. While it is running, check on it once and tell me what it is doing. Then wait for it and " \
+            "tell me the score.",
+    check: lambda { |_repo, final, calls|
+      peeked = calls.any? { |c| command_of(c).match?(/harnex\s+(lanes|status|pane|logs)|mcp__harnex__lanes/) || c[:name].to_s.end_with?("__lanes") }
+      Checks.answer_matches(final, /4242/, "the score 4242") + (peeked ? [] : ["never checked on the running worker"])
+    }
+  },
+  "S7" => {
+    title: "recover from a broken model",
+    prompt: "Have a GPT worker using the model foundry-zyt/gpt-9-imaginary add TextKit.word_count(text), the number " \
+            "of whitespace-separated words, with a test, committed on main. If that model doesn't work, use the " \
+            "default model instead.",
+    check: lambda { |repo, _final|
+      Checks.on_main(repo) + Checks.tests_pass(repo) + Checks.expect(repo, 'TextKit.word_count("a b  c")', 3)
+    }
   }
 }.freeze
 
@@ -264,20 +283,28 @@ def doc_lookup?(call)
   text.match?(/agents-guide|harnex\s+help|--help|\bman\s+harnex/) || text.match?(%r{/skills/[^/]+/})
 end
 
+def continuation?(call)
+  call[:error] && call[:output].to_s.match?(/still working.*\n.*harnex result/m)
+end
+
 def summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
   top = metrics[:calls].reject { |c| c[:sub] }
   harnex_calls = top.select { |c| harnex_call?(c) }
   # The harnex skill's front door (SKILL.md + references/INDEX.md, or the
   # Skill tool) is free; anything beyond it is doc hunting.
   docs = top.select { |c| doc_lookup?(c) }
-  failures = scenario[:check].call(repo, metrics[:final])
+  check = scenario[:check]
+  failures = check.arity == 3 ? check.call(repo, metrics[:final], top) : check.call(repo, metrics[:final])
   {
     scenario: id, supervisor: kind, title: scenario[:title],
     pass: failures.empty?, failures: failures, leftovers: leftovers(repo),
     seconds: seconds.round, exit_code: exit_code, cost_usd: metrics[:cost_usd],
     tool_calls: top.length, harnex_calls: harnex_calls.length,
     harnex_errors: harnex_calls.count { |c| c[:error] },
-    tool_errors: top.count { |c| c[:error] },
+    # Exit 124 with "keep waiting: harnex result NAME" is the documented
+    # continuation of a long task, not a failure.
+    tool_errors: top.count { |c| c[:error] && !continuation?(c) },
+    continuations: top.count { |c| continuation?(c) },
     doc_lookups: docs.length,
     subagent_calls: metrics[:calls].count { |c| c[:sub] },
     final: metrics[:final].to_s[0, 600],
