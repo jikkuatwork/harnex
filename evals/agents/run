@@ -289,6 +289,13 @@ def doc_lookup?(call)
   text.match?(/agents-guide|harnex\s+help|--help|\bman\s+harnex/) || text.match?(%r{/skills/[^/]+/})
 end
 
+# A harnex call that failed because of how harnex was called (usage), as
+# opposed to a worker failure harnex reported properly ("FAILED after").
+def harnex_friction?(call)
+  harnex_call?(call) && call[:error] && !continuation?(call) &&
+    call[:output].to_s.match?(/unknown flag|invalid option|invalid argument|missing argument|is required|no lane named|usage:/i)
+end
+
 def continuation?(call)
   call[:error] && call[:output].to_s.match?(/still working.*\n.*harnex result/m)
 end
@@ -307,6 +314,7 @@ def summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
     seconds: seconds.round, exit_code: exit_code, cost_usd: metrics[:cost_usd],
     tool_calls: top.length, harnex_calls: harnex_calls.length,
     harnex_errors: harnex_calls.count { |c| c[:error] },
+    harnex_friction: harnex_calls.count { |c| harnex_friction?(c) },
     # Exit 124 with "keep waiting: harnex result NAME" is the documented
     # continuation of a long task, not a failure.
     tool_errors: top.count { |c| c[:error] && !continuation?(c) },
@@ -319,10 +327,11 @@ def summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
 end
 
 def markdown(results)
-  lines = ["| Scen | Sup | Pass | Time | Calls | harnex | Err | Docs | Leftovers |", "|---|---|---|---|---|---|---|---|---|"]
+  lines = ["| Scen | Sup | Pass | Time | Calls | harnex | HxErr | Err | Docs | Left |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
   results.each do |r|
     lines << "| #{r[:scenario]} | #{r[:supervisor]} | #{r[:pass] ? 'yes' : 'NO'} | #{r[:seconds]}s | #{r[:tool_calls]} | " \
-             "#{r[:harnex_calls]} | #{r[:tool_errors]} | #{r[:doc_lookups]} | #{r[:leftovers].length} |"
+             "#{r[:harnex_calls]} | #{r[:harnex_friction]} | #{r[:tool_errors]} | #{r[:doc_lookups]} | #{r[:leftovers].length} |"
   end
   results.each do |r|
     next if r[:pass] && r[:leftovers].empty? && r[:tool_errors].zero?
