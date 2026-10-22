@@ -1,0 +1,25 @@
+# harnex
+
+> Pi workers (GPT models by default) as tools for you and your coding agents. Hand a question or a task to a Pi worker and get the reply back in one call: `harnex ask` (read-only), `harnex delegate [--worktree NAME]` (does the task, optionally in its own git worktree), `harnex result` (collect parallel lanes), `harnex reply NAME` (follow up; the worker keeps its context), `harnex land` (merge a worktree lane and clean up), `harnex discard`, `harnex lanes`. Every command prints the worker's reply and a `── NAME:` footer naming the next command. Exit codes: 0 done, 1 failed, 2 usage error, 124 still working (run `harnex result NAME`). `harnex mcp install` exposes the same verbs as MCP tools to Claude Code and Pi.
+
+Version 0.29.0. Install: `gem install harnex` (Ruby 3.x, no dependencies; needs Pi 0.80.4+ and tmux).
+
+## Docs
+
+- [Getting started](https://harnex.zyt.app/docs/start.md): Install, check the setup, your first lanes, and the session layer underneath.
+- [Lanes](https://harnex.zyt.app/docs/lanes.md): ask, delegate, result, reply, land, discard and lanes in depth.
+- [MCP server](https://harnex.zyt.app/docs/mcp.md): The lane verbs as native tools for Claude Code, Pi and any MCP client.
+- [Coding agents](https://harnex.zyt.app/docs/agents.md): Driving harnex from Claude Code and Pi: MCP, the gpt subagent, the CLI.
+- [Upgrading to 0.29](https://harnex.zyt.app/docs/upgrading.md): Breaking changes since 0.12 and what is new in the agent release.
+- [CLI reference](https://harnex.zyt.app/docs/cli.md): Every command's help, generated from the CLI itself.
+- [Technical reference](https://harnex.zyt.app/docs/technical.md): Commands, patterns, the HTTP API, adapters and internals.
+- [Configuration](https://harnex.zyt.app/docs/configuration.md): .harnex/config.json: phases, retention and telemetry settings.
+- [Events](https://harnex.zyt.app/docs/events.md): The per-session JSONL event stream.
+- [Dispatch telemetry](https://harnex.zyt.app/docs/telemetry.md): The canonical dispatch history stream and its schema.
+- [Pi RPC](https://harnex.zyt.app/docs/pi-rpc.md): How harnex drives Pi's structured RPC mode.
+- [Changelog](https://harnex.zyt.app/changelog.md): Every release, newest first.
+
+## Optional
+
+- [Source](https://github.com/jikkuatwork/harnex)
+- [Full text of the main guides](https://harnex.zyt.app/llms-full.txt)

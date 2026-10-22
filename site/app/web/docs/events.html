@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Events · harnex</title>
+<meta name="description" content="The per-session JSONL event stream.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/events">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Events · harnex">
+<meta property="og:description" content="The per-session JSONL event stream.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/events">
+<link rel="alternate" type="text/markdown" href="/docs/events.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/events</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events" aria-current="page">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / events</p>
+      <h1>Events</h1>
+<h2 id="1-purpose-and-non-goals"><a class="anchor" href="#1-purpose-and-non-goals">1. Purpose and non-goals</a></h2>
+
+<p><code>harnex events</code> provides a per-session JSONL stream for orchestration and
+monitoring tooling.</p>
+
+<p>This layer is transport + contract only. It does not implement watcher policy
+or preset logic.</p>
+
+<h2 id="2-cli-usage"><a class="anchor" href="#2-cli-usage">2. CLI usage</a></h2>
+
+<pre><code class="language-text">harnex events --id ID [--repo PATH] [--cli CLI] [--from ISO8601]
+harnex events --id ID --snapshot
+</code></pre>
+
+<ul>
+  <li><code>--id ID</code> is required.</li>
+  <li><code>--follow</code> is enabled by default.</li>
+  <li><code>--snapshot</code> is non-blocking (<code>--no-follow</code> alias behavior).</li>
+  <li><code>--from</code> accepts ISO-8601 only (<code>ts &gt;= from</code> replay filter).</li>
+</ul>
+
+<p>Follow mode exits <code>0</code> when the target session emits <code>type: "exited"</code>.</p>
+
+<h2 id="3-transport-and-file-location"><a class="anchor" href="#3-transport-and-file-location">3. Transport and file location</a></h2>
+
+<p>Events are append-only JSONL rows at:</p>
+
+<pre><code class="language-text">~/.local/state/harnex/events/&lt;repo_key&gt;--&lt;id_key&gt;.jsonl
+</code></pre>
+
+<p>Writers append one event per line and flush after each append.
+Readers can snapshot + tail the same file.</p>
+
+<h2 id="4-v1-schema-reference"><a class="anchor" href="#4-v1-schema-reference">4. v1 schema reference</a></h2>
+
+<p>Every row includes this envelope:</p>
+
+<ul>
+  <li><code>schema_version</code> (Integer): always <code>1</code></li>
+  <li><code>seq</code> (Integer): monotonic per session, starts at <code>1</code></li>
+  <li><code>ts</code> (String): UTC ISO-8601 timestamp with millisecond precision
+(<code>2026-05-01T11:30:00.123Z</code>; rows before 0.16.0 have whole seconds)</li>
+  <li><code>id</code> (String): session ID</li>
+  <li><code>type</code> (String): event type</li>
+</ul>
+
+<p>Emitted now (Layer 4):</p>
+
+<ul>
+  <li><code>started</code>: adds <code>pid</code> (Integer)</li>
+  <li><code>send</code>: adds
+    <ul>
+      <li><code>msg</code> (String): first 200 characters of the original text; if longer,
+a trailing <code>…</code> is appended</li>
+      <li><code>msg_truncated</code> (Boolean): whether truncation occurred</li>
+      <li><code>forced</code> (Boolean): send force mode</li>
+    </ul>
+  </li>
+  <li><code>exited</code>: adds
+    <ul>
+      <li><code>code</code> (Integer): synthesized numeric exit code</li>
+      <li><code>signal</code> (Integer, optional): present for signaled exits</li>
+    </ul>
+  </li>
+  <li><code>task_complete</code> / <code>task_failed</code> (structured adapters): add <code>turn</code> (Integer),
+the session’s work turn. Turn 1 is the first prompt; a message injected
+after a published result starts the next turn, announced by a <code>work_turn</code>
+row (<code>turn</code>). <code>harnex send</code> reports <code>after_seq</code>, the newest <code>seq</code> before
+its message, so <code>harnex wait --until done --after-seq N</code> waits for the turn
+that message started or joined. They also carry, when known:
+<code>final_message</code> (the worker’s last reply this turn, at most 4,000
+characters), <code>final_message_path</code> (the full text),
+<code>final_message_truncated</code>, <code>follow_ups</code> (<code>{sent, pending}</code>), and the lane’s
+<code>end_sha</code> / <code>commits</code> at the turn’s end.</li>
+  <li><code>queue_update</code> (Pi): <code>follow_up</code> and <code>steering</code>, the sizes of Pi’s pending
+queues (counts only, never message text).</li>
+</ul>
+
+<h2 id="5-stability-promise"><a class="anchor" href="#5-stability-promise">5. Stability promise</a></h2>
+
+<p>Schema v1 is additive-only:</p>
+
+<ul>
+  <li>existing fields will not be removed, renamed, or type-changed</li>
+  <li>new fields and new event types may be added</li>
+</ul>
+
+<p>Breaking changes require a major schema bump.</p>
+
+<h2 id="6-consumer-patterns"><a class="anchor" href="#6-consumer-patterns">6. Consumer patterns</a></h2>
+
+<p>Snapshot:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex events <span class="nt">--id</span> worker <span class="nt">--snapshot</span>
+</code></pre></div>
+
+<p>Follow:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex events <span class="nt">--id</span> worker | jq <span class="nt">-c</span> <span class="s1">'.'</span>
+</code></pre></div>
+
+<p>Replay from a timestamp:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex events <span class="nt">--id</span> worker <span class="nt">--snapshot</span> <span class="nt">--from</span> 2026-04-29T10:00:00Z
+</code></pre></div>
+
+<h2 id="7-layer-2-integration-note"><a class="anchor" href="#7-layer-2-integration-note">7. Layer 2 integration note</a></h2>
+
+<p>Layer 4 defines the bus and schema. In a follow-up layer, watcher-owned
+producers can publish <code>resume</code>, <code>log_active</code>, and <code>log_idle</code> events to this
+same stream. <code>harnex events</code> remains a read-only consumer surface.</p>
+
+<h2 id="8-layer-5-dispatch-telemetry"><a class="anchor" href="#8-layer-5-dispatch-telemetry">8. Layer 5: dispatch telemetry</a></h2>
+
+<p>Layer 5 adds dispatch telemetry events without changing schema version <code>1</code>.
+The additions are optional for legacy consumers: existing event types keep
+their fields, and new event types can be ignored by readers that do not need
+telemetry.</p>
+
+<p>New optional fields on existing event types:</p>
+
+<ul>
+  <li><code>started.meta</code> (Object, optional): parsed verbatim from <code>harnex run --meta</code>.
+It is absent when <code>--meta</code> is not provided.</li>
+  <li><code>exited.reason</code> (String, optional): one of <code>success</code>, <code>failure</code>, <code>timeout</code>,
+or <code>disconnected</code>.</li>
+</ul>
+
+<p>New event types:</p>
+
+<ul>
+  <li><code>usage</code>: emitted once after the wrapped process exits and before <code>exited</code>.
+It includes nullable <code>input_tokens</code>, <code>output_tokens</code>, <code>reasoning_tokens</code>,
+<code>cached_tokens</code>, <code>total_tokens</code>, and <code>agent_session_id</code>.</li>
+  <li><code>git</code>: emitted when git metadata is available. <code>phase: "start"</code> includes
+<code>sha</code> and <code>branch</code>; <code>phase: "end"</code> includes <code>sha</code>, <code>loc_added</code>,
+<code>loc_removed</code>, <code>files_changed</code>, and <code>commits</code>.</li>
+  <li><code>summary</code>: emitted last before <code>exited</code>. <code>path</code> is the canonical tracked
+dispatch stream — the only destination a dispatch record is written to.
+<code>exit</code> is <code>success</code>, <code>failure</code>, <code>timeout</code>, or <code>disconnected</code>.</li>
+</ul>
+
+<p>Example telemetry sequence:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:30:00Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"started"</span><span class="p">,</span><span class="nl">"pid"</span><span class="p">:</span><span class="mi">12345</span><span class="p">,</span><span class="nl">"meta"</span><span class="p">:{</span><span class="nl">"issue"</span><span class="p">:</span><span class="s2">"23"</span><span class="p">,</span><span class="nl">"plan"</span><span class="p">:</span><span class="s2">"27"</span><span class="p">,</span><span class="nl">"predicted"</span><span class="p">:{</span><span class="nl">"input_tokens"</span><span class="p">:[</span><span class="mi">200000</span><span class="p">,</span><span class="mi">800000</span><span class="p">]}}}</span><span class="w">
+</span><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:30:00Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"git"</span><span class="p">,</span><span class="nl">"phase"</span><span class="p">:</span><span class="s2">"start"</span><span class="p">,</span><span class="nl">"sha"</span><span class="p">:</span><span class="s2">"a8114695c1f0"</span><span class="p">,</span><span class="nl">"branch"</span><span class="p">:</span><span class="s2">"main"</span><span class="p">}</span><span class="w">
+</span><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">3</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:42:13Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"usage"</span><span class="p">,</span><span class="nl">"input_tokens"</span><span class="p">:</span><span class="mi">104158</span><span class="p">,</span><span class="nl">"output_tokens"</span><span class="p">:</span><span class="mi">2709</span><span class="p">,</span><span class="nl">"reasoning_tokens"</span><span class="p">:</span><span class="mi">870</span><span class="p">,</span><span class="nl">"cached_tokens"</span><span class="p">:</span><span class="mi">250880</span><span class="p">,</span><span class="nl">"total_tokens"</span><span class="p">:</span><span class="mi">106867</span><span class="p">,</span><span class="nl">"agent_session_id"</span><span class="p">:</span><span class="s2">"019ddf05-0f03-7d70-904f-23db7f00640f"</span><span class="p">}</span><span class="w">
+</span><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">4</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:42:13Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"git"</span><span class="p">,</span><span class="nl">"phase"</span><span class="p">:</span><span class="s2">"end"</span><span class="p">,</span><span class="nl">"sha"</span><span class="p">:</span><span class="s2">"abc1234567"</span><span class="p">,</span><span class="nl">"loc_added"</span><span class="p">:</span><span class="mi">312</span><span class="p">,</span><span class="nl">"loc_removed"</span><span class="p">:</span><span class="mi">65</span><span class="p">,</span><span class="nl">"files_changed"</span><span class="p">:</span><span class="mi">7</span><span class="p">,</span><span class="nl">"commits"</span><span class="p">:</span><span class="mi">1</span><span class="p">}</span><span class="w">
+</span><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">5</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:42:13Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"summary"</span><span class="p">,</span><span class="nl">"path"</span><span class="p">:</span><span class="s2">"/home/u/proj/.harnex/dispatch.jsonl"</span><span class="p">,</span><span class="nl">"exit"</span><span class="p">:</span><span class="s2">"success"</span><span class="p">}</span><span class="w">
+</span><span class="p">{</span><span class="nl">"schema_version"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nl">"seq"</span><span class="p">:</span><span class="mi">6</span><span class="p">,</span><span class="nl">"ts"</span><span class="p">:</span><span class="s2">"2026-05-01T11:42:13Z"</span><span class="p">,</span><span class="nl">"id"</span><span class="p">:</span><span class="s2">"pi-i-372"</span><span class="p">,</span><span class="nl">"type"</span><span class="p">:</span><span class="s2">"exited"</span><span class="p">,</span><span class="nl">"code"</span><span class="p">:</span><span class="mi">0</span><span class="p">,</span><span class="nl">"reason"</span><span class="p">:</span><span class="s2">"success"</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>Events files are runtime logs, not the durable dispatch summary. Their age and
+size retention is configurable; current/live-session files are protected. See
+<a href="/docs/configuration">configuration.md</a>.</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/events.md" rel="noopener">docs/events.md</a> · <a href="/docs/events.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/configuration">← Configuration</a>
+        <a class="next" href="/docs/telemetry">Dispatch telemetry →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

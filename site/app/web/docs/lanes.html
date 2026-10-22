@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lanes · harnex</title>
+<meta name="description" content="ask, delegate, result, reply, land, discard and lanes in depth.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/lanes">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Lanes · harnex">
+<meta property="og:description" content="ask, delegate, result, reply, land, discard and lanes in depth.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/lanes">
+<link rel="alternate" type="text/markdown" href="/docs/lanes.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes" aria-current="page"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/lanes</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes" aria-current="page">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / lanes</p>
+      <h1>Lanes</h1>
+<p>A <strong>lane</strong> is one Pi worker doing one job: a question, a task, or a task plus
+its follow-ups. You start one with <code>harnex ask</code> or <code>harnex delegate</code>, collect
+it with <code>harnex result</code>, continue it with <code>harnex reply</code>, and finish it with
+<code>harnex land</code> or <code>harnex discard</code>. Every lane has a name, runs in a visible
+tmux window named after it, and leaves a small record so any later command can
+find it by name from anywhere in the repository.</p>
+
+<p>Lanes are the agent-facing layer of harnex. Everything here is also available
+as native tools through <a href="/docs/mcp"><code>harnex mcp</code></a>, and the low-level <code>run</code>, <code>send</code>,
+<code>wait</code> and <code>watch</code> commands remain underneath for custom orchestration.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Need</th>
+      <th>Command</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>A second opinion, an explanation, a read-only review</td>
+      <td><code>harnex ask "QUESTION"</code></td>
+    </tr>
+    <tr>
+      <td>A task that edits code</td>
+      <td><code>harnex delegate --worktree NAME "TASK"</code>, review, then <code>harnex land NAME</code></td>
+    </tr>
+    <tr>
+      <td>A task that only runs or inspects things</td>
+      <td><code>harnex delegate "TASK"</code></td>
+    </tr>
+    <tr>
+      <td>Several tasks in parallel</td>
+      <td><code>harnex delegate --no-wait --worktree NAME "TASK"</code> per task, then <code>harnex result</code></td>
+    </tr>
+    <tr>
+      <td>More work for the same worker, with its context</td>
+      <td><code>harnex reply NAME "MESSAGE"</code></td>
+    </tr>
+    <tr>
+      <td>Throw a lane away</td>
+      <td><code>harnex discard NAME</code></td>
+    </tr>
+    <tr>
+      <td>What is open and what each worker is doing</td>
+      <td><code>harnex lanes</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="ask"><a class="anchor" href="#ask">Ask</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex ask <span class="s2">"Which module writes dispatch rows, and is the lane case tested?"</span>
+harnex ask <span class="nt">--model</span> openai/gpt-5.1 <span class="nt">--file</span> /tmp/review.md
+</code></pre></div>
+
+<p>The worker reads the repository with read-only tools (<code>read</code>, <code>grep</code>, <code>find</code>,
+<code>ls</code>), answers, and stops. It cannot run commands or change anything; for
+that, use <code>delegate</code>. stdout is the answer; stderr gets one line naming the
+lane, its time and the model. <code>--write</code> lets the worker edit and run commands,
+and <code>--fallback-model M</code> asks once more with another model when the first one
+is out of capacity or rate limited.</p>
+
+<p>Every ask is a lane (<code>pi-ask-xxxx</code>), so <code>harnex reply pi-ask-xxxx "..."</code> asks a
+follow-up of the same worker, with everything it read still in context.</p>
+
+<h2 id="delegate"><a class="anchor" href="#delegate">Delegate</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--worktree</span> word-count <span class="se">\</span>
+  <span class="s2">"Add TextKit.word_count(text): the number of whitespace-separated words, with a test. Run bin/test."</span>
+</code></pre></div>
+
+<p>The worker edits files, runs commands, and replies with a summary. harnex
+prints that reply and then a footer:</p>
+
+<pre><code class="language-text">Committed as `a6bf91e` on `harnex/word-count`.
+- Added `TextKit.word_count(text)` in `lib/textkit.rb`.
+- Ran `bin/test`: 3 tests, 6 assertions, all passing.
+
+── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
+</code></pre>
+
+<p>The footer always says what happened and what to do next: state, time, model,
+cost, commits and the next commands.</p>
+
+<ul>
+  <li><strong><code>--worktree NAME</code></strong> creates <code>.harnex/worktrees/NAME</code> on a new branch
+<code>harnex/NAME</code> from <code>HEAD</code>. The worker is told to commit there. Parallel lanes
+never collide, and your checkout is untouched until you land. If your checkout
+has uncommitted changes, harnex warns that the worktree starts from <code>HEAD</code>.</li>
+  <li><strong>Without <code>--worktree</code></strong> the worker works in the current directory, which is
+right for tasks that only run or inspect things (tests, a benchmark, a long
+command). <code>--name NAME</code> names the lane; otherwise harnex derives a name from
+the task (<code>pi-slow-bench</code>).</li>
+  <li><strong><code>--file PATH</code></strong> reads a long brief from a file. Briefs must be
+self-contained: the worker has not seen your conversation. Name the files, the
+expected behavior and how to verify it.</li>
+  <li><strong><code>--model provider/model</code></strong> and <strong><code>--effort low|medium|high</code></strong> pick the
+model; the default is Pi’s own default model.</li>
+</ul>
+
+<h3 id="waiting-and-long-tasks"><a class="anchor" href="#waiting-and-long-tasks">Waiting, and long tasks</a></h3>
+
+<p>Blocking commands (<code>ask</code>, <code>delegate</code>, <code>reply</code>, <code>result</code>) wait up to 9 minutes
+by default, which fits under the 10-minute tool cap most coding agents have.
+<code>--timeout DUR</code> changes it (<code>540</code>, <code>9m</code>, <code>1h30m</code>, or <code>none</code>).</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Exit code</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>done</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>the worker failed (the footer says why and what to try)</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>usage error (nothing was started)</td>
+    </tr>
+    <tr>
+      <td>124</td>
+      <td>still working — the worker keeps going; run <code>harnex result NAME</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<pre><code class="language-text">── slow-bench: still working (9m02s so far)
+   keep waiting: harnex result slow-bench
+</code></pre>
+
+<p><code>harnex result NAME</code> blocks again (another 9 minutes by default) and prints the
+result in the same format once it lands, even if the worker finished between
+calls.</p>
+
+<h2 id="review-and-land"><a class="anchor" href="#review-and-land">Review and land</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>git diff HEAD...harnex/word-count     <span class="c"># read the change</span>
+<span class="o">(</span><span class="nb">cd</span> .harnex/worktrees/word-count <span class="o">&amp;&amp;</span> bin/test<span class="o">)</span>
+harnex land word-count
+</code></pre></div>
+
+<p><code>harnex land NAME</code> merges <code>harnex/NAME</code> into the current branch of the main
+checkout, then removes the worktree and the branch. Leftover uncommitted
+changes in the lane are committed first. <code>harnex land</code> with no name lands every
+finished worktree lane you started in this repo, oldest first.</p>
+
+<p><strong>Conflicts.</strong> When the merge conflicts, git’s merge is left in progress and
+harnex lists the files. Resolve them, <code>git add</code> them and <code>git commit</code>, then run
+<code>harnex land NAME</code> again to clean up (or <code>git merge --abort</code> to give up).
+Several lanes that touched the same file land one at a time.</p>
+
+<p><strong>Merging by hand</strong> works too. A lane whose branch is already in <code>HEAD</code> (and
+whose worktree is clean) is tidied up by the next <code>delegate</code>, <code>result</code>, <code>lanes</code>
+or bare <code>land</code>.</p>
+
+<p><code>harnex discard NAME</code> stops the lane if it is still working and deletes its
+worktree and branch without merging.</p>
+
+<h2 id="parallel-lanes"><a class="anchor" href="#parallel-lanes">Parallel lanes</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> slugify  <span class="s2">"Fix TextKit.slugify so punctuation is dropped ..."</span>
+harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> <span class="nb">truncate</span> <span class="s2">"Add TextKit.truncate(text, n) ..."</span>
+harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> titleize <span class="s2">"Add TextKit.titleize(text) ..."</span>
+harnex result          <span class="c"># waits for all three, printing each result as it lands</span>
+harnex land            <span class="c"># lands every finished worktree lane, oldest first</span>
+</code></pre></div>
+
+<p><code>harnex result</code> with no names covers every lane you started in this repo whose
+result you have not collected yet. Name lanes to wait for specific ones.
+“You” is the calling agent session (<code>CLAUDE_CODE_SESSION_ID</code> or
+<code>PI_SESSION_ID</code>); a Claude Code subagent shares its parent’s id, so a subagent
+should name the lanes it waits for.</p>
+
+<h2 id="follow-ups"><a class="anchor" href="#follow-ups">Follow-ups</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex reply word-count <span class="s2">"Also add TextKit.char_count(text), in the same style, with a test."</span>
+</code></pre></div>
+
+<p>The worker keeps its context. A worker still on its turn takes the message
+mid-task as a follow-up; a lane that has finished is relaunched on its own Pi
+session (<code>pi --session</code>), so it remembers everything from the earlier turns.
+The footer’s cost is the lane’s total so far.</p>
+
+<h2 id="when-a-model-fails"><a class="anchor" href="#when-a-model-fails">When a model fails</a></h2>
+
+<pre><code class="language-text">── word-count: FAILED after 3s (API error (404): model_not_found) · gpt-9 · $0.00 · 0 commits
+   next: `harnex reply word-count "Continue the same task from where you stopped" --model openai/gpt-5.1`
+         (keeps the task; another model) or `harnex discard word-count`
+</code></pre>
+
+<p>For provider and model failures (not found, rate limited, out of capacity) the
+footer suggests continuing on Pi’s default model. <code>reply --model</code> resumes the
+same session, so the task is not lost. For <code>ask</code>, <code>--fallback-model</code> does this
+automatically.</p>
+
+<h2 id="watching-a-worker"><a class="anchor" href="#watching-a-worker">Watching a worker</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex lanes
+</code></pre></div>
+
+<pre><code class="language-text">NAME      STATE                  AGE    MODEL    BRANCH           NEXT
+slugify   working (now bash 12s) 1m40s  gpt-5.1  harnex/slugify   harnex result slugify
+truncate  done                   2m03s  gpt-5.1  harnex/truncate  harnex land truncate
+</code></pre>
+
+<p>A working lane shows the tool it is running right now (tool names only; harnex
+never records tool arguments). <code>harnex pane --id NAME --lines 40</code> captures the
+worker’s tmux window, and the window itself is always there to watch.</p>
+
+<h2 id="where-things-live"><a class="anchor" href="#where-things-live">Where things live</a></h2>
+
+<ul>
+  <li><strong>Lane records:</strong> <code>~/.local/state/harnex/lanes/</code> (one JSON file per lane:
+repo, worktree, branch, model, owner, Pi session, cost, last result). Closed
+lanes are pruned after 30 days; open lanes never are.</li>
+  <li><strong>Worktrees:</strong> <code>.harnex/worktrees/NAME</code> inside your repository, on branch
+<code>harnex/NAME</code>.</li>
+  <li><strong><code>.harnex/</code></strong> is added to the clone’s <code>.git/info/exclude</code> the first time
+harnex writes there, so lane worktrees and dispatch rows never show up as
+untracked work. Nothing tracked changes.</li>
+</ul>
+
+<h2 id="habits-from-harnex-run"><a class="anchor" href="#habits-from-harnex-run">Habits from <code>harnex run</code></a></h2>
+
+<p>The lane commands accept the flags people and agents reach for from the
+low-level <code>run</code>, instead of refusing them: <code>--id NAME</code> and <code>--tmux NAME</code> name
+the lane, <code>--auto-stop</code> and <code>--wait-done</code> are what lanes do anyway,
+<code>--wait-timeout</code> means <code>--timeout</code>, and <code>--context</code>/<code>--context-file</code> give the
+task.</p>
+
+<p>See also: <a href="/docs/mcp">MCP server</a>, <a href="/docs/agents">Coding agents</a>, and the CLI
+reference (<code>harnex help delegate</code>, <code>result</code>, <code>reply</code>, <code>land</code>, <code>discard</code>,
+<code>lanes</code>, <code>ask</code>).</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/lanes.md" rel="noopener">docs/lanes.md</a> · <a href="/docs/lanes.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/start">← Getting started</a>
+        <a class="next" href="/docs/mcp">MCP server →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

@@ -147,7 +147,7 @@ module Harnex
           harnex delegate --no-wait ...       Start lanes in parallel, then:
           harnex result [NAME...]             Wait for lanes and print their results
           harnex reply NAME MESSAGE           Follow up; the worker keeps its context
-          harnex land NAME                    Merge a worktree lane, remove the worktree
+          harnex land [NAME...]               Merge worktree lanes, remove the worktrees
           harnex discard NAME                 Drop a lane and its worktree
           harnex lanes                        Your lanes and what each needs next
 

@@ -1,0 +1,1929 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Changelog · harnex</title>
+<meta name="description" content="Every release, newest first.">
+<link rel="canonical" href="https://harnex.zyt.app/changelog">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Changelog · harnex">
+<meta property="og:description" content="Every release, newest first.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/changelog">
+<link rel="alternate" type="text/markdown" href="/changelog.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog" aria-current="page"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/changelog</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog" aria-current="page">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / changelog</p>
+      <h1>Changelog</h1>
+<h2 id="0290---2026-10-22--0608-pm--ist"><a class="anchor" href="#0290---2026-10-22--0608-pm--ist">[0.29.0] - 2026-10-22 | 06:08 PM | IST</a></h2>
+
+<p><strong>The agent release.</strong> harnex becomes a tool your coding agents use directly:
+hand a question or a task to a Pi worker (GPT by default) and get the reply
+back as plain text, with a footer saying what happened and what to do next.
+This entry summarizes 0.22.0–0.29.0, the first public release since 0.12.0.
+Website and docs: <a href="https://harnex.zyt.app">https://harnex.zyt.app</a>. Upgrading:
+<code>docs/upgrading-to-0.29.md</code>.</p>
+
+<h3 id="highlights"><a class="anchor" href="#highlights">Highlights</a></h3>
+
+<ul>
+  <li><strong>Lanes</strong> (0.22):
+    <ul>
+      <li><code>harnex delegate [--worktree NAME]</code> hands a task to a worker, optionally
+in its own git worktree;</li>
+      <li><code>result</code> collects parallel lanes;</li>
+      <li><code>reply</code> follows up with the worker’s context (a finished lane resumes its
+Pi session);</li>
+      <li><code>land</code> merges and cleans up; <code>discard</code> drops a lane; <code>lanes</code> shows what
+each worker is doing right now.</li>
+    </ul>
+  </li>
+  <li><strong><code>harnex mcp</code></strong> (0.23): the same verbs as native MCP tools for Claude Code,
+Pi and any MCP client. Long calls report progress, and Claude Code moves them
+to the background and notifies on completion. <code>harnex mcp install</code>
+registers it for both clients.</li>
+  <li><strong>The <code>gpt</code> subagent for Claude Code</strong> (0.21, MCP relay since 0.23): ships
+as <code>agents/gpt.md</code>, and <code>harnex mcp install</code> installs it.</li>
+  <li><strong>Smoothness work</strong> (0.24–0.28), measured with <code>evals/agents/run</code>. Real
+Claude Code and Pi supervisors, with and without MCP, run seven scenarios;
+0.28 passed two consecutive full rounds (28/28 each) with no harnex usage
+errors, no doc lookups and nothing left behind. Along the way:
+    <ul>
+      <li>progress detail;</li>
+      <li>the hand-merge sweep;</li>
+      <li>model-failure next steps;</li>
+      <li>forgiving flags and MCP arguments;</li>
+      <li>workers never see harnex’s own MCP tools.</li>
+    </ul>
+  </li>
+</ul>
+
+<h3 id="breaking-since-0120"><a class="anchor" href="#breaking-since-0120">Breaking (since 0.12.0)</a></h3>
+
+<ul>
+  <li>Codex adapters, the JSON-RPC transport, <code>run --fast</code>/<code>--legacy-pty</code> and
+<code>preflight --legacy-pty</code> were removed (0.20); harnex is Pi + GPT first.</li>
+  <li><code>harnex ask</code> waits 9 minutes by default (0.22); use <code>--timeout none</code> for no
+cap.</li>
+  <li>Pi starts with <code>--no-approve</code> unless <code>-- --approve</code> is passed (0.22).</li>
+</ul>
+
+<h3 id="added-in-0290"><a class="anchor" href="#added-in-0290">Added in 0.29.0</a></h3>
+
+<ul>
+  <li><strong>Docs:</strong>
+    <ul>
+      <li><code>docs/lanes.md</code>, <code>docs/mcp.md</code>, <code>docs/agents.md</code> and
+<code>docs/upgrading-to-0.29.md</code>;</li>
+      <li><code>GUIDE.md</code> now starts with lanes;</li>
+      <li><code>TECHNICAL.md</code> gains a “Lanes and MCP” architecture section.</li>
+    </ul>
+  </li>
+  <li><strong>The website</strong> <code>site/</code>: a monospace, terminal-styled site built from these
+docs and the live CLI help, deployed as a Holm app to harnex.zyt.app.</li>
+  <li><strong>The <code>gpt</code> agent ships in the gem</strong> (<code>agents/gpt.md</code>). <code>harnex mcp
+install</code> installs it at <code>~/.claude/agents/gpt.md</code> unless one exists
+(<code>--no-agent</code> skips it). <code>uninstall</code> removes only an unmodified copy.</li>
+  <li><strong>Gem metadata:</strong> a new summary and description, plus documentation and
+changelog links.</li>
+</ul>
+
+<h3 id="changed"><a class="anchor" href="#changed">Changed</a></h3>
+
+<ul>
+  <li>Examples use generic model names (<code>openai/gpt-5.1</code>).</li>
+</ul>
+
+<h2 id="0280---2026-10-22--0515-pm--ist"><a class="anchor" href="#0280---2026-10-22--0515-pm--ist">[0.28.0] - 2026-10-22 | 05:15 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87): fixes from round B on 0.27.0.</p>
+
+<h3 id="changed-1"><a class="anchor" href="#changed-1">Changed</a></h3>
+
+<ul>
+  <li>The MCP <code>ask</code> tool description, <code>harnex ask --help</code> and the skill index
+say that an ask worker only reads and cannot run commands; to run tests,
+scripts or benchmarks, use <code>delegate</code>. In round B, a relay sent “run
+bin/slow-bench” to a read-only ask, and the worker could only read the
+script.</li>
+  <li>Outside this repo: the <code>gpt</code> relay routes a brief that asks to run
+something or change files to <code>delegate</code> (in place), questions and reviews
+to <code>ask</code>, and honours <code>mode: read</code>.</li>
+  <li>Evals: <code>bin/slow-bench</code> prints a random score and records it in
+<code>.git/bench-last-score</code>. S4 and S6 pass only when the benchmark really
+ran and the answer quotes that score; a fixed score in the script could
+be read without running it.</li>
+</ul>
+
+<h2 id="0270---2026-10-22--0458-pm--ist"><a class="anchor" href="#0270---2026-10-22--0458-pm--ist">[0.27.0] - 2026-10-22 | 04:58 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87): fixes from round A on 0.26.0
+(27/28 pass, 0 leftovers, 0 doc lookups).</p>
+
+<h3 id="changed-2"><a class="anchor" href="#changed-2">Changed</a></h3>
+
+<ul>
+  <li>MCP tools accept the argument names agents reach for from their other
+tools:
+    <ul>
+      <li><code>prompt</code>, <code>brief</code>, <code>message</code> or <code>instructions</code> for <code>task</code>;</li>
+      <li><code>prompt</code> or <code>query</code> for <code>question</code>;</li>
+      <li><code>prompt</code> or <code>text</code> for <code>message</code>;</li>
+      <li><code>lane</code>, <code>id</code> or <code>worktree</code> for <code>name</code>;</li>
+      <li><code>name</code> or <code>lanes</code> for <code>names</code>.</li>
+    </ul>
+
+    <p>A supervisor passed <code>prompt</code> to <code>delegate</code> and got “task is required”.</p>
+  </li>
+  <li>Evals: <code>--resummarize DIR</code>, and an <code>HxErr</code> column that counts harnex
+usage friction apart from worker failures harnex reported properly.</li>
+  <li>Outside this repo: the <code>gpt</code> agent’s description says that <code>harnex lanes</code>
+(or the <code>lanes</code> tool) shows what a running worker is doing.</li>
+</ul>
+
+<h2 id="0260---2026-10-22--0440-pm--ist"><a class="anchor" href="#0260---2026-10-22--0440-pm--ist">[0.26.0] - 2026-10-22 | 04:40 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87): fixes from the first full 0.25.0
+eval round (28/28 pass).</p>
+
+<h3 id="added"><a class="anchor" href="#added">Added</a></h3>
+
+<ul>
+  <li><code>harnex land</code> with no name, and the MCP <code>land</code> tool without <code>names</code>,
+land every finished worktree lane the caller started in this repo,
+oldest first. A supervisor called <code>land {}</code> expecting this. <code>discard</code>
+still requires names.</li>
+  <li><code>harnex doctor</code> reports <code>integrations</code>: whether the harnex MCP server is
+registered for Claude Code and Pi, whether the <code>gpt</code> agent is linked, and
+a hint to run <code>harnex mcp install</code>.</li>
+  <li>Closed lane records and their briefs are pruned after 30 days; open lanes
+never are.</li>
+</ul>
+
+<h3 id="changed-3"><a class="anchor" href="#changed-3">Changed</a></h3>
+
+<ul>
+  <li>README: <code>harnex mcp uninstall</code> before <code>gem uninstall</code>.</li>
+</ul>
+
+<h2 id="0250---2026-10-22--0414-pm--ist"><a class="anchor" href="#0250---2026-10-22--0414-pm--ist">[0.25.0] - 2026-10-22 | 04:14 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87).</p>
+
+<h3 id="fixed"><a class="anchor" href="#fixed">Fixed</a></h3>
+
+<ul>
+  <li><strong>Workers never get harnex’s own MCP tools.</strong> With harnex MCP registered
+in Pi, every harnex-launched Pi worker also saw <code>delegate</code> and the other
+harnex tools, and Pi 1.4.0 keeps MCP tools despite a <code>--tools</code> allowlist.
+In an eval, a read-only ask worker used <code>delegate</code> to launch a writable
+lane. Now:
+    <ul>
+      <li>Pi workers start with <code>--exclude-tools mcp__harnex__…</code> (merged with the
+caller’s own exclusions; Pi &gt;= 0.99);</li>
+      <li>allowlisted (read-only) workers start with <code>--no-mcp</code> (Pi &gt;= 1.0.4).</li>
+    </ul>
+  </li>
+</ul>
+
+<h3 id="changed-4"><a class="anchor" href="#changed-4">Changed</a></h3>
+
+<ul>
+  <li>Progress lines read <code>now bash 12s</code>, without nested parentheses.</li>
+  <li>Lane names generated from a task skip filler words (<code>pi-slow-bench</code>, not
+<code>pi-run-the-slow-bench</code>).</li>
+  <li>Evals lift Claude print mode’s 10-minute background ceiling
+(<code>CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0</code>), as interactive sessions have
+none. S6 accepts <code>tmux capture-pane</code> as checking on a worker.</li>
+</ul>
+
+<h2 id="0240---2026-10-22--0351-pm--ist"><a class="anchor" href="#0240---2026-10-22--0351-pm--ist">[0.24.0] - 2026-10-22 | 03:51 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87): fixes from the 0.23.0 agent evals.</p>
+
+<h3 id="added-1"><a class="anchor" href="#added-1">Added</a></h3>
+
+<ul>
+  <li><strong>What a worker is doing now.</strong> The live activity snapshot records the
+current tool’s name and the turn’s tool-call count. Tool arguments are
+still never retained.
+    <ul>
+      <li>MCP progress shows it: <code>wc: working 2m10s · 7 tool calls · now bash (12s)</code>.</li>
+      <li>So does <code>harnex lanes</code>: <code>working (now bash 12s)</code>.</li>
+      <li>MCP names ask and delegate lanes up front so progress can follow them.</li>
+    </ul>
+  </li>
+  <li><strong>Hand merges are tidied.</strong> A lane whose branch was merged by hand (into
+HEAD, worktree clean, at least one commit) is marked landed, and its
+worktree and branch are removed on the next <code>delegate</code>, <code>result</code> or
+<code>lanes</code>.</li>
+  <li><strong>Clearer next steps in the footer.</strong>
+    <ul>
+      <li>Model and provider failures suggest retrying on Pi’s default model:
+<code>harnex reply NAME "Continue..." --model provider/model</code> keeps the task
+through the lane’s Pi session.</li>
+      <li>Lanes with no commits say there is nothing to merge.</li>
+      <li>Done lanes say <code>land</code> merges and cleans up (instead of <code>git merge</code>); the
+MCP instructions say the same.</li>
+    </ul>
+  </li>
+  <li><strong>Evals:</strong>
+    <ul>
+      <li>two new scenarios: S6 (check on a running worker) and S7 (recover from
+a broken model);</li>
+      <li>the exit-124 continuation no longer counts as a tool error.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="0230---2026-10-22--0328-pm--ist"><a class="anchor" href="#0230---2026-10-22--0328-pm--ist">[0.23.0] - 2026-10-22 | 03:28 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (#87).</p>
+
+<h3 id="added-2"><a class="anchor" href="#added-2">Added</a></h3>
+
+<ul>
+  <li><code>harnex mcp</code>: a stdio MCP server exposing <code>ask</code>, <code>delegate</code>, <code>result</code>,
+<code>reply</code>, <code>land</code>, <code>discard</code> and <code>lanes</code> as native tools for Claude Code, Pi
+and any MCP client. Each tool runs the CLI verb and returns its text.
+    <ul>
+      <li>Blocking calls send <code>notifications/progress</code> every 15s; the default wait
+is 25 minutes.</li>
+      <li>Calls run concurrently.</li>
+      <li>A cancel stops the wait, never the worker.</li>
+    </ul>
+  </li>
+  <li><code>harnex mcp install|uninstall|status</code>: register the server for Claude Code
+(<code>claude mcp add --scope user</code>) and Pi (<code>~/.pi/agent/mcp.json</code>, exposure
+<code>direct</code>, 2h request timeout). It registers the RubyGems wrapper, so no
+version-manager shim or client cwd is involved.</li>
+  <li><code>harnex doctor</code> capabilities add <code>mcp</code>.</li>
+  <li>Lane verbs accept habits from <code>harnex run</code> instead of refusing them:
+    <ul>
+      <li><code>--id</code> and <code>--tmux [NAME]</code> name the lane;</li>
+      <li><code>--auto-stop</code> and <code>--wait-done</code> are accepted and ignored;</li>
+      <li><code>--wait-timeout</code> is an alias for <code>--timeout</code>;</li>
+      <li><code>--context</code> and <code>--context-file</code> give the task;</li>
+      <li><code>reply</code> takes <code>--id</code> and <code>--message</code>.</li>
+    </ul>
+  </li>
+  <li><code>evals/agents/run</code> routes: <code>claude-cli</code> (no MCP, no <code>gpt</code> agent) and
+<code>pi-cli</code> (<code>--no-mcp</code>) beside the configured <code>claude</code> and <code>pi</code>.</li>
+</ul>
+
+<h2 id="0220---2026-10-22--0307-pm--ist"><a class="anchor" href="#0220---2026-10-22--0307-pm--ist">[0.22.0] - 2026-10-22 | 03:07 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication); breaking
+changes allowed (#87). Plan: <code>koder/plans/39_agent_smoothness.md</code>.</p>
+
+<h3 id="added-3"><a class="anchor" href="#added-3">Added</a></h3>
+
+<ul>
+  <li><strong>Lanes: a small agent-facing layer over Pi workers.</strong>
+    <ul>
+      <li><code>harnex delegate [--worktree NAME] TASK</code>: one call hands a task to a
+worker and prints its reply plus a lane footer: state, time, model, cost,
+commits, diffstat and next commands. <code>--worktree NAME</code> creates
+<code>.harnex/worktrees/NAME</code> on branch <code>harnex/NAME</code>. <code>--no-wait</code> starts
+parallel lanes.</li>
+      <li><code>harnex result [NAME...]</code>: wait for lanes and print each result as it
+lands. With no names it covers every uncollected lane the caller
+started in this repo.</li>
+      <li><code>harnex reply NAME MESSAGE</code>: a follow-up. A busy worker takes it
+mid-turn; a finished lane is relaunched on its own Pi session
+(<code>pi --session</code>), so it keeps its context.</li>
+      <li><code>harnex land NAME</code>: merge <code>harnex/NAME</code> into the current branch, then
+remove the worktree and branch. Leftovers are committed first; a
+conflict leaves the merge in progress for the caller.</li>
+      <li><code>harnex discard NAME</code> and <code>harnex lanes</code>.</li>
+      <li>Lane records live in <code>STATE_DIR/lanes/</code>. Blocking commands default to
+<code>--timeout 9m</code>, and exit 124 names <code>harnex result NAME</code>.</li>
+    </ul>
+  </li>
+  <li><code>harnex wait --since TIME</code> ignores events from an earlier launch of the
+same id (each launch restarts the events-log seq).</li>
+  <li><code>harnex doctor</code> capabilities add <code>lanes</code>.</li>
+  <li><code>evals/agents/run</code>: agent smoothness evals. Real supervisors (Claude Code
+headless, Pi print mode) run five scenarios against a fixture repo,
+scored for correctness, tool calls, errors, doc lookups and leftovers.</li>
+</ul>
+
+<h3 id="changed-5"><a class="anchor" href="#changed-5">Changed</a></h3>
+
+<ul>
+  <li><strong>Breaking:</strong>
+    <ul>
+      <li><code>harnex ask</code> defaults to <code>--timeout 9m</code> (<code>none</code> for no cap).</li>
+      <li>Every ask is a lane, so a timed-out ask names <code>harnex result ID</code>, and
+<code>harnex reply ID "..."</code> follows up with the worker’s context.
+<code>ask --resume ID</code> still works and no longer needs <code>--repo</code>.</li>
+      <li>Pi starts with <code>--no-approve</code> unless the caller passes <code>--approve</code>.</li>
+    </ul>
+  </li>
+  <li>Top-level <code>harnex --help</code> leads with the agent verbs;
+<code>harnex agents-guide claude</code> is rewritten around them.</li>
+  <li>Help examples use Pi session ids (<code>pi-i-42</code>) instead of Codex-era ones.</li>
+</ul>
+
+<h3 id="fixed-1"><a class="anchor" href="#fixed-1">Fixed</a></h3>
+
+<ul>
+  <li>Harnex state in a repo no longer shows up as untracked work: writing a
+dispatch row under <code>.harnex/</code> adds <code>.harnex/</code> to the clone’s
+<code>info/exclude</code>. This also unblocks <code>git worktree remove</code> for lane
+worktrees.</li>
+</ul>
+
+<h2 id="0210---2026-10-22--1240-pm--ist"><a class="anchor" href="#0210---2026-10-22--1240-pm--ist">[0.21.0] - 2026-10-22 | 12:40 PM | IST</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication). Makes Pi/GPT
+workers usable as a Claude Code subagent type (#86 slice 1): the <code>gpt</code> agent
+(kept in <code>~/Projects/pi/.claude/agents/gpt.md</code>) relays briefs through
+<code>harnex ask</code> and needs <code>ask --resume</code> to outlast the 10-minute Bash cap.</p>
+
+<h3 id="added-4"><a class="anchor" href="#added-4">Added</a></h3>
+
+<ul>
+  <li><code>harnex ask --resume ID --repo ROOT [--timeout DUR]</code> (#86): keep waiting on
+an ask that timed out and print its answer like the original ask (same
+exit codes, the full answer even when truncated in the result). A timed-out
+ask now names this command on stderr instead of a raw <code>harnex wait</code>, so a
+Claude Code subagent loops on one command shape under the 10-minute Bash
+cap. <code>--json</code> output still carries the run’s own <code>resume</code> field.</li>
+  <li><code>harnex doctor</code> capabilities add <code>ask_resume</code>.</li>
+</ul>
+
+<h2 id="0200---2026-10-20--0955-pm--04"><a class="anchor" href="#0200---2026-10-20--0955-pm--04">[0.20.0] - 2026-10-20 | 09:55 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication). Harnex is now
+Pi + GPT only: Codex support is removed (owner decision 2026-10-20: “we are
+going to be exclusively pi &amp; gpt models”).</p>
+
+<h3 id="removed"><a class="anchor" href="#removed">Removed</a></h3>
+
+<ul>
+  <li>The <code>codex</code> (PTY) and <code>codex app-server</code> (JSON-RPC) adapters, the
+<code>stdio_jsonrpc</code> session transport, the app-server client, and their
+fixtures and tests. <code>harnex run codex</code> is no longer special-cased (it would
+wrap a <code>codex</code> binary as a generic PTY CLI).</li>
+  <li><code>harnex run --fast</code> and <code>--legacy-pty</code>; Codex service-tier forcing;
+<code>harnex preflight --legacy-pty</code>; <code>docs/codex-appserver.md</code>.</li>
+  <li><code>harnex doctor</code> Codex checks: it now checks Pi by default and only Pi
+(<code>--adapter pi|all</code>).</li>
+  <li>Issues #40, #42 and #43 (Codex recovery/fallback/throughput work) closed.</li>
+</ul>
+
+<h3 id="changed-6"><a class="anchor" href="#changed-6">Changed</a></h3>
+
+<ul>
+  <li>Shared session behavior previously tested through Codex (receipts and
+claims, completion-notification ordering, boot-failure classification,
+stop sequencing, auto-stop, status fields, usage pricing, <code>preflight</code>
+end to end) is now tested through Pi or adapter-neutral fakes.</li>
+  <li>Dispatch-row schema fields are unchanged; <code>agent.service_tier</code>,
+<code>actual.rate_limits</code> and Codex error details stay <code>null</code> for new rows.</li>
+  <li><code>harnex doctor</code> capabilities add <code>ask</code>, <code>final_message</code> and <code>owner_tag</code>.</li>
+  <li>Docs, guides, recipes and repo instructions are Pi-only; session ids use
+<code>pi-&lt;role&gt;-&lt;tag&gt;</code>.</li>
+</ul>
+
+<h2 id="0190---2026-10-20--0635-pm--04"><a class="anchor" href="#0190---2026-10-20--0635-pm--04">[0.19.0] - 2026-10-20 | 06:35 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication). Makes Pi
+(GPT-backed) workers usable as native tools from Claude Code sessions and
+subagents (#85), driven by live Claude-subagent stress runs.</p>
+
+<h3 id="added-5"><a class="anchor" href="#added-5">Added</a></h3>
+
+<ul>
+  <li><code>harnex ask "QUESTION"</code>: one blocking call that hands a question to a Pi
+worker (read-only tools by default; <code>--write</code> to allow edits) and prints its
+answer. <code>--model</code>, <code>--fallback-model</code> (one more try on provider capacity),
+<code>--effort</code>, <code>--file/--section</code>, <code>--timeout</code>, <code>--json</code>; stderr names the
+lane, time and model. A read-only ask records in the global stream, so the
+repository stays untouched.</li>
+  <li>Turn results carry the worker’s reply: <code>final_message</code> (at most 4,000
+characters), <code>final_message_path</code> (full text), <code>final_message_truncated</code>,
+plus the lane’s <code>end_sha</code>, <code>commits</code> (since launch), <code>turn_commits</code> and
+<code>model</code>, in events, <code>wait</code>, <code>send --wait-done</code> and owner-stream lines.</li>
+  <li><code>harnex run --wait-done [--wait-timeout DUR]</code>: launch and block until the
+first turn’s result in one call; on 124 the output names the <code>resume</code>
+command.</li>
+  <li><code>--owner-tag TAG</code> on <code>run</code> and <code>watch --owner</code>: a subagent’s own owner
+(<code>&lt;session&gt;/&lt;TAG&gt;</code>), so its stream holds only its lanes and no backlog.</li>
+  <li><code>watch --owner --match GLOB</code> filters lanes by id; <code>--until-idle</code> blocks
+until no matching lane is running and prints every result on the way.</li>
+  <li><code>send --stall-after DUR</code> (with <code>--wait-done</code>); <code>send --wait-done</code> timeouts
+print <code>resume</code>.</li>
+  <li>Status and stall lines name Pi’s running shell commands
+(<code>running_commands</code>; “stalled … while running <code>sleep 150</code>”).</li>
+  <li><code>harnex agents-guide claude</code>: the operating guide for Claude Code.</li>
+</ul>
+
+<h3 id="changed-7"><a class="anchor" href="#changed-7">Changed</a></h3>
+
+<ul>
+  <li><code>watch --owner --once</code> prints every event ready in its pass, not only the
+first.</li>
+  <li>The owner stream delivers each turn’s result once and in settle order, even
+when several turns end between polls (owner records keep a bounded
+per-turn history). Previously a turn replaced by the next before a poll was
+lost.</li>
+  <li><code>harnex send</code> to an exited session fails fast (exit 1, <code>status: "exited"</code>)
+instead of spending its whole timeout on lookup.</li>
+  <li><code>send --wait-done</code> output: <code>status</code> is the turn’s verdict and
+<code>delivery_status</code> the delivery’s.</li>
+  <li><code>wait --until done</code> on a session already gone reports <code>process_state:
+"exited"</code> and names a caller’s stop <code>stopped_by_caller</code>.</li>
+  <li>Stall lines carry <code>turn</code> and <code>elapsed_s</code>; durations under 10 minutes print
+as <code>3m05s</code>.</li>
+  <li>Durations accept compound forms (<code>8m30s</code>, <code>1h30m</code>); <code>--context-section</code>
+accepts a heading with its marks (<code>"## Task"</code>).</li>
+  <li>A follow-up whose run settled while the send was in flight is sent as a
+plain prompt, and follow-ups are counted for the turn they joined.</li>
+  <li><code>resume</code> hints name the checkout’s <code>bin/harnex</code> when running from source.</li>
+</ul>
+
+<h2 id="0180---2026-10-20--0441-pm--04"><a class="anchor" href="#0180---2026-10-20--0441-pm--04">[0.18.0] - 2026-10-20 | 04:41 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication). Closes the
+subagent-orchestration gaps found by Holm Queues 159/160 (#79-#84).</p>
+
+<h3 id="added-6"><a class="anchor" href="#added-6">Added</a></h3>
+
+<ul>
+  <li><code>harnex run --context-file PATH [--context-section TEXT]</code> sends a brief from
+disk, or only the part after a heading (to the next heading of its level)
+or a plain marker line (to end of file), and refuses an empty result.
+<code>--meta-file PATH</code> reads <code>--meta</code> JSON from a file (inline <code>--meta</code> keys
+win). The brief path and SHA-256 of the sent text land in
+<code>meta.context_file</code> / <code>meta.context_sha256</code> (#83).</li>
+  <li><code>harnex watch --owner --once [--timeout DUR] [--cursor NAME]</code>: print the
+first undelivered result or stall, advance the cursor, exit 0 (124 on
+timeout). One blocking call covers every lane an owner launched; named
+cursors keep a parent and its subagent apart (#84).</li>
+  <li>Per-turn completion (#81): <code>harnex send</code> reports <code>after_seq</code>;
+<code>harnex wait --until done --after-seq N</code> waits for the turn after that point;
+<code>harnex send --wait-done</code> does both in one call. <code>task_complete</code> /
+<code>task_failed</code> events carry <code>turn</code>, and the owner stream reports every turn’s
+result (a nudged turn included) instead of one per session.</li>
+  <li><code>provider_capacity</code> outcome class: a Pi turn that fails after Pi’s own
+provider retries ran out (<code>auto_retry_end success:false</code>). In status JSON,
+dispatch rows, the owner stream and <code>orchestration report</code>; fatal by default
+for <code>--failure-budget</code>, as <code>task_failed</code> was (#82).</li>
+  <li>Turn results carry <code>follow_ups: {sent, pending}</code> when follow-ups joined the
+turn (from Pi’s <code>queue_update</code> counts; <code>pending: 0</code> means each reached the
+model), and owner events add <code>settled_at</code>. A later turn’s <code>elapsed_s</code> runs
+from that turn’s start. <code>harnex run --tmux</code> prints <code>tmux_target</code>.</li>
+</ul>
+
+<h3 id="changed-8"><a class="anchor" href="#changed-8">Changed</a></h3>
+
+<ul>
+  <li>A send to a busy Pi session is handed to Pi at once as a follow-up
+(<code>delivery: "follow_up"</code>), delivered when the current turn ends, instead of
+waiting in the 120 s inbox and expiring unread. Other adapters: an expired
+message makes <code>send</code> exit 1 with <code>status: "expired"</code>, and a send that times
+out withdraws its queued message before exiting 124 (#79).</li>
+  <li>Worktree lanes (<code>--cwd</code> in a different Git toplevel than <code>--root</code>) are
+observed in the lane: <code>commit_sha</code>, branch, receipt, activity and acceptance
+describe the lane; the end row adds <code>root_commit_sha</code> (#80).</li>
+  <li><code>run --tmux --context-file</code> hands the brief to the inner runner by path,
+so long briefs no longer hit tmux’s command-length limit.</li>
+</ul>
+
+<h2 id="0170---2026-10-18--0113-pm--04"><a class="anchor" href="#0170---2026-10-18--0113-pm--04">[0.17.0] - 2026-10-18 | 01:13 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication).</p>
+
+<h3 id="added-7"><a class="anchor" href="#added-7">Added</a></h3>
+
+<ul>
+  <li><code>harnex watch --owner [ID]</code>: one owner-scoped stream of compact JSON lines
+(<code>harnex.owner_event.v1</code>, with a readable <code>msg</code>) for every dispatch an owner
+started: <code>started</code>, <code>done</code>, <code>rejected</code>, <code>failed</code>, <code>stalled</code> (with
+<code>--stall-after</code>), <code>stopped</code>, <code>timeout</code>. No heartbeats; runs until killed or
+<code>--max-wait</code>. A per-owner cursor delivers each result once across restarts.
+Built for Claude Code’s <code>Monitor</code> (#77).</li>
+  <li><code>harnex run</code> from a Claude Code Bash shell records <code>CLAUDE_CODE_SESSION_ID</code>
+as the dispatch owner, as Pi does with <code>PI_SESSION_ID</code> (Pi’s wins if both
+are set; explicit <code>--orchestration-session-id</code> wins over both). The tmux
+hand-off marks the owner resolved, so a tmux server’s stale environment
+cannot re-attribute a dispatch.</li>
+  <li>Documented the stable <code>harnex status --json</code> fields for status-line and
+panel consumers.</li>
+</ul>
+
+<h2 id="0161---2026-10-18--1241-pm--04"><a class="anchor" href="#0161---2026-10-18--1241-pm--04">[0.16.1] - 2026-10-18 | 12:41 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release (no RubyGems publication).</p>
+
+<h3 id="added-8"><a class="anchor" href="#added-8">Added</a></h3>
+
+<ul>
+  <li><code>harnex watch --stall-after DUR</code> (and <code>wait --until done --stall-after DUR</code>)
+exits 4 (<code>wait_result: stalled</code>) once the live session shows no progress for
+DUR, leaving the worker running. Pi and other structured adapters use the
+most recent turn-start/model/tool event during an active turn
+(<code>clock: activity</code>); PTY adapters fall back to transcript idle
+(<code>clock: output_log</code>). Stalls write no marker and skip
+<code>--stop-on-terminal</code>. The predicate (<code>Harnex::Stall</code>) is shared for #77
+(#76).</li>
+</ul>
+
+<h2 id="0160---2026-10-18--1255-am--04"><a class="anchor" href="#0160---2026-10-18--1255-am--04">[0.16.0] - 2026-10-18 | 12:55 AM | +04</a></h2>
+
+<p>Owner-authorized local-only release. Owner decision (2026-10-18): Harnex is
+installed locally and is not published to RubyGems.</p>
+
+<h3 id="added-9"><a class="anchor" href="#added-9">Added</a></h3>
+
+<ul>
+  <li>Final gates: <code>harnex run --final-gate '&lt;cmd&gt;'</code> (repeatable; or meta
+<code>final_gates</code>) declares final acceptance commands. Receipts gain
+<code>validation.commands_had_failures</code> (whole-history, harness-observed) and
+<code>validation.final_gates</code> (<code>declared</code>, <code>observed_pass</code>, <code>observed_fail</code>,
+<code>missing</code>, <code>status: pass|fail|unknown|undeclared</code>, per-gate last exit).
+With gates declared, <code>validation.status</code> reports them, so an exploratory or
+intermediate failure no longer marks a green final run as <code>fail</code>. Matching
+is exact, after unwrapping a single <code>bash -lc</code>/<code>sh -c</code> transport wrapper.
+Without gates, behavior is unchanged. Diagnostics only: acceptance and
+outcome classes do not change (#68).</li>
+  <li>Dispatch-row <code>outcome.class</code> gains process classes from signals Harnex
+already holds: <code>boot_failure</code>, <code>permission_prompt</code>, <code>timeout</code>,
+<code>stopped_by_caller</code>, <code>process_failed</code>. They refine an <code>unknown</code>/<code>task_failed</code>
+terminal or the receipt rejection of a process that never signalled
+completion; completion and proof verdicts are never overridden, and the
+vocabulary is closed with an <code>unknown</code> fallback.</li>
+  <li><code>harnex orchestration report</code> counts worker outcome classes per raw attempt
+and per retry family (joined by parent attempt/dispatch id), accepts
+<code>--queue-id</code> as well as <code>--run-id</code>, and takes an optional
+<code>--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]</code>
+that adds a <code>failure_budget</code> verdict and exits 3 on breach (#57).</li>
+  <li><code>harnex preflight ADAPTER [--cwd DIR] [--commit-check]</code> runs one tiny real
+dispatch through <code>harnex run</code> and prints a JSON verdict
+(<code>harnex.preflight.v1</code>): registration, boot, permission prompt, task read
+from the task root (default <code>/tmp</code>), workspace write, harness-observed
+command exit (via a final gate), receipt, worker claims, completion, and
+stop, plus a scratch-repo commit with <code>--commit-check</code>. Each failure is a
+distinct check and failure class; a turn that fails before any work reports
+its (redacted) error as the root cause. Usage, cost and context telemetry
+provenance is reported per adapter. Exits non-zero on any failed check. Its
+dispatch row carries <code>phase=preflight</code> (exempt from repo phase allowlists)
+and <code>orchestration report</code> excludes such rows unless <code>--include-preflight</code>.
+Workers are stopped through the session API and carry a <code>--max-runtime</code>
+backstop, so a killed or timed-out preflight cannot orphan them (#56).</li>
+  <li><code>harnex doctor</code> capabilities add <code>final_gates: 1</code>, <code>outcome_classes: 1</code> and
+<code>preflight: 1</code>.</li>
+</ul>
+
+<h3 id="changed-9"><a class="anchor" href="#changed-9">Changed</a></h3>
+
+<ul>
+  <li><code>harnex status</code> (default current-repo view) now says how many sessions are
+active in other repos, with up to three ids, instead of a bare
+“No active harnex sessions” that read as global emptiness when workers run
+in sibling worktrees. <code>--repo</code>, <code>--all</code> and <code>--json</code> output is unchanged
+(#26).</li>
+  <li>A bare <code>harnex wait</code> (process-exit fence) prints a stderr <code>note:</code> when the
+session was not started with <code>--auto-stop</code>, and again if its turn settles
+while the wait is blocked, pointing at <code>--until done</code>. Events from an
+earlier run of the same id are ignored. Status JSON gains <code>auto_stop</code> (#49).</li>
+  <li>Events JSONL <code>ts</code> now has millisecond precision (<code>iso8601(3)</code>), so teardown
+races can be measured from the events log (#36/#37 follow-up). Readers that
+parse ISO-8601 are unaffected; older rows keep whole seconds.</li>
+</ul>
+
+<h3 id="fixed-2"><a class="anchor" href="#fixed-2">Fixed</a></h3>
+
+<ul>
+  <li>Two status tests that sat below a <code>private</code> keyword never ran; they run now.</li>
+  <li>Test-suite flakes: cross-repo status hint tests no longer see registries
+leaked by other suites, and the detached on-done smoke waits for teardown.</li>
+</ul>
+
+<h2 id="0150---2026-10-16--0720-am--04"><a class="anchor" href="#0150---2026-10-16--0720-am--04">[0.15.0] - 2026-10-16 | 07:20 AM | +04</a></h2>
+
+<p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
+
+<h3 id="added-10"><a class="anchor" href="#added-10">Added</a></h3>
+
+<ul>
+  <li>Pi RPC receipts now attest built-in <code>bash</code> commands: bounded command text,
+integer exit from <code>result.structuredContent.exit_code</code>, status and duration,
+correlated by <code>toolCallId</code>. Output is never persisted. Pi bash calls count in
+<code>commands_executed</code>; other tools stay <code>tool_calls</code> (#70).</li>
+  <li>Receipts gain <code>command_observation: "partial"</code> and
+<code>observed.commands_unobserved</code>: Pi command calls without structured exit
+evidence (abort, timeout, extension override, older Pi, in flight at
+teardown) are counted rather than inferred, and <code>validation.status</code> reads
+<code>unknown</code> instead of <code>pass</code> while any exist. Live verified on Pi 1.2.0/1.3.0.</li>
+  <li><code>harnex doctor</code> advertises <code>capabilities.pi_command_proof: 1</code>; consumers
+should check it before treating Pi receipt commands as proof.</li>
+</ul>
+
+<h3 id="fixed-3"><a class="anchor" href="#fixed-3">Fixed</a></h3>
+
+<ul>
+  <li><code>wait</code>/<code>watch</code> observers no longer exit 1 when a sibling session’s registry
+file is removed between the session scan’s glob and read (stop/cleanup
+race); <code>doctor</code>’s registry sweep is guarded the same way (#75).</li>
+</ul>
+
+<h2 id="0141---2026-10-05--0955-pm--04"><a class="anchor" href="#0141---2026-10-05--0955-pm--04">[0.14.1] - 2026-10-05 | 09:55 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
+
+<h3 id="fixed-4"><a class="anchor" href="#fixed-4">Fixed</a></h3>
+
+<ul>
+  <li>New dispatch records and reconciliation repair appends store paths under the
+user’s home as <code>~</code>/<code>~/...</code>, without mutating runtime records or rewriting
+existing rows. Nested data and home-prefix boundaries are preserved (#74).</li>
+  <li>Canonical reconciliation accepts equivalent absolute and home-relative paths
+while retaining genuine payload conflicts. Status results keep their absolute
+repository roots, and retention still protects portable live-record paths.</li>
+</ul>
+
+<h2 id="0140---2026-09-28--0825-pm--04"><a class="anchor" href="#0140---2026-09-28--0825-pm--04">[0.14.0] - 2026-09-28 | 08:25 PM | +04</a></h2>
+
+<p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
+
+<h3 id="fixed-5"><a class="anchor" href="#fixed-5">Fixed</a></h3>
+
+<ul>
+  <li>Explicit idle Pi shutdown preserves the latest settled accepted/no-change
+proof, including follow-up turns. Busy/newly dispatched work cannot reuse an
+older receipt; unexpected transport loss and malformed output still fail.
+Raw child exits remain observable separately from logical cleanup status (#69).</li>
+  <li><code>wait</code>/<code>watch</code> observer deadlines now include slow registry, event, HTTP and
+exit-grace probes. A private observer process enforces the monotonic cap without
+stopping the worker; late results cannot override timeout (#71).</li>
+</ul>
+
+<h3 id="added-11"><a class="anchor" href="#added-11">Added</a></h3>
+
+<ul>
+  <li>Opt-in <code>wait/watch --heartbeat DUR</code> streams flushed diagnostics on stderr while
+preserving one final JSON stdout result. <code>wait --max-wait</code> aliases <code>--timeout</code>.</li>
+  <li>Structured work/model/tool activity clocks distinguish real events from UI/log
+freshness, with unknown PTY clocks and no retained thinking-stream content.</li>
+  <li>Bounded stop reason/origin survives events, status, receipts and dispatch-end
+telemetry. Expected cancellation is distinct from provider disconnection.</li>
+  <li><code>run --max-runtime DUR</code> enforces a fixed runner-owned worker budget independent
+of supervisors, prompts, retries or UI chatter. Active expiry fails work; idle
+cleanup preserves accepted proof. Doctor exposes versioned capabilities (#71).</li>
+</ul>
+
+<h2 id="0130---2026-09-23--0156-am--04"><a class="anchor" href="#0130---2026-09-23--0156-am--04">[0.13.0] - 2026-09-23 | 01:56 AM | +04</a></h2>
+
+<p>Local-only activation approved by the owner. Public RubyGems publication, Git
+tag, and push are deferred; later publication must use the exact verified gem
+built from this commit rather than rebuilding version 0.13.0.</p>
+
+<h3 id="added-12"><a class="anchor" href="#added-12">Added</a></h3>
+
+<ul>
+  <li>Dispatch telemetry now has an opt-in local archive bridge. A stable sidecar
+lock encloses archive preparation and append, preventing atomic rotation from
+stranding writers on an old inode. A separate complete-history reader feeds
+history, canonical reconciliation, latest-row lookup, status, and attempt
+accounting. Helper failures never drop a new dispatch row, while unavailable
+or malformed complete history fails explicitly instead of appearing empty.</li>
+  <li><code>harnex telemetry archive-capability --json</code> exposes the local helper protocol
+version and exact archiver/history environment names so automation can refuse
+to trim active dispatch history against an older installed Harnex.</li>
+</ul>
+
+<h2 id="0121---2026-09-19--1230-pm--04"><a class="anchor" href="#0121---2026-09-19--1230-pm--04">[0.12.1] - 2026-09-19 | 12:30 PM | +04</a></h2>
+
+<h3 id="fixed-6"><a class="anchor" href="#fixed-6">Fixed</a></h3>
+
+<ul>
+  <li>Pi-launched dispatches now capture the invoking primary’s <code>PI_SESSION_ID</code>
+before crossing detached/tmux process boundaries and publish a durable,
+owner-addressed, per-attempt completion record. Reusing a dispatch name no
+longer erases an unacknowledged attempt, and nested workers never implicitly
+nominate themselves as completion consumers.</li>
+  <li>Addressed delivery registration fails before the initial structured prompt
+when it cannot be persisted. A terminal delivery-write failure leaves the
+registered running record available for native <code>harnex watch</code> recovery.
+Existing typed markers and optional <code>--on-done</code> hooks remain compatible.</li>
+</ul>
+
+<h2 id="0120---2026-09-03--1009-am--ist"><a class="anchor" href="#0120---2026-09-03--1009-am--ist">[0.12.0] - 2026-09-03 | 10:09 AM | IST</a></h2>
+
+<h3 id="added-13"><a class="anchor" href="#added-13">Added</a></h3>
+
+<ul>
+  <li>Registered sessions now atomically publish a typed completion marker under
+<code>$HARNEX_STATE_DIR/done/</code> at the first accepted, rejected, failed, or error
+work result, without requiring a <code>wait</code> or <code>watch</code> client.</li>
+  <li><code>harnex run --on-done CMD</code> launches one non-blocking trusted local shell hook
+with typed completion, receipt, commit, and elapsed-time environment values.
+The option works in foreground, detached, and tmux launches.</li>
+</ul>
+
+<h3 id="changed-10"><a class="anchor" href="#changed-10">Changed</a></h3>
+
+<ul>
+  <li><code>harnex status</code> now renders settled live work (<code>done</code>, <code>rejected</code>, or
+<code>failed</code>) ahead of an adapter’s prompt/busy state. Existing JSON fields and
+the v2 dispatch envelope remain unchanged.</li>
+</ul>
+
+<h2 id="0110---2026-08-14--0103-pm--ist"><a class="anchor" href="#0110---2026-08-14--0103-pm--ist">[0.11.0] - 2026-08-14 | 01:03 PM | IST</a></h2>
+
+<h3 id="fixed-7"><a class="anchor" href="#fixed-7">Fixed</a></h3>
+
+<ul>
+  <li>Pi RPC completion now fences on Pi 0.80.4+’s <code>agent_settled</code> event instead of
+the lower-level <code>agent_end</code>. Provider retries, compaction recovery, and queued
+continuations can no longer publish premature <code>task_complete</code> or open the
+inbox early. Final <code>error</code>, <code>aborted</code>, and <code>length</code> stop reasons fail closed;
+a settled run without an authoritative final assistant reason also fails.</li>
+  <li>Pi 0.84’s breaking delta-only <code>message_update</code> shape is correlated from
+<code>message_start</code> through authoritative <code>message_end</code>, preserving streamed
+output without duplicating the final message.</li>
+  <li>Harnex <code>--model</code> and <code>--effort</code> now become supported Pi <code>--model</code> /
+<code>--thinking</code> startup controls and are verified through RPC <code>get_state</code>,
+instead of adding ignored fields to <code>prompt</code> or persisting RPC setters into
+the user’s Pi defaults. Model mismatches and clamped effort requests fail
+before prompting, telemetry distinguishes requested from observed effective
+model values, and forced busy sends use Pi’s <code>steer</code> streaming behavior.</li>
+  <li>Pi RPC request waits are bounded, subprocess stderr is continuously drained
+into a bounded diagnostic tail, and process status is read from Open3’s wait
+thread instead of racing it with a second <code>waitpid</code> and potentially losing a
+nonzero exit status.</li>
+</ul>
+
+<h3 id="changed-11"><a class="anchor" href="#changed-11">Changed</a></h3>
+
+<ul>
+  <li><strong>Compatibility:</strong> structured Pi dispatch now requires Pi &gt;= 0.80.4. Both
+foreground and detached/tmux launches validate the installed version before
+spawn. This is the first Pi release with the final <code>agent_settled</code> fence.</li>
+  <li>Pi retry/compaction events retain settlement state and expose current
+summarization-retry lifecycle events in Harnex’s event stream.</li>
+  <li>Codex schema fixtures are refreshed against CLI 0.147.0 after a bounded
+semantic review. The drift is limited to a string path-alias replacement and
+additive optional thread/item fields that Harnex does not consume; existing
+minimal response fixtures still validate, so no Codex adapter behavior
+changes.</li>
+</ul>
+
+<h3 id="added-14"><a class="anchor" href="#added-14">Added</a></h3>
+
+<ul>
+  <li><code>harnex doctor --adapter pi</code> statically verifies the Pi RPC version;
+<code>--adapter all</code> checks both Pi and Codex while the no-argument default remains
+Codex-compatible.</li>
+  <li><code>docs/pi-rpc.md</code> documents transport semantics, project trust, lifecycle,
+model controls, telemetry, and known boundaries. An opt-in live contract test
+(<code>PI_INTEGRATION=1</code>) verifies the installed Pi event shape without adding
+provider cost to the normal suite.</li>
+</ul>
+
+<h2 id="0102---2026-08-08--0649-pm--ist"><a class="anchor" href="#0102---2026-08-08--0649-pm--ist">[0.10.2] - 2026-08-08 | 06:49 PM | IST</a></h2>
+
+<p>Docs-only patch: no library or CLI behavior changes. Released so the
+packaged <code>agents-guide</code> surfaces serve the corrected guidance instead of the
+stale 0.10.1 copies.</p>
+
+<h3 id="changed-12"><a class="anchor" href="#changed-12">Changed</a></h3>
+
+<ul>
+  <li><code>guides/04_monitoring.md</code>: the Completion Test’s clean-tree check now
+documents excluding the harness-owned dispatch stream
+(<code>git status --short -- . ':!.harnex'</code>) in repos that track
+<code>.harnex/dispatch.jsonl</code>. New anti-patterns: claiming “no live sessions”
+from memory (finished agents park at prompts — sweep proven-done sessions,
+then prove with <code>harnex status</code>) and failing clean-tree fences on
+dispatch-stream growth.</li>
+  <li><code>docs/dispatch-telemetry.md</code>: new “Clean-Tree Checks And The Tracked
+Stream” section — the tracked stream grows mid-run and is harness-owned;
+fences and worker briefs must exclude it and never revert it.</li>
+</ul>
+
+<p>Context: holm Analysis 803 (queue-process failure meta-analysis). During
+Q107 g2 a worker aborted after misreading dispatch-stream growth as foreign
+dirt, and a coordinator claimed “no live sessions” while 12 completed
+workers sat parked at prompts.</p>
+
+<h2 id="0101---2026-08-04--1220-am--ist"><a class="anchor" href="#0101---2026-08-04--1220-am--ist">[0.10.1] - 2026-08-04 | 12:20 AM | IST</a></h2>
+
+<p>Patch release: closes the recovery and regression-checking gap left
+after <code>0.10.0</code> removed the upstream telemetry mirror. The canonical
+<code>.harnex/dispatch.jsonl</code> stream remains the only writer; this release adds
+operator tooling to prove and repair that stream without schema migration.</p>
+
+<h3 id="added-15"><a class="anchor" href="#added-15">Added</a></h3>
+
+<ul>
+  <li><code>harnex telemetry assert-canonical</code> validates the canonical dispatch stream
+and, when explicit <code>--source</code> paths are supplied, fails closed on missing or
+conflicting rich end rows. It is read-only, tolerates mixed-era history
+including open v2 starts and legacy rows, and emits bounded redacted reports.</li>
+  <li><code>harnex telemetry reconcile</code> uses the same analysis, defaults to dry-run, and
+only appends missing rich end rows when <code>--apply</code> is passed. It never rewrites,
+deletes, sorts, migrates, cleans source files, or discovers sources
+automatically.</li>
+  <li>Source paths may be files or directories. Directory scans are bounded to
+<code>.json</code>/<code>.jsonl</code>, skip <code>.git</code>, symlinks, and the resolved canonical stream,
+ignore unrelated generic JSON, and treat identity or payload conflicts as
+zero-write failures.</li>
+</ul>
+
+<h2 id="0100---2026-08-03--0144-pm--ist"><a class="anchor" href="#0100---2026-08-03--0144-pm--ist">[0.10.0] - 2026-08-03 | 01:44 PM | IST</a></h2>
+
+<p>Minor bump, <strong>breaking</strong>: <code>--summary-out</code> is removed outright, so the canonical
+<code>.harnex/dispatch.jsonl</code> is the only telemetry destination. Also fixes four
+runner reliability defects found while verifying that removal — concurrent
+registry corruption, a delivered send reported as failed, a corrupt registry
+entry crashing every session scan, and a closed stdout wedging the wrapped
+agent.</p>
+
+<h3 id="fixed-8"><a class="anchor" href="#fixed-8">Fixed</a></h3>
+
+<ul>
+  <li><strong>Concurrent registry writes no longer corrupt each other</strong> (#66).
+<code>write_registry</code> derived its temp path from the pid alone, but several
+threads in one session write the same registry — the startup persist, the
+inbox delivery thread, and one thread per API client. One thread renamed the
+file another was still writing, and the loser raised <code>Errno::ENOENT</code>
+(2080 failures in a 2400-write reproduction; now zero). Writes are also no
+longer defeated by a state directory that was reaped mid-session.</li>
+  <li><strong>A failed registry write no longer fails an already delivered send</strong> (#66).
+Registry persistence runs <em>after</em> the prompt has reached the agent, so a
+bookkeeping failure was reporting a dispatched turn as failed — enough to
+make an orchestrator retry work already in flight. Post-injection refresh now
+warns; startup persistence stays strict so an undiscoverable session still
+fails loudly instead of running unreachable.</li>
+  <li><strong>One corrupt registry file no longer crashes every session scan</strong> (#66).
+A non-numeric pid raised <code>ArgumentError</code> out of <code>active_sessions</code>, taking
+down <code>harnex status</code>, <code>harnex send</code>, and <code>harnex pane</code>. Such an entry is now
+treated as dead and pruned, matching the existing self-healing for
+unparseable JSON.</li>
+  <li><strong>A closed stdout no longer wedges the wrapped agent</strong> (#66).
+<code>Errno::EPIPE</code>/<code>EBADF</code> are not <code>IOError</code> subclasses, so they escaped the
+output reader’s rescue and killed the thread; the PTY then stopped draining
+and the agent blocked forever on write, presenting as an agent hang with no
+harness error. Draining is now unconditional and stdout echo is best-effort.
+Both reader loops report an unexpected exit instead of vanishing silently.</li>
+  <li><code>Retention</code> metadata writes route through the shared atomic writer instead of
+repeating the same pid-only temp-name pattern.</li>
+</ul>
+
+<h3 id="removed-1"><a class="anchor" href="#removed-1">Removed</a></h3>
+
+<ul>
+  <li><strong>BREAKING: <code>--summary-out</code> is gone</strong> (#65). <code>.harnex/dispatch.jsonl</code> is now
+the only destination a dispatch writes telemetry to. Passing <code>--summary-out
+PATH</code> or <code>--summary-out=PATH</code> is rejected as an unknown flag and exits
+non-zero; it is deliberately not a silent ignore, so a stale caller fails
+immediately rather than believing it still has a second copy. 0.9.0 demoted
+the flag to an explicit-only mirror but left it in place; that mirror was the
+source of a three-times-hand-reconciled stranded-telemetry class.</li>
+  <li><code>summary_out_path</code> no longer appears on <code>dispatch_start</code> or <code>dispatch_end</code>
+rows, and <code>summary_out</code> no longer appears in <code>harnex status --json</code>,
+<code>harnex wait</code>, or <code>harnex watch</code> payloads. The <code>summary</code> event no longer
+carries <code>mirror_path</code>.</li>
+</ul>
+
+<h3 id="added-16"><a class="anchor" href="#added-16">Added</a></h3>
+
+<ul>
+  <li><strong>Harness-authored observed-state receipts</strong> (#64): every dispatch now writes
+a canonical <code>harnex.artifact_report.v1</code> receipt without worker-authored JSON.
+Receipts carry explicit <code>receipt.author=harnex</code> provenance, start/end Git
+state (committed plus staged/unstaged/untracked paths and LOC), bounded Codex
+command exits, turn acceptance, and usage. The receipt is written before a
+structured <code>task_complete</code> event and refreshed with final teardown telemetry.</li>
+  <li>Every session receives a default repo-keyed receipt under
+<code>~/.local/state/harnex/receipts/</code>; <code>--artifact-report</code> now overrides that
+destination. Live status, detached/tmux launch payloads, dispatch-start rows,
+and dispatch-end metadata expose the receipt and claims paths.</li>
+  <li>Review workers may write a bounded optional block to
+<code>HARNEX_ARTIFACT_CLAIMS_PATH</code> (<code>summary</code>, <code>verdict</code>, and P1/P2/P3 counts).
+Claims are sanitized and copied into the receipt but never participate in
+completion acceptance or final-receipt validity.</li>
+  <li>Receipt files and claims inputs join the existing 45-day / 1-GiB retention
+policy as a third independently configurable directory, including
+<code>HARNEX_RECEIPTS_MAX_AGE_DAYS</code> / <code>HARNEX_RECEIPTS_MAX_BYTES</code> and live/current
+path protection.</li>
+</ul>
+
+<h3 id="changed-13"><a class="anchor" href="#changed-13">Changed</a></h3>
+
+<ul>
+  <li><code>TerminalStatus</code> resolves exclusively from the canonical stream. It
+previously preferred the mirror file named by a record’s <code>summary_out_path</code>,
+which — with the writer removed — would have let a leftover mirror from an
+older release resolve status from stale data. A pre-existing mirror file on
+disk now has no effect on any id.</li>
+  <li><code>status["source"]</code> reports <code>dispatch_end</code> where it previously reported
+<code>summary_out</code> for rich end rows. <code>dispatch_history</code>, <code>dispatch_start</code>,
+<code>live</code>, <code>registry</code>, and <code>none</code> are unchanged.</li>
+  <li><code>artifact-report validate --final</code> preserves the legacy manual-v1 contract
+while recognizing the additive harness-receipt contract. Harness receipts
+validate observed acceptance and zero-delta evidence; failed exploratory
+command exits remain factual telemetry for queue policy rather than allowing
+worker claims to decide receipt validity.</li>
+  <li>Artifact fingerprints are now internal claims-freshness bookkeeping only.
+Pre-existing, stale, malformed, or missing worker reports are overwritten by
+fresh harness proof instead of becoming work-acceptance failures. The legacy
+<code>init</code> command and <code>--require-artifact-report</code> flag remain compatible, but
+neither an explicit path nor model-authored proof is required.</li>
+  <li>Codex autonomous completion still rejects acknowledgment-only turns as
+<code>completed_no_activity</code>; optional claims cannot satisfy the observed-activity
+gate. Receipt write/validation failure is fail-closed as <code>report_invalid</code>.</li>
+  <li>Git observation now baselines the starting worktree so uncommitted product
+edits are included while unchanged pre-existing dirt and harness-owned
+dispatch/receipt files are excluded.</li>
+</ul>
+
+<h2 id="090---2026-08-03--0111-am--ist"><a class="anchor" href="#090---2026-08-03--0111-am--ist">[0.9.0] - 2026-08-03 | 01:11 AM | IST</a></h2>
+
+<p>Minor bump: the durable dispatch row family is now v2, <code>--summary-out</code> changes
+from a default destination to an explicit mirror, and retention/phase policy add
+operator-visible behavior.</p>
+
+<h3 id="added-17"><a class="anchor" href="#added-17">Added</a></h3>
+
+<ul>
+  <li><strong>Price-table cost for token-reporting adapters</strong> (#63, plan 33
+Phase 2; subsumes #58’s cost gap): new <code>lib/harnex/pricing.rb</code> holds a
+static per-1M-token USD rate table keyed by provider + model, each entry
+<code>as_of</code>-dated and hand-copied from the provider pricing pages
+(OpenAI gpt-5.x/codex and Anthropic Claude families, rates as of
+2026-08-02; update procedure documented in the file header).
+<code>build_summary_usage</code> applies it only when <code>cost_usd</code> is null, usage
+status is <code>observed</code>/<code>zero</code>, and the effective model matches the table —
+then <code>cost_source: "price_table"</code> and a new always-present
+<code>usage.cost_price_as_of</code> field record provenance. Unknown models stay
+null; provider-reported cost (Pi) is never overwritten; costs are never
+backfilled.</li>
+  <li>The codex app-server adapter now captures the effective model from the
+schema-required <code>model</code> field on <code>thread/start</code> / <code>thread/resume</code>
+responses, so <code>agent.model_effective</code> (and price-table lookup) resolves
+without the caller passing <code>--meta '{"model": ...}'</code>.</li>
+  <li>Token-semantics are capture-path-aware: new adapter hook
+<code>usage_input_includes_cached?</code> distinguishes codex app-server JSON
+(cached ⊆ input → billable input = input − cached) from the codex PTY
+transcript line (input excludes cached → cached prices additively).
+Verified against the captured schema fixtures and a live app-server row.</li>
+  <li>Price-table lookup now covers Holm’s effective <code>gpt-5.5</code> model and keys its
+tier-sensitive rates by the recorded service tier (<code>standard</code>, <code>flex</code>, or
+<code>fast</code>; <code>priority</code> aliases fast). Because published <code>gpt-5.5</code> rates split at
+272K active context, Harnex also requires an observed peak below that boundary;
+missing/long-context evidence remains unpriced rather than applying the wrong
+short-context rate.</li>
+  <li>Optional repo phase policy in <code>.harnex/config.json</code>: an allowlist can <code>warn</code>
+or <code>reject</code> non-canonical effective <code>meta.phase</code> values before spawn. Explicit
+malformed policy files fail closed; no config preserves existing behavior.</li>
+  <li>Bounded events/output retention: 45-day and 1-GiB defaults per directory,
+repo config plus environment overrides, current/live-session protection,
+oldest-first age/size pruning, one-hour automatic throttle, and bounded
+last-prune metadata. <code>harnex doctor</code> reports size/limits; <code>--prune --dry-run</code>
+previews bounded candidate paths and <code>--prune</code> applies the policy.</li>
+</ul>
+
+<h3 id="changed-14"><a class="anchor" href="#changed-14">Changed</a></h3>
+
+<ul>
+  <li><strong>Single tracked telemetry stream</strong> (#63, plan 33 Phase 1): a dispatch
+now writes exactly two rows to the repo-tracked <code>.harnex/dispatch.jsonl</code>
+— the <code>dispatch_start</code> row and one unified v2 <code>dispatch_end</code> row that
+merges the thin envelope (top-level <code>schema_version: 2</code>, <code>record_type</code>,
+<code>id</code>, <code>status</code>, <code>tier</code>, timing, <code>tmux_state</code>, …) with the rich summary
+sections (<code>meta</code>, <code>predicted</code>, <code>actual</code>, <code>agent</code>, <code>usage</code>, <code>context</code>,
+<code>attribution</code>, <code>outcome</code>, <code>attempt</code>, <code>reliability</code>, <code>queue?</code>,
+<code>orchestration?</code>, artifact-report keys). Start rows stamp
+<code>schema_version: 2</code> as well. Readers accept v1 and v2 rows mixed in one
+file; <code>harnex history</code> keeps skipping pre-0.7.3 envelope-less rows.</li>
+  <li><code>--summary-out</code> is now an explicit-only mirror: no default path. When
+set, the identical v2 end record is appended there in addition to the
+tracked stream. Consumers that redirected <code>--summary-out</code> to keep rich
+rows should drop the flag — the tracked stream now carries everything.
+<code>Harnex.default_summary_out_path</code> is removed; every writer and reader
+resolves the stream through <code>DispatchHistory.path_for</code> (git-root walk,
+global fallback), so non-git roots stream to the global file instead of
+a repo-local <code>.harnex/</code> directory.</li>
+  <li>The <code>summary</code> event now points <code>path</code> at the tracked stream and carries
+<code>mirror_path</code> when a mirror is configured.</li>
+  <li><code>TerminalStatus</code> resolves a v2 end row as both summary and history in
+one shot (branching on <code>record_type</code> first), so <code>wait --until done</code> and
+<code>status --id</code> fall back to the unified stream; legacy duck-types remain
+for pre-v2 files.</li>
+  <li>Cross-dispatch attempt fields are harness-derived from the canonical stream:
+<code>attempts_total</code>/succeeded/failed, <code>fallback_triggered</code>, and
+<code>reliability.recovered</code> follow bounded parent links and degrade safely on
+missing, duplicate, malformed, or cyclic history. <code>fallback</code> is now a public,
+live-parent-guarded attempt kind; in-run <code>retry_count</code> remains separate.</li>
+  <li>Public telemetry/configuration references under <code>docs/*.md</code> are now packaged
+in the gem. README, GUIDE, TECHNICAL, agent guides, and event/telemetry docs
+use the same canonical-stream, mirror, native-watch, pricing, phase-policy,
+and retention terminology.</li>
+</ul>
+
+<h3 id="fixed-9"><a class="anchor" href="#fixed-9">Fixed</a></h3>
+
+<ul>
+  <li><code>harnex history</code> no longer renders blank rows for pre-0.7.3
+<code>{meta, predicted, actual}</code>-schema telemetry rows in
+<code>.harnex/dispatch.jsonl</code>: rows recognized as neither start nor end
+records are skipped in both table and <code>--json</code> output. The raw file is
+untouched — legacy rows remain available for forensics.</li>
+</ul>
+
+<h2 id="080---2026-08-02--0846-pm--ist"><a class="anchor" href="#080---2026-08-02--0846-pm--ist">[0.8.0] - 2026-08-02 | 08:46 PM | IST</a></h2>
+
+<p>Minor bump: two behavior changes below (<code>wait --until done</code> exit codes,
+<code>--attempt-kind retry</code> now requiring <code>--parent-dispatch-id</code>).</p>
+
+<h3 id="added-18"><a class="anchor" href="#added-18">Added</a></h3>
+
+<ul>
+  <li>Dispatch-start records (#62): every dispatch appends a durable
+<code>dispatch_start</code> row to the repo dispatch stream at registration (id,
+session_id, pid, host, started_at, meta, schema_version); the
+<code>dispatch_end</code> row written at teardown completes it. End rows now carry
+<code>record_type</code> and <code>session_id</code> so readers can pair them.</li>
+  <li><code>harnex history</code> now shows uncompleted dispatches as <code>running</code> (pid alive
+on this host) or <code>interrupted</code> (pid gone, no end row) instead of hiding
+them until teardown.</li>
+  <li>Duplicate-dispatch guard (#62): <code>harnex run --attempt-kind retry</code> requires
+<code>--parent-dispatch-id</code>, and retry/fix/superseding dispatches naming a
+still-running parent in the same repo are refused with a clear error.
+<code>--allow-live-parent</code> overrides for intentional parallelism; <code>review</code> is
+exempt.</li>
+</ul>
+
+<h3 id="changed-15"><a class="anchor" href="#changed-15">Changed</a></h3>
+
+<ul>
+  <li><code>harnex wait --until done</code> now has a documented exit-code contract
+(guides/04_monitoring.md): <code>0</code> accepted work, <code>1</code> failed, <code>2</code> completed but
+proof rejected, <code>3</code> no such session, <code>124</code> timeout. The wrapped process’s
+exit code is reported as payload data instead of being passed through.
+Payloads carry a <code>wait_result</code> field.</li>
+  <li><code>harnex wait --until done</code> re-checks liveness every poll (registry, then
+uncompleted start row with alive pid) and blocks while the session’s pid
+is alive. Stale exit-status files and events from an earlier dispatch that
+reused the same id are ignored while a live session is in view.</li>
+  <li><code>harnex status</code> no longer silently reports stale registry data as live:
+rows are labelled <code>source: live|registry|dispatch_start</code> with
+<code>degraded: true</code> when the live status API was unreachable. With <code>--id</code>, a
+running session whose registry row is missing is still reported running
+from its uncompleted start row.</li>
+  <li>One canonical repo resolution for all dispatch-stream writers and readers:
+history rows now key off the session’s <code>repo_root</code> (matching the summary
+path) instead of the launch cwd, and <code>repo_key</code> canonicalizes symlinked
+paths via realpath so registries written from a symlinked cwd stay visible
+to checkers resolving the physical path.</li>
+  <li>Refreshed the codex app-server schema fixtures against codex-cli 0.145.0
+(10 fixtures; upstream-additive changes only, no adapter impact).</li>
+</ul>
+
+<h2 id="0714---2026-07-15--1006-pm--ist"><a class="anchor" href="#0714---2026-07-15--1006-pm--ist">[0.7.14] - 2026-07-15 | 10:06 PM | IST</a></h2>
+
+<h3 id="added-19"><a class="anchor" href="#added-19">Added</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now accepts opt-in orchestration metadata flags
+(<code>--orchestration-run-id</code>, <code>--orchestration-generation-id</code>,
+<code>--orchestration-role</code>, <code>--orchestration-session-id</code>, and
+<code>--orchestration-rotation-reason</code>) and emits a top-level <code>orchestration</code>
+block when present.</li>
+  <li>New <code>harnex orchestration sample</code> / <code>harnex orchestration report</code> commands
+ingest bounded external-primary samples and compute primary-versus-worker
+queue rollups without storing prompts, transcripts, tool payloads, or secrets.</li>
+  <li>New <code>harnex artifact-report init PATH</code> and <code>harnex artifact-report validate
+PATH [--final]</code> commands provide a bounded v1 report skeleton and
+machine-readable field diagnostics without echoing report payloads.</li>
+  <li><code>harnex run --require-artifact-report</code> makes fresh accepted/no-change report
+proof part of the work verdict and exposes strict mode to workers through
+<code>HARNEX_ARTIFACT_REPORT_REQUIRED=1</code>.</li>
+</ul>
+
+<h3 id="changed-16"><a class="anchor" href="#changed-16">Changed</a></h3>
+
+<ul>
+  <li>Autonomous Codex app-server turns launched with <code>--context</code> now distinguish
+provider turn completion from accepted work completion. Harnex requires
+structured command/tool activity, a Git delta, or a fresh accepted/no-change
+report before emitting <code>task_complete</code>; the classifier never parses final
+prose and applies equally to flex and fast service tiers.</li>
+  <li>Dispatch outcomes now include additive <code>class</code> and <code>report_status</code> fields,
+and watch/wait/status/marker payloads preserve typed proof failures.</li>
+</ul>
+
+<h3 id="fixed-10"><a class="anchor" href="#fixed-10">Fixed</a></h3>
+
+<ul>
+  <li>Acknowledgment-only Codex turns now emit <code>completed_no_activity</code> and return a
+non-zero work/auto-stop verdict instead of being reported as successful work.</li>
+  <li>Strict report mode fails closed for missing, malformed, unsupported,
+oversized, schema-incomplete, rejected, and unchanged stale sidecars. A valid
+explicit <code>no_change</code> report remains an accepted proof path for intentional
+no-delta work, while report-shaped JSON printed in final prose is ignored.</li>
+</ul>
+
+<h2 id="0713---2026-07-15--1224-pm--ist"><a class="anchor" href="#0713---2026-07-15--1224-pm--ist">[0.7.13] - 2026-07-15 | 12:24 PM | IST</a></h2>
+
+<h3 id="added-20"><a class="anchor" href="#added-20">Added</a></h3>
+
+<ul>
+  <li>Dispatch summaries now include a stable additive <code>context</code> block with
+terminal and peak active-context pressure, source/status provenance, bounded
+sample counts, and explicit missing-sample handling. Pi RPC reports observed
+<code>get_session_stats.contextUsage</code>; Codex app-server conservatively estimates
+pressure from <code>tokenUsage.last</code> plus <code>modelContextWindow</code>; unsupported
+adapters do not fabricate values.</li>
+  <li>Dispatch summaries now include additive <code>usage</code>, <code>attribution</code>, <code>outcome</code>, and
+per-session <code>attempt</code> blocks. <code>usage.status</code> distinguishes provider-observed,
+explicit-zero, caller-estimated, unsupported, and missing values so nullable
+cost/token fields are never mistaken for zero.</li>
+  <li><code>harnex run</code> accepts <code>--parent-dispatch-id</code>, <code>--parent-attempt-id</code>, and
+<code>--attempt-kind</code> (<code>initial</code>, <code>retry</code>, <code>fix</code>, <code>review</code>, or <code>superseding</code>) to
+preserve parent/child relationships while retaining separate raw effort rows.</li>
+  <li>Terminal event streams now emit <code>attempt_started</code> / <code>attempt_finished</code> and
+translate Pi internal retry notices into <code>attempt_retry_scheduled</code>; the
+Session exposes an <code>attempt_fallback_switched</code> telemetry seam for recovery
+and fallback owners.</li>
+  <li>Bounded artifact reports can optionally record a semantic outcome
+(<code>accepted</code>, <code>rejected</code>, <code>no_change</code>, or <code>unknown</code>). Final outcome blocks
+retain git commit/path/LOC observations without claiming they prove authorship.</li>
+</ul>
+
+<h3 id="changed-17"><a class="anchor" href="#changed-17">Changed</a></h3>
+
+<ul>
+  <li>Dispatch telemetry documentation now distinguishes cumulative usage from
+active context-window pressure and defines context sample/high-water/null
+semantics alongside usage-cost provenance, strict attribution quality,
+sidecar-backed outcomes, attempt linkage, and safe throughput/reliability
+query examples.</li>
+</ul>
+
+<h2 id="0712---2026-07-10--1119-pm--ist"><a class="anchor" href="#0712---2026-07-10--1119-pm--ist">[0.7.12] - 2026-07-10 | 11:19 PM | IST</a></h2>
+
+<h3 id="fixed-11"><a class="anchor" href="#fixed-11">Fixed</a></h3>
+
+<ul>
+  <li>The new <code>reliability</code> block no longer treats legacy generic-PTY
+<code>exit="disconnected"</code> rows (process exited 0 but no adapter usage summary was
+parsed) as real transport loss. Legacy <code>actual.disconnections</code> remains
+compatible; new <code>reliability.real_disconnections</code> stays <code>0</code> for that normal
+no-summary process exit case.</li>
+</ul>
+
+<h2 id="0711---2026-07-10--1114-pm--ist"><a class="anchor" href="#0711---2026-07-10--1114-pm--ist">[0.7.11] - 2026-07-10 | 11:14 PM | IST</a></h2>
+
+<h3 id="added-21"><a class="anchor" href="#added-21">Added</a></h3>
+
+<ul>
+  <li>Dispatch summaries now include top-level additive <code>agent</code> and <code>reliability</code>
+blocks for every run, and a top-level <code>queue</code> block when queue attribution is
+provided. New consumers should prefer these blocks over legacy flat fields for
+queue economics and reliability analytics.</li>
+  <li><code>harnex run</code> now accepts first-class queue/agent telemetry flags:
+<code>--project-id</code>, <code>--queue-id</code>, <code>--entry-id</code>, <code>--entry-title</code>, <code>--phase</code>,
+<code>--tier</code>, <code>--issue</code>, <code>--plan</code>, <code>--intent</code>, <code>--model</code>, and <code>--effort</code>.
+Explicit flags override same-named <code>--meta</code> values and are forwarded through
+tmux re-exec.</li>
+  <li><code>harnex run --require-attribution</code> fails before launching unless required
+queue attribution is present (<code>project_id</code>, <code>phase</code>, <code>intent</code>, and at least
+one work id).</li>
+</ul>
+
+<h3 id="changed-18"><a class="anchor" href="#changed-18">Changed</a></h3>
+
+<ul>
+  <li>Dispatch telemetry docs, README, and the packaged dispatch agents-guide now
+document queue attribution, effective agent routing fields, reliability split,
+and a sample queue grouping snippet.</li>
+</ul>
+
+<h2 id="0710---2026-07-10--1057-pm--ist"><a class="anchor" href="#0710---2026-07-10--1057-pm--ist">[0.7.10] - 2026-07-10 | 10:57 PM | IST</a></h2>
+
+<h3 id="added-22"><a class="anchor" href="#added-22">Added</a></h3>
+
+<ul>
+  <li><code>harnex run --artifact-report PATH</code> / <code>--validation-report PATH</code> now expose a
+worker-writable <code>harnex.artifact_report.v1</code> sidecar path via
+<code>HARNEX_ARTIFACT_REPORT_PATH</code> and <code>HARNEX_VALIDATION_REPORT_PATH</code>, ingest the
+report at dispatch finalization, and append compact top-level
+<code>artifact_report</code>, <code>validation</code>, and <code>artifacts</code> blocks to the dispatch
+summary row.</li>
+</ul>
+
+<h3 id="changed-19"><a class="anchor" href="#changed-19">Changed</a></h3>
+
+<ul>
+  <li>Dispatch telemetry docs, README, and the packaged dispatch agents-guide now
+document sidecar proof while keeping plain-text <code>koder/</code> artifacts canonical.</li>
+</ul>
+
+<h3 id="fixed-12"><a class="anchor" href="#fixed-12">Fixed</a></h3>
+
+<ul>
+  <li>Missing, malformed, unsupported-schema, and oversized artifact reports now
+fail soft with <code>artifact_report.ingest_status</code> warning telemetry instead of
+crashing or changing the wrapped process exit code.</li>
+</ul>
+
+<h2 id="079---2026-07-10--1033-pm--ist"><a class="anchor" href="#079---2026-07-10--1033-pm--ist">[0.7.9] - 2026-07-10 | 10:33 PM | IST</a></h2>
+
+<h3 id="added-23"><a class="anchor" href="#added-23">Added</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now accepts wrapper-level <code>--cwd DIR</code> and <code>--root DIR</code> options.
+<code>--cwd</code> starts the wrapped agent in <code>DIR</code> and makes that directory the
+harnex session root for registry/session metadata and default dispatch
+summaries. <code>--root</code> changes harnex root attribution without changing the
+child process cwd.</li>
+</ul>
+
+<h3 id="changed-20"><a class="anchor" href="#changed-20">Changed</a></h3>
+
+<ul>
+  <li><code>harnex run --help</code>, README, and the dispatch guide now document
+public-bundle / temporary-workdir dispatches with <code>--cwd</code>.</li>
+  <li>Refreshed pinned Codex app-server schema fixtures against
+<code>codex-cli 0.144.1</code> so the release suite is green with the current local
+Codex CLI.</li>
+</ul>
+
+<h3 id="fixed-13"><a class="anchor" href="#fixed-13">Fixed</a></h3>
+
+<ul>
+  <li>Non-git temporary work directories no longer leak raw <code>git rev-parse</code> fatal
+messages during harnex root probing.</li>
+</ul>
+
+<h2 id="078---2026-06-13--0845-pm--ist"><a class="anchor" href="#078---2026-06-13--0845-pm--ist">[0.7.8] - 2026-06-13 | 08:45 PM | IST</a></h2>
+
+<h3 id="added-24"><a class="anchor" href="#added-24">Added</a></h3>
+
+<ul>
+  <li><code>harnex watch --id &lt;id&gt; --until done</code> now provides a native work-terminal
+watcher for existing visible/detached sessions. It exits <code>0</code> for successful
+work, non-zero for <code>task_failed</code> / failed terminal telemetry, <code>124</code> for
+wall-clock timeout, and can write optional done/fail marker files for legacy
+queue integrations.</li>
+</ul>
+
+<h3 id="changed-21"><a class="anchor" href="#changed-21">Changed</a></h3>
+
+<ul>
+  <li>Monitoring docs now recommend native <code>harnex watch</code> for unattended
+single-dispatch monitoring and reserve <code>harnex run --watch</code> for foreground
+launch-and-stall-recovery.</li>
+</ul>
+
+<h2 id="077---2026-06-12--1048-am--ist"><a class="anchor" href="#077---2026-06-12--1048-am--ist">[0.7.7] - 2026-06-12 | 10:48 AM | IST</a></h2>
+
+<h3 id="fixed-14"><a class="anchor" href="#fixed-14">Fixed</a></h3>
+
+<ul>
+  <li>Codex app-server failed turns now emit <code>task_failed</code> instead of being
+misreported as successful <code>task_complete</code> work. <code>harnex wait --until done</code>
+returns non-zero for failed-turn events, dispatch history records
+<code>terminal_event=task_failed</code>, and auto-stop terminates structured sessions
+without sending a stale <code>turn/interrupt</code> after the turn is already complete.</li>
+  <li>Codex app-server nested error notifications now preserve the real Codex error
+message (for example missing provider credentials) without counting them as
+transport disconnects.</li>
+</ul>
+
+<h3 id="changed-22"><a class="anchor" href="#changed-22">Changed</a></h3>
+
+<ul>
+  <li>Refreshed the pinned Codex app-server JSON Schema fixtures to
+<code>codex-cli 0.139.0</code> and taught the test schema validator <code>minLength</code>.</li>
+</ul>
+
+<h2 id="076---2026-06-09--1259-am--ist"><a class="anchor" href="#076---2026-06-09--1259-am--ist">[0.7.6] - 2026-06-09 | 12:59 AM | IST</a></h2>
+
+<h3 id="added-25"><a class="anchor" href="#added-25">Added</a></h3>
+
+<ul>
+  <li><code>harnex status --json</code> now exposes work-level completion fields (<code>done</code>,
+<code>work_state</code>, and <code>process_state</code>) so monitors can distinguish completed
+work from a still-live interactive process.</li>
+  <li><code>harnex wait --until done</code> waits for <code>task_complete</code> or terminal exit,
+whichever arrives first, giving queue monitors a safe default fence.</li>
+</ul>
+
+<h3 id="changed-23"><a class="anchor" href="#changed-23">Changed</a></h3>
+
+<ul>
+  <li>Refreshed README quick-start and monitoring guidance to emphasize
+<code>--context --auto-stop</code>, <code>--until task_complete</code> for interactive structured
+sessions, durable terminal summaries, and timeout/artifact verification.</li>
+  <li>Monitoring, buddy, and recipe examples now gate unattended work on
+<code>--until done</code> / <code>done</code> / <code>work_state</code> instead of <code>state=completed</code> alone.</li>
+</ul>
+
+<h2 id="075---2026-05-26--0518-pm--ist"><a class="anchor" href="#075---2026-05-26--0518-pm--ist">[0.7.5] - 2026-05-26 | 05:18 PM | IST</a></h2>
+
+<h3 id="added-26"><a class="anchor" href="#added-26">Added</a></h3>
+
+<ul>
+  <li><code>Harnex::TerminalStatus</code> now resolves durable terminal dispatch state from
+summary/history rows so commands can classify inactive sessions without
+relying on tmp done markers.</li>
+</ul>
+
+<h3 id="changed-24"><a class="anchor" href="#changed-24">Changed</a></h3>
+
+<ul>
+  <li><code>harnex status --json --id &lt;id&gt;</code> now returns a machine-readable row even when
+the live session is gone, with <code>state</code> in <code>running|completed|failed|unknown</code>
+and terminal metadata (<code>terminal</code>, <code>exit</code>, <code>exit_code</code>, <code>summary_out</code>).</li>
+  <li><code>harnex wait --id &lt;id&gt;</code> now falls back to terminal summary/history telemetry
+when registry and exit-status files are missing, returning <code>completed</code> on
+summary success and <code>unknown</code> when no durable terminal signal exists.</li>
+  <li>Monitoring guides now treat <code>/tmp/*-done.txt</code> as legacy compatibility hints;
+canonical completion is <code>harnex wait</code> / <code>harnex status --json</code> / dispatch
+summary rows.</li>
+</ul>
+
+<h2 id="074---2026-05-25--0845-am--ist"><a class="anchor" href="#074---2026-05-25--0845-am--ist">[0.7.4] - 2026-05-25 | 08:45 AM | IST</a></h2>
+
+<h3 id="added-27"><a class="anchor" href="#added-27">Added</a></h3>
+
+<ul>
+  <li>First-class <code>pi</code> structured adapter (<code>Harnex::Adapters::Pi</code>) for
+<code>pi --mode rpc</code> JSONL transport. <code>harnex run pi</code> now supports
+structured completion (<code>agent_end</code> -&gt; <code>task_complete</code>), stop/abort,
+extension-UI dialog auto-cancel in RPC mode, streamed output/tool
+synthesis, and Pi session-stats telemetry capture.</li>
+</ul>
+
+<h3 id="changed-25"><a class="anchor" href="#changed-25">Changed</a></h3>
+
+<ul>
+  <li>Structured transport handling in <code>Session</code> now supports both Codex
+JSON-RPC (<code>:stdio_jsonrpc</code>) and Pi JSONL RPC (<code>:stdio_jsonl_rpc</code>).</li>
+  <li>DISPATCH telemetry restores <code>actual.cost_usd</code> (adapter-reported
+approximate USD when available). Pi sessions populate it from
+<code>get_session_stats.cost</code>; adapters without reliable cost stay <code>null</code>.</li>
+  <li>README, dispatch telemetry docs, and dispatch guide now document Pi RPC
+usage and the <code>--</code> child-flag pattern.</li>
+</ul>
+
+<h2 id="073---2026-05-13--0143-pm--ist"><a class="anchor" href="#073---2026-05-13--0143-pm--ist">[0.7.3] - 2026-05-13 | 01:43 PM | IST</a></h2>
+
+<h3 id="added-28"><a class="anchor" href="#added-28">Added</a></h3>
+
+<ul>
+  <li><code>harnex run codex --fast</code> now opts Codex app-server runs into
+<code>service_tier="fast"</code>. Default Codex runs now inject
+<code>service_tier="flex"</code> unless the child CLI args already supply an
+explicit <code>service_tier</code> config.</li>
+  <li>First-class <code>opencode</code> PTY adapter. <code>harnex run opencode</code> now uses
+<code>Harnex::Adapters::Opencode</code> instead of the generic fallback, with
+an OpenCode-specific stop sequence (double Ctrl+C), repo path
+inference (<code>--dir</code> or positional project path), and session-id
+extraction from transcript tails (<code>Continue opencode -s ...</code>).</li>
+</ul>
+
+<h3 id="changed-26"><a class="anchor" href="#changed-26">Changed</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now rejects unknown long flags before spawning the
+agent process, with a clear error pointing at <code>harnex run --help</code>.
+Anything past the <code>--</code> separator continues to forward unchanged
+to the agent CLI. Closes the trigger that correlated with the F23
+auto-stop teardown leak. Closes harnex issue #38.</li>
+  <li>Codex app-server contract fixtures are refreshed against
+<code>codex-cli 0.130.0</code>; response builders now include the required
+<code>thread.sessionId</code> field.</li>
+  <li>Internal Codex app-server code now has the extracted
+<code>Harnex::Codex::AppServer::Client</code> namespace and the subprocess
+restart primitive needed by the deployment-fallback plan. No
+public fallback CLI flag is exposed yet.</li>
+</ul>
+
+<h3 id="fixed-15"><a class="anchor" href="#fixed-15">Fixed</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now defaults dispatch summaries to
+<code>&lt;repo&gt;/.harnex/dispatch.jsonl</code> for every resolved repo, regardless
+of whether a legacy <code>koder/</code> directory exists. Closes harnex issue
+#39.</li>
+  <li><code>harnex run</code> with <code>--auto-stop</code> now exits within a bounded grace
+(default 5s, override via <code>HARNEX_AUTOSTOP_TEARDOWN_GRACE_SECONDS</code>)
+after <code>task_complete</code>. Closes a leak where the wrapping Ruby parent
+process could sleep on <code>futex_wait_queue</code> indefinitely during
+teardown, surviving as <code>orphan_tmux</code> until manually swept (F09
+detected; F23 remediates). Closes harnex issue #37.</li>
+</ul>
+
+<h2 id="072---2026-05-08"><a class="anchor" href="#072---2026-05-08">[0.7.2] - 2026-05-08</a></h2>
+
+<h3 id="fixed-16"><a class="anchor" href="#fixed-16">Fixed</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now resolves the repo-local
+<code>&lt;repo&gt;/.harnex/dispatch.jsonl</code> write path from the supervisor’s
+launch cwd (captured at invocation time), not from the agent’s
+runtime cwd. Closes a regression where cross-repo dispatches
+(supervisor in repo A, agent <code>cd</code>’s into repo B) wrote their
+terminal row only to the global fallback, never to repo A.</li>
+</ul>
+
+<h3 id="added-29"><a class="anchor" href="#added-29">Added</a></h3>
+
+<ul>
+  <li><code>harnex doctor --sweep</code> reports read-only harnex/tmux session drift,
+including active registry rows, matching <code>cx-*</code> tmux windows, orphan
+tmux windows, and stale session log files whose owning pid is gone.</li>
+</ul>
+
+<h2 id="071---2026-05-08"><a class="anchor" href="#071---2026-05-08">[0.7.1] - 2026-05-08</a></h2>
+
+<h3 id="fixed-17"><a class="anchor" href="#fixed-17">Fixed</a></h3>
+
+<ul>
+  <li>
+    <p><code>harnex run --auto-stop</code> now observes the terminal <code>task_complete</code>
+event after the agent subprocess exits before tearing down, closing
+a race where one-shot dispatches could report <code>timeout</code> even when
+the agent finished the task cleanly. Adds a regression test that
+exercises the post-exit event drain path.</p>
+  </li>
+  <li>
+    <p><code>harnex wait</code> predicates now classify dispatch progress by
+structured event-record fields instead of regex-matching the
+human-readable transcript, with the prior exact-marker text as a
+legacy fallback. Eliminates a class of spurious matches where
+prose containing a marker word was misread as a state transition.</p>
+  </li>
+</ul>
+
+<h3 id="added-30"><a class="anchor" href="#added-30">Added</a></h3>
+
+<ul>
+  <li>Dispatch summaries now preserve declared brief budget metadata
+(<code>read_budget_lines</code>, <code>output_ceiling_lines</code>) from <code>--meta</code> and
+record rough terminal measurements (<code>lines_changed</code>, <code>output_lines</code>,
+<code>output_bytes</code>, <code>event_records</code>) for downstream budget enforcement.</li>
+</ul>
+
+<h2 id="070---2026-05-08"><a class="anchor" href="#070---2026-05-08">[0.7.0] - 2026-05-08</a></h2>
+
+<h3 id="added-31"><a class="anchor" href="#added-31">Added</a></h3>
+
+<ul>
+  <li><code>harnex run</code> now appends one terminal dispatch record to
+<code>&lt;repo&gt;/.harnex/dispatch.jsonl</code>, falling back to
+<code>~/.local/state/harnex/dispatch.jsonl</code> outside git repos. New
+<code>harnex history</code> reads that log with <code>--limit</code>, <code>--since</code>, <code>--id</code>,
+<code>--global</code>, <code>--json</code>, and <code>--all</code> filters.</li>
+  <li>DISPATCH row <code>actual</code> now includes <code>turn_count</code>, <code>tool_calls</code>,
+<code>commands_executed</code>, <code>rate_limits</code>, <code>output_log_path</code>, and
+<code>events_log_path</code> — surfacing data harnex already tracked but did
+not persist. <code>meta.parent_dispatch_id</code> now auto-derives from
+<code>$HARNEX_ID</code> when not supplied via <code>--meta</code>. (#35 Tier 2)</li>
+  <li>DISPATCH row <code>meta.agent_provider</code> and <code>meta.agent_version</code> now
+populated. <code>provider</code> is a per-adapter constant
+(claude → <code>anthropic</code>, codex → <code>openai</code>, generic → nil).
+<code>agent_version</code> lazily probes <code>&lt;base_command.first&gt; --version</code>
+with a 2s timeout, memoizes per adapter, and falls back to nil if
+the binary is missing or stalls. (#35 Tier 3)</li>
+</ul>
+
+<h3 id="removed-2"><a class="anchor" href="#removed-2">Removed</a></h3>
+
+<ul>
+  <li>DISPATCH row dropped four always-null fields with no code path
+populating them: <code>actual.cost_usd</code>, <code>actual.tests_run</code>,
+<code>actual.tests_passed</code>, <code>actual.tests_failed</code>, and
+<code>meta.agent_deployment</code>. Cost computation belongs to downstream
+consumers (per-model rate tables change frequently); test-result
+aggregation belongs to CI integrations, not the harness; and the
+<code>agent_deployment</code> concept had no source of truth. JSON Lines
+consumers should update column readers — schema is now stable but
+smaller. (#35 Tier 3)</li>
+</ul>
+
+<h3 id="fixed-18"><a class="anchor" href="#fixed-18">Fixed</a></h3>
+
+<ul>
+  <li><code>harnex wait</code> (default exit-watch mode) now blocks until the
+exit-status file is on disk after the agent subprocess dies, with
+a 5s grace bound (override via <code>HARNEX_EXIT_STATUS_GRACE_SECONDS</code>).
+The exit-status file is written <em>after</em> the DISPATCH row in the
+parent’s teardown ensure block, so its presence guarantees the row
+is on disk. Closes the race where <code>wait</code> could return between
+<code>Process.wait2</code> unblocking and <code>Session#finalize_session!</code>
+appending the row, which made dispatch-poll orchestrators flake
+on “missing telemetry”. (#36)</li>
+</ul>
+
+<h3 id="changed-27"><a class="anchor" href="#changed-27">Changed</a></h3>
+
+<ul>
+  <li><code>koder/STATE.md</code> is now a thin past / present / future handoff
+instead of a long-running project history. Durable change history
+belongs in <code>CHANGELOG.md</code>, release verification in <code>koder/releases/</code>,
+and issue or implementation detail in <code>koder/issues/</code> or
+<code>koder/plans/</code>.</li>
+  <li>Agent orientation and the repo-local <code>open</code> / <code>close</code> skills now
+explicitly tell future sessions to keep <code>STATE.md</code> concise and route
+detailed notes to the durable tracking document that owns them.</li>
+</ul>
+
+<h2 id="065--2026-05-07"><a class="anchor" href="#065--2026-05-07">[0.6.5] — 2026-05-07</a></h2>
+
+<h3 id="added-32"><a class="anchor" href="#added-32">Added</a></h3>
+
+<ul>
+  <li><code>harnex run --auto-stop</code> for one-shot <code>--context</code> dispatches.
+JSON-RPC Codex sessions stop after the first <code>task_complete</code> event,
+while PTY-backed sessions stop after the initial context turn returns
+to a prompt. The shutdown path reuses <code>harnex stop</code>, including the
+JSON-RPC TERM/KILL fallback.</li>
+</ul>
+
+<h3 id="fixed-19"><a class="anchor" href="#fixed-19">Fixed</a></h3>
+
+<ul>
+  <li>JSON-RPC Codex sessions now terminate their <code>codex app-server</code>
+subprocess on <code>harnex stop</code>: harnex preserves the existing
+<code>turn/interrupt</code> request, then sends TERM with a bounded KILL
+fallback so the runner can release the API port and registry entry.</li>
+  <li>JSON-RPC adapter now captures token usage in <code>DISPATCH.jsonl</code>.
+<code>Session#handle_rpc_notification</code> reads schema-true
+<code>params["tokenUsage"]</code> on <code>thread/tokenUsage/updated</code>, and the
+session-end telemetry path branches on <code>adapter.transport</code>: JSON-RPC
+pulls the cumulative <code>tokenUsage.total</code> and maps the camelCase
+<code>{input,output,cachedInput,reasoningOutput}Tokens</code> fields onto the
+snake_case <code>actual.*_tokens</code> columns. PTY continues to scrape the
+transcript tail. (#33)</li>
+  <li>JSON-RPC adapter rejects <code>-m</code>/<code>--model</code>/<code>--model=…</code> early with a
+clear <code>ArgumentError</code> pointing at <code>-c model="&lt;name&gt;"</code>. Previously the
+flag was silently forwarded to <code>codex app-server</code>, which exited at
+startup and surfaced only as an opaque <code>disconnected</code> transport
+message. Legacy PTY adapter (<code>--legacy-pty</code>) still accepts <code>-m</code>.
+<code>harnex help run</code> and <code>guides/01_dispatch.md</code> document the JSON-RPC
+vs PTY flag-form difference. (#34)</li>
+</ul>
+
+<h2 id="064--2026-05-06"><a class="anchor" href="#064--2026-05-06">[0.6.4] — 2026-05-06</a></h2>
+
+<h3 id="fixed-20"><a class="anchor" href="#fixed-20">Fixed</a></h3>
+
+<ul>
+  <li>JSON-RPC adapter (<code>codex app-server</code>): harnex now mediates Codex’s
+server-to-client approval requests via the protocol — auto-approves
+<code>applyPatchApproval</code>, <code>execCommandApproval</code>,
+<code>item/commandExecution/requestApproval</code>, and
+<code>item/fileChange/requestApproval</code>. Previously the adapter rejected
+every server-side request with <code>-32601 "Unsupported server request"</code>,
+which meant Codex’s default sandbox blocked shell exec, file changes,
+git commits, and package-manager invocations whenever a dispatched
+worker tried to do real work. Autonomous worker dispatches now run
+cleanly under the default sandbox without needing
+<code>--dangerously-bypass-approvals-and-sandbox</code> or
+<code>-c sandbox_mode=danger-full-access</code>.</li>
+  <li><code>CodexAppServer#build_command</code> now appends operator-supplied codex
+flags (passed via <code>harnex run codex -- -c key=value</code>) while still
+filtering out the harnex-context entry that <code>--context</code> smuggles
+through <code>@extra_args</code> (codex <code>app-server</code> rejects positional input).</li>
+</ul>
+
+<h3 id="changed-28"><a class="anchor" href="#changed-28">Changed</a></h3>
+
+<ul>
+  <li><code>--legacy-pty</code> is now a long-term supported fallback rather than a
+deprecated path. The 0.7.0-removal plan is dropped — the legacy PTY
+adapter remains the right tool for interactive/TUI use cases and for
+any operator who prefers terminal-native Codex chrome. JSON-RPC
+remains the default for autonomous worker dispatches and structured
+observability.</li>
+</ul>
+
+<h3 id="added-33"><a class="anchor" href="#added-33">Added</a></h3>
+
+<ul>
+  <li>JSON-RPC adapter: classify sub-5s pre-turn exits as <code>boot_failure</code>
+(vs the existing <code>disconnected</code> terminal state), tracked by latching
+on <code>turn/started</code>. <code>build_summary_actual</code> counts <code>boot_failure</code> exits
+in <code>actual.disconnections</code> so early-boot deaths are not lost from
+dispatch telemetry. First of three planned commits for issue #32;
+remaining work (ensure-block telemetry write + optional <code>last_error</code>
+capture) tracked separately.</li>
+</ul>
+
+<h2 id="063--2026-05-06"><a class="anchor" href="#063--2026-05-06">[0.6.3] — 2026-05-06</a></h2>
+
+<h3 id="fixed-21"><a class="anchor" href="#fixed-21">Fixed</a></h3>
+
+<ul>
+  <li>JSON-RPC adapter (<code>codex app-server</code>): <code>--context</code> boot injection now
+succeeds against real Codex CLI. Three schema mismatches in
+<code>Adapters::CodexAppServer</code> caused 100% session disconnect on boot
+with <code>"Invalid request: invalid type: null, expected a string"</code>:
+    <ul>
+      <li><code>ensure_thread!</code> and the <code>thread/started</code> notification handler read
+<code>result["threadId"]</code>, but Codex’s actual <code>thread/start</code> response is
+<code>{"thread": {"id": "..."}}</code>. With <code>@thread_id = nil</code>, the subsequent
+<code>turn/start</code> sent <code>threadId: null</code> and Codex’s serde rejected it.</li>
+      <li><code>dispatch</code> sent <code>input: { content: [{type, text}] }</code>, but
+<code>TurnStartParams.input</code> is an <strong>array</strong> of <code>UserInput</code>. Now sends
+<code>input: [{type: "text", text: "..."}]</code>.</li>
+      <li><code>initialize</code> joined ALL <code>extra_args</code> into <code>@initial_prompt</code>, which
+prepended Codex CLI flags (e.g. <code>-m gpt-5.5-mini -c
+model_reasoning_effort=low</code>) into the prompt content. Now extracts
+only the harnex-prefixed context element.</li>
+    </ul>
+
+    <p>Re-opens and properly closes #29. The 0.6.2 fix shipped clean tests
+but the test stubs mirrored harnex’s wrong assumptions instead of
+Codex’s actual JSON-RPC schema, so production was 100% broken on the
+default JSON-RPC path.</p>
+  </li>
+</ul>
+
+<h3 id="notes"><a class="anchor" href="#notes">Notes</a></h3>
+
+<ul>
+  <li>Test stubs in <code>codex_appserver_lifecycle_test.rb</code> and
+<code>session_jsonrpc_test.rb</code> still mirror harnex’s old assumptions.
+Tracked as a follow-up (test rewrite using <code>codex app-server
+generate-json-schema</code> as the source of truth, plus a contract-test
+gate). Existing tests remain green; the structural improvement does
+not block this release.</li>
+  <li><code>--legacy-pty</code> remains as the documented fallback. Removal still
+scheduled for 0.7.0 once test-rewrite + contract gate land.</li>
+</ul>
+
+<h2 id="062--2026-05-06"><a class="anchor" href="#062--2026-05-06">[0.6.2] — 2026-05-06</a></h2>
+
+<h3 id="fixed-22"><a class="anchor" href="#fixed-22">Fixed</a></h3>
+
+<ul>
+  <li>App-server adapter: <code>--context</code> delivery and <code>harnex send</code> mid-session
+now succeed without <code>--legacy-pty</code>. Previously both raised
+<code>NotImplementedError</code> from <code>build_send_payload</code> on the stdio_jsonrpc
+transport — <code>--context</code> boot fired a <code>disconnected source=transport</code>
+event and the session never registered; <code>harnex send</code> timed out at
+120s with <code>delivery timed out</code>. Closes #29.</li>
+</ul>
+
+<h3 id="notes-1"><a class="anchor" href="#notes-1">Notes</a></h3>
+
+<ul>
+  <li><code>--legacy-pty</code> is no longer required for any normal dispatch flow.
+Removal still scheduled for 0.7.0 per the 0.6.1 deprecation note.</li>
+</ul>
+
+<h2 id="061--2026-05-06"><a class="anchor" href="#061--2026-05-06">[0.6.1] — 2026-05-06</a></h2>
+
+<h3 id="added-34"><a class="anchor" href="#added-34">Added</a></h3>
+
+<ul>
+  <li><code>harnex agents-guide [topic]</code> exposes dispatch, chain, buddy,
+monitoring, and naming guidance from the installed CLI.</li>
+  <li><code>harnex --help</code> now points agents to <code>harnex agents-guide</code>.</li>
+  <li><code>harnex help &lt;command&gt;</code> entries now include common patterns and gotchas for
+agent dispatch workflows.</li>
+</ul>
+
+<h3 id="removed-3"><a class="anchor" href="#removed-3">Removed</a></h3>
+
+<ul>
+  <li><code>harnex skills install</code> and <code>harnex skills uninstall</code>.</li>
+  <li>Bundled <code>skills/</code> sources and repo-local skill symlinks. Agents now discover
+guidance through <code>harnex --help</code> and <code>harnex agents-guide</code>.</li>
+</ul>
+
+<h3 id="notes-2"><a class="anchor" href="#notes-2">Notes</a></h3>
+
+<ul>
+  <li><code>--legacy-pty</code> removal is still scheduled for 0.7.0.</li>
+  <li><code>man harnex</code> was deferred; the CLI-native <code>agents-guide</code> path satisfies the
+agent-discovery acceptance test without adding a man-page build dependency.</li>
+</ul>
+
+<h2 id="060--2026-05-06"><a class="anchor" href="#060--2026-05-06">0.6.0 — 2026-05-06</a></h2>
+
+<h3 id="architectural-pivot-codex-on-json-rpc"><a class="anchor" href="#architectural-pivot-codex-on-json-rpc">Architectural pivot: Codex on JSON-RPC</a></h3>
+
+<p>harnex now speaks <code>codex app-server</code> JSON-RPC over stdio for the
+Codex adapter. Pane-scraping is retired for Codex. Closed by
+construction:</p>
+
+<ul>
+  <li>#22 (Codex side; <code>--watch --stall-after</code> still applies to
+claude/generic)</li>
+  <li>#24 (disconnect detection — <code>error</code> notifications and JSON-RPC
+error responses replace screen-text regex)</li>
+  <li>#25 (first-class completion signal — <code>turn/completed</code> is it)</li>
+</ul>
+
+<h3 id="new"><a class="anchor" href="#new">New</a></h3>
+
+<ul>
+  <li><code>harnex wait --until task_complete</code> — block until a turn completes.
+Example: <code>harnex wait --id cx-i-242 --until task_complete</code>.
+Adapter-agnostic; tails the events JSONL.</li>
+  <li><code>harnex status --json</code> includes <code>last_completed_at</code>, <code>model</code>,
+<code>effort</code>, <code>auto_disconnects</code>.</li>
+  <li><code>harnex doctor</code> preflight checks Codex CLI ≥ 0.128.0.</li>
+  <li><code>Adapter#transport</code> and <code>Adapter#describe</code> extension points so
+callers can introspect adapter contracts. Default is
+<code>:pty</code> for backward compatibility.</li>
+</ul>
+
+<h3 id="migration"><a class="anchor" href="#migration">Migration</a></h3>
+
+<ul>
+  <li>Codex CLI ≥ 0.128.0 required.</li>
+  <li>Existing <code>harnex run codex ...</code> invocations work unchanged.</li>
+  <li>Emergency fallback: <code>harnex run codex --legacy-pty ...</code> (the
+pre-0.6.0 PTY adapter). Deprecated; will be removed in 0.7.0.</li>
+</ul>
+
+<h3 id="cross-repo"><a class="anchor" href="#cross-repo">Cross-repo</a></h3>
+
+<ul>
+  <li>Resolves holm #201 from the harnex side. holm #271 (substrate v2
+meta) tracks the broader pivot.</li>
+</ul>
+
+<h2 id="050--2026-05-01"><a class="anchor" href="#050--2026-05-01">0.5.0 — 2026-05-01</a></h2>
+
+<h3 id="added-35"><a class="anchor" href="#added-35">Added</a></h3>
+
+<ul>
+  <li><code>harnex run --meta '&lt;JSON&gt;'</code> — per-dispatch metadata intake captured into
+the <code>started</code> event for downstream telemetry analysis.</li>
+  <li><code>harnex run --summary-out PATH</code> — appends one consolidated dispatch
+telemetry record per session (<code>meta</code> + <code>predicted</code> + <code>actual</code> blocks) to
+a project-local file. Default target is <code>&lt;repo&gt;/koder/DISPATCH.jsonl</code>.</li>
+  <li>Token usage + git telemetry capture: new <code>usage</code>, <code>git</code>, and <code>summary</code>
+events emitted on session end with input/output/reasoning/cached tokens,
+wall time, cost, LOC changed, files changed, and commits made.</li>
+</ul>
+
+<h3 id="notes-3"><a class="anchor" href="#notes-3">Notes</a></h3>
+
+<ul>
+  <li>Closes #23 (dispatch telemetry capture). Additive — <code>events</code>
+<code>schema_version</code> stays at <code>1</code>.</li>
+  <li>Authoritative DISPATCH record schema is maintained in the consumer
+project (holm <code>koder/DISPATCH.schema.md</code>); harnex implements what is
+required and leaves non-extractable fields explicitly <code>null</code>.</li>
+</ul>
+
+<h2 id="040--2026-04-30"><a class="anchor" href="#040--2026-04-30">0.4.0 — 2026-04-30</a></h2>
+
+<h3 id="added--built-in-dispatch-monitoring-22-layers-14"><a class="anchor" href="#added--built-in-dispatch-monitoring-22-layers-14">Added — Built-in dispatch monitoring (#22, Layers 1–4)</a></h3>
+
+<ul>
+  <li><strong>Layer 1</strong>: <code>log_mtime</code> and <code>log_idle_s</code> exposed in <code>harnex status</code>
+payloads, with an <code>IDLE</code> column in text mode.</li>
+  <li><strong>Layer 2</strong>: <code>harnex run --watch --stall-after DUR --max-resumes N</code>
+blocking babysitter for fire-and-watch workflows. Auto-resumes a
+stalled session up to <code>N</code> times. Legacy file-hook mode preserved via
+the renamed <code>--watch-file</code> flag.</li>
+  <li><strong>Layer 3</strong>: <code>harnex run --preset impl|plan|gate</code> resolves
+stall/resume defaults; explicit <code>--stall-after</code> / <code>--max-resumes</code>
+flags still override.</li>
+  <li><strong>Layer 4</strong>: <code>harnex events --id &lt;session&gt;</code> JSONL stream with v1
+schema (envelope: <code>schema_version</code>, <code>seq</code>, <code>ts</code>, <code>id</code>, <code>type</code>); emits
+<code>started</code>, <code>send</code>, <code>exited</code> events. <code>send.msg</code> truncated to 200 chars
+with <code>msg_truncated</code> flag. File transport at
+<code>~/.local/state/harnex/events/&lt;repo&gt;--&lt;id&gt;.jsonl</code>. Stability promise:
+<code>schema_version: 1</code> means additive-only changes.</li>
+</ul>
+
+<h3 id="notes-4"><a class="anchor" href="#notes-4">Notes</a></h3>
+
+<ul>
+  <li>Layer 5 (codex stream-disconnect detection) was deferred at 0.4.0
+close to avoid regex-heuristic stalls. Later closed by construction
+in 0.6.0 via the Codex app-server adapter (#24, #27).</li>
+</ul>
+
+<h2 id="034--2026-04-24"><a class="anchor" href="#034--2026-04-24">0.3.4 — 2026-04-24</a></h2>
+
+<h3 id="changed-29"><a class="anchor" href="#changed-29">Changed</a></h3>
+
+<ul>
+  <li>Skill catalogue collapsed: <code>harnex</code> orchestrator skill merged into
+<code>dispatch</code>; <code>chain-implement</code> rewritten as a cohesive set;
+cross-references audited end-to-end. Closes #21.</li>
+</ul>
+
+<h3 id="notes-5"><a class="anchor" href="#notes-5">Notes</a></h3>
+
+<ul>
+  <li>The bundled skills system was later removed entirely in 0.6.1
+(superseded by CLI-discoverable <code>harnex agents-guide</code>).</li>
+</ul>
+
+<h2 id="033--2026-04-23"><a class="anchor" href="#033--2026-04-23">0.3.3 — 2026-04-23</a></h2>
+
+<h3 id="fixed-23"><a class="anchor" href="#fixed-23">Fixed</a></h3>
+
+<ul>
+  <li><code>--tmux</code> no longer greedily consumes the next flag as the window
+name. Previously <code>harnex run codex --tmux --id foo</code> was parsed as
+<code>--tmux="--id"</code>, dropping the explicit session ID. Closes #20.</li>
+</ul>
+
+<h2 id="032--2026-04-19"><a class="anchor" href="#032--2026-04-19">0.3.2 — 2026-04-19</a></h2>
+
+<h3 id="fixed-24"><a class="anchor" href="#fixed-24">Fixed</a></h3>
+
+<ul>
+  <li>State detection for cursor-addressed TUIs (Codex v0.121+). The
+cursor-positioning escape sequences emitted by newer Codex versions
+were confusing the prompt detector, leaving sessions stuck in
+<code>unknown</code> state.</li>
+</ul>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/CHANGELOG.md" rel="noopener">CHANGELOG.md</a> · <a href="/changelog.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/pi-rpc">← Pi RPC</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

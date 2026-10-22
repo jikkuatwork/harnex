@@ -1,0 +1,962 @@
+# Getting started
+
+Source: https://harnex.zyt.app/docs/start
+
+You've installed harnex. Here's how to actually use it.
+
+harnex hands work to Pi workers (GPT models by default) and gives you, or the
+agent you are working with, the result back as plain text. Each worker runs in
+a visible tmux window you can switch to at any time.
+
+## Check the setup
+
+```bash
+harnex doctor          # Pi 0.80.4+ on PATH, tmux, retention; MCP integrations
+harnex mcp install     # optional: native tools for Claude Code and Pi
+```
+
+## Your first lanes
+
+Ask another model a question. The worker reads the repository, answers and
+stops:
+
+```bash
+harnex ask "Which module parses the dispatch rows, and is it tested?"
+```
+
+Hand a worker a task in its own git worktree, review it, and land it:
+
+```bash
+harnex delegate --worktree word-count \
+  "Add TextKit.word_count(text) with a test; run bin/test."
+git diff HEAD...harnex/word-count
+harnex land word-count
+```
+
+The worker's reply comes back with a footer that says what happened and what
+to do next:
+
+```text
+── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
+```
+
+Follow up with the same worker; it keeps its context:
+
+```bash
+harnex reply word-count "Also add TextKit.char_count(text)."
+```
+
+Run several at once, then collect them:
+
+```bash
+harnex delegate --no-wait --worktree a "Task A"
+harnex delegate --no-wait --worktree b "Task B"
+harnex result
+harnex land
+```
+
+Commands wait up to 9 minutes; if a worker is still going they exit 124 and
+`harnex result NAME` keeps waiting. `harnex lanes` shows what each worker is
+doing right now. The full guide is [docs/lanes.md](docs/lanes.md); for
+driving harnex from Claude Code or Pi, see [docs/agents.md](docs/agents.md)
+and [docs/mcp.md](docs/mcp.md).
+
+## Sessions: the layer underneath
+
+Lanes are built on ordinary harnex sessions. The rest of this guide covers
+that layer, which you need for custom orchestration, long-lived interactive
+workers, and wrapping other terminal agents.
+
+### Recommended mental model
+
+Treat harnex as a local supervisor harness, not as a conversation
+bus between agents.
+
+- Start a fresh worker for each step, usually with `--tmux`
+- Give one clear startup task with `--context` (or `--context-file`); add `--auto-stop` for one-shot work
+- Monitor existing visible work with `harnex watch --until done`
+- Use `--wait-for-idle` only as a follow-up-send fence, then verify the artifact
+- Ask the worker to write its output to a file when the next step needs it
+- Stop completed interactive workers promptly
+
+For multi-step flows, chain fresh workers with file handoffs:
+Pi writes a plan, a fresh Pi implements it, Claude (or a fresh Pi
+lane) reviews it, another fresh Pi fixes it.
+
+### Your first session
+
+Pi is the default worker. Check that the installed Pi is new enough
+(0.80.4 or later), then start it through harnex:
+
+```bash
+harnex doctor
+harnex run pi
+```
+
+Harnex runs Pi in its structured RPC mode (`pi --mode rpc`) and
+prints the session as a transcript. Harnex runs alongside it —
+registering the session, listening for messages, and tracking
+whether the agent is busy or idle. Claude Code, OpenCode, or any
+other terminal CLI (`harnex run claude`) runs under a PTY instead and
+looks exactly as it does when run directly.
+
+Give it a name so other sessions can find it:
+
+```bash
+harnex run pi --id pi-i-13
+```
+
+Session IDs follow `<cli>-<role>-<tag>`: `pi-p-13` plans issue 13,
+`pi-i-13` implements it, `pi-f-13` fixes it, and `cl-r-13` is a
+Claude reviewer. See `harnex agents-guide naming`.
+
+### Sending messages
+
+From another terminal:
+
+```bash
+harnex send --id pi-i-13 --message "implement the auth module"
+```
+
+If the agent is busy, you don't have to wait or retry: a busy Pi
+worker takes the message at once as a follow-up and runs it when the
+current turn ends, and other agents queue it until they are back at a
+prompt. Follow-ups exist, but the default workflow should still be
+one task per fresh worker.
+
+For unattended visible dispatch, prefer the native work-level watcher over
+external poll loops:
+
+```bash
+harnex run pi --id pi-i-13 --tmux pi-i-13 \
+  --context "Read and execute /tmp/task-impl-13.md" --auto-stop
+harnex watch --id pi-i-13 --until done --max-wait 90m
+```
+
+Or launch and wait in one call. `--wait-done` blocks until the first
+turn's result and prints it; the worker's reply is
+`turn_result.final_message`. On exit 124 the worker keeps going; run
+the `resume` command the output names.
+
+```bash
+harnex run pi --id pi-i-13 --tmux pi-i-13 \
+  --context "Read and execute /tmp/task-impl-13.md" \
+  --auto-stop --wait-done --wait-timeout 9m
+```
+
+Pi RPC cannot show Pi's project-trust prompt, so harnex starts Pi with
+`--no-approve` (project-local Pi resources ignored); pass `-- --approve` to
+load them.
+
+`harnex run --watch --preset impl` is a separate foreground launch-and-stall
+babysitter; do not combine it with `--tmux` or `--detach`. For full flag
+behavior and event-stream consumers, see
+[TECHNICAL.md](TECHNICAL.md) and the built-in monitoring section in
+[README.md](README.md).
+
+### Seeing what's running
+
+```bash
+harnex status
+```
+
+Shows all live sessions for the current repo with their ID, CLI
+type, age, and state (prompt/busy).
+
+### Running agents in tmux
+
+This is the recommended way to run multiple agents. Each one gets
+its own tmux window you can switch to anytime:
+
+```bash
+harnex run pi --id pi-i-13 --tmux pi-i-13
+harnex run claude --id cl-r-13 --tmux cl-r-13
+```
+
+Pass the same value to `--id` and `--tmux` so status, panes, logs,
+and the tmux window name all line up.
+
+Switch between them with your normal tmux keys (`Ctrl-b n`,
+`Ctrl-b p`, or `Ctrl-b w` to pick from a list). This is the
+easiest way to monitor what each agent is doing. Claude's window
+shows its normal TUI; Pi's shows harnex's transcript of the RPC
+session rather than Pi's own TUI.
+
+For longer-running work, `harnex pane` lets you peek at an
+agent's screen without switching windows:
+
+```bash
+harnex pane --id pi-i-13 --lines 30
+```
+
+Or watch it live from your current terminal:
+
+```bash
+harnex pane --id pi-i-13 --follow
+```
+
+### Raw parallel sessions in worktrees
+
+`harnex delegate --worktree` creates and cleans up worktrees for you. To
+manage them yourself with raw sessions, give each its own git worktree.
+`--cwd` starts Pi in the worktree, `--root` keeps the session attributed to
+your main checkout, and harnex credits each session with its own commits:
+
+```bash
+git worktree add ../wt-13 -b issue-13
+git worktree add ../wt-14 -b issue-14
+harnex run pi --id pi-i-13 --tmux pi-i-13 --cwd ../wt-13 --root . \
+  --context-file /tmp/task-13.md --auto-stop
+harnex run pi --id pi-i-14 --tmux pi-i-14 --cwd ../wt-14 --root . \
+  --context-file /tmp/task-14.md --auto-stop
+```
+
+Watch each with `harnex watch --id`, or, from a Claude Code or Pi
+supervisor, wait for every lane you launched in one call:
+
+```bash
+harnex watch --owner --until-idle --timeout 90m
+```
+
+A Claude Code subagent shares its parent's session ID; it passes the
+same `--owner-tag TAG` to `harnex run` and `harnex watch --owner` so
+it sees only its own lanes (`harnex agents-guide claude`).
+
+### Sending work and waiting for it to finish
+
+Use `--wait-for-idle` to block until the agent finishes
+processing:
+
+```bash
+harnex send --id pi-i-13 --message "implement the plan" --wait-for-idle --timeout 600
+```
+
+This is better than separate send + wait commands because there's
+no gap where you might check too early and think the agent is
+done when it hasn't started yet.
+
+With Pi, `--wait-done` goes further: it blocks until the turn the
+message started (or joined) settles and prints that turn's result,
+with the same exit codes as `harnex wait --until done`:
+
+```bash
+harnex send --id pi-i-13 --message "Also cover the empty-input case." --wait-done --timeout 540
+```
+
+Treat `--wait-for-idle` as the fence, not the report. After the
+send returns, use `harnex pane` or `harnex logs` to inspect what
+actually happened.
+
+### Sending large prompts
+
+Shell quoting and terminal input don't love multi-kilobyte inline
+messages. For anything longer than a few sentences, write the
+task to a file and tell the agent to read it:
+
+```bash
+cat > /tmp/task-impl-13.md <<'EOF'
+Implement phase 2 from koder/plans/03_output_streaming.md.
+
+Focus on:
+- The HTTP endpoint for streaming output
+- Integration with the existing ring buffer
+- Tests for the new endpoint
+
+Do not modify the CLI commands.
+EOF
+
+harnex send --id pi-i-13 --message "Read and execute /tmp/task-impl-13.md"
+```
+
+If the task is already written down — a plan file, an issue, a
+spec — just point to it:
+
+```bash
+harnex send --id pi-i-13 --message "Implement koder/plans/plan_09_atomic_send_wait.md"
+```
+
+At launch, `--context-file` sends a file's text itself as the task,
+and `--context-section` sends only the part under one heading:
+
+```bash
+harnex run pi --id pi-i-13 --tmux pi-i-13 \
+  --context-file koder/briefs/13.md --context-section "## Task" --auto-stop
+```
+
+This is more reliable, easier to debug (you can read the file to
+see exactly what was sent), and avoids quoting headaches.
+
+### Capturing results
+
+For dependable multi-step work, prefer file handoffs over reply
+messages.
+
+Examples:
+
+```bash
+# Planning
+harnex send --id pi-p-13 --message "Read koder/issues/13_atomic_send_wait.md and write a plan to /tmp/plan-13.md. Do not change code." --wait-for-idle --timeout 600
+
+# Review
+harnex send --id cl-r-13 --message "Review the current changes against /tmp/plan-13.md and write findings to /tmp/review-13.md. If clean, say so explicitly." --wait-for-idle --timeout 600
+```
+
+Why files work better:
+
+- The next worker can read exactly the same artifact you reviewed
+- The supervisor can inspect the artifact without scraping terminal text
+- If the session dies, the output still exists
+
+Pi results also carry the worker's last reply as `final_message` (in
+`run --wait-done`, `send --wait-done`, and `watch --owner` output).
+That is enough for a short answer; use a file for anything the next
+step must read.
+
+After the worker finishes, inspect the screen:
+
+```bash
+harnex pane --id cl-r-13 --lines 60
+```
+
+**Return channel for any tmux pane:** Every spawned session gets
+`$HARNEX_SPAWNER_PANE` — the tmux pane ID of whoever ran `harnex run`.
+The spawned agent can report back via `tmux send-keys`, even if the
+invoker isn't a harnex session:
+
+```bash
+tmux send-keys -t "$HARNEX_SPAWNER_PANE" "done — results in /tmp/result.md" Enter
+```
+
+If you're inside a harnex-managed session, you can also use
+`$HARNEX_ID` as the return address with `harnex send`. But file
+handoffs remain the preferred primary control flow.
+
+### Stopping agents
+
+```bash
+harnex stop --id pi-i-13
+```
+
+For Pi, harnex aborts any running turn and ends the `pi --mode rpc`
+process. PTY agents get their native exit sequence (e.g. `/exit` for
+Claude). Either way the agent shuts down cleanly.
+
+### A reliable supervised workflow
+
+Use fresh instances for each stage. Pi plans, implements, and fixes.
+Claude (or a fresh Pi lane) only reviews.
+
+```bash
+# 1. Plan with Pi
+harnex run pi --id pi-p-13 --tmux pi-p-13
+harnex send --id pi-p-13 --message "Read koder/issues/13_atomic_send_wait.md and write a concrete implementation plan to /tmp/plan-13.md. Do not change code." --wait-for-idle --timeout 600
+harnex pane --id pi-p-13 --lines 60
+harnex stop --id pi-p-13
+
+# 2. Implement with a fresh Pi
+harnex run pi --id pi-i-13 --tmux pi-i-13
+harnex send --id pi-i-13 --message "Read /tmp/plan-13.md, implement it, run tests, and write a short summary to /tmp/impl-13.md." --wait-for-idle --timeout 1200
+harnex pane --id pi-i-13 --lines 80
+harnex stop --id pi-i-13
+
+# 3. Review with a fresh Claude
+harnex run claude --id cl-r-13 --tmux cl-r-13
+harnex send --id cl-r-13 --message "Review the current changes against /tmp/plan-13.md. Write findings to /tmp/review-13.md. If there are no issues, say clean." --wait-for-idle --timeout 900
+harnex pane --id cl-r-13 --lines 80
+harnex stop --id cl-r-13
+```
+
+If the review finds issues, spawn a fresh Pi fixer (`pi-f-13`) and
+tell it to read `/tmp/review-13.md`, fix the findings, run tests, and
+write an updated summary. Then review again with a fresh Claude
+instance, or a fresh Pi lane (`pi-r-13`) that has not seen the
+implementation.
+
+Each Pi step can also be one blocking call:
+`harnex run pi --id pi-p-13 --tmux pi-p-13 --context "..." --auto-stop --wait-done --wait-timeout 9m`.
+
+## Teaching agents about harnex
+
+The smoothest way is `harnex mcp install`: Claude Code and Pi get the lane
+commands as native tools, and Claude Code gets a `gpt` subagent (see
+[docs/agents.md](docs/agents.md)). Harnex also ships its agent guidance in the
+CLI; no skill install or project-local docs are required:
+
+```bash
+harnex agents-guide             # list all agent guide topics
+harnex agents-guide dispatch    # Fire and Watch lifecycle
+harnex agents-guide monitoring  # completion signals and polling
+harnex agents-guide naming      # session IDs and artifact names
+harnex agents-guide claude      # Pi workers as tools from Claude Code
+```
+
+Tell an agent to run `harnex --help` and then `harnex agents-guide`.
+The guides cover dispatch, chain implementation, buddies, monitoring,
+naming conventions, and Claude Code using Pi workers as tools.
+
+## Recipes
+
+Tested workflows for common multi-agent patterns. Read them
+from the CLI:
+
+```bash
+harnex recipes             # list all recipes
+harnex recipes show 01     # read one
+harnex agents-guide        # deeper agent-facing guidance
+```
+
+- **Fire and Watch** (`harnex recipes show 01`) — send work to a
+  fresh worker, watch its tmux screen, capture the result, stop it.
+- **Chain Implement** (`harnex recipes show 02`) — process a
+  batch as repeated fire-and-watch: Pi plan/implement, Claude (or a
+  fresh Pi lane) review, Pi fix, then review again if needed.
+- **Buddy** (`harnex recipes show 03`) — spawn an accountability
+  partner for overnight or long-running work. The buddy polls the
+  worker's screen and nudges it if it stalls.
+
+## What's next
+
+For lanes, MCP and coding agents, see [docs/lanes.md](docs/lanes.md),
+[docs/mcp.md](docs/mcp.md) and [docs/agents.md](docs/agents.md); upgrading
+from an older release, [docs/upgrading-to-0.29.md](docs/upgrading-to-0.29.md).
+For the full command reference, flags, HTTP API, and internals,
+see [TECHNICAL.md](TECHNICAL.md). The packaged
+[dispatch telemetry](docs/dispatch-telemetry.md) and
+[configuration](docs/configuration.md) references cover the canonical v2 stream,
+phase allowlists, and log retention.
+
+
+---
+
+# Lanes
+
+Source: https://harnex.zyt.app/docs/lanes
+
+A **lane** is one Pi worker doing one job: a question, a task, or a task plus
+its follow-ups. You start one with `harnex ask` or `harnex delegate`, collect
+it with `harnex result`, continue it with `harnex reply`, and finish it with
+`harnex land` or `harnex discard`. Every lane has a name, runs in a visible
+tmux window named after it, and leaves a small record so any later command can
+find it by name from anywhere in the repository.
+
+Lanes are the agent-facing layer of harnex. Everything here is also available
+as native tools through [`harnex mcp`](mcp.md), and the low-level `run`, `send`,
+`wait` and `watch` commands remain underneath for custom orchestration.
+
+| Need | Command |
+| --- | --- |
+| A second opinion, an explanation, a read-only review | `harnex ask "QUESTION"` |
+| A task that edits code | `harnex delegate --worktree NAME "TASK"`, review, then `harnex land NAME` |
+| A task that only runs or inspects things | `harnex delegate "TASK"` |
+| Several tasks in parallel | `harnex delegate --no-wait --worktree NAME "TASK"` per task, then `harnex result` |
+| More work for the same worker, with its context | `harnex reply NAME "MESSAGE"` |
+| Throw a lane away | `harnex discard NAME` |
+| What is open and what each worker is doing | `harnex lanes` |
+
+## Ask
+
+```bash
+harnex ask "Which module writes dispatch rows, and is the lane case tested?"
+harnex ask --model openai/gpt-5.1 --file /tmp/review.md
+```
+
+The worker reads the repository with read-only tools (`read`, `grep`, `find`,
+`ls`), answers, and stops. It cannot run commands or change anything; for
+that, use `delegate`. stdout is the answer; stderr gets one line naming the
+lane, its time and the model. `--write` lets the worker edit and run commands,
+and `--fallback-model M` asks once more with another model when the first one
+is out of capacity or rate limited.
+
+Every ask is a lane (`pi-ask-xxxx`), so `harnex reply pi-ask-xxxx "..."` asks a
+follow-up of the same worker, with everything it read still in context.
+
+## Delegate
+
+```bash
+harnex delegate --worktree word-count \
+  "Add TextKit.word_count(text): the number of whitespace-separated words, with a test. Run bin/test."
+```
+
+The worker edits files, runs commands, and replies with a summary. harnex
+prints that reply and then a footer:
+
+```text
+Committed as `a6bf91e` on `harnex/word-count`.
+- Added `TextKit.word_count(text)` in `lib/textkit.rb`.
+- Ran `bin/test`: 3 tests, 6 assertions, all passing.
+
+── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
+```
+
+The footer always says what happened and what to do next: state, time, model,
+cost, commits and the next commands.
+
+- **`--worktree NAME`** creates `.harnex/worktrees/NAME` on a new branch
+  `harnex/NAME` from `HEAD`. The worker is told to commit there. Parallel lanes
+  never collide, and your checkout is untouched until you land. If your checkout
+  has uncommitted changes, harnex warns that the worktree starts from `HEAD`.
+- **Without `--worktree`** the worker works in the current directory, which is
+  right for tasks that only run or inspect things (tests, a benchmark, a long
+  command). `--name NAME` names the lane; otherwise harnex derives a name from
+  the task (`pi-slow-bench`).
+- **`--file PATH`** reads a long brief from a file. Briefs must be
+  self-contained: the worker has not seen your conversation. Name the files, the
+  expected behavior and how to verify it.
+- **`--model provider/model`** and **`--effort low|medium|high`** pick the
+  model; the default is Pi's own default model.
+
+### Waiting, and long tasks
+
+Blocking commands (`ask`, `delegate`, `reply`, `result`) wait up to 9 minutes
+by default, which fits under the 10-minute tool cap most coding agents have.
+`--timeout DUR` changes it (`540`, `9m`, `1h30m`, or `none`).
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | done |
+| 1 | the worker failed (the footer says why and what to try) |
+| 2 | usage error (nothing was started) |
+| 124 | still working — the worker keeps going; run `harnex result NAME` |
+
+```text
+── slow-bench: still working (9m02s so far)
+   keep waiting: harnex result slow-bench
+```
+
+`harnex result NAME` blocks again (another 9 minutes by default) and prints the
+result in the same format once it lands, even if the worker finished between
+calls.
+
+## Review and land
+
+```bash
+git diff HEAD...harnex/word-count     # read the change
+(cd .harnex/worktrees/word-count && bin/test)
+harnex land word-count
+```
+
+`harnex land NAME` merges `harnex/NAME` into the current branch of the main
+checkout, then removes the worktree and the branch. Leftover uncommitted
+changes in the lane are committed first. `harnex land` with no name lands every
+finished worktree lane you started in this repo, oldest first.
+
+**Conflicts.** When the merge conflicts, git's merge is left in progress and
+harnex lists the files. Resolve them, `git add` them and `git commit`, then run
+`harnex land NAME` again to clean up (or `git merge --abort` to give up).
+Several lanes that touched the same file land one at a time.
+
+**Merging by hand** works too. A lane whose branch is already in `HEAD` (and
+whose worktree is clean) is tidied up by the next `delegate`, `result`, `lanes`
+or bare `land`.
+
+`harnex discard NAME` stops the lane if it is still working and deletes its
+worktree and branch without merging.
+
+## Parallel lanes
+
+```bash
+harnex delegate --no-wait --worktree slugify  "Fix TextKit.slugify so punctuation is dropped ..."
+harnex delegate --no-wait --worktree truncate "Add TextKit.truncate(text, n) ..."
+harnex delegate --no-wait --worktree titleize "Add TextKit.titleize(text) ..."
+harnex result          # waits for all three, printing each result as it lands
+harnex land            # lands every finished worktree lane, oldest first
+```
+
+`harnex result` with no names covers every lane you started in this repo whose
+result you have not collected yet. Name lanes to wait for specific ones.
+"You" is the calling agent session (`CLAUDE_CODE_SESSION_ID` or
+`PI_SESSION_ID`); a Claude Code subagent shares its parent's id, so a subagent
+should name the lanes it waits for.
+
+## Follow-ups
+
+```bash
+harnex reply word-count "Also add TextKit.char_count(text), in the same style, with a test."
+```
+
+The worker keeps its context. A worker still on its turn takes the message
+mid-task as a follow-up; a lane that has finished is relaunched on its own Pi
+session (`pi --session`), so it remembers everything from the earlier turns.
+The footer's cost is the lane's total so far.
+
+## When a model fails
+
+```text
+── word-count: FAILED after 3s (API error (404): model_not_found) · gpt-9 · $0.00 · 0 commits
+   next: `harnex reply word-count "Continue the same task from where you stopped" --model openai/gpt-5.1`
+         (keeps the task; another model) or `harnex discard word-count`
+```
+
+For provider and model failures (not found, rate limited, out of capacity) the
+footer suggests continuing on Pi's default model. `reply --model` resumes the
+same session, so the task is not lost. For `ask`, `--fallback-model` does this
+automatically.
+
+## Watching a worker
+
+```bash
+harnex lanes
+```
+
+```text
+NAME      STATE                  AGE    MODEL    BRANCH           NEXT
+slugify   working (now bash 12s) 1m40s  gpt-5.1  harnex/slugify   harnex result slugify
+truncate  done                   2m03s  gpt-5.1  harnex/truncate  harnex land truncate
+```
+
+A working lane shows the tool it is running right now (tool names only; harnex
+never records tool arguments). `harnex pane --id NAME --lines 40` captures the
+worker's tmux window, and the window itself is always there to watch.
+
+## Where things live
+
+- **Lane records:** `~/.local/state/harnex/lanes/` (one JSON file per lane:
+  repo, worktree, branch, model, owner, Pi session, cost, last result). Closed
+  lanes are pruned after 30 days; open lanes never are.
+- **Worktrees:** `.harnex/worktrees/NAME` inside your repository, on branch
+  `harnex/NAME`.
+- **`.harnex/`** is added to the clone's `.git/info/exclude` the first time
+  harnex writes there, so lane worktrees and dispatch rows never show up as
+  untracked work. Nothing tracked changes.
+
+## Habits from `harnex run`
+
+The lane commands accept the flags people and agents reach for from the
+low-level `run`, instead of refusing them: `--id NAME` and `--tmux NAME` name
+the lane, `--auto-stop` and `--wait-done` are what lanes do anyway,
+`--wait-timeout` means `--timeout`, and `--context`/`--context-file` give the
+task.
+
+See also: [MCP server](mcp.md), [Coding agents](agents.md), and the CLI
+reference (`harnex help delegate`, `result`, `reply`, `land`, `discard`,
+`lanes`, `ask`).
+
+
+---
+
+# MCP server
+
+Source: https://harnex.zyt.app/docs/mcp
+
+`harnex mcp` serves the [lane](lanes.md) commands as native
+[Model Context Protocol](https://modelcontextprotocol.io) tools over stdio.
+Claude Code, Pi and any other MCP client can then hand work to Pi workers
+without shelling out, quoting a brief, or looping on exit codes.
+
+```bash
+harnex mcp install     # register for Claude Code (user scope) and Pi
+harnex mcp status      # where it is registered
+harnex mcp uninstall   # remove both registrations
+```
+
+Restart running Claude Code and Pi sessions afterwards: clients load MCP
+servers when a session starts. `harnex doctor` reports the registrations under
+`integrations`.
+
+## Tools
+
+Each tool runs the matching CLI command and returns its text: the worker's
+reply followed by the `── NAME:` footer.
+
+| Tool | Arguments | Does |
+| --- | --- | --- |
+| `ask` | `question`; `model`, `effort`, `fallback_model`, `write`, `cwd`, `wait_minutes` | A read-only answer from a Pi worker |
+| `delegate` | `task`; `worktree`, `name`, `wait`, `model`, `effort`, `cwd`, `wait_minutes` | A worker does the task (in a worktree when `worktree` is set) |
+| `result` | `names`; `cwd`, `wait_minutes` | Wait for lanes and return each result |
+| `reply` | `name`, `message`; `model`, `wait`, `cwd`, `wait_minutes` | Follow-up to the same worker, which keeps its context |
+| `land` | `names` (optional); `cwd` | Merge worktree lanes, remove worktrees and branches |
+| `discard` | `names`; `cwd` | Drop lanes without merging |
+| `lanes` | `all`; `cwd` | Open lanes, what each worker is doing, the next step |
+
+Arguments are forgiving: `prompt`, `brief` or `message` work for `task`;
+`prompt` or `query` for `question`; `lane` or `id` for `name`. `cwd` defaults
+to the server's working directory, which MCP clients set to the project.
+
+## Long calls
+
+A blocking call (`ask`, `delegate`, `reply`, `result`) waits up to
+`wait_minutes` (default 25) and then returns "still working" with the lane name;
+the worker keeps going and `result` collects it. While it waits, the server
+sends `notifications/progress` every 15 seconds:
+
+```text
+word-count: working 2m10s · 7 tool calls · now bash 12s
+```
+
+Progress resets the clients' idle timers (Claude Code's 30-minute stdio idle
+timeout, Pi's per-request timeout), and Claude Code shows it under the running
+tool call.
+
+- **Claude Code, main conversation:** a call still running after two minutes
+  moves to a background task on its own; Claude keeps working and is notified
+  when the result lands. A plain `delegate` therefore behaves like a background
+  subagent.
+- **Claude Code subagents and headless runs** block on the call. Headless
+  `claude -p` stops background work ten idle minutes after the main turn ends;
+  set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for longer unattended runs.
+- **Pi:** `harnex mcp install` registers the server with `exposure: direct`
+  (the tools are declared to the model like built-ins) and a two-hour request
+  timeout.
+- **Cancelling** a call (for example pressing Esc) stops the wait, not the
+  worker; `lanes` and `result` still see it.
+
+Calls run concurrently, so a client can start several `delegate` calls with
+`wait: false` and collect them with one `result`.
+
+## Workers never get harnex's tools
+
+Pi keeps MCP tools even when a worker is limited with `--tools`, so a worker
+started by harnex would otherwise see `delegate` and could start more workers,
+or escape a read-only ask. harnex prevents both: every Pi worker starts with
+`--exclude-tools mcp__harnex__…`, and a read-only ask worker starts with
+`--no-mcp`.
+
+## Other clients
+
+Any client that speaks MCP over stdio can run the server. The command is the
+`harnex` executable with the argument `mcp`. Prefer the absolute path of the
+RubyGems wrapper, `$(ruby -e 'print Gem.bindir')/harnex`, which is what
+`harnex mcp install` registers, so no version-manager shim or working
+directory gets in the way:
+
+```json
+{
+  "mcpServers": {
+    "harnex": { "command": "/path/to/bin/harnex", "args": ["mcp"] }
+  }
+}
+```
+
+The server negotiates MCP protocol revisions 2024-11-05 through 2025-11-25
+and declares only the `tools` capability.
+
+## Troubleshooting
+
+- **The tools don't appear:** restart the client session; check
+  `harnex mcp status` and, for Pi, `pi mcp list`.
+- **A call ends with "still working":** that is the wait limit, not a failure;
+  call `result` with the lane name.
+- **A worker failed on its model:** the footer suggests
+  `reply` with another `model`, which keeps the task.
+
+
+---
+
+# Coding agents
+
+Source: https://harnex.zyt.app/docs/agents
+
+harnex is built to be driven by coding agents: Claude Code, Pi, or anything
+that can run a shell command or call an MCP tool. A supervising agent hands a
+question or a task to a Pi worker (a GPT model by default), keeps working, and
+gets the worker's reply back as plain text it can act on.
+
+There are three ways in, from smoothest to most portable:
+
+1. **MCP tools** (`harnex mcp install`): `ask`, `delegate`, `result`,
+   `reply`, `land`, `discard` and `lanes` as native tools. See
+   [MCP server](mcp.md).
+2. **The `gpt` subagent** for Claude Code: a background subagent that relays
+   one brief to a worker and returns the reply verbatim.
+3. **The CLI** from any agent's shell tool: the same verbs as
+   [lanes](lanes.md).
+
+## Claude Code
+
+### MCP tools (main conversation)
+
+With the server registered, Claude calls the tools directly. A call that runs
+longer than two minutes moves to the background on its own; Claude keeps
+working and is notified when the result lands, so a `delegate` behaves like a
+background subagent without one:
+
+```text
+❯ Use the harnex delegate tool to have a GPT worker run the slow benchmark and tell me the score.
+● Calling harnex…
+  ⎿  pi-slow-bench: working 59s · 3 tool calls · now bash 44s
+● The GPT worker is still running the benchmark. I'll report the score when it finishes.
+● MCP task (harnex/delegate) completed.
+● The score is 302926.
+```
+
+### The `gpt` subagent
+
+`harnex mcp install` also installs a `gpt` agent definition at
+`~/.claude/agents/gpt.md` when none exists. It is a thin Haiku relay with only
+the harnex tools: it never does the task itself and returns the worker's reply
+exactly, footer included. Use it for parallel work (several `Agent` calls in
+one message) and for follow-ups (`SendMessage` to the same agent reaches the
+same worker, with its context).
+
+```text
+Agent(subagent_type: "gpt", prompt: """
+worktree: word-count
+
+Add TextKit.word_count(text) to lib/textkit.rb with a test; run bin/test.
+""")
+```
+
+Optional header lines, then a blank line, then the brief:
+
+| Header | Effect |
+| --- | --- |
+| `worktree: NAME` | Edit in a new worktree on `harnex/NAME`; land it afterwards |
+| `mode: write` | Run commands or edit the current checkout in place |
+| `mode: read` | Read-only, even if the brief mentions commands |
+| `model: provider/model`, `effort: low\|medium\|high` | Pick the worker's model |
+| `fallback: provider/model` | Retry a read-only ask on another model |
+| `cwd: DIR` | Work in another directory |
+
+Without a header, questions and reviews go to a read-only worker, and a brief
+that asks to run something or change files goes to a worker that can.
+The definition ships with harnex as [`agents/gpt.md`](../agents/gpt.md).
+
+### The CLI from Claude's Bash tool
+
+```bash
+harnex delegate --worktree word-count "Add TextKit.word_count(text) with a test; run bin/test."
+```
+
+Give the Bash call `timeout: 600000`: commands wait up to 9 minutes, and
+Claude Code's default Bash timeout is two minutes. On exit 124 run
+`harnex result NAME`. In the main conversation, `run_in_background` works too.
+
+### Things worth knowing
+
+- Claude Code loads agent definitions and MCP servers when a session starts;
+  restart after `harnex mcp install`.
+- Background results reach the parent XML-escaped (`&amp;`, `&lt;`). The relay's
+  own text is exact.
+- Headless `claude -p` stops background work ten idle minutes after the main
+  turn; set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for long unattended runs.
+
+## Pi
+
+`harnex mcp install` adds the server to `~/.pi/agent/mcp.json` with
+`exposure: direct`, so a Pi supervisor sees the tools like built-ins. Without
+MCP, Pi uses the CLI through its `bash` tool; `harnex agents-guide claude` is
+the short guide it needs (it applies to any supervising agent). Workers
+started by harnex never see harnex's own MCP tools, so a worker cannot start
+more workers.
+
+## Habits that keep it smooth
+
+- **Self-contained briefs.** The worker has not seen your conversation: name
+  the files, the expected behavior and the check (`bin/test`).
+- **A worktree for anything that edits.** `--worktree NAME` keeps parallel
+  lanes apart and your checkout clean until you land.
+- **Verify, then land.** `done` means the worker's turn ended without error,
+  not that the work is right. Read the diff and run the tests yourself.
+- **Land, don't merge by hand.** `land` also removes the worktree and branch.
+- **Check on a worker with `lanes`.** It shows the tool each worker is running
+  now.
+
+## Measuring it
+
+`evals/agents/run` drives real supervisors (Claude Code headless and Pi print
+mode, each with and without MCP) through seven scenarios against a fixture
+repository and scores correctness, tool calls, harnex usage errors, doc
+lookups and leftovers. harnex 0.29 passes all 28 runs with no harnex usage
+errors, no doc lookups and nothing left behind.
+
+```bash
+evals/agents/run --list
+evals/agents/run --supervisor claude,pi S2 S3
+```
+
+
+---
+
+# Upgrading to 0.29
+
+Source: https://harnex.zyt.app/docs/upgrading
+
+harnex 0.29 is the agent release. It adds lanes (`delegate`, `result`,
+`reply`, `land`, `discard`, `lanes`), the `harnex mcp` server and the `gpt`
+subagent for Claude Code. The low-level session commands (`run`, `send`, `wait`,
+`watch`, `stop`, `status`, `pane`, `logs`, `events`) keep working as before.
+
+The last RubyGems release before this one was 0.12.0. If you are upgrading
+from it, read the whole page; from 0.21 on, only the 0.22 section applies.
+
+```bash
+gem install harnex          # 0.29.0
+harnex --version
+harnex doctor               # checks Pi; reports MCP and agent integrations
+harnex mcp install          # optional: native tools for Claude Code and Pi
+pi update                   # harnex needs Pi 0.80.4+; MCP features want 1.0.4+
+```
+
+## Breaking changes
+
+### Codex support was removed (0.20)
+
+harnex now runs Pi workers backed by GPT and other models; Pi's structured RPC
+mode is the worker path that is designed, tested and supported. Removed:
+
+- the `codex` and `codex app-server` adapters and the JSON-RPC session
+  transport;
+- `harnex run --fast` and `--legacy-pty`, and `harnex preflight --legacy-pty`;
+- the Codex checks in `harnex doctor` (it checks Pi; `--adapter pi|all`).
+
+`harnex run codex` is no longer special-cased; it wraps a `codex` binary as a
+generic PTY program. Claude Code, OpenCode and any other terminal CLI still run
+under a PTY as before. Dispatch rows keep their schema; Codex-only fields stay
+`null` in new rows.
+
+### `harnex ask` waits 9 minutes by default (0.22)
+
+`ask` used to wait without a limit. It now stops waiting after 9 minutes (the
+worker keeps going) and exits 124, naming `harnex result ID`, which keeps
+waiting and prints the answer. Pass `--timeout none` for the old behavior.
+`ask --resume ID` still works and no longer needs `--repo`.
+
+### Pi starts with `--no-approve` (0.22)
+
+Pi's RPC mode cannot show its project-trust prompt, so harnex now starts every
+Pi worker with `--no-approve`: project-local Pi resources (`.pi/` extensions,
+skills, prompts) are ignored unless you pass `-- --approve`. Before, the result
+depended on Pi's default.
+
+### Workers never see harnex's own MCP tools (0.25)
+
+When harnex is registered as an MCP server in Pi, every Pi worker harnex
+starts gets `--exclude-tools mcp__harnex__…`, and a read-only ask worker gets
+`--no-mcp`. A worker can no longer start other workers. Your own `--tools`
+and `--exclude-tools` still apply (the exclusions are merged).
+
+## What's new, briefly
+
+- **Lanes** — `delegate` hands a task to a worker (optionally in its own git
+  worktree) and prints its reply with a footer of state, model, cost, commits
+  and next steps. `result` collects parallel lanes, `reply` follows up with the
+  worker's context (a finished lane resumes its Pi session), `land` merges and
+  cleans up, `discard` drops a lane, `lanes` shows what each worker is doing.
+  See [Lanes](lanes.md).
+- **`harnex mcp`** — the same verbs as native MCP tools for Claude Code, Pi and
+  any MCP client, with progress notifications for long calls. See
+  [MCP server](mcp.md).
+- **The `gpt` subagent** for Claude Code, installed by `harnex mcp install`.
+  See [Coding agents](agents.md).
+- **Hygiene** — harnex adds `.harnex/` to the clone's `.git/info/exclude`, so
+  lane worktrees and dispatch rows never show up as untracked work.
+- **`harnex doctor`** reports `integrations` (MCP registrations, the agent)
+  and new capabilities (`lanes`, `mcp`, `ask_resume`).
+- **`wait --since TIME`** ignores events from an earlier launch of a reused
+  session id.
+
+## If something looks different
+
+| You see | Why | Do |
+| --- | --- | --- |
+| `ask` exits 124 after 9 minutes | new default wait | `harnex result ID`, or `--timeout none` |
+| A Pi worker ignores `.pi/` resources | `--no-approve` by default | `harnex run pi ... -- --approve` |
+| `harnex run codex` behaves like a plain PTY program | Codex adapters removed | use Pi workers (`harnex delegate`, `harnex run pi`) |
+| A new `.harnex/` line in `.git/info/exclude` | harnex hides its own state | nothing; it is local to the clone |
+| Workers lack `mcp__harnex__*` tools | recursion guard | intended |
+
+The full history is in the [changelog](../CHANGELOG.md).

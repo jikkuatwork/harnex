@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>harnex — Pi workers as tools for your coding agents</title>
+<meta name="description" content="Pi workers (GPT models) as tools for you and your coding agents: delegate tasks into git worktrees, follow up with context, land the result. CLI and MCP.">
+<link rel="canonical" href="https://harnex.zyt.app/">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="harnex — Pi workers as tools for your coding agents">
+<meta property="og:description" content="Pi workers (GPT models) as tools for you and your coding agents: delegate tasks into git worktrees, follow up with context, land the result. CLI and MCP.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/" aria-current="page"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+
+<section class="hero">
+  <p class="kicker"><b>v0.29.0</b> · the agent release · <a href="/docs/upgrading">what changed</a></p>
+  <h1 class="wordmark" aria-label="harnex">harnex<span class="cursor" aria-hidden="true"></span></h1>
+  <p class="tagline">Pi workers as tools for you and your <em>coding agents</em>.</p>
+  <p class="sub">Hand a question or a task to a Pi worker (a GPT model by default) and get the reply back in one call: in its own git worktree, in a tmux window you can watch, with follow-ups that keep the worker's context. From your shell, or as native tools in Claude Code and Pi.</p>
+
+  <div class="install">
+    <div class="cmd"><span class="p">$</span><code>gem install harnex</code><span class="note">ruby 3.x · no deps</span></div>
+    <div class="cmd"><span class="p">$</span><code>harnex mcp install</code><span class="note">claude code + pi</span></div>
+  </div>
+
+  <div class="term" role="img" aria-label="A terminal: harnex delegate runs a worker in a worktree, prints its reply and a footer, then harnex land merges the lane.">
+    <div class="title"><span>~/textkit — zsh</span><span>pi · gpt-5.1</span></div>
+    <pre data-play><span class="ln"><span class="p">$ </span><span class="c">harnex delegate --worktree word-count "Add TextKit.word_count(text) with a test; run bin/test."</span>
+</span><span class="ln o" data-wait="260">Committed as <span class="t">a6bf91e</span> on <span class="t">harnex/word-count</span>.
+</span><span class="ln" data-wait="80">
+</span><span class="ln o" data-wait="90">- Added TextKit.word_count(text) in lib/textkit.rb.
+</span><span class="ln o" data-wait="90">- Added tests for mixed whitespace, punctuation and empty input.
+</span><span class="ln o" data-wait="90">- Ran bin/test: 3 tests, 6 assertions, all passing.
+</span><span class="ln" data-wait="200">
+</span><span class="ln f" data-wait="120">── word-count: <span class="ok">done in 49s</span> · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+</span><span class="ln o" data-wait="90">   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+</span><span class="ln o" data-wait="900">   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count`
+</span><span class="ln" data-wait="120">
+</span><span class="ln" data-wait="700"><span class="p">$ </span><span class="c">harnex land word-count</span>
+</span><span class="ln f" data-wait="0">── word-count: merged harnex/word-count into main (1 commit); removed its worktree and branch
+</span></pre>
+  </div>
+</section>
+
+<section class="section" id="verbs">
+  <p class="rule">the verbs <span class="meta">· harnex --help</span></p>
+  <h2>Seven commands. Plain text in, plain text out.</h2>
+  <p class="lead">Every command blocks until the worker replies, then prints the reply and a footer with the state, model, cost, commits and the next commands. Exit 0 done, 1 failed, 124 still working.</p>
+  <dl class="verbs">
+    <dt>ask "QUESTION"</dt><dd>A second opinion. <span>The worker reads the repository and answers; it changes nothing.</span></dd>
+    <dt>delegate "TASK"</dt><dd>A worker does the task. <span>Add <code>--worktree NAME</code> to give it its own git worktree.</span></dd>
+    <dt>result [NAME…]</dt><dd>Collect parallel lanes. <span>Prints each result as it lands.</span></dd>
+    <dt>reply NAME "…"</dt><dd>Follow up. <span>The worker keeps its context, even after it finished.</span></dd>
+    <dt>land [NAME…]</dt><dd>Merge a worktree lane. <span>Then removes the worktree and the branch.</span></dd>
+    <dt>discard NAME</dt><dd>Drop a lane. <span>Stops the worker, deletes its worktree and branch.</span></dd>
+    <dt>lanes</dt><dd>What is open. <span>And what each worker is doing right now.</span></dd>
+  </dl>
+</section>
+
+<section class="section" id="ways">
+  <p class="rule">three ways in</p>
+  <h2>Built to be driven by agents.</h2>
+  <p class="lead">A supervising agent hands work to a Pi worker, keeps going, and acts on the reply. The same verbs work from a shell, as MCP tools, or through a Claude Code subagent.</p>
+  <div class="grid">
+    <article class="card">
+      <h3>Your shell <span class="tag">· any agent</span></h3>
+      <p>Run several workers at once, each in its own worktree, then land them.</p>
+<pre><span class="p">$ </span>harnex delegate --no-wait \
+    --worktree a "Task A"
+<span class="p">$ </span>harnex delegate --no-wait \
+    --worktree b "Task B"
+<span class="p">$ </span>harnex result
+<span class="p">$ </span>harnex land</pre>
+    </article>
+    <article class="card">
+      <h3>Claude Code <span class="tag">· MCP</span></h3>
+      <p>Native tools. A long call moves to the background on its own; Claude is notified when the worker finishes.</p>
+<pre><span class="o">❯ use harnex to have a GPT
+  worker run the benchmark</span>
+● harnex delegate
+  ⎿ bench: working 59s ·
+    now bash 44s
+<span class="o">● MCP task completed.</span>
+● The score is 302926.</pre>
+    </article>
+    <article class="card">
+      <h3>Pi <span class="tag">· MCP or CLI</span></h3>
+      <p>Pi supervises Pi. Tools are declared like built-ins; workers can never start more workers.</p>
+<pre><span class="o"># ~/.pi/agent/mcp.json</span>
+"harnex": {
+  "command": ".../harnex",
+  "args": ["mcp"],
+  "exposure": "direct"
+}</pre>
+    </article>
+  </div>
+</section>
+
+<section class="section" id="anatomy">
+  <p class="rule">anatomy of a lane</p>
+  <h2>Every result says what happened and what to do next.</h2>
+  <div class="anatomy">
+    <div class="term" style="margin-top:0">
+      <div class="title"><span>footer</span><span>harnex 0.29</span></div>
+<pre style="min-height:0"><span class="f">── word-count: <span class="ok">done in 49s</span> · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)</span>
+<span class="o">   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`,
+         then `harnex land word-count`;
+         more work: `harnex reply word-count "..."`</span>
+
+<span class="f">── slow-bench: still working (9m02s so far)</span>
+<span class="o">   keep waiting: harnex result slow-bench</span>
+
+<span class="f">── fix-a: FAILED after 3s (model_not_found) · gpt-9</span>
+<span class="o">   next: harnex reply fix-a "Continue the same task
+         from where you stopped" --model openai/gpt-5.1</span></pre>
+    </div>
+    <ol>
+      <li><span><b>A name.</b> The lane's name is its tmux window, its branch (<span class="mark">harnex/NAME</span>) and the handle for every later command.</span></li>
+      <li><span><b>State, time, model, cost.</b> Read from the worker's own usage report, summed over every turn.</span></li>
+      <li><span><b>What changed.</b> Commits and a diffstat since the lane started, straight from git.</span></li>
+      <li><span><b>The next command.</b> Land it, follow up, keep waiting, or retry on another model. The task is never lost: a retry resumes the worker's session.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section" id="measured">
+  <p class="rule">measured, not guessed <span class="meta">· evals/agents/run</span></p>
+  <h2>Real agents, real tasks, scored.</h2>
+  <p class="lead">Claude Code and Pi, each with and without MCP, get plain requests against a fixture repository: a second opinion, one change, three parallel workers, an 11-minute task, a follow-up, a progress check, a broken model. 0.29 passed two consecutive full rounds.</p>
+  <div class="table-scroll">
+    <table class="evals">
+      <thead><tr><th>measure</th><th>0.21</th><th>0.29</th></tr></thead>
+      <tbody>
+        <tr><td>runs passed</td><td class="was">10/10 (5 × 2)</td><td class="n">28/28 × 2 rounds</td></tr>
+        <tr><td>harnex usage errors</td><td class="was">several</td><td class="n">0</td></tr>
+        <tr><td>docs read before acting</td><td class="was">4–6 per task</td><td class="n">0</td></tr>
+        <tr><td>files, worktrees, sessions left behind</td><td class="was">8</td><td class="n">0</td></tr>
+        <tr><td>parallel task, Claude Code</td><td class="was">252s</td><td class="n">86–117s</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" id="underneath">
+  <p class="rule">underneath</p>
+  <h2>A local harness for any terminal agent.</h2>
+  <p class="lead">Lanes are ordinary harnex sessions. Pi runs in structured RPC mode, so harnex sees every turn settle and every command exit; Claude Code, OpenCode or any other CLI runs under a PTY. Each session gets a local control API, an event stream, a receipt of what it actually did, and a row in the dispatch history. <code>run</code>, <code>send</code>, <code>wait</code>, <code>watch</code>, <code>pane</code> and <code>events</code> stay available for custom orchestration.</p>
+  <div class="cta">
+    <a class="btn solid" href="/docs/start">get started →</a>
+    <a class="btn" href="/docs/lanes">read about lanes</a>
+    <a class="btn" href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+  </div>
+</section>
+
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

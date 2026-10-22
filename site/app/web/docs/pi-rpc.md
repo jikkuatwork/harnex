@@ -1,0 +1,225 @@
+# Pi RPC adapter
+
+Harnex runs Pi workers over Pi's structured subprocess protocol rather than
+scraping the TUI:
+
+```text
+harnex run pi  ->  pi --mode rpc  ->  LF-delimited JSON objects on stdio
+```
+
+Pi RPC is JSONL, not JSON-RPC 2.0. Harnex presents the same
+run/send/wait/events control surface over it as over its PTY adapters.
+
+## Compatibility
+
+Harnex requires Pi **0.80.4 or newer** for structured dispatch. Pi 0.80.4 added
+`agent_settled`, the first lifecycle event that guarantees no automatic retry,
+compaction recovery, or queued continuation remains. `agent_end` is only a
+low-level run boundary and is never accepted as Harnex work completion.
+
+Check the installed transport before unattended work:
+
+```bash
+harnex doctor --adapter pi
+```
+
+`harnex run pi` also checks the version before spawn and fails closed when the
+version cannot be parsed or predates 0.80.4. The current contract was live
+verified against Pi 0.84.1.
+
+Pi 0.84.0 removed cumulative message snapshots from `message_update`. Harnex
+therefore assembles output from `assistantMessageEvent` deltas between
+`message_start` and authoritative `message_end` events. This remains compatible
+with Pi 0.80.4-0.83.x and avoids printing the final message twice on 0.84+.
+
+## Dispatch
+
+```bash
+harnex run pi --id pi-i-42 --tmux pi-i-42 \
+  --context "Implement issue 42 and run tests" --auto-stop
+
+harnex wait --id pi-i-42 --until task_complete --timeout 3600
+harnex events --id pi-i-42
+```
+
+`--context` is sent as an RPC `prompt` command; it is not passed as a Pi
+positional argument.
+
+Harnex model and effort flags are active controls, not telemetry-only labels:
+
+```bash
+harnex run pi \
+  --model openai/gpt-5.1 --effort high \
+  --context "Review the change" --auto-stop
+```
+
+Harnex maps those controls to Pi `--model` / `--thinking` startup flags, then
+verifies the effective values with RPC `get_state` before prompting. This avoids
+`set_model` / `set_thinking_level` persisting a dispatch override into the
+user's Pi defaults. Use `provider/model` for deterministic dispatch. Harnex
+fails before the prompt if Pi cannot apply the requested model or thinking level
+exactly, so requested and effective policy cannot silently diverge. Direct
+adapter callers can still use Pi's RPC setters for an intentional mid-session
+switch.
+
+Pass Pi startup flags after `--`:
+
+```bash
+harnex run pi --context "Implement X" --auto-stop -- \
+  --no-session --no-extensions --model openai/gpt-5.1
+```
+
+When both Harnex `--model` and a Pi child `--model` are supplied, the Harnex
+startup override is appended last and is authoritative for that dispatch.
+
+## Project trust
+
+Pi 0.79 added project trust. RPC mode cannot show the interactive trust prompt;
+an unresolved project follows Pi's global `defaultProjectTrust` policy. Harnex
+does not auto-trust repository code.
+
+For deterministic unattended runs, choose explicitly after reviewing the
+repository:
+
+```bash
+# Load trusted project-local .pi settings, packages, and extensions
+harnex run pi --context "..." -- --approve
+
+# Ignore project-local executable resources
+harnex run pi --context "..." -- --no-approve
+```
+
+Context files continue to follow Pi's documented trust behavior. Third-party or
+project extensions execute with the worker's OS privileges; `--approve` is a
+security decision, not merely a prompt-suppression flag.
+
+## Lifecycle and failures
+
+Harnex maps Pi events as follows:
+
+| Pi event | Harnex behavior |
+|---|---|
+| `agent_start`, `turn_start` | busy |
+| `agent_end` | remain busy; capture outcome/stats, but do not complete |
+| retry/compaction events | remain busy and emit structured telemetry |
+| `agent_settled` + final `stopReason=stop` | emit `task_complete` |
+| `agent_settled` + `error`, `aborted`, or `length` | emit `task_failed` |
+| `agent_settled` without an authoritative final stop reason | fail closed |
+| EOF, malformed JSON, or request timeout | disconnect/failure |
+
+A forced send while Pi is busy is translated to a `prompt` with
+`streamingBehavior="steer"`; ordinary sends wait for the settled prompt state.
+This avoids sending a plain prompt that current Pi correctly rejects while
+streaming.
+
+RPC requests are bounded, stderr is continuously drained into a bounded
+diagnostic tail, and Harnex consumes Open3's wait thread so the real subprocess
+exit status is not lost to a competing `waitpid`.
+
+Persistent workers can be stopped after accepted `agent_settled` completion.
+An explicit idle `harnex stop` preserves the latest accepted/no-change receipt,
+including after a follow-up turn. Expected EOF and TERM teardown are normal
+adapter cleanup, not a lost connection. Harnex reports a logical exit of zero
+for that cleanup; the `process_exited` event retains the raw child exit code
+and signal (TERM yields code 143; Pi may handle it with `process.exit(143)`,
+so signal 15 is only present when the OS reports a signalled exit).
+
+A new prompt invalidates the preceding turn's completion before waiting for its
+RPC response. Stop during that new work fails closed, and late lifecycle events
+cannot promote the interrupted turn or replace the idle-stop decision. Unexpected
+EOF (even exit zero), malformed transport, and abnormal cleanup exits remain
+failures. Output is drained before final receipt/dispatch finalization so trailing
+transport errors are not silently lost. Existing `--auto-stop` settlement remains
+supported.
+
+## Runtime limits and activity
+
+Harnex 0.14.0 adds opt-in `run --max-runtime DUR`, independent of observer
+`watch --max-wait` / `wait --timeout`. Check `doctor --adapter pi` for
+`capabilities.runtime_budget: 1` before enabling it. The fixed monotonic budget
+is armed before child launch and initial prompting, and never resets on retries,
+follow-up prompts, steering, or UI output. Expiry terminates without waiting for
+an abort RPC or completion/output lock, including during startup. Owned worker
+process groups cover their normal descendants; deliberately detached groups are
+not an OS-level containment guarantee. Active work fails with logical run exit
+124; cleanup after accepted idle settlement preserves proof. Shutdown/finalization
+has separate I/O overhead. An earlier stop cannot disable the deadline;
+`runtime_budget.enforced` records actual enforcement separately from stop labels.
+
+Live JSON status separates `activity` work clocks from `log_idle_s`. Pi assistant
+message boundaries and text/thinking/tool-call deltas update model activity;
+`tool_execution_*` updates tool activity. Thinking content is not stored in the
+activity tracker or newly logged. Extension UI/queue/retry events never fake
+model/tool progress. `model_active` describes an observed stream lifetime, not
+hidden provider state; a quiet active stream is not a completed task. PTY clocks
+are unknown. Dispatch-end rows retain the terminal activity snapshot.
+
+The first requested stop records reason/origin/time and work state in a
+`stop_requested` event, JSON status/end metadata, and receipt `observed.stop`.
+The labels are bounded caller declarations, separate from acceptance. Harnex's
+runtime expiry is `runtime_budget`/`runtime`, ordinary stop is `manual`/`cli`,
+and auto-stop is `completion`/`auto_stop`. Expected cancellation EOF is not a
+provider disconnection; unexpected EOF or malformed/unterminated JSONL remains a failure.
+Raw Pi exit evidence is in `process_exited`, before logical normalization.
+
+See `harnex agents-guide monitoring` for clock fields, heartbeat streaming,
+observer deadlines, stop labels, and the full runtime-budget contract.
+
+## Telemetry
+
+At settlement and teardown, Harnex reads `get_session_stats` and records:
+
+- input/output/cache/total tokens and provider-reported cost;
+- tool-call count;
+- Pi session ID;
+- effective provider and model;
+- terminal and peak active-context usage.
+
+Message/tool/retry/compaction events are available through `harnex events`.
+
+### Command proof
+
+Built-in `bash` tool calls are command evidence in the observed receipt.
+Harnex correlates `tool_execution_start` and `tool_execution_end` by
+`toolCallId` and records a command only when both structured facts exist:
+non-empty `args.command` text (bounded to 2,000 characters) and an integer
+`result.structuredContent.exit_code`. Status is `completed` or `failed` from
+`isError`; `duration_s` comes from `durationMs`. Command output, including
+`structuredContent.output`, is never persisted.
+
+Pi reports aborts, timeouts, and shell exits without a code as plain error
+text with no `structuredContent`; extensions that replace a result can drop it
+too. Harnex never parses that prose. Such calls, malformed exits, and calls
+still in flight at teardown count in `observed.commands_unobserved`, and
+`command_observation` becomes `partial` (some exits observed) or `unsupported`
+(none). A session with no bash calls reports `observed` with no commands.
+Other tools — read, edit, write, MCP, extension tools — are tool calls, not
+commands. `actual.commands_executed` counts bash calls; `actual.tool_calls` is
+Pi's own reported total, which includes them.
+
+Live verified on Pi 1.2.0 and 1.3.0. Older Pi releases without bash
+`structuredContent` fail closed to `unsupported`. Harnex 0.15.0+ advertises
+this contract as `harnex doctor` `capabilities.pi_command_proof: 1`; check it
+before treating Pi receipt commands as proof.
+Blocking extension dialogs (`select`, `confirm`, `input`, `editor`) are
+currently auto-cancelled so autonomous workers cannot hang. Full extension UI
+mediation is not implemented.
+
+## Boundaries
+
+- The structured adapter does not embed Pi's TypeScript SDK.
+- `--tmux` displays Harnex's synthesized RPC transcript, not Pi's native TUI.
+- First-class native Pi TUI/PTTY markers remain tracked in Issue `#45`.
+- Durable Pi session recovery is separate from lifecycle correctness and remains
+  part of the broader structured-recovery work.
+
+## Verification
+
+Hermetic tests cover lifecycle settlement, retry boundaries, failure stop
+reasons, delta-only message streaming, model/effort RPC controls, request
+timeouts, and telemetry. The opt-in live contract test is:
+
+```bash
+PI_INTEGRATION=1 ruby -Ilib -Itest \
+  test/harnex/adapters/pi_integration_test.rb
+```

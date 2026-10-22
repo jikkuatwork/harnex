@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title><%= h(page_title) %></title>
+<meta name="description" content="<%= h(description) %>">
+<link rel="canonical" href="<%= SITE_URL %><%= path %>">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="<%= h(page_title) %>">
+<meta property="og:description" content="<%= h(description) %>">
+<meta property="og:type" content="website">
+<meta property="og:url" content="<%= SITE_URL %><%= path %>">
+<% if markdown_path %><link rel="alternate" type="text/markdown" href="<%= markdown_path %>">
+<% end %><link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=<%= BUILD %>">
+<script src="/assets/theme.js?v=<%= BUILD %>"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+<% NAV.each_with_index do |(key, label, href), index| %>    <a href="<%= href %>"<%= ' aria-current="page"' if key == current %>><span class="ix"><%= index %>:</span><%= label %></a>
+<% end %>  </nav>
+  <div class="right">
+    <span class="ver">v<%= VERSION %></span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="<%= GITHUB %>" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<%= body %>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="<%= GITHUB %>" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex <%= VERSION %></span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=<%= BUILD %>" defer></script>
+<script src="/assets/feedback.js?v=<%= BUILD %>" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

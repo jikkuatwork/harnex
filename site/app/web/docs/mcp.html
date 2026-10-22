@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MCP server · harnex</title>
+<meta name="description" content="The lane verbs as native tools for Claude Code, Pi and any MCP client.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/mcp">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="MCP server · harnex">
+<meta property="og:description" content="The lane verbs as native tools for Claude Code, Pi and any MCP client.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/mcp">
+<link rel="alternate" type="text/markdown" href="/docs/mcp.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp" aria-current="page"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/mcp</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp" aria-current="page">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / mcp</p>
+      <h1>MCP server</h1>
+<p><code>harnex mcp</code> serves the <a href="/docs/lanes">lane</a> commands as native
+<a href="https://modelcontextprotocol.io">Model Context Protocol</a> tools over stdio.
+Claude Code, Pi and any other MCP client can then hand work to Pi workers
+without shelling out, quoting a brief, or looping on exit codes.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex mcp <span class="nb">install</span>     <span class="c"># register for Claude Code (user scope) and Pi</span>
+harnex mcp status      <span class="c"># where it is registered</span>
+harnex mcp uninstall   <span class="c"># remove both registrations</span>
+</code></pre></div>
+
+<p>Restart running Claude Code and Pi sessions afterwards: clients load MCP
+servers when a session starts. <code>harnex doctor</code> reports the registrations under
+<code>integrations</code>.</p>
+
+<h2 id="tools"><a class="anchor" href="#tools">Tools</a></h2>
+
+<p>Each tool runs the matching CLI command and returns its text: the worker’s
+reply followed by the <code>── NAME:</code> footer.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Arguments</th>
+      <th>Does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>ask</code></td>
+      <td><code>question</code>; <code>model</code>, <code>effort</code>, <code>fallback_model</code>, <code>write</code>, <code>cwd</code>, <code>wait_minutes</code></td>
+      <td>A read-only answer from a Pi worker</td>
+    </tr>
+    <tr>
+      <td><code>delegate</code></td>
+      <td><code>task</code>; <code>worktree</code>, <code>name</code>, <code>wait</code>, <code>model</code>, <code>effort</code>, <code>cwd</code>, <code>wait_minutes</code></td>
+      <td>A worker does the task (in a worktree when <code>worktree</code> is set)</td>
+    </tr>
+    <tr>
+      <td><code>result</code></td>
+      <td><code>names</code>; <code>cwd</code>, <code>wait_minutes</code></td>
+      <td>Wait for lanes and return each result</td>
+    </tr>
+    <tr>
+      <td><code>reply</code></td>
+      <td><code>name</code>, <code>message</code>; <code>model</code>, <code>wait</code>, <code>cwd</code>, <code>wait_minutes</code></td>
+      <td>Follow-up to the same worker, which keeps its context</td>
+    </tr>
+    <tr>
+      <td><code>land</code></td>
+      <td><code>names</code> (optional); <code>cwd</code></td>
+      <td>Merge worktree lanes, remove worktrees and branches</td>
+    </tr>
+    <tr>
+      <td><code>discard</code></td>
+      <td><code>names</code>; <code>cwd</code></td>
+      <td>Drop lanes without merging</td>
+    </tr>
+    <tr>
+      <td><code>lanes</code></td>
+      <td><code>all</code>; <code>cwd</code></td>
+      <td>Open lanes, what each worker is doing, the next step</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Arguments are forgiving: <code>prompt</code>, <code>brief</code> or <code>message</code> work for <code>task</code>;
+<code>prompt</code> or <code>query</code> for <code>question</code>; <code>lane</code> or <code>id</code> for <code>name</code>. <code>cwd</code> defaults
+to the server’s working directory, which MCP clients set to the project.</p>
+
+<h2 id="long-calls"><a class="anchor" href="#long-calls">Long calls</a></h2>
+
+<p>A blocking call (<code>ask</code>, <code>delegate</code>, <code>reply</code>, <code>result</code>) waits up to
+<code>wait_minutes</code> (default 25) and then returns “still working” with the lane name;
+the worker keeps going and <code>result</code> collects it. While it waits, the server
+sends <code>notifications/progress</code> every 15 seconds:</p>
+
+<pre><code class="language-text">word-count: working 2m10s · 7 tool calls · now bash 12s
+</code></pre>
+
+<p>Progress resets the clients’ idle timers (Claude Code’s 30-minute stdio idle
+timeout, Pi’s per-request timeout), and Claude Code shows it under the running
+tool call.</p>
+
+<ul>
+  <li><strong>Claude Code, main conversation:</strong> a call still running after two minutes
+moves to a background task on its own; Claude keeps working and is notified
+when the result lands. A plain <code>delegate</code> therefore behaves like a background
+subagent.</li>
+  <li><strong>Claude Code subagents and headless runs</strong> block on the call. Headless
+<code>claude -p</code> stops background work ten idle minutes after the main turn ends;
+set <code>CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0</code> for longer unattended runs.</li>
+  <li><strong>Pi:</strong> <code>harnex mcp install</code> registers the server with <code>exposure: direct</code>
+(the tools are declared to the model like built-ins) and a two-hour request
+timeout.</li>
+  <li><strong>Cancelling</strong> a call (for example pressing Esc) stops the wait, not the
+worker; <code>lanes</code> and <code>result</code> still see it.</li>
+</ul>
+
+<p>Calls run concurrently, so a client can start several <code>delegate</code> calls with
+<code>wait: false</code> and collect them with one <code>result</code>.</p>
+
+<h2 id="workers-never-get-harnexs-tools"><a class="anchor" href="#workers-never-get-harnexs-tools">Workers never get harnex’s tools</a></h2>
+
+<p>Pi keeps MCP tools even when a worker is limited with <code>--tools</code>, so a worker
+started by harnex would otherwise see <code>delegate</code> and could start more workers,
+or escape a read-only ask. harnex prevents both: every Pi worker starts with
+<code>--exclude-tools mcp__harnex__…</code>, and a read-only ask worker starts with
+<code>--no-mcp</code>.</p>
+
+<h2 id="other-clients"><a class="anchor" href="#other-clients">Other clients</a></h2>
+
+<p>Any client that speaks MCP over stdio can run the server. The command is the
+<code>harnex</code> executable with the argument <code>mcp</code>. Prefer the absolute path of the
+RubyGems wrapper, <code>$(ruby -e 'print Gem.bindir')/harnex</code>, which is what
+<code>harnex mcp install</code> registers, so no version-manager shim or working
+directory gets in the way:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"harnex"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nl">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/path/to/bin/harnex"</span><span class="p">,</span><span class="w"> </span><span class="nl">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"mcp"</span><span class="p">]</span><span class="w"> </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>The server negotiates MCP protocol revisions 2024-11-05 through 2025-11-25
+and declares only the <code>tools</code> capability.</p>
+
+<h2 id="troubleshooting"><a class="anchor" href="#troubleshooting">Troubleshooting</a></h2>
+
+<ul>
+  <li><strong>The tools don’t appear:</strong> restart the client session; check
+<code>harnex mcp status</code> and, for Pi, <code>pi mcp list</code>.</li>
+  <li><strong>A call ends with “still working”:</strong> that is the wait limit, not a failure;
+call <code>result</code> with the lane name.</li>
+  <li><strong>A worker failed on its model:</strong> the footer suggests
+<code>reply</code> with another <code>model</code>, which keeps the task.</li>
+</ul>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/mcp.md" rel="noopener">docs/mcp.md</a> · <a href="/docs/mcp.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/lanes">← Lanes</a>
+        <a class="next" href="/docs/agents">Coding agents →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

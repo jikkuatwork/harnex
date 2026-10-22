@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Getting started · harnex</title>
+<meta name="description" content="Install, check the setup, your first lanes, and the session layer underneath.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/start">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Getting started · harnex">
+<meta property="og:description" content="Install, check the setup, your first lanes, and the session layer underneath.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/start">
+<link rel="alternate" type="text/markdown" href="/docs/start.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start" aria-current="page"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/start</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start" aria-current="page">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / start</p>
+      <h1>Getting started</h1>
+<p>You’ve installed harnex. Here’s how to actually use it.</p>
+
+<p>harnex hands work to Pi workers (GPT models by default) and gives you, or the
+agent you are working with, the result back as plain text. Each worker runs in
+a visible tmux window you can switch to at any time.</p>
+
+<h2 id="check-the-setup"><a class="anchor" href="#check-the-setup">Check the setup</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex doctor          <span class="c"># Pi 0.80.4+ on PATH, tmux, retention; MCP integrations</span>
+harnex mcp <span class="nb">install</span>     <span class="c"># optional: native tools for Claude Code and Pi</span>
+</code></pre></div>
+
+<h2 id="your-first-lanes"><a class="anchor" href="#your-first-lanes">Your first lanes</a></h2>
+
+<p>Ask another model a question. The worker reads the repository, answers and
+stops:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex ask <span class="s2">"Which module parses the dispatch rows, and is it tested?"</span>
+</code></pre></div>
+
+<p>Hand a worker a task in its own git worktree, review it, and land it:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--worktree</span> word-count <span class="se">\</span>
+  <span class="s2">"Add TextKit.word_count(text) with a test; run bin/test."</span>
+git diff HEAD...harnex/word-count
+harnex land word-count
+</code></pre></div>
+
+<p>The worker’s reply comes back with a footer that says what happened and what
+to do next:</p>
+
+<pre><code class="language-text">── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
+</code></pre>
+
+<p>Follow up with the same worker; it keeps its context:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex reply word-count <span class="s2">"Also add TextKit.char_count(text)."</span>
+</code></pre></div>
+
+<p>Run several at once, then collect them:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> a <span class="s2">"Task A"</span>
+harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> b <span class="s2">"Task B"</span>
+harnex result
+harnex land
+</code></pre></div>
+
+<p>Commands wait up to 9 minutes; if a worker is still going they exit 124 and
+<code>harnex result NAME</code> keeps waiting. <code>harnex lanes</code> shows what each worker is
+doing right now. The full guide is <a href="/docs/lanes">docs/lanes.md</a>; for
+driving harnex from Claude Code or Pi, see <a href="/docs/agents">docs/agents.md</a>
+and <a href="/docs/mcp">docs/mcp.md</a>.</p>
+
+<h2 id="sessions-the-layer-underneath"><a class="anchor" href="#sessions-the-layer-underneath">Sessions: the layer underneath</a></h2>
+
+<p>Lanes are built on ordinary harnex sessions. The rest of this guide covers
+that layer, which you need for custom orchestration, long-lived interactive
+workers, and wrapping other terminal agents.</p>
+
+<h3 id="recommended-mental-model"><a class="anchor" href="#recommended-mental-model">Recommended mental model</a></h3>
+
+<p>Treat harnex as a local supervisor harness, not as a conversation
+bus between agents.</p>
+
+<ul>
+  <li>Start a fresh worker for each step, usually with <code>--tmux</code></li>
+  <li>Give one clear startup task with <code>--context</code> (or <code>--context-file</code>); add <code>--auto-stop</code> for one-shot work</li>
+  <li>Monitor existing visible work with <code>harnex watch --until done</code></li>
+  <li>Use <code>--wait-for-idle</code> only as a follow-up-send fence, then verify the artifact</li>
+  <li>Ask the worker to write its output to a file when the next step needs it</li>
+  <li>Stop completed interactive workers promptly</li>
+</ul>
+
+<p>For multi-step flows, chain fresh workers with file handoffs:
+Pi writes a plan, a fresh Pi implements it, Claude (or a fresh Pi
+lane) reviews it, another fresh Pi fixes it.</p>
+
+<h3 id="your-first-session"><a class="anchor" href="#your-first-session">Your first session</a></h3>
+
+<p>Pi is the default worker. Check that the installed Pi is new enough
+(0.80.4 or later), then start it through harnex:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex doctor
+harnex run pi
+</code></pre></div>
+
+<p>Harnex runs Pi in its structured RPC mode (<code>pi --mode rpc</code>) and
+prints the session as a transcript. Harnex runs alongside it —
+registering the session, listening for messages, and tracking
+whether the agent is busy or idle. Claude Code, OpenCode, or any
+other terminal CLI (<code>harnex run claude</code>) runs under a PTY instead and
+looks exactly as it does when run directly.</p>
+
+<p>Give it a name so other sessions can find it:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13
+</code></pre></div>
+
+<p>Session IDs follow <code>&lt;cli&gt;-&lt;role&gt;-&lt;tag&gt;</code>: <code>pi-p-13</code> plans issue 13,
+<code>pi-i-13</code> implements it, <code>pi-f-13</code> fixes it, and <code>cl-r-13</code> is a
+Claude reviewer. See <code>harnex agents-guide naming</code>.</p>
+
+<h3 id="sending-messages"><a class="anchor" href="#sending-messages">Sending messages</a></h3>
+
+<p>From another terminal:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"implement the auth module"</span>
+</code></pre></div>
+
+<p>If the agent is busy, you don’t have to wait or retry: a busy Pi
+worker takes the message at once as a follow-up and runs it when the
+current turn ends, and other agents queue it until they are back at a
+prompt. Follow-ups exist, but the default workflow should still be
+one task per fresh worker.</p>
+
+<p>For unattended visible dispatch, prefer the native work-level watcher over
+external poll loops:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13 <span class="se">\</span>
+  <span class="nt">--context</span> <span class="s2">"Read and execute /tmp/task-impl-13.md"</span> <span class="nt">--auto-stop</span>
+harnex watch <span class="nt">--id</span> pi-i-13 <span class="nt">--until</span> <span class="k">done</span> <span class="nt">--max-wait</span> 90m
+</code></pre></div>
+
+<p>Or launch and wait in one call. <code>--wait-done</code> blocks until the first
+turn’s result and prints it; the worker’s reply is
+<code>turn_result.final_message</code>. On exit 124 the worker keeps going; run
+the <code>resume</code> command the output names.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13 <span class="se">\</span>
+  <span class="nt">--context</span> <span class="s2">"Read and execute /tmp/task-impl-13.md"</span> <span class="se">\</span>
+  <span class="nt">--auto-stop</span> <span class="nt">--wait-done</span> <span class="nt">--wait-timeout</span> 9m
+</code></pre></div>
+
+<p>Pi RPC cannot show Pi’s project-trust prompt, so harnex starts Pi with
+<code>--no-approve</code> (project-local Pi resources ignored); pass <code>-- --approve</code> to
+load them.</p>
+
+<p><code>harnex run --watch --preset impl</code> is a separate foreground launch-and-stall
+babysitter; do not combine it with <code>--tmux</code> or <code>--detach</code>. For full flag
+behavior and event-stream consumers, see
+<a href="/docs/technical">TECHNICAL.md</a> and the built-in monitoring section in
+<a href="/">README.md</a>.</p>
+
+<h3 id="seeing-whats-running"><a class="anchor" href="#seeing-whats-running">Seeing what’s running</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex status
+</code></pre></div>
+
+<p>Shows all live sessions for the current repo with their ID, CLI
+type, age, and state (prompt/busy).</p>
+
+<h3 id="running-agents-in-tmux"><a class="anchor" href="#running-agents-in-tmux">Running agents in tmux</a></h3>
+
+<p>This is the recommended way to run multiple agents. Each one gets
+its own tmux window you can switch to anytime:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13
+harnex run claude <span class="nt">--id</span> cl-r-13 <span class="nt">--tmux</span> cl-r-13
+</code></pre></div>
+
+<p>Pass the same value to <code>--id</code> and <code>--tmux</code> so status, panes, logs,
+and the tmux window name all line up.</p>
+
+<p>Switch between them with your normal tmux keys (<code>Ctrl-b n</code>,
+<code>Ctrl-b p</code>, or <code>Ctrl-b w</code> to pick from a list). This is the
+easiest way to monitor what each agent is doing. Claude’s window
+shows its normal TUI; Pi’s shows harnex’s transcript of the RPC
+session rather than Pi’s own TUI.</p>
+
+<p>For longer-running work, <code>harnex pane</code> lets you peek at an
+agent’s screen without switching windows:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex pane <span class="nt">--id</span> pi-i-13 <span class="nt">--lines</span> 30
+</code></pre></div>
+
+<p>Or watch it live from your current terminal:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex pane <span class="nt">--id</span> pi-i-13 <span class="nt">--follow</span>
+</code></pre></div>
+
+<h3 id="raw-parallel-sessions-in-worktrees"><a class="anchor" href="#raw-parallel-sessions-in-worktrees">Raw parallel sessions in worktrees</a></h3>
+
+<p><code>harnex delegate --worktree</code> creates and cleans up worktrees for you. To
+manage them yourself with raw sessions, give each its own git worktree.
+<code>--cwd</code> starts Pi in the worktree, <code>--root</code> keeps the session attributed to
+your main checkout, and harnex credits each session with its own commits:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>git worktree add ../wt-13 <span class="nt">-b</span> issue-13
+git worktree add ../wt-14 <span class="nt">-b</span> issue-14
+harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13 <span class="nt">--cwd</span> ../wt-13 <span class="nt">--root</span> <span class="nb">.</span> <span class="se">\</span>
+  <span class="nt">--context-file</span> /tmp/task-13.md <span class="nt">--auto-stop</span>
+harnex run pi <span class="nt">--id</span> pi-i-14 <span class="nt">--tmux</span> pi-i-14 <span class="nt">--cwd</span> ../wt-14 <span class="nt">--root</span> <span class="nb">.</span> <span class="se">\</span>
+  <span class="nt">--context-file</span> /tmp/task-14.md <span class="nt">--auto-stop</span>
+</code></pre></div>
+
+<p>Watch each with <code>harnex watch --id</code>, or, from a Claude Code or Pi
+supervisor, wait for every lane you launched in one call:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex watch <span class="nt">--owner</span> <span class="nt">--until-idle</span> <span class="nt">--timeout</span> 90m
+</code></pre></div>
+
+<p>A Claude Code subagent shares its parent’s session ID; it passes the
+same <code>--owner-tag TAG</code> to <code>harnex run</code> and <code>harnex watch --owner</code> so
+it sees only its own lanes (<code>harnex agents-guide claude</code>).</p>
+
+<h3 id="sending-work-and-waiting-for-it-to-finish"><a class="anchor" href="#sending-work-and-waiting-for-it-to-finish">Sending work and waiting for it to finish</a></h3>
+
+<p>Use <code>--wait-for-idle</code> to block until the agent finishes
+processing:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"implement the plan"</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+</code></pre></div>
+
+<p>This is better than separate send + wait commands because there’s
+no gap where you might check too early and think the agent is
+done when it hasn’t started yet.</p>
+
+<p>With Pi, <code>--wait-done</code> goes further: it blocks until the turn the
+message started (or joined) settles and prints that turn’s result,
+with the same exit codes as <code>harnex wait --until done</code>:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"Also cover the empty-input case."</span> <span class="nt">--wait-done</span> <span class="nt">--timeout</span> 540
+</code></pre></div>
+
+<p>Treat <code>--wait-for-idle</code> as the fence, not the report. After the
+send returns, use <code>harnex pane</code> or <code>harnex logs</code> to inspect what
+actually happened.</p>
+
+<h3 id="sending-large-prompts"><a class="anchor" href="#sending-large-prompts">Sending large prompts</a></h3>
+
+<p>Shell quoting and terminal input don’t love multi-kilobyte inline
+messages. For anything longer than a few sentences, write the
+task to a file and tell the agent to read it:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="nb">cat</span> <span class="o">&gt;</span> /tmp/task-impl-13.md <span class="o">&lt;&lt;</span><span class="sh">'</span><span class="no">EOF</span><span class="sh">'
+Implement phase 2 from koder/plans/03_output_streaming.md.
+
+Focus on:
+- The HTTP endpoint for streaming output
+- Integration with the existing ring buffer
+- Tests for the new endpoint
+
+Do not modify the CLI commands.
+</span><span class="no">EOF
+
+</span>harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"Read and execute /tmp/task-impl-13.md"</span>
+</code></pre></div>
+
+<p>If the task is already written down — a plan file, an issue, a
+spec — just point to it:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"Implement koder/plans/plan_09_atomic_send_wait.md"</span>
+</code></pre></div>
+
+<p>At launch, <code>--context-file</code> sends a file’s text itself as the task,
+and <code>--context-section</code> sends only the part under one heading:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13 <span class="se">\</span>
+  <span class="nt">--context-file</span> koder/briefs/13.md <span class="nt">--context-section</span> <span class="s2">"## Task"</span> <span class="nt">--auto-stop</span>
+</code></pre></div>
+
+<p>This is more reliable, easier to debug (you can read the file to
+see exactly what was sent), and avoids quoting headaches.</p>
+
+<h3 id="capturing-results"><a class="anchor" href="#capturing-results">Capturing results</a></h3>
+
+<p>For dependable multi-step work, prefer file handoffs over reply
+messages.</p>
+
+<p>Examples:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="c"># Planning</span>
+harnex send <span class="nt">--id</span> pi-p-13 <span class="nt">--message</span> <span class="s2">"Read koder/issues/13_atomic_send_wait.md and write a plan to /tmp/plan-13.md. Do not change code."</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+
+<span class="c"># Review</span>
+harnex send <span class="nt">--id</span> cl-r-13 <span class="nt">--message</span> <span class="s2">"Review the current changes against /tmp/plan-13.md and write findings to /tmp/review-13.md. If clean, say so explicitly."</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+</code></pre></div>
+
+<p>Why files work better:</p>
+
+<ul>
+  <li>The next worker can read exactly the same artifact you reviewed</li>
+  <li>The supervisor can inspect the artifact without scraping terminal text</li>
+  <li>If the session dies, the output still exists</li>
+</ul>
+
+<p>Pi results also carry the worker’s last reply as <code>final_message</code> (in
+<code>run --wait-done</code>, <code>send --wait-done</code>, and <code>watch --owner</code> output).
+That is enough for a short answer; use a file for anything the next
+step must read.</p>
+
+<p>After the worker finishes, inspect the screen:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex pane <span class="nt">--id</span> cl-r-13 <span class="nt">--lines</span> 60
+</code></pre></div>
+
+<p><strong>Return channel for any tmux pane:</strong> Every spawned session gets
+<code>$HARNEX_SPAWNER_PANE</code> — the tmux pane ID of whoever ran <code>harnex run</code>.
+The spawned agent can report back via <code>tmux send-keys</code>, even if the
+invoker isn’t a harnex session:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>tmux send-keys <span class="nt">-t</span> <span class="s2">"</span><span class="nv">$HARNEX_SPAWNER_PANE</span><span class="s2">"</span> <span class="s2">"done — results in /tmp/result.md"</span> Enter
+</code></pre></div>
+
+<p>If you’re inside a harnex-managed session, you can also use
+<code>$HARNEX_ID</code> as the return address with <code>harnex send</code>. But file
+handoffs remain the preferred primary control flow.</p>
+
+<h3 id="stopping-agents"><a class="anchor" href="#stopping-agents">Stopping agents</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex stop <span class="nt">--id</span> pi-i-13
+</code></pre></div>
+
+<p>For Pi, harnex aborts any running turn and ends the <code>pi --mode rpc</code>
+process. PTY agents get their native exit sequence (e.g. <code>/exit</code> for
+Claude). Either way the agent shuts down cleanly.</p>
+
+<h3 id="a-reliable-supervised-workflow"><a class="anchor" href="#a-reliable-supervised-workflow">A reliable supervised workflow</a></h3>
+
+<p>Use fresh instances for each stage. Pi plans, implements, and fixes.
+Claude (or a fresh Pi lane) only reviews.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="c"># 1. Plan with Pi</span>
+harnex run pi <span class="nt">--id</span> pi-p-13 <span class="nt">--tmux</span> pi-p-13
+harnex send <span class="nt">--id</span> pi-p-13 <span class="nt">--message</span> <span class="s2">"Read koder/issues/13_atomic_send_wait.md and write a concrete implementation plan to /tmp/plan-13.md. Do not change code."</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+harnex pane <span class="nt">--id</span> pi-p-13 <span class="nt">--lines</span> 60
+harnex stop <span class="nt">--id</span> pi-p-13
+
+<span class="c"># 2. Implement with a fresh Pi</span>
+harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13
+harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"Read /tmp/plan-13.md, implement it, run tests, and write a short summary to /tmp/impl-13.md."</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 1200
+harnex pane <span class="nt">--id</span> pi-i-13 <span class="nt">--lines</span> 80
+harnex stop <span class="nt">--id</span> pi-i-13
+
+<span class="c"># 3. Review with a fresh Claude</span>
+harnex run claude <span class="nt">--id</span> cl-r-13 <span class="nt">--tmux</span> cl-r-13
+harnex send <span class="nt">--id</span> cl-r-13 <span class="nt">--message</span> <span class="s2">"Review the current changes against /tmp/plan-13.md. Write findings to /tmp/review-13.md. If there are no issues, say clean."</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 900
+harnex pane <span class="nt">--id</span> cl-r-13 <span class="nt">--lines</span> 80
+harnex stop <span class="nt">--id</span> cl-r-13
+</code></pre></div>
+
+<p>If the review finds issues, spawn a fresh Pi fixer (<code>pi-f-13</code>) and
+tell it to read <code>/tmp/review-13.md</code>, fix the findings, run tests, and
+write an updated summary. Then review again with a fresh Claude
+instance, or a fresh Pi lane (<code>pi-r-13</code>) that has not seen the
+implementation.</p>
+
+<p>Each Pi step can also be one blocking call:
+<code>harnex run pi --id pi-p-13 --tmux pi-p-13 --context "..." --auto-stop --wait-done --wait-timeout 9m</code>.</p>
+
+<h2 id="teaching-agents-about-harnex"><a class="anchor" href="#teaching-agents-about-harnex">Teaching agents about harnex</a></h2>
+
+<p>The smoothest way is <code>harnex mcp install</code>: Claude Code and Pi get the lane
+commands as native tools, and Claude Code gets a <code>gpt</code> subagent (see
+<a href="/docs/agents">docs/agents.md</a>). Harnex also ships its agent guidance in the
+CLI; no skill install or project-local docs are required:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex agents-guide             <span class="c"># list all agent guide topics</span>
+harnex agents-guide dispatch    <span class="c"># Fire and Watch lifecycle</span>
+harnex agents-guide monitoring  <span class="c"># completion signals and polling</span>
+harnex agents-guide naming      <span class="c"># session IDs and artifact names</span>
+harnex agents-guide claude      <span class="c"># Pi workers as tools from Claude Code</span>
+</code></pre></div>
+
+<p>Tell an agent to run <code>harnex --help</code> and then <code>harnex agents-guide</code>.
+The guides cover dispatch, chain implementation, buddies, monitoring,
+naming conventions, and Claude Code using Pi workers as tools.</p>
+
+<h2 id="recipes"><a class="anchor" href="#recipes">Recipes</a></h2>
+
+<p>Tested workflows for common multi-agent patterns. Read them
+from the CLI:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex recipes             <span class="c"># list all recipes</span>
+harnex recipes show 01     <span class="c"># read one</span>
+harnex agents-guide        <span class="c"># deeper agent-facing guidance</span>
+</code></pre></div>
+
+<ul>
+  <li><strong>Fire and Watch</strong> (<code>harnex recipes show 01</code>) — send work to a
+fresh worker, watch its tmux screen, capture the result, stop it.</li>
+  <li><strong>Chain Implement</strong> (<code>harnex recipes show 02</code>) — process a
+batch as repeated fire-and-watch: Pi plan/implement, Claude (or a
+fresh Pi lane) review, Pi fix, then review again if needed.</li>
+  <li><strong>Buddy</strong> (<code>harnex recipes show 03</code>) — spawn an accountability
+partner for overnight or long-running work. The buddy polls the
+worker’s screen and nudges it if it stalls.</li>
+</ul>
+
+<h2 id="whats-next"><a class="anchor" href="#whats-next">What’s next</a></h2>
+
+<p>For lanes, MCP and coding agents, see <a href="/docs/lanes">docs/lanes.md</a>,
+<a href="/docs/mcp">docs/mcp.md</a> and <a href="/docs/agents">docs/agents.md</a>; upgrading
+from an older release, <a href="/docs/upgrading">docs/upgrading-to-0.29.md</a>.
+For the full command reference, flags, HTTP API, and internals,
+see <a href="/docs/technical">TECHNICAL.md</a>. The packaged
+<a href="/docs/telemetry">dispatch telemetry</a> and
+<a href="/docs/configuration">configuration</a> references cover the canonical v2 stream,
+phase allowlists, and log retention.</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/GUIDE.md" rel="noopener">GUIDE.md</a> · <a href="/docs/start.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="next" href="/docs/lanes">Lanes →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

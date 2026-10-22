@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Upgrading to 0.29 · harnex</title>
+<meta name="description" content="Breaking changes since 0.12 and what is new in the agent release.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/upgrading">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Upgrading to 0.29 · harnex">
+<meta property="og:description" content="Breaking changes since 0.12 and what is new in the agent release.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/upgrading">
+<link rel="alternate" type="text/markdown" href="/docs/upgrading.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/upgrading</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading" aria-current="page">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / upgrading</p>
+      <h1>Upgrading to 0.29</h1>
+<p>harnex 0.29 is the agent release. It adds lanes (<code>delegate</code>, <code>result</code>,
+<code>reply</code>, <code>land</code>, <code>discard</code>, <code>lanes</code>), the <code>harnex mcp</code> server and the <code>gpt</code>
+subagent for Claude Code. The low-level session commands (<code>run</code>, <code>send</code>, <code>wait</code>,
+<code>watch</code>, <code>stop</code>, <code>status</code>, <code>pane</code>, <code>logs</code>, <code>events</code>) keep working as before.</p>
+
+<p>The last RubyGems release before this one was 0.12.0. If you are upgrading
+from it, read the whole page; from 0.21 on, only the 0.22 section applies.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>gem <span class="nb">install </span>harnex          <span class="c"># 0.29.0</span>
+harnex <span class="nt">--version</span>
+harnex doctor               <span class="c"># checks Pi; reports MCP and agent integrations</span>
+harnex mcp <span class="nb">install</span>          <span class="c"># optional: native tools for Claude Code and Pi</span>
+pi update                   <span class="c"># harnex needs Pi 0.80.4+; MCP features want 1.0.4+</span>
+</code></pre></div>
+
+<h2 id="breaking-changes"><a class="anchor" href="#breaking-changes">Breaking changes</a></h2>
+
+<h3 id="codex-support-was-removed-020"><a class="anchor" href="#codex-support-was-removed-020">Codex support was removed (0.20)</a></h3>
+
+<p>harnex now runs Pi workers backed by GPT and other models; Pi’s structured RPC
+mode is the worker path that is designed, tested and supported. Removed:</p>
+
+<ul>
+  <li>the <code>codex</code> and <code>codex app-server</code> adapters and the JSON-RPC session
+transport;</li>
+  <li><code>harnex run --fast</code> and <code>--legacy-pty</code>, and <code>harnex preflight --legacy-pty</code>;</li>
+  <li>the Codex checks in <code>harnex doctor</code> (it checks Pi; <code>--adapter pi|all</code>).</li>
+</ul>
+
+<p><code>harnex run codex</code> is no longer special-cased; it wraps a <code>codex</code> binary as a
+generic PTY program. Claude Code, OpenCode and any other terminal CLI still run
+under a PTY as before. Dispatch rows keep their schema; Codex-only fields stay
+<code>null</code> in new rows.</p>
+
+<h3 id="harnex-ask-waits-9-minutes-by-default-022"><a class="anchor" href="#harnex-ask-waits-9-minutes-by-default-022"><code>harnex ask</code> waits 9 minutes by default (0.22)</a></h3>
+
+<p><code>ask</code> used to wait without a limit. It now stops waiting after 9 minutes (the
+worker keeps going) and exits 124, naming <code>harnex result ID</code>, which keeps
+waiting and prints the answer. Pass <code>--timeout none</code> for the old behavior.
+<code>ask --resume ID</code> still works and no longer needs <code>--repo</code>.</p>
+
+<h3 id="pi-starts-with---no-approve-022"><a class="anchor" href="#pi-starts-with---no-approve-022">Pi starts with <code>--no-approve</code> (0.22)</a></h3>
+
+<p>Pi’s RPC mode cannot show its project-trust prompt, so harnex now starts every
+Pi worker with <code>--no-approve</code>: project-local Pi resources (<code>.pi/</code> extensions,
+skills, prompts) are ignored unless you pass <code>-- --approve</code>. Before, the result
+depended on Pi’s default.</p>
+
+<h3 id="workers-never-see-harnexs-own-mcp-tools-025"><a class="anchor" href="#workers-never-see-harnexs-own-mcp-tools-025">Workers never see harnex’s own MCP tools (0.25)</a></h3>
+
+<p>When harnex is registered as an MCP server in Pi, every Pi worker harnex
+starts gets <code>--exclude-tools mcp__harnex__…</code>, and a read-only ask worker gets
+<code>--no-mcp</code>. A worker can no longer start other workers. Your own <code>--tools</code>
+and <code>--exclude-tools</code> still apply (the exclusions are merged).</p>
+
+<h2 id="whats-new-briefly"><a class="anchor" href="#whats-new-briefly">What’s new, briefly</a></h2>
+
+<ul>
+  <li><strong>Lanes</strong> — <code>delegate</code> hands a task to a worker (optionally in its own git
+worktree) and prints its reply with a footer of state, model, cost, commits
+and next steps. <code>result</code> collects parallel lanes, <code>reply</code> follows up with the
+worker’s context (a finished lane resumes its Pi session), <code>land</code> merges and
+cleans up, <code>discard</code> drops a lane, <code>lanes</code> shows what each worker is doing.
+See <a href="/docs/lanes">Lanes</a>.</li>
+  <li><strong><code>harnex mcp</code></strong> — the same verbs as native MCP tools for Claude Code, Pi and
+any MCP client, with progress notifications for long calls. See
+<a href="/docs/mcp">MCP server</a>.</li>
+  <li><strong>The <code>gpt</code> subagent</strong> for Claude Code, installed by <code>harnex mcp install</code>.
+See <a href="/docs/agents">Coding agents</a>.</li>
+  <li><strong>Hygiene</strong> — harnex adds <code>.harnex/</code> to the clone’s <code>.git/info/exclude</code>, so
+lane worktrees and dispatch rows never show up as untracked work.</li>
+  <li><strong><code>harnex doctor</code></strong> reports <code>integrations</code> (MCP registrations, the agent)
+and new capabilities (<code>lanes</code>, <code>mcp</code>, <code>ask_resume</code>).</li>
+  <li><strong><code>wait --since TIME</code></strong> ignores events from an earlier launch of a reused
+session id.</li>
+</ul>
+
+<h2 id="if-something-looks-different"><a class="anchor" href="#if-something-looks-different">If something looks different</a></h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>You see</th>
+      <th>Why</th>
+      <th>Do</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>ask</code> exits 124 after 9 minutes</td>
+      <td>new default wait</td>
+      <td><code>harnex result ID</code>, or <code>--timeout none</code></td>
+    </tr>
+    <tr>
+      <td>A Pi worker ignores <code>.pi/</code> resources</td>
+      <td><code>--no-approve</code> by default</td>
+      <td><code>harnex run pi ... -- --approve</code></td>
+    </tr>
+    <tr>
+      <td><code>harnex run codex</code> behaves like a plain PTY program</td>
+      <td>Codex adapters removed</td>
+      <td>use Pi workers (<code>harnex delegate</code>, <code>harnex run pi</code>)</td>
+    </tr>
+    <tr>
+      <td>A new <code>.harnex/</code> line in <code>.git/info/exclude</code></td>
+      <td>harnex hides its own state</td>
+      <td>nothing; it is local to the clone</td>
+    </tr>
+    <tr>
+      <td>Workers lack <code>mcp__harnex__*</code> tools</td>
+      <td>recursion guard</td>
+      <td>intended</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The full history is in the <a href="/changelog">changelog</a>.</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/upgrading-to-0.29.md" rel="noopener">docs/upgrading-to-0.29.md</a> · <a href="/docs/upgrading.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/agents">← Coding agents</a>
+        <a class="next" href="/docs/cli">CLI reference →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

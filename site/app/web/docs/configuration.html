@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Configuration · harnex</title>
+<meta name="description" content=".harnex/config.json: phases, retention and telemetry settings.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/configuration">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Configuration · harnex">
+<meta property="og:description" content=".harnex/config.json: phases, retention and telemetry settings.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/configuration">
+<link rel="alternate" type="text/markdown" href="/docs/configuration.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/configuration</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration" aria-current="page">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / configuration</p>
+      <h1>Configuration</h1>
+<p>Harnex has one optional repository configuration file:</p>
+
+<pre><code class="language-text">&lt;git-root&gt;/.harnex/config.json
+</code></pre>
+
+<p>It is resolved with the same git-root rule as the canonical dispatch stream.
+Non-git launches use the global dispatch stream and do not invent a global
+configuration file. An absent file is valid. An explicitly present malformed
+file fails before agent spawn so policy is never silently ignored.</p>
+
+<h2 id="phase-allowlist"><a class="anchor" href="#phase-allowlist">Phase allowlist</a></h2>
+
+<p>Repositories can normalize queue/work phase names:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"phase"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"allowlist"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+      </span><span class="s2">"plan-write"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"plan-review"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"plan-fix"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"test-suite"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"implement"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"code-review"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"code-fix"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"mapping"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"triage"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"docs"</span><span class="w">
+    </span><span class="p">],</span><span class="w">
+    </span><span class="nl">"policy"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reject"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>The effective value is the first-class <code>harnex run --phase TEXT</code> value, or
+<code>--meta.phase</code> when no first-class override is supplied.</p>
+
+<ul>
+  <li>No <code>phase</code> configuration: any phase passes.</li>
+  <li>Allowlisted phase: dispatches silently.</li>
+  <li><code>policy: "warn"</code>: prints a warning and dispatches.</li>
+  <li><code>policy: "reject"</code>: exits non-zero before spawn and writes no dispatch row.</li>
+</ul>
+
+<p>The allowlist must be an array of non-empty strings. Policy must be <code>warn</code> or
+<code>reject</code>.</p>
+
+<h2 id="events-output-and-receipt-retention"><a class="anchor" href="#events-output-and-receipt-retention">Events, output, and receipt retention</a></h2>
+
+<p>Per-session event JSONL, output transcripts, and generated proof receipts live
+under Harnex’s local state directory and are not the durable dispatch stream:</p>
+
+<pre><code class="language-text">~/.local/state/harnex/events/
+~/.local/state/harnex/output/
+~/.local/state/harnex/receipts/
+</code></pre>
+
+<p>Defaults apply independently to each directory:</p>
+
+<ul>
+  <li>maximum age: 45 days;</li>
+  <li>maximum total size: 1 GiB.</li>
+</ul>
+
+<p>Override them in repo configuration:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"retention"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"events"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"max_age_days"</span><span class="p">:</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"max_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1073741824</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="nl">"output"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"max_age_days"</span><span class="p">:</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"max_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1073741824</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="nl">"receipts"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"max_age_days"</span><span class="p">:</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"max_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1073741824</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>Environment variables take precedence:</p>
+
+<pre><code class="language-text">HARNEX_EVENTS_MAX_AGE_DAYS
+HARNEX_EVENTS_MAX_BYTES
+HARNEX_OUTPUT_MAX_AGE_DAYS
+HARNEX_OUTPUT_MAX_BYTES
+HARNEX_RECEIPTS_MAX_AGE_DAYS
+HARNEX_RECEIPTS_MAX_BYTES
+</code></pre>
+
+<p>Limits must be positive integers. Harnex deletes only regular files directly
+owned by the <code>events</code>, <code>output</code>, and <code>receipts</code> directories: expired files first, then the
+oldest unprotected files until the size cap is met. It never follows paths
+outside those directories. Files for the current session, live registry PIDs,
+and alive uncompleted dispatch-start rows are protected. If protected files
+alone exceed a cap, Harnex reports the directory over cap rather than deleting
+them.</p>
+
+<p>A bounded prune runs opportunistically when a dispatch starts. Inspect or force
+the same policy with <code>doctor</code>:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex doctor                    <span class="c"># sizes, limits, and last-prune status</span>
+harnex doctor <span class="nt">--prune</span> <span class="nt">--dry-run</span>  <span class="c"># preview bounded candidate paths, do not delete</span>
+harnex doctor <span class="nt">--prune</span>            <span class="c"># apply now</span>
+</code></pre></div>
+
+<p><code>--dry-run</code> is valid only with <code>--prune</code>. Manual prune bypasses the automatic
+cadence but preserves the same live/current safety rules.</p>
+
+<p>Set <code>HARNEX_STATE_DIR</code> before launching Harnex when tests or isolated automation
+need a disposable local-state root.</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/configuration.md" rel="noopener">docs/configuration.md</a> · <a href="/docs/configuration.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/technical">← Technical reference</a>
+        <a class="next" href="/docs/events">Events →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

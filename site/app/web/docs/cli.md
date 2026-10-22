@@ -1,0 +1,923 @@
+# CLI reference (harnex 0.29.0)
+
+```text
+harnex: Pi workers (GPT models) as tools for you and your agents.
+
+Hand work to a worker (each runs in a visible tmux window):
+  harnex ask QUESTION                 A read-only answer from another model
+  harnex delegate [--worktree NAME] TASK
+                                      A worker does the task; prints its reply
+  harnex delegate --no-wait ...       Start lanes in parallel, then:
+  harnex result [NAME...]             Wait for lanes and print their results
+  harnex reply NAME MESSAGE           Follow up; the worker keeps its context
+  harnex land [NAME...]               Merge worktree lanes, remove the worktrees
+  harnex discard NAME                 Drop a lane and its worktree
+  harnex lanes                        Your lanes and what each needs next
+
+  Blocking commands wait 9m by default and exit 124 if the worker is still
+  going; run `harnex result NAME` to keep waiting. Exit 0 done, 1 failed.
+
+Low-level session control:
+  harnex run <cli> [options] [--] [cli-args...]
+  harnex send --id ID [options] [text...]
+  harnex wait --id ID [options]
+  harnex watch --id ID [options]
+  harnex stop --id ID [options]
+  harnex status [options]
+  harnex logs --id ID [options]
+  harnex events --id ID [options]
+  harnex history [options]
+  harnex pane --id ID [options]
+
+The same verbs as native MCP tools (Claude Code, Pi):
+  harnex mcp install                  Register the harnex MCP server
+  harnex mcp                          Serve MCP over stdio (clients run this)
+
+Setup, docs and telemetry:
+  harnex doctor                       Check Pi and harnex setup
+  harnex preflight ADAPTER [options]  Prove an adapter with one tiny dispatch
+  harnex agents-guide [topic]         Agent guides (dispatch, chain, buddy, monitoring, naming, claude)
+  harnex guide | recipes              Getting started; workflow recipes
+  harnex orchestration sample|report [options]
+  harnex artifact-report init|validate PATH [options]
+  harnex telemetry assert-canonical|reconcile [options]
+  harnex help [command]
+
+Examples:
+  harnex ask "Where is the dispatch row written, and is that path tested?"
+  harnex delegate --worktree word-count "Add TextKit.word_count with a test"
+  harnex land word-count
+  harnex delegate --no-wait --worktree fix-a "Fix A"; harnex delegate --no-wait --worktree fix-b "Fix B"; harnex result
+  harnex run pi --tmux pi-i-42 --id pi-i-42 --context-file /tmp/task-42.md
+```
+
+## harnex ask
+
+```text
+Usage: harnex ask [options] [--] QUESTION...
+       harnex ask --file PATH [--section TEXT] [options]
+       harnex ask --resume ID [--timeout DUR] [--json]
+
+Ask a Pi worker one question and print its answer on stdout. The worker
+runs in a visible tmux window, reads the repository (it cannot run
+commands unless --write; to run things use `harnex delegate`), and stops
+when it has answered. stderr gets one line naming the lane, its time and model.
+A read-only ask records its dispatch in the global harnex stream, so the
+repository stays untouched; --write records in the repository.
+
+Options:
+  --model NAME     Pi model (provider/model); default: Pi's own default
+                   (`defaultProvider`/`defaultModel` in ~/.pi/agent/settings.json)
+  --fallback-model NAME
+                   Ask once more with NAME when the first model fails on
+                   provider capacity or rate limits (provider_capacity)
+  --effort LEVEL   Reasoning effort / Pi thinking level
+  --cwd DIR        Directory the worker works in (default: current directory)
+  --file PATH      Read the question from PATH (see run --context-file)
+  --section TEXT   With --file: send only that section
+  --write          Let the worker edit files and run commands (default:
+                   read-only tools read,grep,find,ls)
+  --id ID          Session id (default: pi-ask-<random>)
+  --timeout DUR    Cap the wait: 540, 9m or 8m30s (default 9m; `none` waits
+                   without a cap). On 124 the worker keeps going and stderr
+                   names the command that keeps waiting (`harnex result ID`)
+  --resume ID      Same as `harnex result ID` (kept for older callers)
+  --detach         Run headless instead of in a tmux window
+  --json           Print the full result JSON instead of the answer
+  -h, --help       Show this help
+
+Exit codes: 0 answered, 1 the worker failed (stderr says why), 2 proof
+rejected or a usage error (usage errors print no JSON and no answer),
+124 timeout (the worker keeps running).
+
+Examples:
+  harnex ask "Which module parses the dispatch rows, and is it tested?"
+  harnex ask --model openai/gpt-5.1 --file /tmp/review.md --timeout 9m
+  harnex ask --write --cwd ../lane "Fix the failing test and commit"
+```
+
+## harnex delegate
+
+```text
+Usage: harnex delegate [options] [--] TASK...
+       harnex delegate --file PATH [options]
+
+Hand a task to a Pi worker (a GPT model by default) and print its reply
+and a lane summary. The worker runs in a visible tmux window, may edit
+files and run commands, and stops when it has replied. Follow up with
+`harnex reply NAME "..."`; it keeps the worker's context.
+
+Options:
+  --worktree NAME  Work in a new git worktree (.harnex/worktrees/NAME, branch
+                   harnex/NAME); finish with `harnex land NAME` or
+                   `harnex discard NAME`
+  --name NAME      Lane name without a worktree (default: from the task)
+  --cwd DIR        Directory the worker works in (default: current directory)
+  --file PATH      Read the task from PATH
+  --model NAME     Pi model (provider/model); default: Pi's own default
+  --effort LEVEL   Reasoning effort / Pi thinking level
+  --no-wait        Start the lane and return at once; collect with
+                   `harnex result` (all your lanes) or `harnex result NAME`
+  --timeout DUR    Wait at most DUR (default 9m, fits a 10-minute tool cap;
+                   `none` waits without a cap). On 124 the worker keeps going:
+                   run `harnex result NAME`
+  --detach         Run headless instead of in a tmux window
+  --json           Print the lane record and result as JSON
+  -h, --help       Show this help
+
+Exit codes: 0 done, 1 failed, 2 usage error, 124 still working.
+
+Examples:
+  harnex delegate --worktree word-count "Add TextKit.word_count with a test"
+  harnex delegate --no-wait --worktree fix-a "Fix A"   # then: harnex result
+  harnex delegate "Run bin/slow-bench and report the score"
+```
+
+## harnex result
+
+```text
+Usage: harnex result [NAME...] [options]
+
+Wait for lanes to report and print each result as it lands. With no
+NAME: every lane you started in this repo whose result you have not
+collected yet (from `harnex delegate --no-wait`, a timed-out delegate,
+reply or ask).
+
+Options:
+  --timeout DUR  Wait at most DUR (default 9m; `none` waits without a cap).
+                 On 124 the workers keep going: run the same command again
+  --json         One JSON line per lane instead of text
+  -h, --help     Show this help
+
+Exit codes: 0 every lane done, 1 a lane failed, 124 a lane still working.
+```
+
+## harnex reply
+
+```text
+Usage: harnex reply NAME [options] [--] MESSAGE...
+
+Send a lane a follow-up and print the result, in the same format as
+`harnex delegate`. The worker keeps its context: a busy worker gets the
+message during its turn; a finished lane resumes its Pi session.
+
+Options:
+  --model NAME    Model for this turn (default: the lane's)
+  --no-wait       Send and return at once; collect with `harnex result NAME`
+  --timeout DUR   Wait at most DUR (default 9m; `none` waits without a cap)
+  --json          Print the lane record and result as JSON
+  -h, --help      Show this help
+
+Exit codes: 0 done, 1 failed, 2 usage error, 124 still working.
+```
+
+## harnex land
+
+```text
+Usage: harnex land [NAME...]
+
+Merge a worktree lane (branch harnex/NAME) into the current branch of the
+main checkout, then remove its worktree and branch. With no NAME: every
+finished worktree lane you started in this repo, oldest first. Uncommitted changes
+in the lane are committed first. On a merge conflict the merge stays in
+progress: resolve it, `git commit`, and run `harnex land NAME` again to
+clean up (or `git merge --abort`).
+
+Exit codes: 0 landed, 1 conflict or another problem (the lane is kept).
+```
+
+## harnex discard
+
+```text
+Usage: harnex discard NAME...
+
+Stop a lane (if it is still working) and delete its worktree and branch
+without merging. Uncommitted and unmerged work in the lane is lost.
+```
+
+## harnex lanes
+
+```text
+Usage: harnex lanes [--all] [--closed] [--json]
+
+List the lanes of this repo: name, state, age, model, branch and what
+to do next. Landed and discarded lanes are hidden unless --closed.
+
+Options:
+  --all      Lanes of every repo
+  --closed   Include landed and discarded lanes
+  --json     JSON array of lane records
+  -h, --help Show this help
+```
+
+## harnex mcp
+
+```text
+Usage: harnex mcp                  Serve MCP over stdio (what MCP clients run)
+       harnex mcp install [--claude] [--pi] [--no-agent] [--dry-run]
+       harnex mcp uninstall [--claude] [--pi]
+       harnex mcp status
+
+Exposes ask, delegate, result, reply, land, discard and lanes as native tools.
+install registers the server for Claude Code (`claude mcp add --scope user`)
+and Pi (/home/kodeman/.pi/agent/mcp.json, exposure direct). With neither flag it does both
+(each only when that CLI is installed). For Claude Code it also installs the
+`gpt` subagent at ~/.claude/agents/gpt.md unless one exists (--no-agent skips it).
+Restart running sessions afterwards.
+```
+
+## harnex run
+
+```text
+Usage: harnex run <cli> [options] [--] [cli-args...]
+
+Options:
+  --id ID            Session identifier (default: random two-word ID)
+  --description TEXT Short description of what this session is doing
+  --detach           Start session in background and return JSON on stdout
+  --tmux [NAME]      Run in a tmux window (implies --detach)
+  --host HOST        Bind host for the local API (default: 127.0.0.1)
+  --port PORT        Force a specific local API port
+  --watch            Enable blocking babysitter mode (foreground only)
+  --stall-after DUR  Force-resume threshold (default: 480s)
+  --max-resumes N    Max forced resumes before escalation (default: 1)
+  --preset NAME      Watch preset: impl, plan, gate (requires --watch)
+  --watch-file PATH  Auto-send a file-change hook on modification
+  --context TEXT     Inject as the initial prompt (prepends session header)
+  --context-file PATH
+                     Read the initial prompt from PATH; refuses an empty result.
+                     Records meta.context_file and meta.context_sha256 (SHA-256
+                     of the text actually sent, i.e. the trimmed section)
+  --context-section TEXT
+                     With --context-file: send only the section after the first
+                     line starting with TEXT (a heading runs to the next heading
+                     of its level or higher; a plain marker line to end of file)
+  --auto-stop        Stop after the first accepted task completion from --context
+  --wait-done        With --tmux/--detach: block until the first turn's result
+                     and print it with the launch fields (the worker's reply is
+                     turn_result.final_message). Exit codes of wait --until done
+  --wait-timeout DUR Cap --wait-done (default: none); on 124 the output has
+                     `resume`, the command that keeps waiting
+  --on-done CMD      Launch /bin/sh -c CMD once at the first typed work result
+  --max-runtime DUR  Fixed worker runtime budget (e.g. 30m); not a watch timeout
+  --meta JSON        Attach parsed JSON metadata to the started event
+  --meta-file PATH   Read --meta JSON from PATH (inline --meta keys win)
+  --artifact-report PATH
+                     Override the harness-authored observed-state receipt path
+  --validation-report PATH
+                     Compatibility alias for --artifact-report
+  --require-artifact-report
+                     Compatibility strict-proof flag; a default harness receipt
+                     path is used when no explicit path is provided
+  --final-gate CMD   Declare a final acceptance command (repeatable; or meta
+                     "final_gates": [...]). The receipt's validation.status
+                     then reports the last observed exit of each gate,
+                     matched by exact command string; earlier failures
+                     stay visible as validation.commands_had_failures
+  --project-id ID    Queue telemetry project id (first-class flags override --meta)
+  --queue-id ID      Queue telemetry queue id
+  --entry-id ID      Queue telemetry entry id
+  --entry-title TEXT Queue telemetry entry title
+  --phase TEXT       Queue/work phase telemetry
+  --tier TEXT        Queue/work tier telemetry
+  --issue ID         Queue/work issue telemetry
+  --plan ID          Queue/work plan telemetry
+  --intent TEXT      Queue/work intent telemetry
+  --model NAME       Requested model metadata (also used for structured dispatch)
+  --effort LEVEL     Requested reasoning effort metadata (structured dispatch)
+  --parent-dispatch-id ID
+                     Parent dispatch id for retry/fix/review/fallback joins
+  --parent-attempt-id ID
+                     Parent attempt id for retry/fix/review/fallback joins
+  --attempt-kind KIND
+                     initial, retry, fix, review, fallback, or superseding (default: initial).
+                     retry/fallback requires --parent-dispatch-id so the
+                     duplicate-dispatch guard can verify the parent
+  --allow-live-parent
+                     Dispatch even though --parent-dispatch-id names a
+                     session that is still running (intentional
+                     parallelism, e.g. isolated worktrees)
+  --orchestration-run-id ID
+                     Logical primary-orchestrator run id for queue rollups
+  --orchestration-generation-id ID
+                     Primary generation id after rotation/recovery boundaries
+  --orchestration-role ROLE
+                     primary or worker; defaults to worker in rollups when omitted
+  --orchestration-session-id ID
+                     External primary session id for rollups and owned
+                     completion delivery (default: shell PI_SESSION_ID)
+  --owner-tag TAG    Own this dispatch as "<owner>/<TAG>" (owner: the session id
+                     below). A Claude subagent shares its parent's session id;
+                     a tag gives it its own `watch --owner --owner-tag TAG` stream
+  --orchestration-rotation-reason TEXT
+                     Clean rotation/recovery reason for the generation
+  --require-attribution
+                     Fail before launch unless project/phase/intent and one work id are present
+  --cwd DIR          Run the wrapped agent from DIR and use DIR as the session root
+  --root DIR         Override harnex session/root attribution without changing child cwd
+  --timeout SECS     Max seconds to wait for detached registration (default: 5.0)
+  --inbox-ttl SECS   Expire queued inbox messages after SECS (default: 120)
+  -h, --help         Show this help
+
+Notes:
+  Compatibility: `--watch PATH` and `--watch=PATH` still configure file-hook mode.
+  Bare `--watch` enables the babysitter.
+  --auto-stop requires --context (or --context-file).
+  --on-done CMD is trusted local shell input. Do not put secrets in CMD;
+  command lines may be visible to local process inspection.
+  --max-runtime is opt-in and never resets on prompts/retries/activity.
+  It terminates the worker, unlike watch --max-wait which only stops waiting.
+  Every dispatch gets a harness-authored receipt. Workers may write only
+  optional claims to HARNEX_ARTIFACT_CLAIMS_PATH; claims never accept work.
+  Explicit --stall-after/--max-resumes values override --preset defaults.
+  --final-gate is receipt diagnostics, not proof: replay the gate commands
+  yourself before accepting work. Only Pi observes command exits, so only
+  Pi dispatches can pass a gate; PTY dispatches report unknown.
+  CLIs with smart prompt detection: claude, opencode, pi
+  Any other CLI name is launched with generic wrapping.
+  Wrapper options may appear before or after <cli>.
+
+Common patterns:
+  harnex run pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md"
+  harnex run pi --id pi-i-42 --tmux pi-i-42 --context "Read /tmp/task-impl-42.md" --auto-stop
+  harnex run pi --id pi-i-42 --watch --preset impl --context "Read /tmp/task-impl-42.md"
+  harnex run pi --cwd ../wt-42 --root . --id pi-i-42 --tmux pi-i-42 --context-file /tmp/task-42.md --auto-stop --wait-done --wait-timeout 9m
+  harnex run pi --id pi-r-64 --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH' --auto-stop
+  harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution --context "Implement SP-4"
+  harnex run claude --id cl-r-42 --tmux cl-r-42 --description "Review task 42"
+
+Gotchas:
+  Always pair --id and --tmux with the same value for delegated work.
+  Passing --tmux without --id creates a random harnex session ID.
+  --watch is foreground-only; do not combine it with --tmux or --detach.
+  Use -- before child CLI flags when a flag could be parsed by harnex.
+  Pi RPC requires Pi >= 0.80.4 (`harnex doctor --adapter pi`). Prefer
+    provider/model for Harnex --model. Pi runs with --no-approve
+    (project-local Pi resources ignored) unless you pass -- --approve.
+```
+
+## harnex send
+
+```text
+Usage: harnex send --id ID [options] [text...]
+        --id ID                      Target session ID
+        --repo PATH                  Resolve the target using PATH's repo root
+        --cli CLI                    Filter by CLI type
+        --message TEXT               Message text to inject instead of positional args
+        --no-submit                  Inject text without pressing Enter
+        --submit-only                Press Enter without injecting text
+        --force                      Send even if the agent is not at a prompt
+        --no-wait                    Return immediately after queueing (HTTP 202). Use for fire-and-forget or when polling delivery separately.
+        --wait-for-idle              After a successful send, wait for the agent to return to prompt
+        --wait-done                  After delivery, block until the turn it started or joined completes or fails (exit codes of wait --until done)
+        --stall-after DUR            With --wait-done: exit 4 when the turn shows no progress for DUR
+        --relay                      Force relay header formatting
+        --no-relay                   Disable automatic relay headers
+        --port PORT                  Send directly to a specific port
+        --token TOKEN                Auth token for --port mode
+        --host HOST                  Override the host when --port is used
+        --timeout SECS               How long to wait for lookup, delivery, or idle wait (default: 120; --wait-done is uncapped unless given)
+        --verbose                    Print lookup and delivery details to stderr
+    -h, --help                       Show help
+
+Common patterns:
+  harnex send --id pi-i-42 --message "Read /tmp/task-impl-42.md" --wait-for-idle --timeout 900
+  harnex send --id pi-i-42 --message "Continue with the current task." --force
+  harnex send --id pi-i-42 --message "Continue the same task from where you stopped" --wait-done --timeout 540
+  harnex send --id "$HARNEX_ID" --message "Worker finished; tests passed."
+
+Gotchas:
+  --wait-for-idle is a turn fence, not proof that the whole task is done.
+  Every delivery reports after_seq: `harnex wait --id ID --until done --after-seq N`
+    waits for the turn that message started or joined, never an earlier result.
+    --wait-done does both in one call; on timeout (124) resume with that wait.
+  A busy Pi session takes the message at once as a follow-up (delivery:
+    "follow_up"), delivered when its current turn ends; --force steers mid-turn.
+  Other adapters queue until the agent is at a prompt. If it is not delivered
+    within --timeout the message is withdrawn and send exits 124; one that
+    expires in the inbox (--inbox-ttl) exits 1 with status "expired".
+  Use --no-wait for fire-and-forget delivery only when another monitor owns completion.
+  Long prompts are more reliable when written to a file and referenced by path.
+  Messages between harnex sessions get relay headers unless --no-relay is used.
+```
+
+## harnex wait
+
+```text
+Usage: harnex wait [options]
+
+Options:
+  --id ID         Session ID to wait for (required)
+  --until STATE   Wait until session reaches STATE. Supported:
+                    done            (work fence — task_complete,
+                                     task_failed, or terminal exit,
+                                     whichever comes first)
+                    task_complete   (events JSONL — fires on
+                                     successful turn completion)
+                    task_failed     (events JSONL — fires on
+                                     failed turn completion)
+                    <other>         (agent_state HTTP poll, e.g.
+                                     "prompt", "busy")
+                  Without --until, waits for session exit (default).
+  --repo PATH     Resolve session using PATH's repo root (default: current repo)
+  --timeout DUR   Hard observer cap (seconds, or suffix s/m/h; default: unlimited)
+  --max-wait DUR  Alias for --timeout
+  --heartbeat DUR  Flush observed progress to stderr at this interval (default: off)
+  --after-seq N   With --until done/task_complete/task_failed: ignore every
+                  event at or before events-log seq N (the after_seq that
+                  `harnex send` reports), so the wait covers the turn that
+                  message started or joined, not an earlier result.
+  --since TIME    With --until done: ignore events before TIME (ISO 8601),
+                  e.g. an earlier launch of a lane relaunched under the
+                  same id (each launch restarts the events-log seq)
+  --stall-after DUR
+                  With --until done: exit 4 when the live session shows no
+                  progress for DUR (Pi/structured: model, tool or turn
+                  events during an active turn; PTY: transcript idle).
+                  Never nudges or stops the worker.
+  -h, --help      Show this help
+
+Common patterns:
+  harnex wait --id pi-i-42 --until done --timeout 900
+  harnex wait --id pi-i-42 --until done --stall-after 25m --timeout 4h
+  harnex wait --id pi-i-42 --until done --after-seq 812 --timeout 9m
+  harnex wait --id pi-i-42 --until task_complete --timeout 900
+  harnex wait --id pi-i-42 --until prompt --timeout 120
+  harnex wait --id pi-i-42
+
+Exit codes for --until done:
+  0    completed with accepted work
+  1    failed (work failed, process failed, or killed)
+  2    completed but proof rejected (completed_no_activity,
+       report_missing, report_invalid, report_rejected)
+  3    no such session (no live, start, event, or terminal signal)
+  4    stalled: no progress for --stall-after (worker left running)
+  124  observer deadline elapsed (does not stop the worker)
+
+Gotchas:
+  done is the safest work-level fence for monitors.
+  A bare wait returns only on process exit; sessions without
+  --auto-stop stay alive after their turn (stderr notes say so).
+  While the session's pid is alive, --until done blocks (up to
+  --timeout); "no signal yet" from a live worker is never terminal.
+  task_complete/task_failed are event predicates; prompt/busy are live state polls.
+  Prompt state alone does not prove work acceptance. Verify artifacts/tests.
+  Exit waits can resolve from terminal summary rows when live registry/
+  exit-status files are already gone.
+  Without --timeout, wait can block indefinitely.
+```
+
+## harnex watch
+
+```text
+Usage: harnex watch --id ID [options]
+       harnex watch --owner [ID] [--stall-after DUR] [--max-wait DUR]
+       harnex watch --owner [ID] --once [--timeout DUR] [--cursor NAME]
+
+Options:
+  --id ID              Existing session ID to watch
+  --owner [ID]         Stream every dispatch this owner started (see below);
+                       ID defaults to $PI_SESSION_ID or $CLAUDE_CODE_SESSION_ID
+  --once               With --owner: wait for undelivered results or stalls,
+                       print every one that is ready, advance the cursor and
+                       exit 0 (124 on timeout)
+  --until-idle         With --owner: like --once, but keep printing results
+                       until no (matching) lane is still running; exit 0
+                       then, 124 on timeout. One call for a whole batch
+  --cursor NAME        With --owner: keep a separate named cursor. A Claude
+                       Code subagent inherits its parent's
+                       $CLAUDE_CODE_SESSION_ID, so both own the same lanes;
+                       give each consumer its own cursor
+  --owner-tag TAG      With --owner: watch "<owner>/<TAG>", the lanes launched
+                       with `run --owner-tag TAG`
+  --match GLOB[,GLOB]  With --owner: only lanes whose id matches (e.g.
+                       'pi-s2-*'); repeatable
+  --until done         Watch work-level terminal state (default: done)
+  --repo PATH          Resolve session using PATH's repo root (default: current repo)
+  --max-wait DUR       Hard observer cap (examples: 900, 15m, 2h)
+  --timeout DUR        Alias for --max-wait
+  --heartbeat DUR      Flush observed progress to stderr (default: off)
+  --stall-after DUR    Exit 4 when the session shows no progress for DUR
+                       (Pi/structured: model/tool/turn events in an active
+                       turn; PTY: transcript idle). Observes only.
+  --done-marker PATH   Write a JSON marker when work completes successfully
+  --fail-marker PATH   Write a JSON marker when work fails
+  --stop-on-terminal   Stop the live session after success/failure (not on timeout)
+  -h, --help           Show this help
+
+`harnex watch` is the safe watcher for existing --tmux or detached
+dispatches. Exit codes follow the `harnex wait --until done` contract:
+0 accepted work, 1 failed, 2 completed-but-proof-rejected, 3 no such
+session, 4 stalled (--stall-after), 124 for --max-wait timeouts.
+Stalls and timeouts write no marker and skip --stop-on-terminal.
+
+Owner stream (--owner): runs until killed or --max-wait (exit 124) and
+prints one JSON line (schema harnex.owner_event.v1, with a readable
+`msg`) per change: started, done, rejected, failed, stalled (with
+--stall-after), stopped, timeout. No heartbeats. On start it repeats
+`started` for running dispatches and delivers results not yet
+delivered to this owner; a cursor prevents repeats across restarts.
+Built for Claude Code's Monitor tool, e.g.:
+  harnex watch --owner --stall-after 25m
+Each turn reports its own result: a lane nudged with `harnex send`
+reports again when that turn ends (the line carries `turn`).
+
+--once is for a caller that must block in one foreground command (a
+Claude Code subagent cannot be woken later): one call waits on every
+lane the owner launched (or the --match lanes) and returns the next
+results or stalls. It never returns `started`. Loop it, e.g.:
+  harnex watch --owner --once --timeout 9m --cursor sub-a --match 'pi-a-*'
+
+For launch-and-babysit stall recovery, use `harnex run --watch`: it
+nudges with "resume" on output-log idle and is independent of this
+observer. If both run, set --stall-after here above run's
+stall-after x (max-resumes + 1).
+```
+
+## harnex stop
+
+```text
+Usage: harnex stop [options]
+
+Options:
+  --id ID      Session ID to stop (required)
+  --repo PATH  Resolve the session using PATH's repo root (default: current repo)
+  --cli CLI    Filter by CLI type
+  --timeout S  How long to retry transient API failures (default: 5.0)
+  --reason R   Stop reason: manual, completion, runtime_budget (default: manual)
+  --origin O   Caller label: api, cli, auto_stop, watch, runtime (default: cli)
+  -h, --help   Show this help
+
+Sends the adapter stop sequence to the session. Reason/origin are bounded
+caller-declared labels, not proof of task failure or caller identity.
+Use `harnex wait --id ID` afterward to block until the session finishes.
+
+Common patterns:
+  harnex stop --id pi-i-42
+  harnex stop --id pi-i-42 --repo /path/to/repo
+  harnex stop --id pi-i-42 --timeout 15
+
+Gotchas:
+  Stop only after verifying the worker's result landed.
+  For tmux sessions, stop targets the harnex session ID, not the tmux name.
+  If a session is in another repo/worktree, pass --repo or run status --all.
+```
+
+## harnex status
+
+```text
+Usage: harnex status [options]
+
+Options:
+  --id ID      Show a specific session
+  --repo PATH  Filter to PATH's repo root (default: current repo)
+  --all        List sessions across all repos
+  --json       Output JSON instead of a table
+  -h, --help   Show this help
+
+Common patterns:
+  harnex status
+  harnex status --all
+  harnex status --id pi-i-42 --json
+
+Gotchas:
+  By default, status filters to the current repo root.
+  Use --all when supervising workers launched from sibling worktrees.
+  When the current repo has none, the default view says how many
+  sessions are active in other repos (never with --repo or --all).
+  With --id, terminal summaries can report completed/failed/unknown
+  even after the live session registry is gone.
+  Settled work outranks prompt state in the table: done, rejected, or failed.
+  JSON `done`/`work_state` retains the structured work-level fields.
+  A prompt-like state is not a completion signal by itself.
+```
+
+## harnex logs
+
+```text
+Usage: harnex logs [options]
+
+Options:
+  --id ID       Session ID to inspect (required)
+  --repo PATH   Resolve using PATH's repo root (default: current repo)
+  --cli CLI     Filter the active session by CLI
+  --follow      Keep streaming appended output until session exit
+  --lines N     Print the last N lines before following (default: 200)
+  -h, --help    Show this help
+
+Common patterns:
+  harnex logs --id pi-i-42 --lines 80
+  harnex logs --id pi-i-42 --follow
+  harnex logs --id pi-i-42 --repo /path/to/repo --lines 200
+
+Gotchas:
+  logs reads the persisted transcript, not the live tmux screen.
+  Use pane when you need the current TUI view or prompt text.
+  --follow streams until the live session exits.
+```
+
+## harnex events
+
+```text
+Usage: harnex events [options]
+
+Options:
+  --id ID         Session ID to inspect (required)
+  --repo PATH     Resolve using PATH's repo root (default: current repo)
+  --cli CLI       Filter the active session by CLI
+  --[no-]follow   Keep streaming appended events (default: true)
+  --snapshot      Print current events and exit (alias for --no-follow)
+  --from TS       Replay floor (ISO-8601, inclusive)
+  -h, --help      Show this help
+
+Common patterns:
+  harnex events --id pi-i-42 --snapshot
+  harnex events --id pi-i-42
+  harnex events --id pi-i-42 --from 2026-05-06T10:00:00Z --snapshot
+
+Gotchas:
+  events is structured JSONL; logs is human transcript text.
+  Default mode follows live events. Use --snapshot to print and exit.
+  Use wait --until task_complete when you only need a completion fence.
+```
+
+## harnex history
+
+```text
+Usage: harnex history [options]
+
+Options:
+  --limit N   Number of records to show (default: 5)
+  --since DUR Only show records started within DUR (examples: 1h, 1d)
+  --id TEXT   Filter records whose id contains TEXT
+  --global    Read the global no-repo history file
+  --json      Output JSONL instead of a table
+  --all       Show all matching records
+  -h, --help  Show this help
+```
+
+## harnex pane
+
+```text
+Usage: harnex pane [options]
+
+Options:
+  --id ID       Session ID to inspect (required)
+  --repo PATH   Resolve using PATH's repo root (default: current repo)
+  --cli CLI     Filter the active session by CLI
+  --lines N     Capture the last N lines instead of the full pane
+  --follow      Refresh the pane snapshot every second until the session exits
+  --interval N  Refresh interval in seconds for --follow (default: 1)
+  --json        Output JSON with capture metadata
+  -h, --help    Show this help
+
+Common patterns:
+  harnex pane --id pi-i-42 --lines 40
+  harnex pane --id pi-i-42 --lines 40 --json
+  harnex pane --id pi-i-42 --follow --interval 2
+
+Gotchas:
+  pane requires a tmux-backed session.
+  Use --repo when the same ID exists in multiple repos or worktrees.
+  Do not use pane state alone as completion proof; verify artifacts/tests.
+```
+
+## harnex doctor
+
+```text
+Usage: harnex doctor [--adapter pi|all] [--sweep] [--prune [--dry-run]]
+
+Runs static preflight checks for harnex adapter dependencies (Pi).
+
+Options:
+  --adapter NAME
+               Check pi or all (default: pi)
+  --sweep      Include a read-only report of harnex/tmux session drift
+  --prune      Apply bounded harnex events/output/receipt retention pruning
+  --dry-run    Preview --prune candidates without deleting
+  -h, --help   Show this help
+
+Common patterns:
+  harnex doctor
+  harnex doctor --adapter pi
+  harnex doctor --adapter all --sweep
+  harnex doctor --prune --dry-run
+  harnex doctor --prune
+  harnex doctor --help
+
+Gotchas:
+  doctor validates local adapter prerequisites; it does not start sessions.
+  Pi RPC requires >= 0.80.4 so `agent_settled` is available.
+  JSON includes harnex_version and versioned capabilities; check
+  capabilities.runtime_budget == 1 before using run --max-runtime, and
+  capabilities.pi_command_proof == 1 before trusting Pi receipt commands.
+  --sweep is diagnostic only; it does not stop sessions or remove files.
+  --dry-run must be paired with --prune.
+  Run it after installing or upgrading a selected agent CLI.
+```
+
+## harnex preflight
+
+```text
+Usage: harnex preflight ADAPTER [options] [--] [cli-args...]
+
+Runs one tiny end-to-end dispatch through `harnex run ADAPTER` and prints
+a JSON verdict. Exits 0 only when every required check passes.
+
+Options:
+  --cwd DIR           Workspace to dispatch in (default: current directory)
+  --task-root DIR     Where the pinned task file is written (default: /tmp)
+  --commit-check      Also prove a commit in a throwaway scratch repo
+                      (never the caller's repo)
+  --timeout DUR       Per-dispatch deadline (default: 180s)
+  --registration-timeout DUR
+                      Registration deadline (default: 30s)
+  --model NAME        Passed to `harnex run --model`
+  --effort LEVEL      Passed to `harnex run --effort`
+  --id ID             Dispatch id (default: pf-<adapter>-<random>)
+  -h, --help          Show this help
+
+Checks: registration, boot, permission, task_read, workspace_write,
+  command_exit, receipt, claims, completion, stop, plus commit with --commit-check.
+Each is pass, fail, unsupported (the adapter cannot expose that evidence,
+e.g. PTY command exits), or skipped. The verdict also reports usage, cost
+and context telemetry provenance for the adapter.
+
+Common patterns:
+  harnex preflight pi --cwd ~/repo -- --no-approve
+  harnex preflight pi --cwd ~/repo --commit-check --model openai/gpt-5.1 -- --no-approve
+  harnex preflight pi --cwd ~/repo && harnex run pi --cwd ~/repo --context "..."
+
+Gotchas:
+  Preflight spends one real model turn (two with --commit-check).
+  Its dispatch row lands in history with phase=preflight and is excluded
+  from orchestration report rollups unless --include-preflight is passed.
+  Run it for the chosen adapter and one declared fallback before an
+  unattended queue; both must sit inside your dispatch-model policy.
+  It proves plumbing (boot, files, commands, receipts), not model quality.
+```
+
+## harnex agents-guide
+
+```text
+Usage: harnex agents-guide [list|show <topic>|<topic>]
+
+Subcommands:
+  list           List available agent guide topics (default)
+  show <topic>   Print a guide by name or number
+
+Examples:
+  harnex agents-guide
+  harnex agents-guide list
+  harnex agents-guide show 01
+  harnex agents-guide show dispatch
+  harnex agents-guide monitoring
+
+Common patterns:
+  harnex agents-guide dispatch
+  harnex agents-guide chain
+  harnex agents-guide naming
+
+Gotchas:
+  Agent guides replace the old harnex skills install flow.
+  They are packaged with the gem and require no external project docs.
+```
+
+## harnex recipes
+
+```text
+Usage: harnex recipes [list|show <name>]
+
+Subcommands:
+  list          List available recipes (default)
+  show <name>   Print a recipe by name or number
+
+Examples:
+  harnex recipes
+  harnex recipes list
+  harnex recipes show 01
+  harnex recipes show fire_and_watch
+
+Common patterns:
+  harnex recipes show 01   # Fire and Watch
+  harnex recipes show 02   # Chain Implement
+  harnex recipes show 03   # Buddy
+
+Gotchas:
+  Recipes are compact command walkthroughs.
+  Use `harnex agents-guide` for the deeper agent-facing guide.
+```
+
+## harnex guide
+
+```text
+Usage: harnex guide
+
+Print the getting started guide.
+
+Common patterns:
+  harnex guide
+  harnex agents-guide
+  harnex recipes
+
+Gotchas:
+  guide is short human onboarding.
+  agents-guide is the deeper operational reference for dispatching agents.
+```
+
+## harnex orchestration
+
+```text
+Usage:
+  harnex orchestration sample --out PATH --run-id ID --generation-id ID [options]
+  harnex orchestration report --dispatch PATH (--run-id ID | --queue-id ID) [--samples PATH]
+      [--failure-budget N] [--budget-unit attempts|families] [--fatal-classes A,B] [--json]
+
+Sample options:
+  --project-id ID
+  --queue-id ID
+  --session-id ID
+  --event NAME                  sample, generation_started, generation_finished, rotation, recovery, or compaction
+  --ts ISO8601
+  --context-status STATUS       observed, estimated, unsupported, missing, or zero
+  --context-tokens N
+  --context-window-tokens N
+  --context-percent N
+  --context-peak-tokens N
+  --context-peak-percent N
+  --usage-status STATUS         observed, estimated, unsupported, missing, or zero
+  --usage-input-tokens N
+  --usage-output-tokens N
+  --usage-cached-input-tokens N
+  --usage-reasoning-tokens N
+  --usage-total-tokens N
+  --usage-cost-usd N
+  --usage-cost-source TEXT
+  --tool-calls N
+  --compactions N
+  --rotation-reason TEXT
+
+Report options:
+  --dispatch PATH               Dispatch summary JSONL
+  --samples PATH                External primary sample JSONL
+  --run-id ID                   Logical orchestration run id
+  --queue-id ID                 Queue id (alone, or narrowing --run-id)
+  --include-preflight           Count `harnex preflight` rows (excluded by default)
+  --failure-budget N            Exit 3 once N fatal worker failures are counted
+  --budget-unit UNIT            attempts (default) or families (retries joined
+                                by parent attempt/dispatch id count once)
+  --fatal-classes A,B           Outcome classes that consume the budget
+                                (default: the classes marked * below)
+  --json                        Output the full report JSON
+  -h, --help                    Show this help
+
+Worker outcome classes (dispatch row outcome.class):
+  completed   completed_with_proof completed_with_activity
+  proof       completed_no_activity* report_missing report_invalid report_rejected
+  process     task_failed* provider_capacity* boot_failure* permission_prompt*
+              timeout* process_failed* stopped_by_caller
+  fallback    unknown
+The budget is a ledger, not a breaker: enforcement stays with the caller.
+Exit codes: 0 report printed (within budget), 1 error, 2 usage error,
+3 budget breached.
+```
+
+## harnex artifact-report
+
+```text
+Usage:
+  harnex artifact-report init PATH [--force]
+  harnex artifact-report validate PATH [--final]
+
+Commands:
+  init       Write a legacy/manual harnex.artifact_report.v1 skeleton
+  validate   Validate a harness receipt or legacy document without printing data
+
+Options:
+  --final    Require an accepted/no_change final harness receipt, or the
+             legacy passing-proof contract
+  --force    Replace an existing file during init
+  -h, --help Show this help
+
+Normal `harnex run` sessions generate their own receipt; workers do not
+need `init`. Both commands print machine-readable JSON. `validate` exits
+0 only when the requested contract is satisfied; diagnostics contain
+field paths and shape errors, never report payloads or transcripts.
+```
+
+## harnex telemetry
+
+```text
+Usage:
+  harnex telemetry archive-capability [--json]
+  harnex telemetry assert-canonical [--canonical PATH | --global] [--source PATH] [--json]
+  harnex telemetry reconcile [--canonical PATH | --global] --source PATH [--apply] [--json]
+
+Options:
+  --canonical PATH  Canonical dispatch JSONL path
+  --global          Use the global harnex dispatch JSONL
+  --source PATH     Source JSONL file or directory; repeatable
+  --apply           Append missing records when reconciling
+  --json            Emit JSON report
+  -h, --help        Show this help
+```

@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pi RPC · harnex</title>
+<meta name="description" content="How harnex drives Pi&#39;s structured RPC mode.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/pi-rpc">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Pi RPC · harnex">
+<meta property="og:description" content="How harnex drives Pi&#39;s structured RPC mode.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/pi-rpc">
+<link rel="alternate" type="text/markdown" href="/docs/pi-rpc.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/pi-rpc</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc" aria-current="page">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / pi-rpc</p>
+      <h1>Pi RPC</h1>
+<p>Harnex runs Pi workers over Pi’s structured subprocess protocol rather than
+scraping the TUI:</p>
+
+<pre><code class="language-text">harnex run pi  -&gt;  pi --mode rpc  -&gt;  LF-delimited JSON objects on stdio
+</code></pre>
+
+<p>Pi RPC is JSONL, not JSON-RPC 2.0. Harnex presents the same
+run/send/wait/events control surface over it as over its PTY adapters.</p>
+
+<h2 id="compatibility"><a class="anchor" href="#compatibility">Compatibility</a></h2>
+
+<p>Harnex requires Pi <strong>0.80.4 or newer</strong> for structured dispatch. Pi 0.80.4 added
+<code>agent_settled</code>, the first lifecycle event that guarantees no automatic retry,
+compaction recovery, or queued continuation remains. <code>agent_end</code> is only a
+low-level run boundary and is never accepted as Harnex work completion.</p>
+
+<p>Check the installed transport before unattended work:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex doctor <span class="nt">--adapter</span> pi
+</code></pre></div>
+
+<p><code>harnex run pi</code> also checks the version before spawn and fails closed when the
+version cannot be parsed or predates 0.80.4. The current contract was live
+verified against Pi 0.84.1.</p>
+
+<p>Pi 0.84.0 removed cumulative message snapshots from <code>message_update</code>. Harnex
+therefore assembles output from <code>assistantMessageEvent</code> deltas between
+<code>message_start</code> and authoritative <code>message_end</code> events. This remains compatible
+with Pi 0.80.4-0.83.x and avoids printing the final message twice on 0.84+.</p>
+
+<h2 id="dispatch"><a class="anchor" href="#dispatch">Dispatch</a></h2>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-42 <span class="nt">--tmux</span> pi-i-42 <span class="se">\</span>
+  <span class="nt">--context</span> <span class="s2">"Implement issue 42 and run tests"</span> <span class="nt">--auto-stop</span>
+
+harnex <span class="nb">wait</span> <span class="nt">--id</span> pi-i-42 <span class="nt">--until</span> task_complete <span class="nt">--timeout</span> 3600
+harnex events <span class="nt">--id</span> pi-i-42
+</code></pre></div>
+
+<p><code>--context</code> is sent as an RPC <code>prompt</code> command; it is not passed as a Pi
+positional argument.</p>
+
+<p>Harnex model and effort flags are active controls, not telemetry-only labels:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="se">\</span>
+  <span class="nt">--model</span> openai/gpt-5.1 <span class="nt">--effort</span> high <span class="se">\</span>
+  <span class="nt">--context</span> <span class="s2">"Review the change"</span> <span class="nt">--auto-stop</span>
+</code></pre></div>
+
+<p>Harnex maps those controls to Pi <code>--model</code> / <code>--thinking</code> startup flags, then
+verifies the effective values with RPC <code>get_state</code> before prompting. This avoids
+<code>set_model</code> / <code>set_thinking_level</code> persisting a dispatch override into the
+user’s Pi defaults. Use <code>provider/model</code> for deterministic dispatch. Harnex
+fails before the prompt if Pi cannot apply the requested model or thinking level
+exactly, so requested and effective policy cannot silently diverge. Direct
+adapter callers can still use Pi’s RPC setters for an intentional mid-session
+switch.</p>
+
+<p>Pass Pi startup flags after <code>--</code>:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--context</span> <span class="s2">"Implement X"</span> <span class="nt">--auto-stop</span> <span class="nt">--</span> <span class="se">\</span>
+  <span class="nt">--no-session</span> <span class="nt">--no-extensions</span> <span class="nt">--model</span> openai/gpt-5.1
+</code></pre></div>
+
+<p>When both Harnex <code>--model</code> and a Pi child <code>--model</code> are supplied, the Harnex
+startup override is appended last and is authoritative for that dispatch.</p>
+
+<h2 id="project-trust"><a class="anchor" href="#project-trust">Project trust</a></h2>
+
+<p>Pi 0.79 added project trust. RPC mode cannot show the interactive trust prompt;
+an unresolved project follows Pi’s global <code>defaultProjectTrust</code> policy. Harnex
+does not auto-trust repository code.</p>
+
+<p>For deterministic unattended runs, choose explicitly after reviewing the
+repository:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="c"># Load trusted project-local .pi settings, packages, and extensions</span>
+harnex run pi <span class="nt">--context</span> <span class="s2">"..."</span> <span class="nt">--</span> <span class="nt">--approve</span>
+
+<span class="c"># Ignore project-local executable resources</span>
+harnex run pi <span class="nt">--context</span> <span class="s2">"..."</span> <span class="nt">--</span> <span class="nt">--no-approve</span>
+</code></pre></div>
+
+<p>Context files continue to follow Pi’s documented trust behavior. Third-party or
+project extensions execute with the worker’s OS privileges; <code>--approve</code> is a
+security decision, not merely a prompt-suppression flag.</p>
+
+<h2 id="lifecycle-and-failures"><a class="anchor" href="#lifecycle-and-failures">Lifecycle and failures</a></h2>
+
+<p>Harnex maps Pi events as follows:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Pi event</th>
+      <th>Harnex behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>agent_start</code>, <code>turn_start</code></td>
+      <td>busy</td>
+    </tr>
+    <tr>
+      <td><code>agent_end</code></td>
+      <td>remain busy; capture outcome/stats, but do not complete</td>
+    </tr>
+    <tr>
+      <td>retry/compaction events</td>
+      <td>remain busy and emit structured telemetry</td>
+    </tr>
+    <tr>
+      <td><code>agent_settled</code> + final <code>stopReason=stop</code></td>
+      <td>emit <code>task_complete</code></td>
+    </tr>
+    <tr>
+      <td><code>agent_settled</code> + <code>error</code>, <code>aborted</code>, or <code>length</code></td>
+      <td>emit <code>task_failed</code></td>
+    </tr>
+    <tr>
+      <td><code>agent_settled</code> without an authoritative final stop reason</td>
+      <td>fail closed</td>
+    </tr>
+    <tr>
+      <td>EOF, malformed JSON, or request timeout</td>
+      <td>disconnect/failure</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>A forced send while Pi is busy is translated to a <code>prompt</code> with
+<code>streamingBehavior="steer"</code>; ordinary sends wait for the settled prompt state.
+This avoids sending a plain prompt that current Pi correctly rejects while
+streaming.</p>
+
+<p>RPC requests are bounded, stderr is continuously drained into a bounded
+diagnostic tail, and Harnex consumes Open3’s wait thread so the real subprocess
+exit status is not lost to a competing <code>waitpid</code>.</p>
+
+<p>Persistent workers can be stopped after accepted <code>agent_settled</code> completion.
+An explicit idle <code>harnex stop</code> preserves the latest accepted/no-change receipt,
+including after a follow-up turn. Expected EOF and TERM teardown are normal
+adapter cleanup, not a lost connection. Harnex reports a logical exit of zero
+for that cleanup; the <code>process_exited</code> event retains the raw child exit code
+and signal (TERM yields code 143; Pi may handle it with <code>process.exit(143)</code>,
+so signal 15 is only present when the OS reports a signalled exit).</p>
+
+<p>A new prompt invalidates the preceding turn’s completion before waiting for its
+RPC response. Stop during that new work fails closed, and late lifecycle events
+cannot promote the interrupted turn or replace the idle-stop decision. Unexpected
+EOF (even exit zero), malformed transport, and abnormal cleanup exits remain
+failures. Output is drained before final receipt/dispatch finalization so trailing
+transport errors are not silently lost. Existing <code>--auto-stop</code> settlement remains
+supported.</p>
+
+<h2 id="runtime-limits-and-activity"><a class="anchor" href="#runtime-limits-and-activity">Runtime limits and activity</a></h2>
+
+<p>Harnex 0.14.0 adds opt-in <code>run --max-runtime DUR</code>, independent of observer
+<code>watch --max-wait</code> / <code>wait --timeout</code>. Check <code>doctor --adapter pi</code> for
+<code>capabilities.runtime_budget: 1</code> before enabling it. The fixed monotonic budget
+is armed before child launch and initial prompting, and never resets on retries,
+follow-up prompts, steering, or UI output. Expiry terminates without waiting for
+an abort RPC or completion/output lock, including during startup. Owned worker
+process groups cover their normal descendants; deliberately detached groups are
+not an OS-level containment guarantee. Active work fails with logical run exit
+124; cleanup after accepted idle settlement preserves proof. Shutdown/finalization
+has separate I/O overhead. An earlier stop cannot disable the deadline;
+<code>runtime_budget.enforced</code> records actual enforcement separately from stop labels.</p>
+
+<p>Live JSON status separates <code>activity</code> work clocks from <code>log_idle_s</code>. Pi assistant
+message boundaries and text/thinking/tool-call deltas update model activity;
+<code>tool_execution_*</code> updates tool activity. Thinking content is not stored in the
+activity tracker or newly logged. Extension UI/queue/retry events never fake
+model/tool progress. <code>model_active</code> describes an observed stream lifetime, not
+hidden provider state; a quiet active stream is not a completed task. PTY clocks
+are unknown. Dispatch-end rows retain the terminal activity snapshot.</p>
+
+<p>The first requested stop records reason/origin/time and work state in a
+<code>stop_requested</code> event, JSON status/end metadata, and receipt <code>observed.stop</code>.
+The labels are bounded caller declarations, separate from acceptance. Harnex’s
+runtime expiry is <code>runtime_budget</code>/<code>runtime</code>, ordinary stop is <code>manual</code>/<code>cli</code>,
+and auto-stop is <code>completion</code>/<code>auto_stop</code>. Expected cancellation EOF is not a
+provider disconnection; unexpected EOF or malformed/unterminated JSONL remains a failure.
+Raw Pi exit evidence is in <code>process_exited</code>, before logical normalization.</p>
+
+<p>See <code>harnex agents-guide monitoring</code> for clock fields, heartbeat streaming,
+observer deadlines, stop labels, and the full runtime-budget contract.</p>
+
+<h2 id="telemetry"><a class="anchor" href="#telemetry">Telemetry</a></h2>
+
+<p>At settlement and teardown, Harnex reads <code>get_session_stats</code> and records:</p>
+
+<ul>
+  <li>input/output/cache/total tokens and provider-reported cost;</li>
+  <li>tool-call count;</li>
+  <li>Pi session ID;</li>
+  <li>effective provider and model;</li>
+  <li>terminal and peak active-context usage.</li>
+</ul>
+
+<p>Message/tool/retry/compaction events are available through <code>harnex events</code>.</p>
+
+<h3 id="command-proof"><a class="anchor" href="#command-proof">Command proof</a></h3>
+
+<p>Built-in <code>bash</code> tool calls are command evidence in the observed receipt.
+Harnex correlates <code>tool_execution_start</code> and <code>tool_execution_end</code> by
+<code>toolCallId</code> and records a command only when both structured facts exist:
+non-empty <code>args.command</code> text (bounded to 2,000 characters) and an integer
+<code>result.structuredContent.exit_code</code>. Status is <code>completed</code> or <code>failed</code> from
+<code>isError</code>; <code>duration_s</code> comes from <code>durationMs</code>. Command output, including
+<code>structuredContent.output</code>, is never persisted.</p>
+
+<p>Pi reports aborts, timeouts, and shell exits without a code as plain error
+text with no <code>structuredContent</code>; extensions that replace a result can drop it
+too. Harnex never parses that prose. Such calls, malformed exits, and calls
+still in flight at teardown count in <code>observed.commands_unobserved</code>, and
+<code>command_observation</code> becomes <code>partial</code> (some exits observed) or <code>unsupported</code>
+(none). A session with no bash calls reports <code>observed</code> with no commands.
+Other tools — read, edit, write, MCP, extension tools — are tool calls, not
+commands. <code>actual.commands_executed</code> counts bash calls; <code>actual.tool_calls</code> is
+Pi’s own reported total, which includes them.</p>
+
+<p>Live verified on Pi 1.2.0 and 1.3.0. Older Pi releases without bash
+<code>structuredContent</code> fail closed to <code>unsupported</code>. Harnex 0.15.0+ advertises
+this contract as <code>harnex doctor</code> <code>capabilities.pi_command_proof: 1</code>; check it
+before treating Pi receipt commands as proof.
+Blocking extension dialogs (<code>select</code>, <code>confirm</code>, <code>input</code>, <code>editor</code>) are
+currently auto-cancelled so autonomous workers cannot hang. Full extension UI
+mediation is not implemented.</p>
+
+<h2 id="boundaries"><a class="anchor" href="#boundaries">Boundaries</a></h2>
+
+<ul>
+  <li>The structured adapter does not embed Pi’s TypeScript SDK.</li>
+  <li><code>--tmux</code> displays Harnex’s synthesized RPC transcript, not Pi’s native TUI.</li>
+  <li>First-class native Pi TUI/PTTY markers remain tracked in Issue <code>#45</code>.</li>
+  <li>Durable Pi session recovery is separate from lifecycle correctness and remains
+part of the broader structured-recovery work.</li>
+</ul>
+
+<h2 id="verification"><a class="anchor" href="#verification">Verification</a></h2>
+
+<p>Hermetic tests cover lifecycle settlement, retry boundaries, failure stop
+reasons, delta-only message streaming, model/effort RPC controls, request
+timeouts, and telemetry. The opt-in live contract test is:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="nv">PI_INTEGRATION</span><span class="o">=</span>1 ruby <span class="nt">-Ilib</span> <span class="nt">-Itest</span> <span class="se">\</span>
+  <span class="nb">test</span>/harnex/adapters/pi_integration_test.rb
+</code></pre></div>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/pi-rpc.md" rel="noopener">docs/pi-rpc.md</a> · <a href="/docs/pi-rpc.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/telemetry">← Dispatch telemetry</a>
+        <a class="next" href="/changelog">Changelog →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

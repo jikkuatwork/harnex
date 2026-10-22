@@ -1,0 +1,24 @@
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/<%= page[:slug] %></span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+<% GROUPS.each do |group, pages| %>        <p class="grp"><%= group %></p>
+        <ul>
+<% pages.each do |item| %>          <li><a href="<%= item[:url] %>"<%= ' aria-current="page"' if item[:slug] == page[:slug] %>><%= h(item[:title]) %></a></li>
+<% end %>        </ul>
+<% end %>      </nav>
+    </aside>
+    <article class="doc<%= ' help' if page[:src] == :cli %>">
+      <p class="crumb"><a href="/docs/">docs</a> / <%= page[:slug] %></p>
+      <h1><%= h(page[:title]) %></h1>
+<%= html %>
+<% if page[:src].is_a?(String) %>      <p class="edit">source: <a href="<%= GITHUB %>/blob/main/<%= page[:src] %>" rel="noopener"><%= page[:src] %></a> · <a href="<%= page[:url] %>.md">raw markdown</a></p>
+<% end %>      <nav class="pager" aria-label="Pages">
+<% if prev_page %>        <a class="prev" href="<%= prev_page[:url] %>">← <%= h(prev_page[:title]) %></a>
+<% end %><% if next_page %>        <a class="next" href="<%= next_page[:url] %>"><%= h(next_page[:title]) %> →</a>
+<% end %>      </nav>
+    </article>
+  </div>
+</div>

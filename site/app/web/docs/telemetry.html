@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dispatch telemetry · harnex</title>
+<meta name="description" content="The canonical dispatch history stream and its schema.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/telemetry">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Dispatch telemetry · harnex">
+<meta property="og:description" content="The canonical dispatch history stream and its schema.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/telemetry">
+<link rel="alternate" type="text/markdown" href="/docs/telemetry.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/telemetry</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry" aria-current="page">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / telemetry</p>
+      <h1>Dispatch telemetry</h1>
+<p><code>harnex run</code> captures predicted-vs-actual dispatch telemetry for a wrapped
+agent session. Raw measurements remain on the v1 per-session events stream.
+Durable summaries use one canonical v2 dispatch stream: every run appends one
+<code>dispatch_start</code> row at registration and one rich <code>dispatch_end</code> row at
+teardown.</p>
+
+<p>Inside a git repo the stream is <code>&lt;git-root&gt;/.harnex/dispatch.jsonl</code>; outside a
+git repo it is <code>~/.local/state/harnex/dispatch.jsonl</code>. <code>harnex history</code>,
+<code>status --id</code>, and <code>wait</code> consume the same rows. Legacy v1 thin rows and
+pre-v2 envelope-less summaries may coexist and remain readable/skippable.</p>
+
+<h2 id="portable-home-paths"><a class="anchor" href="#portable-home-paths">Portable home paths</a></h2>
+
+<p>From 0.14.1, new canonical records and reconciliation repair appends serialize
+string values equal to the current user’s home as <code>~</code>, and paths beneath it as
+<code>~/...</code>. The home-directory match uses a complete path-component boundary;
+sibling directories, other users’ tilde forms and paths outside that home are
+not rewritten. A path mentioned later inside a prose string is not scrubbed.
+This is path serialization, not a general identity or secret redactor.</p>
+
+<p>The writer serializes a copy. Runtime/session structures, the events stream,
+registry and receipt files retain their normal paths. Existing ledger rows are
+not rewritten automatically. Status API results still expose absolute repository
+roots, and path-consuming retention/report operations resolve portable paths
+against the reader’s home.</p>
+
+<p>Reconciliation compares absolute paths under the current home and their portable
+forms consistently. Genuinely different paths, identities, values and outcomes
+still conflict. Home-relative paths are interpreted in the current user’s home
+context; this does not infer another machine’s home directory or migrate archives.</p>
+
+<h2 id="clean-tree-checks-and-the-tracked-stream"><a class="anchor" href="#clean-tree-checks-and-the-tracked-stream">Clean-Tree Checks And The Tracked Stream</a></h2>
+
+<p>Some repos deliberately track <code>.harnex/dispatch.jsonl</code> as project telemetry.
+There the stream grows while sessions run, so worker briefs, completion
+fences, and orchestration clean-tree checks must treat the path as
+harness-owned: expected to be dirty mid-run, never foreign dirt to abort on,
+and never a file a worker should revert or “clean up”. Exclude it explicitly,
+for example <code>git status --porcelain -- . ':!.harnex'</code>, and commit its growth
+alongside the work it describes.</p>
+
+<h2 id="cli-flags"><a class="anchor" href="#cli-flags">CLI flags</a></h2>
+
+<pre><code class="language-text">harnex run pi --meta '{"model":"openai/gpt-5.1","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
+harnex run pi --context 'Implement the task; Harnex writes the final receipt'
+harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
+harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
+harnex run pi --orchestration-run-id queue-005 --orchestration-generation-id gen-1 --orchestration-role worker
+harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
+</code></pre>
+
+<ul>
+  <li><code>--meta JSON</code> must be a JSON object. The parsed object is echoed verbatim on
+the <code>started.meta</code> event.</li>
+  <li>Every run allocates a harness-owned <code>harnex.artifact_report.v1</code> receipt path.
+The default is a repo-keyed file under <code>~/.local/state/harnex/receipts/</code>; live status
+and the end row expose it as <code>artifact_report_path</code> / <code>artifact_report.path</code>.</li>
+  <li><code>--artifact-report PATH</code> overrides that output destination.
+<code>--validation-report PATH</code> remains a compatibility alias. The worker receives
+the final path as <code>HARNEX_ARTIFACT_REPORT_PATH</code> /
+<code>HARNEX_VALIDATION_REPORT_PATH</code>, but Harnex owns and overwrites that file.</li>
+  <li><code>HARNEX_ARTIFACT_CLAIMS_PATH</code> is a separate optional input for bounded
+<code>summary</code>, <code>verdict</code>, and <code>P1</code>/<code>P2</code>/<code>P3</code> counts. Claims are never acceptance
+evidence. Stale, malformed, or oversized claims are ignored.</li>
+  <li><code>--require-artifact-report</code> is retained for script compatibility and exports
+<code>HARNEX_ARTIFACT_REPORT_REQUIRED=1</code>, but it no longer needs an explicit path
+or model-authored report. Receipt write failure is fail-closed for every run.</li>
+  <li><code>harnex artifact-report validate PATH --final</code> validates the generated
+receipt without echoing its contents. <code>init</code> and the old final-validation
+contract remain available for legacy/manual v1 documents.</li>
+  <li><code>--project-id</code>, <code>--queue-id</code>, <code>--entry-id</code>, <code>--entry-title</code>, <code>--phase</code>,
+<code>--tier</code>, <code>--issue</code>, <code>--plan</code>, <code>--intent</code>, <code>--model</code>, <code>--effort</code>,
+<code>--parent-dispatch-id</code>, <code>--parent-attempt-id</code>, and <code>--attempt-kind</code> are
+first-class queue/agent telemetry flags. They are persisted as caller-provided
+strings and override same-named <code>--meta</code> values. <code>--attempt-kind</code> is one of
+<code>initial</code>, <code>retry</code>, <code>fix</code>, <code>review</code>, <code>fallback</code>, or <code>superseding</code>; linkage fields keep
+independently-run follow-ups joinable without merging their raw usage.</li>
+  <li><code>--orchestration-run-id</code>, <code>--orchestration-generation-id</code>,
+<code>--orchestration-role</code>, <code>--orchestration-session-id</code>, and
+<code>--orchestration-rotation-reason</code> opt a dispatch row into logical
+primary-orchestrator rollups. <code>--orchestration-role</code> is <code>primary</code> or
+<code>worker</code>; Harnex-managed primaries should use <code>primary</code> instead of emitting a
+duplicate external sample for the same usage row.</li>
+  <li><code>--require-attribution</code> fails before launch unless <code>project_id</code>, <code>phase</code>,
+<code>intent</code>, and at least one of <code>queue_id</code> / <code>entry_id</code> / <code>issue</code> / <code>plan</code> are
+present through first-class flags or <code>--meta</code>.</li>
+  <li>The canonical stream is the only destination a dispatch writes telemetry to.
+There is no second copy and no flag to request one; a flag asking for a
+mirror file is rejected as unknown. See CHANGELOG for the removal note.</li>
+  <li>The v2 <code>dispatch_end</code> combines the history envelope (<code>schema_version</code>,
+<code>record_type</code>, id/status/timing fields) with all rich telemetry sections.
+A default dispatch therefore adds exactly two rows, not separate thin and
+rich end rows.</li>
+</ul>
+
+<p>Use <code>harnex history --json | jq .</code> for pipelines over the repo-local log.</p>
+
+<h2 id="optional-external-archive-bridge"><a class="anchor" href="#optional-external-archive-bridge">Optional external archive bridge</a></h2>
+
+<p>Repositories may keep the active stream bounded while preserving one logical
+history through two opt-in local executable hooks:</p>
+
+<ul>
+  <li><code>HARNEX_DISPATCH_ARCHIVER=/absolute/path/to/helper</code> runs immediately before
+each append as <code>helper --canonical PATH --incoming-bytes N</code>. Harnex holds a
+stable sidecar lock under <code>$HARNEX_STATE_DIR/locks/</code> before invoking the
+helper and opens the active stream only afterward, so an atomic replacement
+cannot strand a waiting writer on the old inode. A helper failure emits a
+bounded warning and the new row is still appended to the active stream.</li>
+  <li><code>HARNEX_DISPATCH_HISTORY_READER=/absolute/path/to/helper</code> runs as
+<code>helper --canonical PATH</code>. It must write the complete archive-plus-active
+JSONL stream to stdout and exit successfully. Harnex captures that stream in
+a private temporary file before exposing any rows; failure or malformed
+output is reported as unavailable history rather than an empty result.</li>
+</ul>
+
+<p>Both values must name an absolute, executable, non-symlink local file. Harnex
+passes no telemetry bytes or credentials in arguments, does no network work of
+its own, suppresses helper output on the write path, and retains its ordinary
+active-file behavior when the hooks are unset. The repository-specific helper
+owns encryption, storage credentials, archive verification, and retrieval.
+<code>harnex history</code>, canonical assertion/reconciliation, latest-row lookup, and
+attempt-chain accounting consume the complete reader when configured.</p>
+
+<h2 id="canonical-assertion-and-reconciliation"><a class="anchor" href="#canonical-assertion-and-reconciliation">Canonical assertion and reconciliation</a></h2>
+
+<p><code>harnex telemetry assert-canonical</code> is the read-only drift gate for the
+canonical dispatch stream. Without sources it performs structural validation;
+with explicit <code>--source PATH</code> inputs it also reports missing or conflicting rich
+end rows and exits non-zero until the canonical stream is clean.</p>
+
+<p><code>harnex telemetry reconcile</code> runs the same analysis. It is a dry-run by default;
+only <code>--apply</code> appends missing rich end rows, and then only after the canonical
+stream and all source candidates have been parsed and conflict-checked. Apply
+uses one append lock, rechecks under that lock, and is idempotent.</p>
+
+<pre><code class="language-text">harnex telemetry assert-canonical [--canonical PATH | --global] [--source PATH ...] [--json]
+harnex telemetry reconcile [--canonical PATH | --global] --source PATH [--source PATH ...] [--apply] [--json]
+</code></pre>
+
+<p>The default canonical path is the repo-local <code>.harnex/dispatch.jsonl</code>, or the
+global dispatch stream outside a git repo. <code>--canonical</code> and <code>--global</code> are
+mutually exclusive. Sources are never discovered automatically: each <code>--source</code>
+must be a file or directory. Directory scans consider regular <code>.json</code> and
+<code>.jsonl</code> files, skip <code>.git</code>, symlinks, and the resolved canonical path, and
+ignore unrelated JSON that does not match a rich Harnex dispatch end shape.</p>
+
+<p>Mixed-era history is valid input. Legacy v1 thin rows, pre-v2 envelope-less rich
+summaries, and v2 start/end rows may coexist. Open v2 starts are tolerated
+because a running or interrupted dispatch may not have an end row yet. Identity
+checks normalize equivalent timestamp offsets, and conflicts fail closed rather
+than choosing a winner.</p>
+
+<p>Reports are bounded and redacted: they contain counts, statuses, identities, and
+path:line diagnostics, not raw telemetry payloads, prompts, claims, command
+text, or rich sections. The commands never rewrite, delete, sort, migrate,
+clean source files, reintroduce mirrors, or perform source discovery on their
+own.</p>
+
+<h2 id="metadata-and-prediction-contract"><a class="anchor" href="#metadata-and-prediction-contract">Metadata and prediction contract</a></h2>
+
+<p>The v2 <code>dispatch_end</code> always has <code>meta</code>, <code>predicted</code>, <code>actual</code>, <code>agent</code>,
+<code>usage</code>, <code>context</code>, <code>attribution</code>, <code>outcome</code>, <code>attempt</code>, <code>reliability</code>,
+<code>artifact_report</code>, <code>receipt</code>, <code>observed</code>, and <code>validation</code> blocks. When queue
+attribution fields are provided, harnex also adds a top-level <code>queue</code> block.
+When orchestration fields are provided, harnex adds a top-level
+<code>orchestration</code> block. A sanitized <code>claims</code> block is additive only when the
+worker supplied one.</p>
+
+<p>Harnex-owned <code>meta</code> fields are always populated when derivable: <code>id</code>,
+<code>tmux_session</code>, <code>description</code>, <code>started_at</code>, <code>ended_at</code>, <code>harness</code>,
+<code>harness_version</code>, <code>agent</code>, <code>agent_version</code>, <code>agent_provider</code>, <code>host</code>,
+<code>platform</code>, <code>repo</code>, <code>branch</code>, <code>start_sha</code>, and <code>end_sha</code>.</p>
+
+<p>These top-level <code>--meta</code> keys pass through into <code>meta</code> when provided:
+<code>orchestrator</code>, <code>orchestrator_session</code>, <code>chain_id</code>, <code>parent_dispatch_id</code>,
+<code>parent_attempt_id</code>, <code>attempt_kind</code>, <code>tier</code>, <code>phase</code>, <code>issue</code>, <code>plan</code>, and
+<code>task_brief</code>. <code>harnex run --context-file</code> fills <code>context_file</code> (absolute
+path), <code>context_sha256</code> (SHA-256 of the text actually sent) and, on
+<code>started.meta</code> only, <code>context_section</code>; it also defaults <code>task_brief</code> to the
+file path. Queue-specific keys such as
+<code>project_id</code>, <code>queue_id</code>, <code>entry_id</code>, <code>entry_title</code>, and <code>intent</code> are used for
+the top-level <code>queue</code> block but are not duplicated into legacy <code>meta</code>. Unknown
+top-level keys are kept on <code>started.meta</code> but are not copied into the v2 end
+row.</p>
+
+<p><code>predicted</code> is copied from <code>--meta.predicted</code> when it is a JSON object;
+otherwise it is <code>{}</code>. The canonical record applies the portable-path serialization
+above; runtime values are unchanged. Harnex does no profile lookup or
+recommendation-table resolution.</p>
+
+<h2 id="queue-agent-and-reliability-blocks"><a class="anchor" href="#queue-agent-and-reliability-blocks">Queue, agent, and reliability blocks</a></h2>
+
+<p>The top-level <code>queue</code> block is emitted only when at least one queue attribution
+field is known. When present, it has a stable key set and preserves values as
+strings:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"queue"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"project_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"harnex"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"queue_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"queue-005"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"entry_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SP-4"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"entry_title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Implement sidecar ingestion"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"issue"</span><span class="p">:</span><span class="w"> </span><span class="s2">"52"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"plan"</span><span class="p">:</span><span class="w"> </span><span class="s2">"52"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"phase"</span><span class="p">:</span><span class="w"> </span><span class="s2">"implement"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"tier"</span><span class="p">:</span><span class="w"> </span><span class="s2">"B"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"intent"</span><span class="p">:</span><span class="w"> </span><span class="s2">"queue-work"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>The top-level <code>agent</code> block is always emitted and is the preferred home for
+routing details; legacy <code>meta.agent*</code> and <code>actual.model</code> stay for compatibility:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"agent"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"cli"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pi"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"model_requested"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai/gpt-5.1"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"model_effective"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gpt-5.1"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"reasoning_effort"</span><span class="p">:</span><span class="w"> </span><span class="s2">"high"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"service_tier"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"adapter_transport"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdio_jsonl_rpc"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p><code>service_tier</code> is copied from <code>--meta</code> and is otherwise null; older rows may
+carry an adapter-set value.</p>
+
+<p>The top-level <code>reliability</code> block is always emitted and should be preferred over
+legacy <code>actual.disconnections</code> for reliability analytics:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"reliability"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"adapter_close"</span><span class="p">:</span><span class="w"> </span><span class="s2">"normal"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"real_disconnections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"stream_interruptions"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"stalls"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"force_resumes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"compactions"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"recovered"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p><code>adapter_close</code> is <code>normal</code> for ordinary process/adapter completion,
+<code>interrupted</code> for timeout/signal termination, <code>lost</code> for boot failure or real
+transport loss, and <code>unknown</code> when harnex cannot classify it. Successful
+structured runs that close normally after task completion should report
+<code>real_disconnections: 0</code> even if old consumers still read the legacy counter.</p>
+
+<p>Example grouping for queue analysis:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>jq <span class="nt">-r</span> <span class="s1">'select(.queue) | [.queue.project_id, .queue.queue_id, .queue.entry_id, .queue.phase, .agent.model_effective] | @tsv'</span> .harnex/dispatch.jsonl
+</code></pre></div>
+
+<h2 id="usage-context-pressure-attribution-outcomes-and-attempts"><a class="anchor" href="#usage-context-pressure-attribution-outcomes-and-attempts">Usage, context pressure, attribution, outcomes, and attempts</a></h2>
+
+<p><code>usage</code> makes nullable legacy <code>actual</code> token and cost fields interpretable:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"observed"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"cost_usd"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.42</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"cost_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"price_table"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"cost_price_as_of"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-08-03"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"input_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">120000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">8000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"cached_input_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">2000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"reasoning_tokens"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">130000</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p><code>usage.status</code> is <code>observed</code> for an adapter measurement, <code>zero</code> for an explicit
+all-zero adapter measurement, <code>estimated</code> for caller-supplied
+<code>--meta '{"usage":{"status":"estimated",...}}'</code> values, <code>unsupported</code> when
+the adapter has no supported usage source, or <code>missing</code> when a supported source
+provided no observation. <code>cost_source</code> is <code>provider_reported</code> for a reliable
+adapter value, <code>price_table</code> when Harnex computes exact maintained
+provider/model/service-tier/context-band list pricing, and <code>caller_estimate</code> for
+a declared estimate. Price-table rows carry <code>cost_price_as_of</code>; unknown models,
+service/context tiers, missing context evidence, or required token components
+remain null. Provider-reported values are never
+overwritten, and all cost telemetry is operational estimation rather than a
+billing invoice.</p>
+
+<p><code>context</code> is separate from cumulative <code>usage</code>: it describes how full the active
+model context became, not how many tokens all requests accumulated:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"context"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"observed"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pi_get_session_stats"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"terminal_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">64000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"window_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">200000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"terminal_percent"</span><span class="p">:</span><span class="w"> </span><span class="mf">32.0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"peak_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">118000</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"peak_percent"</span><span class="p">:</span><span class="w"> </span><span class="mf">59.0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"samples"</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"missing_samples"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"latest_sample_status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"missing"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p><code>terminal_*</code> is the final <strong>valid</strong> occupancy sample and <code>peak_*</code> is the
+independent high-water mark across valid samples. <code>window_tokens</code> is the model
+window paired with that terminal sample. <code>samples</code> counts bounded source
+samples, including unavailable ones; <code>missing_samples</code> counts that unavailable
+subset. Consequently, a null sample immediately after compaction leaves the
+last valid terminal and peak values intact while setting
+<code>latest_sample_status: "missing"</code>. Null never means zero.</p>
+
+<p><code>context.status</code> is <code>observed</code> for Pi’s dedicated
+<code>get_session_stats.contextUsage</code> signal, <code>missing</code> when a supported source
+yielded no valid occupancy, or <code>unsupported</code> when the adapter has no
+active-context source (<code>estimated</code> appears only in older rows). <code>source</code> is
+<code>pi_get_session_stats</code> for Pi and null for unsupported adapters. Pi’s
+percentage is adapter reported. No prompt, transcript, message, tool payload,
+or compaction summary is copied into this block.</p>
+
+<p><code>attribution.status</code> is <code>complete</code> when <code>project_id</code>, <code>phase</code>, <code>intent</code>, and a
+work id are present; <code>partial</code> when any attribution is known but that contract
+is incomplete; otherwise <code>missing</code>. <code>outcome.status</code> is derived from the
+harness receipt: <code>accepted</code>, <code>rejected</code>, <code>no_change</code>, or <code>unknown</code>. Optional
+worker claims cannot set it. Its additive <code>class</code> records the work verdict
+(<code>completed_with_proof</code>, <code>completed_no_activity</code>, <code>report_invalid</code>,
+<code>task_failed</code>, plus legacy classes retained in old rows), and <code>report_status</code>
+is normally <code>accepted</code> or <code>rejected</code>. <code>source=harnex_observed_state</code> identifies
+new receipts. The block also contains final commit/path/LOC observations; those
+facts prove the delta, not semantic quality or human authorship.</p>
+
+<p><code>outcome.class</code> is one value from a closed vocabulary (#57):</p>
+
+<ul>
+  <li><strong>Completion:</strong> <code>completed_with_proof</code>, <code>completed_with_activity</code>.</li>
+  <li><strong>Proof defects:</strong> <code>completed_no_activity</code>, <code>report_missing</code>,
+<code>report_invalid</code>, <code>report_rejected</code>.</li>
+  <li><strong>Process:</strong> <code>task_failed</code> (the turn failed), <code>provider_capacity</code> (the turn
+failed after the adapter’s own provider retries ran out, from Pi’s
+structured <code>auto_retry_end success:false</code>; capacity or rate limits rather
+than the work), <code>boot_failure</code> (structured
+transport died before its first turn), <code>permission_prompt</code> (ended on a
+trust/confirmation prompt the adapter recognizes), <code>timeout</code> (<code>--max-runtime</code>
+stopped running work, or exit 124), <code>stopped_by_caller</code> (a manual stop
+while work was running), <code>process_failed</code> (nonzero exit with no turn
+verdict).</li>
+  <li><strong>Fallback:</strong> <code>unknown</code>.</li>
+</ul>
+
+<p>Completion and proof classes are never overridden. Process classes refine an
+<code>unknown</code> or <code>task_failed</code> terminal, or a <code>report_rejected</code> receipt for a
+process that never signalled completion (finalization always writes a receipt,
+so that rejection records the failed process, not a proof verdict). Signals:
+the exit path, stop provenance, and final input state; never transcript text.
+A stop or deadline outranks <code>task_failed</code> only when the work was still running
+when it was stopped. A clean exit 0 without completion keeps its accepted
+receipt (<code>completed_with_proof</code>), as before. Older rows are not reclassified.</p>
+
+<p><code>harnex orchestration report --run-id ID</code> (or <code>--queue-id ID</code>) counts
+<code>workers.outcome_classes</code> per raw attempt and per retry family. A family joins
+attempts by <code>parent_attempt_id</code>, by <code>parent_dispatch_id</code> for non-initial
+attempts (retry/fix/fallback/superseding/review), or by a reused dispatch id,
+so correlated retries count as one root cause. Spawner-derived parents of
+initial workers do not join families. Start rows are not counted. An optional
+<code>--failure-budget N [--budget-unit attempts|families] [--fatal-classes A,B]</code>
+adds a <code>failure_budget</code> verdict and exits 3 once N fatal failures are counted
+(1 is an error, 2 a usage error; a missing <code>--dispatch</code> file is an error).
+By default the fatal classes are <code>completed_no_activity</code>, <code>task_failed</code>,
+<code>provider_capacity</code>, <code>boot_failure</code>, <code>permission_prompt</code>, <code>timeout</code>, and <code>process_failed</code>; proof
+defects, caller stops and <code>unknown</code> are not fatal.
+Harnex supplies the ledger only: the caller decides what to do on a breach.</p>
+
+<p>Every end row has one Harnex-session <code>attempt</code>. Its random <code>id</code> is distinct
+from operator-visible <code>run_id</code>; <code>parent_attempt_id</code> and <code>parent_dispatch_id</code>
+link retries/fixes/reviews/fallbacks while each row keeps separate raw usage.
+At finalization Harnex walks the canonical stream’s parent chain once to derive
+<code>actual.attempts_total</code>, succeeded/failed counts, <code>fallback_triggered</code>, and
+<code>reliability.recovered</code>; missing parents and malformed/cyclic history degrade
+safely to the resolvable chain. <code>retry_count</code> remains the separate in-run event
+counter. The events JSONL also carries <code>attempt_started</code>, <code>attempt_finished</code>,
+and adapter-reported retry/fallback events.</p>
+
+<h2 id="orchestration-tax-rollups"><a class="anchor" href="#orchestration-tax-rollups">Orchestration tax rollups</a></h2>
+
+<p><code>harnex orchestration</code> joins one logical primary-orchestrator run across
+primary generations and child dispatches. It is opt-in and bounded: the sample
+path stores counters and lifecycle labels only.</p>
+
+<p>Harnex-managed primaries can be represented directly by their dispatch row:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--orchestration-run-id</span> queue-005 <span class="se">\</span>
+  <span class="nt">--orchestration-generation-id</span> primary-1 <span class="nt">--orchestration-role</span> primary ...
+</code></pre></div>
+
+<p>External interactive primaries can emit bounded samples through an integration
+or shell command:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex orchestration sample <span class="nt">--out</span> .harnex/orchestrator.jsonl <span class="se">\</span>
+  <span class="nt">--run-id</span> queue-005 <span class="nt">--generation-id</span> primary-1 <span class="nt">--project-id</span> harnex <span class="se">\</span>
+  <span class="nt">--queue-id</span> queue-005 <span class="nt">--session-id</span> pi-primary-1 <span class="se">\</span>
+  <span class="nt">--context-status</span> observed <span class="nt">--context-tokens</span> 64000 <span class="se">\</span>
+  <span class="nt">--context-window-tokens</span> 200000 <span class="nt">--context-percent</span> 32 <span class="se">\</span>
+  <span class="nt">--usage-status</span> observed <span class="nt">--usage-input-tokens</span> 120000 <span class="se">\</span>
+  <span class="nt">--usage-output-tokens</span> 9000 <span class="nt">--usage-total-tokens</span> 129000 <span class="se">\</span>
+  <span class="nt">--tool-calls</span> 31 <span class="nt">--compactions</span> 1
+</code></pre></div>
+
+<p>The sample schema is <code>harnex.orchestrator_sample.v1</code>. Valid sample events are
+<code>sample</code>, <code>generation_started</code>, <code>generation_finished</code>, <code>rotation</code>, <code>recovery</code>,
+and <code>compaction</code>. Samples must never include prompts, transcripts, hidden
+reasoning, tool arguments/results, secrets, or private payloads.</p>
+
+<p>Reports join dispatch rows whose <code>orchestration.run_id</code> matches the requested
+run and optional external samples with the same <code>orchestration_run_id</code>:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex orchestration report <span class="nt">--dispatch</span> .harnex/dispatch.jsonl <span class="se">\</span>
+  <span class="nt">--samples</span> .harnex/orchestrator.jsonl <span class="nt">--run-id</span> queue-005 <span class="nt">--json</span>
+</code></pre></div>
+
+<p>The report schema is <code>harnex.orchestration_tax.v1</code>. It includes primary usage
+and context coverage, per-generation peaks and rotation reasons, worker usage,
+accepted/rejected/blocked/unknown child outcomes deduplicated by work id,
+primary usage/tool calls per accepted entry, and explicit <code>missing</code> /
+<code>unsupported</code> statuses instead of treating absent telemetry as zero.</p>
+
+<h2 id="observed-state-receipts-and-optional-claims"><a class="anchor" href="#observed-state-receipts-and-optional-claims">Observed-state receipts and optional claims</a></h2>
+
+<p>Every dispatch receives a bounded receipt authored by Harnex, not by the
+worker. The schema identifier remains <code>harnex.artifact_report.v1</code> so existing
+<code>artifact-report validate --final</code> consumers keep one command and one result
+contract. The additive <code>receipt.author=harnex</code> marker selects the observed-state
+final contract.</p>
+
+<p>A generated receipt contains:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"harnex.artifact_report.v1"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pass"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"receipt"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"version"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"author"</span><span class="p">:</span><span class="w"> </span><span class="s2">"harnex"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"generated_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-08-03T05:00:00Z"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pi-r-64"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8d8f3f07c8fc343d"</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="nl">"outcome"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"no_change"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"summary"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Harnex observed successful completion with no Git delta."</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="nl">"validation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pass"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"final_reported"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"commands"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+      </span><span class="p">{</span><span class="w"> </span><span class="nl">"cmd"</span><span class="p">:</span><span class="w"> </span><span class="s2">"git diff --check"</span><span class="p">,</span><span class="w"> </span><span class="nl">"exit_code"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completed"</span><span class="w"> </span><span class="p">}</span><span class="w">
+    </span><span class="p">]</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="nl">"observed"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"git"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"observed"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"start_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0123456789abcdef0123456789abcdef01234567"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"end_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0123456789abcdef0123456789abcdef01234567"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"changed_paths"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+      </span><span class="nl">"loc_added"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"loc_removed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"files_changed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"commits"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="nl">"commands"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+      </span><span class="p">{</span><span class="w"> </span><span class="nl">"cmd"</span><span class="p">:</span><span class="w"> </span><span class="s2">"git diff --check"</span><span class="p">,</span><span class="w"> </span><span class="nl">"exit_code"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completed"</span><span class="w"> </span><span class="p">}</span><span class="w">
+    </span><span class="p">],</span><span class="w">
+    </span><span class="nl">"command_observation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"observed"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"turn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completed"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"outcome_class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completed_with_proof"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"task_complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"task_failed"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"accepted"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"exit_code"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="nl">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"observed"</span><span class="p">,</span><span class="w"> </span><span class="nl">"input_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="nl">"output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="nl">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="w"> </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p><code>observed.git</code> is sufficient for a queue to distinguish commit proof
+(<code>start_sha != end_sha</code>, commit count/path/LOC evidence) from an observed
+<code>no_change</code> result. <code>start_dirty</code>, <code>end_dirty</code>, and <code>worktree_changed</code> expose
+worktree caveats while unchanged pre-session dirt is excluded from the delta.
+Pi RPC built-in <code>bash</code> tool calls contribute bounded command text, integer
+exit code, status, and optional duration. Pi commands require an integer <code>result.structuredContent.exit_code</code>
+correlated by <code>toolCallId</code>; Pi bash calls without one (abort, timeout,
+extension override, older Pi, still running at teardown) are counted in
+<code>observed.commands_unobserved</code> and mark <code>command_observation</code> as <code>partial</code>
+when some exits were observed, or <code>unsupported</code> when none were. PTY transports
+report <code>command_observation: "unsupported"</code> rather than guessing from prose or
+generic tool events. If the 256-KiB receipt cap requires
+trimming, <code>commands_truncated</code> / <code>changed_paths_truncated</code> make that explicit;
+full aggregate counts remain in the dispatch row. Usage carries the same
+measured/missing/unsupported semantics as the dispatch
+row and is refreshed at teardown when final adapter usage becomes available.</p>
+
+<p><code>validation.commands</code> mirrors all bounded observed command exits for legacy
+readers. Its aggregate status is <code>not_run</code>, <code>pass</code>, or <code>fail</code>, or <code>unknown</code>
+when no observed exit failed but <code>commands_unobserved</code> is positive; a failed
+exploratory command may precede a successful turn. For harness receipts,
+<code>validate --final</code> therefore validates receipt authorship/shape, accepted turn,
+and accepted/no-change outcome instead of letting an intermediate command exit
+rewrite the harness verdict. Queue policy may impose a stricter command gate by
+inspecting <code>observed.commands</code>.</p>
+
+<p>Final gates (#68) separate acceptance from command history. Declare them with
+repeatable <code>harnex run --final-gate '&lt;cmd&gt;'</code> (or meta <code>"final_gates": [...]</code>,
+which <code>--final-gate</code> appends to). The receipt then carries:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="nl">"validation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+  </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pass"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"commands_had_failures"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"final_gates"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"declared"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nl">"observed_pass"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nl">"observed_fail"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nl">"missing"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pass"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"gates"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nl">"cmd"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rake test"</span><span class="p">,</span><span class="w"> </span><span class="nl">"exit_code"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}]</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<ul>
+  <li>A gate matches an observed command by exact string. A structured adapter’s
+single-shell transport wrapper (<code>bash -lc '&lt;cmd&gt;'</code>, <code>sh -c '&lt;cmd&gt;'</code>) is
+unwrapped first; the inner script must still equal the gate exactly.</li>
+  <li>Each gate is decided by its <strong>last</strong> observed run, so an intermediate
+failure followed by a green final run passes.</li>
+  <li>A gate that never ran is <code>fail</code> when command observation was complete, and
+<code>unknown</code> when it was <code>partial</code> or <code>unsupported</code> (PTY transports), since it
+may be among the unobserved calls.</li>
+  <li>With gates declared, <code>validation.status</code> is the gate status. Without them,
+<code>final_gates.status</code> is <code>undeclared</code> and <code>validation.status</code> keeps the
+any-failure semantics above.</li>
+  <li><code>commands_had_failures</code> covers the session’s whole command history, not only
+the retained 50-command window.</li>
+  <li>Dispatch rows keep <code>commands_had_failures</code> and the final-gate counts and
+status, without the gate command text.</li>
+</ul>
+
+<p>This is receipt ergonomics, not proof: <code>validate --final</code> and outcome classes
+do not change, and supervisors should still replay declared final commands
+verbatim before accepting work.</p>
+
+<p>Reviewers can write one optional input file at
+<code>HARNEX_ARTIFACT_CLAIMS_PATH</code>:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"claims"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"summary"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Review complete; one P2 remains."</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"verdict"</span><span class="p">:</span><span class="w"> </span><span class="s2">"changes_requested"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"findings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nl">"P1"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nl">"P2"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nl">"P3"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<p>Only those bounded fields are copied. Claims are informational and never affect
+receipt validity, <code>outcome.status</code>, or the completion gate. The fingerprint of
+a configured pre-existing file is used only to avoid ingesting stale claims;
+Harnex always atomically replaces the final receipt, eliminating the old
+missing/stale-proof acceptance race. Legacy workers that still write a full v1
+file may contribute its outcome summary/status as advisory claims, but Harnex
+replaces the document and ignores it for acceptance.</p>
+
+<p><code>artifact_report</code> in the dispatch row records final path, bytes, SHA-256,
+schema, ingest status, report status, and author. <code>receipt</code>, <code>observed</code>, and
+<code>validation</code> are compact top-level copies; <code>claims</code> appears only when present.
+The default receipt path is outside the checkout so proof generation cannot
+pollute the Git delta. An explicit path is supported when a queue requires one.
+Receipt write/validation failure is typed <code>report_invalid</code> and fails closed.
+Harnex never scrapes report-shaped final prose or copies full transcripts.</p>
+
+<p><code>harnex artifact-report init</code> still creates the older manual skeleton, and the
+validator still accepts that legacy final contract. It is compatibility tooling,
+not a required worker step for new dispatches.</p>
+
+<h2 id="autonomous-completion-gate"><a class="anchor" href="#autonomous-completion-gate">Autonomous completion gate</a></h2>
+
+<p>A Pi turn counts as accepted work completion once it settles
+(<code>agent_settled</code>) without a final <code>error</code>, <code>aborted</code>, or <code>length</code> stop reason.
+With <code>--require-artifact-report</code>, Harnex also requires at least one structured
+command/tool call or a Git delta (PTY adapters can satisfy it only with a Git
+delta). If both are absent, it emits <code>task_failed</code> with
+<code>outcome_class=completed_no_activity</code>, writes a rejected observed receipt, and
+normalizes auto-stop to non-zero. The gate deliberately ignores final answer
+text and claims. Intentional no-op work must still perform observable
+inspection/validation; a model assertion of <code>no_change</code> cannot self-approve.</p>
+
+<p>PTY transports do not expose equivalent completion-item metadata, so their
+existing prompt-return auto-stop behavior remains. PTY transports label
+command observation <code>unsupported</code>; Git and terminal state are still recorded
+without guessing.</p>
+
+<h2 id="actuals"><a class="anchor" href="#actuals">Actuals</a></h2>
+
+<p>At process exit, harnex collects usage through the active adapter. Pi RPC
+sessions read <code>get_session_stats</code>, and PTY adapters parse the last 16 KB of
+transcript when they support a parser. Adapters without a parser emit nullable
+usage fields. Separately, Pi aggregates bounded <code>contextUsage</code> samples; they are
+never substituted with cumulative usage when active occupancy is unavailable.</p>
+
+<p>Git actuals capture the start/end SHA plus committed, staged, unstaged, and
+untracked changes relative to the worktree state observed at session start.
+Unchanged pre-existing dirt is not credited to the worker, and harness-owned
+dispatch/receipt paths are excluded. Git failures leave the corresponding
+consolidated fields <code>null</code> and omit <code>git</code> events.</p>
+
+<p>Git is observed in the repository the agent works in. A lane launched with
+<code>--cwd &lt;worktree&gt; --root &lt;checkout&gt;</code>, where the two resolve to different Git
+toplevels, is observed in its <code>--cwd</code> worktree: <code>commit_sha</code>, <code>branch</code>,
+<code>start_sha</code>/<code>end_sha</code>, <code>observed.git</code>, activity and acceptance all describe
+the lane, so supervisor commits on the root never count as the lane’s work.
+<code>--root</code> still decides where the rows are written. The <code>git</code> start event then
+carries <code>git_root</code>, and the end row’s <code>root_commit_sha</code> records the <code>--root</code>
+repository’s head (it is <code>null</code> for every other dispatch).</p>
+
+<p>The <code>actual</code> block includes model/effort hints from <code>--meta</code>, duration, token
+counts, <code>agent_session_id</code>, compatibility <code>cost_usd</code>, adapter transport, git
+deltas, exit reason, task completion state, signal/exit code, last error,
+operational counters (<code>stalls</code>, <code>force_resumes</code>, <code>disconnections</code>,
+<code>compactions</code>, <code>turn_count</code>, <code>tool_calls</code>, <code>commands_executed</code>), <code>rate_limits</code>
+(always null now; only older rows carry payloads), output/event volume
+measurements, and output/events log paths. New additive attempt counters are
+<code>attempts_total</code>, <code>attempts_succeeded</code>, <code>attempts_failed</code>, <code>retry_count</code>,
+<code>throttle_429_count</code> (no current producer, so 0 in new rows), <code>disconnect_count</code>,
+and <code>fallback_triggered</code>. Throughput values are populated only for a
+harness-accepted outcome: <code>throughput_tokens_per_s</code> and
+<code>throughput_successes_per_h</code>; <code>retry_tax_pct</code> is <code>0.0</code> when no retry occurred
+and <code>null</code> until a retry source can measure attributable wasted tokens.</p>
+
+<p>Legacy <code>actual.cost_usd</code> reflects adapter/provider-reported cost only. Prefer
+the top-level <code>usage</code> block: it also carries price-table-derived cost and its
+<code>cost_source</code> / <code>cost_price_as_of</code> provenance. Claude PTY currently has no
+bounded usage producer and reports <code>unsupported</code>; it is not silently priced.</p>
+
+<p>Examples for downstream analysis (never treat missing usage as zero):</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="c"># Accepted successes per hour, grouped by project/phase/effective model.</span>
+jq <span class="nt">-s</span> <span class="s1">'map(select(.outcome.status == "accepted" and .attribution.status == "complete"))
+  | group_by([.attribution.project_id, .attribution.phase, .agent.model_effective])
+  | map({group: .[0].attribution.project_id + "/" + .[0].attribution.phase + "/" + .[0].agent.model_effective,
+         successes_per_hour: ((length * 3600) / (map(.actual.duration_s) | add))})'</span> .harnex/dispatch.jsonl
+
+<span class="c"># Retry and real-disconnect rates for completed rows.</span>
+jq <span class="nt">-s</span> <span class="s1">'map(select(.actual.attempts_total &gt; 0))
+  | {retry_rate: ((map(.actual.retry_count) | add) / (map(.actual.attempts_total) | add)),
+     disconnect_rate: ((map(.actual.disconnect_count) | add) / (map(.actual.attempts_total) | add))}'</span> .harnex/dispatch.jsonl
+</code></pre></div>
+
+<h2 id="exit-taxonomy"><a class="anchor" href="#exit-taxonomy">Exit taxonomy</a></h2>
+
+<ul>
+  <li><code>success</code>: wrapped process exited <code>0</code> with task completion, accepted observed
+receipt proof, or an adapter session summary.</li>
+  <li><code>failure</code>: wrapped process exited non-zero, the observed-activity gate emitted
+<code>task_failed</code>, or Harnex could not write/validate the receipt.</li>
+  <li><code>timeout</code>: wrapped process exited with code <code>124</code>.</li>
+  <li><code>boot_failure</code>: the structured Pi RPC transport exited within the startup
+window (5 s) before a turn was observed.</li>
+  <li><code>disconnected</code>: wrapped process exited <code>0</code> but no session summary was parsed.</li>
+</ul>
+
+<p>Canonical dispatch-stream writes remain best-effort. Receipt
+writes are different: proof-generation failure is fail-closed and changes the
+work verdict. Repo phase allowlists and runtime-log retention are documented in
+<a href="/docs/configuration">configuration.md</a>.</p>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/dispatch-telemetry.md" rel="noopener">docs/dispatch-telemetry.md</a> · <a href="/docs/telemetry.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/events">← Events</a>
+        <a class="next" href="/docs/pi-rpc">Pi RPC →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

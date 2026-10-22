@@ -1,0 +1,14 @@
+{
+  "name": "harnex",
+  "title": "harnex",
+  "shortName": "harnex",
+  "description": "Pi workers (GPT models) as tools for you and your coding agents: delegate tasks into git worktrees, follow up with context, land the result. CLI and MCP.",
+  "themeColor": "#e8a33d",
+  "iconStyle": "night",
+  "web": {
+    "spa": false,
+    "headers": [
+      { "path": "/fonts/*", "set": { "Cache-Control": "public, max-age=31536000, immutable" } }
+    ]
+  }
+}

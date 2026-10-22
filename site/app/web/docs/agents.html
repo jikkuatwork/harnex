@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Coding agents · harnex</title>
+<meta name="description" content="Driving harnex from Claude Code and Pi: MCP, the gpt subagent, the CLI.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/agents">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Coding agents · harnex">
+<meta property="og:description" content="Driving harnex from Claude Code and Pi: MCP, the gpt subagent, the CLI.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/agents">
+<link rel="alternate" type="text/markdown" href="/docs/agents.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents" aria-current="page"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/agents</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents" aria-current="page">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / agents</p>
+      <h1>Coding agents</h1>
+<p>harnex is built to be driven by coding agents: Claude Code, Pi, or anything
+that can run a shell command or call an MCP tool. A supervising agent hands a
+question or a task to a Pi worker (a GPT model by default), keeps working, and
+gets the worker’s reply back as plain text it can act on.</p>
+
+<p>There are three ways in, from smoothest to most portable:</p>
+
+<ol>
+  <li><strong>MCP tools</strong> (<code>harnex mcp install</code>): <code>ask</code>, <code>delegate</code>, <code>result</code>,
+<code>reply</code>, <code>land</code>, <code>discard</code> and <code>lanes</code> as native tools. See
+<a href="/docs/mcp">MCP server</a>.</li>
+  <li><strong>The <code>gpt</code> subagent</strong> for Claude Code: a background subagent that relays
+one brief to a worker and returns the reply verbatim.</li>
+  <li><strong>The CLI</strong> from any agent’s shell tool: the same verbs as
+<a href="/docs/lanes">lanes</a>.</li>
+</ol>
+
+<h2 id="claude-code"><a class="anchor" href="#claude-code">Claude Code</a></h2>
+
+<h3 id="mcp-tools-main-conversation"><a class="anchor" href="#mcp-tools-main-conversation">MCP tools (main conversation)</a></h3>
+
+<p>With the server registered, Claude calls the tools directly. A call that runs
+longer than two minutes moves to the background on its own; Claude keeps
+working and is notified when the result lands, so a <code>delegate</code> behaves like a
+background subagent without one:</p>
+
+<pre><code class="language-text">❯ Use the harnex delegate tool to have a GPT worker run the slow benchmark and tell me the score.
+● Calling harnex…
+  ⎿  pi-slow-bench: working 59s · 3 tool calls · now bash 44s
+● The GPT worker is still running the benchmark. I'll report the score when it finishes.
+● MCP task (harnex/delegate) completed.
+● The score is 302926.
+</code></pre>
+
+<h3 id="the-gpt-subagent"><a class="anchor" href="#the-gpt-subagent">The <code>gpt</code> subagent</a></h3>
+
+<p><code>harnex mcp install</code> also installs a <code>gpt</code> agent definition at
+<code>~/.claude/agents/gpt.md</code> when none exists. It is a thin Haiku relay with only
+the harnex tools: it never does the task itself and returns the worker’s reply
+exactly, footer included. Use it for parallel work (several <code>Agent</code> calls in
+one message) and for follow-ups (<code>SendMessage</code> to the same agent reaches the
+same worker, with its context).</p>
+
+<pre><code class="language-text">Agent(subagent_type: "gpt", prompt: """
+worktree: word-count
+
+Add TextKit.word_count(text) to lib/textkit.rb with a test; run bin/test.
+""")
+</code></pre>
+
+<p>Optional header lines, then a blank line, then the brief:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Header</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>worktree: NAME</code></td>
+      <td>Edit in a new worktree on <code>harnex/NAME</code>; land it afterwards</td>
+    </tr>
+    <tr>
+      <td><code>mode: write</code></td>
+      <td>Run commands or edit the current checkout in place</td>
+    </tr>
+    <tr>
+      <td><code>mode: read</code></td>
+      <td>Read-only, even if the brief mentions commands</td>
+    </tr>
+    <tr>
+      <td><code>model: provider/model</code>, <code>effort: low\|medium\|high</code></td>
+      <td>Pick the worker’s model</td>
+    </tr>
+    <tr>
+      <td><code>fallback: provider/model</code></td>
+      <td>Retry a read-only ask on another model</td>
+    </tr>
+    <tr>
+      <td><code>cwd: DIR</code></td>
+      <td>Work in another directory</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Without a header, questions and reviews go to a read-only worker, and a brief
+that asks to run something or change files goes to a worker that can.
+The definition ships with harnex as <a href="https://github.com/jikkuatwork/harnex/blob/main/agents/gpt.md"><code>agents/gpt.md</code></a>.</p>
+
+<h3 id="the-cli-from-claudes-bash-tool"><a class="anchor" href="#the-cli-from-claudes-bash-tool">The CLI from Claude’s Bash tool</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--worktree</span> word-count <span class="s2">"Add TextKit.word_count(text) with a test; run bin/test."</span>
+</code></pre></div>
+
+<p>Give the Bash call <code>timeout: 600000</code>: commands wait up to 9 minutes, and
+Claude Code’s default Bash timeout is two minutes. On exit 124 run
+<code>harnex result NAME</code>. In the main conversation, <code>run_in_background</code> works too.</p>
+
+<h3 id="things-worth-knowing"><a class="anchor" href="#things-worth-knowing">Things worth knowing</a></h3>
+
+<ul>
+  <li>Claude Code loads agent definitions and MCP servers when a session starts;
+restart after <code>harnex mcp install</code>.</li>
+  <li>Background results reach the parent XML-escaped (<code>&amp;amp;</code>, <code>&amp;lt;</code>). The relay’s
+own text is exact.</li>
+  <li>Headless <code>claude -p</code> stops background work ten idle minutes after the main
+turn; set <code>CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0</code> for long unattended runs.</li>
+</ul>
+
+<h2 id="pi"><a class="anchor" href="#pi">Pi</a></h2>
+
+<p><code>harnex mcp install</code> adds the server to <code>~/.pi/agent/mcp.json</code> with
+<code>exposure: direct</code>, so a Pi supervisor sees the tools like built-ins. Without
+MCP, Pi uses the CLI through its <code>bash</code> tool; <code>harnex agents-guide claude</code> is
+the short guide it needs (it applies to any supervising agent). Workers
+started by harnex never see harnex’s own MCP tools, so a worker cannot start
+more workers.</p>
+
+<h2 id="habits-that-keep-it-smooth"><a class="anchor" href="#habits-that-keep-it-smooth">Habits that keep it smooth</a></h2>
+
+<ul>
+  <li><strong>Self-contained briefs.</strong> The worker has not seen your conversation: name
+the files, the expected behavior and the check (<code>bin/test</code>).</li>
+  <li><strong>A worktree for anything that edits.</strong> <code>--worktree NAME</code> keeps parallel
+lanes apart and your checkout clean until you land.</li>
+  <li><strong>Verify, then land.</strong> <code>done</code> means the worker’s turn ended without error,
+not that the work is right. Read the diff and run the tests yourself.</li>
+  <li><strong>Land, don’t merge by hand.</strong> <code>land</code> also removes the worktree and branch.</li>
+  <li><strong>Check on a worker with <code>lanes</code>.</strong> It shows the tool each worker is running
+now.</li>
+</ul>
+
+<h2 id="measuring-it"><a class="anchor" href="#measuring-it">Measuring it</a></h2>
+
+<p><code>evals/agents/run</code> drives real supervisors (Claude Code headless and Pi print
+mode, each with and without MCP) through seven scenarios against a fixture
+repository and scores correctness, tool calls, harnex usage errors, doc
+lookups and leftovers. harnex 0.29 passes all 28 runs with no harnex usage
+errors, no doc lookups and nothing left behind.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>evals/agents/run <span class="nt">--list</span>
+evals/agents/run <span class="nt">--supervisor</span> claude,pi S2 S3
+</code></pre></div>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/docs/agents.md" rel="noopener">docs/agents.md</a> · <a href="/docs/agents.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/mcp">← MCP server</a>
+        <a class="next" href="/docs/upgrading">Upgrading to 0.29 →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>

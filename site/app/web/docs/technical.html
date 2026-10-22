@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Technical reference · harnex</title>
+<meta name="description" content="Commands, patterns, the HTTP API, adapters and internals.">
+<link rel="canonical" href="https://harnex.zyt.app/docs/technical">
+<meta name="theme-color" content="#0c0d0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3efe4" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Technical reference · harnex">
+<meta property="og:description" content="Commands, patterns, the HTTP API, adapters and internals.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://harnex.zyt.app/docs/technical">
+<link rel="alternate" type="text/markdown" href="/docs/technical.md">
+<link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
+<script src="/assets/theme.js?v=cefc697d77"></script>
+</head>
+<body>
+<a class="skip" href="#main">skip to content</a>
+<header class="bar">
+  <a class="session" href="/" aria-label="harnex home">harnex</a>
+  <nav aria-label="Site">
+    <a href="/"><span class="ix">0:</span>home</a>
+    <a href="/docs/start"><span class="ix">1:</span>start</a>
+    <a href="/docs/lanes"><span class="ix">2:</span>lanes</a>
+    <a href="/docs/mcp"><span class="ix">3:</span>mcp</a>
+    <a href="/docs/agents"><span class="ix">4:</span>agents</a>
+    <a href="/docs/cli"><span class="ix">5:</span>cli</a>
+    <a href="/changelog"><span class="ix">6:</span>changelog</a>
+  </nav>
+  <div class="right">
+    <span class="ver">v0.29.0</span>
+    <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
+    <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
+  </div>
+</header>
+<main id="main">
+<div class="wrap">
+  <div class="docs">
+    <aside class="side" aria-label="Documentation">
+      <button class="side-toggle" type="button" aria-expanded="false"><span>docs/technical</span><span class="chev">≡</span></button>
+      <nav>
+        <p class="ls">$ ls docs/</p>
+        <p class="grp">guide</p>
+        <ul>
+          <li><a href="/docs/start">Getting started</a></li>
+          <li><a href="/docs/lanes">Lanes</a></li>
+          <li><a href="/docs/mcp">MCP server</a></li>
+          <li><a href="/docs/agents">Coding agents</a></li>
+          <li><a href="/docs/upgrading">Upgrading to 0.29</a></li>
+        </ul>
+        <p class="grp">reference</p>
+        <ul>
+          <li><a href="/docs/cli">CLI reference</a></li>
+          <li><a href="/docs/technical" aria-current="page">Technical reference</a></li>
+          <li><a href="/docs/configuration">Configuration</a></li>
+          <li><a href="/docs/events">Events</a></li>
+          <li><a href="/docs/telemetry">Dispatch telemetry</a></li>
+          <li><a href="/docs/pi-rpc">Pi RPC</a></li>
+        </ul>
+        <p class="grp">project</p>
+        <ul>
+          <li><a href="/changelog">Changelog</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <article class="doc">
+      <p class="crumb"><a href="/docs/">docs</a> / technical</p>
+      <h1>Technical reference</h1>
+<p>For what harnex is and whether you’d want it, see
+<a href="/">README.md</a>. This document covers commands, patterns,
+and internals.</p>
+
+<h2 id="commands"><a class="anchor" href="#commands">Commands</a></h2>
+
+<h3 id="lanes--ask-delegate-result-reply-land-discard-lanes"><a class="anchor" href="#lanes--ask-delegate-result-reply-land-discard-lanes">Lanes — <code>ask</code>, <code>delegate</code>, <code>result</code>, <code>reply</code>, <code>land</code>, <code>discard</code>, <code>lanes</code></a></h3>
+
+<p>The agent-facing layer. Each verb prints plain text (the worker’s reply, then
+a <code>── NAME:</code> footer with state, model, cost, commits and next commands) and
+shares exit codes: 0 done, 1 failed, 2 usage error, 124 still working.
+Blocking verbs default to <code>--timeout 9m</code>. See <a href="/docs/lanes">docs/lanes.md</a>
+and <code>harnex help &lt;verb&gt;</code>.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex ask <span class="s2">"QUESTION"</span> <span class="o">[</span><span class="nt">--model</span> M] <span class="o">[</span><span class="nt">--write</span><span class="o">]</span> <span class="o">[</span><span class="nt">--fallback-model</span> M]
+harnex delegate <span class="o">[</span><span class="nt">--worktree</span> NAME | <span class="nt">--name</span> NAME] <span class="o">[</span><span class="nt">--no-wait</span><span class="o">]</span> <span class="o">[</span><span class="nt">--model</span> M] <span class="s2">"TASK"</span>
+harnex result <span class="o">[</span>NAME...]
+harnex reply NAME <span class="s2">"MESSAGE"</span> <span class="o">[</span><span class="nt">--model</span> M]
+harnex land <span class="o">[</span>NAME...]
+harnex discard NAME...
+harnex lanes <span class="o">[</span><span class="nt">--all</span><span class="o">]</span> <span class="o">[</span><span class="nt">--closed</span><span class="o">]</span> <span class="o">[</span><span class="nt">--json</span><span class="o">]</span>
+</code></pre></div>
+
+<h3 id="harnex-mcp--the-lane-verbs-as-mcp-tools"><a class="anchor" href="#harnex-mcp--the-lane-verbs-as-mcp-tools"><code>harnex mcp</code> — The lane verbs as MCP tools</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex mcp <span class="nb">install</span> <span class="o">[</span><span class="nt">--claude</span><span class="o">]</span> <span class="o">[</span><span class="nt">--pi</span><span class="o">]</span> <span class="o">[</span><span class="nt">--no-agent</span><span class="o">]</span> <span class="o">[</span><span class="nt">--dry-run</span><span class="o">]</span>
+harnex mcp status
+harnex mcp uninstall
+harnex mcp            <span class="c"># stdio server (what clients run)</span>
+</code></pre></div>
+
+<p>See <a href="/docs/mcp">docs/mcp.md</a>.</p>
+
+<h3 id="harnex-run--start-an-agent"><a class="anchor" href="#harnex-run--start-an-agent"><code>harnex run</code> — Start an agent</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi
+harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13 <span class="nt">--model</span> openai/gpt-5.1
+harnex run pi <span class="nt">--cwd</span> ../wt-13 <span class="nt">--root</span> <span class="nb">.</span> <span class="nt">--</span> <span class="nt">--no-approve</span>
+harnex run claude <span class="nt">--id</span> cl-r-13 <span class="nt">--tmux</span> cl-r-13
+</code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>--id ID</code></td>
+      <td>Name this session (default: random)</td>
+    </tr>
+    <tr>
+      <td><code>--description</code></td>
+      <td>Store a short session description</td>
+    </tr>
+    <tr>
+      <td><code>--detach</code></td>
+      <td>Run in background, no terminal</td>
+    </tr>
+    <tr>
+      <td><code>--tmux [NAME]</code></td>
+      <td>Run in a tmux window you can watch</td>
+    </tr>
+    <tr>
+      <td><code>--host HOST</code></td>
+      <td>Bind a specific API host</td>
+    </tr>
+    <tr>
+      <td><code>--port PORT</code></td>
+      <td>Force a specific API port</td>
+    </tr>
+    <tr>
+      <td><code>--watch</code></td>
+      <td>Enable blocking babysitter mode (foreground only)</td>
+    </tr>
+    <tr>
+      <td><code>--stall-after DUR</code></td>
+      <td>Idle threshold before force-resume (default: <code>480s</code>)</td>
+    </tr>
+    <tr>
+      <td><code>--max-resumes N</code></td>
+      <td>Max forced resumes before escalation (default: <code>1</code>)</td>
+    </tr>
+    <tr>
+      <td><code>--preset NAME</code></td>
+      <td>Watch preset (<code>impl</code>, <code>plan</code>, <code>gate</code>), requires <code>--watch</code></td>
+    </tr>
+    <tr>
+      <td><code>--watch-file PATH</code></td>
+      <td>Auto-send a file-change hook (<code>--watch PATH</code>/<code>--watch=PATH</code> legacy)</td>
+    </tr>
+    <tr>
+      <td><code>--context TXT</code></td>
+      <td>Give the agent a task on startup</td>
+    </tr>
+    <tr>
+      <td><code>--context-file PATH</code></td>
+      <td>Read the startup task from a file (refuses an empty result)</td>
+    </tr>
+    <tr>
+      <td><code>--context-section TXT</code></td>
+      <td>With <code>--context-file</code>, send only the section starting at TXT</td>
+    </tr>
+    <tr>
+      <td><code>--auto-stop</code></td>
+      <td>With <code>--context</code>, stop after accepted task completion</td>
+    </tr>
+    <tr>
+      <td><code>--wait-done</code></td>
+      <td>With <code>--tmux</code>/<code>--detach</code>, block and print the first turn’s result</td>
+    </tr>
+    <tr>
+      <td><code>--wait-timeout DUR</code></td>
+      <td>Cap <code>--wait-done</code>; on 124 the output names a <code>resume</code> command</td>
+    </tr>
+    <tr>
+      <td><code>--model NAME</code></td>
+      <td>Pi model (<code>provider/model</code>), verified over RPC before the prompt</td>
+    </tr>
+    <tr>
+      <td><code>--effort LEVEL</code></td>
+      <td>Pi thinking level, verified over RPC before the prompt</td>
+    </tr>
+    <tr>
+      <td><code>--cwd DIR</code></td>
+      <td>Run the agent from DIR (e.g. a worktree lane)</td>
+    </tr>
+    <tr>
+      <td><code>--root DIR</code></td>
+      <td>Override root attribution without changing the child cwd</td>
+    </tr>
+    <tr>
+      <td><code>--owner-tag TAG</code></td>
+      <td>Own the dispatch as <code>&lt;owner&gt;/TAG</code> for <code>watch --owner --owner-tag</code></td>
+    </tr>
+    <tr>
+      <td><code>--meta JSON</code></td>
+      <td>Attach bounded caller metadata</td>
+    </tr>
+    <tr>
+      <td><code>--phase TEXT</code></td>
+      <td>First-class phase attribution (optionally repo-allowlisted)</td>
+    </tr>
+    <tr>
+      <td><code>--artifact-report PATH</code></td>
+      <td>Override the harness-authored v1 receipt destination</td>
+    </tr>
+    <tr>
+      <td><code>--require-artifact-report</code></td>
+      <td>Compatibility strict flag; default receipt path is sufficient</td>
+    </tr>
+    <tr>
+      <td><code>--timeout SEC</code></td>
+      <td>Wait budget for detached registration</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>A Pi turn is accepted when it settles. With <code>--require-artifact-report</code> it must
+also show structured command/tool activity or a Git delta, or it is rejected as
+<code>completed_no_activity</code>. PTY adapters stop on prompt return. Every transport
+gets a harness-authored observed-state receipt; optional worker claims never
+determine acceptance, and receipt-write failure is fail-closed.</p>
+
+<p><code>--wait-done</code> prints the launch fields plus <code>turn_result</code> (<code>outcome_class</code>,
+<code>model</code>, <code>commits</code>, <code>turn_commits</code>, and <code>final_message</code>, the worker’s last reply)
+and uses the <code>wait --until done</code> exit codes. Pass Pi startup flags after <code>--</code>;
+unattended runs should choose Pi project trust with <code>--approve</code> or <code>--no-approve</code>.</p>
+
+<h3 id="harnex-doctor--preflight-drift-and-retention"><a class="anchor" href="#harnex-doctor--preflight-drift-and-retention"><code>harnex doctor</code> — Preflight, drift, and retention</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex doctor
+harnex doctor <span class="nt">--sweep</span>
+harnex doctor <span class="nt">--prune</span> <span class="nt">--dry-run</span>
+harnex doctor <span class="nt">--prune</span>
+</code></pre></div>
+
+<p>Output is JSON: the Pi RPC prerequisite (Pi &gt;= 0.80.4; <code>--adapter pi|all</code>),
+events/output/receipt retention status, and versioned <code>capabilities</code>. <code>--sweep</code>
+adds read-only live-session/tmux drift diagnostics. <code>--prune --dry-run</code>
+previews age/size-cap deletions; <code>--prune</code> applies them while preserving current
+and live-session files. See <a href="/docs/configuration">docs/configuration.md</a>.</p>
+
+<h3 id="harnex-preflight--prove-an-adapter-end-to-end"><a class="anchor" href="#harnex-preflight--prove-an-adapter-end-to-end"><code>harnex preflight</code> — Prove an adapter end to end</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex preflight pi <span class="nt">--cwd</span> ~/repo <span class="nt">--</span> <span class="nt">--no-approve</span>
+harnex preflight pi <span class="nt">--cwd</span> ~/repo <span class="nt">--commit-check</span> <span class="nt">--model</span> openai/gpt-5.1 <span class="nt">--</span> <span class="nt">--no-approve</span>
+</code></pre></div>
+
+<p>Spends one real model turn (two with <code>--commit-check</code>, which commits in a
+throwaway scratch repo) and prints a JSON verdict: registration, boot,
+permission, task read, workspace write, command exit, receipt, claims,
+completion, and stop. Exits 0 only when every required check passes.</p>
+
+<h3 id="harnex-artifact-report--validate-receipts-and-legacy-proof"><a class="anchor" href="#harnex-artifact-report--validate-receipts-and-legacy-proof"><code>harnex artifact-report</code> — Validate receipts and legacy proof</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex artifact-report init .harnex/reports/worker.json
+harnex artifact-report validate .harnex/reports/worker.json <span class="nt">--final</span>
+</code></pre></div>
+
+<p>Normal runs write their own final receipt, so workers do not call <code>init</code>.
+<code>validate</code> emits bounded machine-readable field diagnostics; <code>--final</code> accepts
+a complete harness receipt whose observed terminal state was accepted. <code>init</code>
+remains for legacy/manual v1 documents, whose older successful-validation
+contract is still supported.</p>
+
+<h3 id="harnex-send--talk-to-a-running-agent"><a class="anchor" href="#harnex-send--talk-to-a-running-agent"><code>harnex send</code> — Talk to a running agent</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex send <span class="nt">--id</span> worker <span class="nt">--message</span> <span class="s2">"implement plan A"</span>
+</code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>--id ID</code></td>
+      <td>Which agent to talk to</td>
+    </tr>
+    <tr>
+      <td><code>--message</code></td>
+      <td>The message text</td>
+    </tr>
+    <tr>
+      <td><code>--wait-for-idle</code></td>
+      <td>Block until agent finishes processing</td>
+    </tr>
+    <tr>
+      <td><code>--wait-done</code></td>
+      <td>Block until the turn settles; print its result</td>
+    </tr>
+    <tr>
+      <td><code>--repo PATH</code></td>
+      <td>Resolve session from a repo root</td>
+    </tr>
+    <tr>
+      <td><code>--cli CLI</code></td>
+      <td>Filter by CLI type</td>
+    </tr>
+    <tr>
+      <td><code>--submit-only</code></td>
+      <td>Just press Enter (PTY adapters only)</td>
+    </tr>
+    <tr>
+      <td><code>--no-submit</code></td>
+      <td>Type without Enter (PTY adapters only)</td>
+    </tr>
+    <tr>
+      <td><code>--force</code></td>
+      <td>Send even if the agent looks busy</td>
+    </tr>
+    <tr>
+      <td><code>--no-wait</code></td>
+      <td>Don’t wait for delivery confirmation</td>
+    </tr>
+    <tr>
+      <td><code>--relay</code></td>
+      <td>Force relay header formatting</td>
+    </tr>
+    <tr>
+      <td><code>--no-relay</code></td>
+      <td>Suppress automatic relay headers</td>
+    </tr>
+    <tr>
+      <td><code>--port</code> / <code>--token</code></td>
+      <td>Send directly to a known API port</td>
+    </tr>
+    <tr>
+      <td><code>--timeout</code></td>
+      <td>Overall wait budget</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>A busy Pi worker takes the message at once as a follow-up
+(<code>delivery: "follow_up"</code>) and runs it when the current turn ends;
+<code>--force</code> steers it into the running turn instead. Other adapters queue
+it until the agent is at a prompt.</p>
+
+<h3 id="harnex-stop--ask-an-agent-to-stop"><a class="anchor" href="#harnex-stop--ask-an-agent-to-stop"><code>harnex stop</code> — Ask an agent to stop</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex stop <span class="nt">--id</span> worker
+harnex stop <span class="nt">--id</span> worker <span class="nt">--timeout</span> 5
+</code></pre></div>
+
+<p>Pi: aborts any running turn over RPC and terminates the
+<code>pi --mode rpc</code> process. PTY adapters get their native exit
+sequence (<code>/exit</code> for Claude, Ctrl+C for OpenCode). Retries
+transient failures for up to the given timeout.</p>
+
+<h3 id="harnex-status--see-running-agents"><a class="anchor" href="#harnex-status--see-running-agents"><code>harnex status</code> — See running agents</a></h3>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>ID       CLI     PID    PORT   AGE  IDLE  STATE   REPO   DESC
+pi-i-13  pi      12345  43123  36s  12s   prompt  ~/...  -
+cl-r-13  claude  12346  43124   8s  -     busy    ~/...  -
+</code></pre></div>
+
+<p>Text mode includes an <code>IDLE</code> column derived from <code>log_idle_s</code> (<code>-</code> means no
+transcript activity yet).</p>
+
+<p>Use <code>--json</code> for full payloads. JSON includes:</p>
+
+<ul>
+  <li><code>log_mtime</code> (ISO8601 or <code>null</code>) — transcript file mtime</li>
+  <li><code>log_idle_s</code> (Integer or <code>null</code>) — seconds since last transcript write</li>
+  <li><code>artifact_report_path</code> — harness-owned final observed-state receipt</li>
+  <li><code>artifact_claims_path</code> — optional bounded worker-claims input</li>
+</ul>
+
+<p>Use <code>--all</code> for all repos.</p>
+
+<h3 id="harnex-wait--wait-for-an-agent-to-finish"><a class="anchor" href="#harnex-wait--wait-for-an-agent-to-finish"><code>harnex wait</code> — Wait for an agent to finish</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex <span class="nb">wait</span> <span class="nt">--id</span> pi-i-13
+harnex <span class="nb">wait</span> <span class="nt">--id</span> pi-i-13 <span class="nt">--until</span> <span class="k">done</span> <span class="nt">--timeout</span> 900
+harnex <span class="nb">wait</span> <span class="nt">--id</span> pi-i-13 <span class="nt">--until</span> <span class="k">done</span> <span class="nt">--after-seq</span> 812 <span class="nt">--timeout</span> 9m
+</code></pre></div>
+
+<p><code>--until done</code> is the work-level fence: 0 accepted, 1 failed, 2 completed but
+proof rejected, 3 no such session, 4 stalled (<code>--stall-after</code>), 124 observer
+timeout (the worker keeps running). <code>--after-seq</code> (from <code>harnex send</code> output)
+waits for the turn that message started, not an earlier result.</p>
+
+<h3 id="harnex-watch--monitor-dispatches"><a class="anchor" href="#harnex-watch--monitor-dispatches"><code>harnex watch</code> — Monitor dispatches</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex watch <span class="nt">--id</span> pi-i-13 <span class="nt">--until</span> <span class="k">done</span> <span class="nt">--max-wait</span> 90m
+harnex watch <span class="nt">--owner</span> <span class="nt">--stall-after</span> 25m
+harnex watch <span class="nt">--owner</span> <span class="nt">--once</span> <span class="nt">--timeout</span> 9m <span class="nt">--owner-tag</span> sub-a
+harnex watch <span class="nt">--owner</span> <span class="nt">--until-idle</span> <span class="nt">--timeout</span> 90m
+</code></pre></div>
+
+<p><code>--id</code> watches one existing <code>--tmux</code>/detached session with the <code>wait --until
+done</code> exit codes and optional <code>--done-marker</code> / <code>--fail-marker</code> files.
+<code>--owner</code> streams one JSON line (<code>harnex.owner_event.v1</code>) per change for every
+dispatch the calling Claude Code or Pi session launched; results carry
+<code>final_message</code>. <code>--once</code> prints what is ready and exits (124 when nothing is
+new); <code>--until-idle</code> keeps printing until no lane is running. <code>--owner-tag</code>
+narrows to lanes launched with <code>run --owner-tag</code>.</p>
+
+<h3 id="harnex-ask--ask-a-pi-worker-one-question"><a class="anchor" href="#harnex-ask--ask-a-pi-worker-one-question"><code>harnex ask</code> — Ask a Pi worker one question</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex ask <span class="s2">"Which module parses the dispatch rows, and is it tested?"</span>
+harnex ask <span class="nt">--model</span> openai/gpt-5.1 <span class="nt">--file</span> /tmp/review.md <span class="nt">--timeout</span> 9m
+</code></pre></div>
+
+<p>Runs a Pi worker in a tmux window with read-only tools, prints its answer on
+stdout, and stops it. <code>--write</code> allows edits and commands; <code>--json</code> prints the
+full result. Exit codes: 0 answered, 1 failed, 2 proof rejected or usage
+error, 124 timeout (the worker keeps running).</p>
+
+<h3 id="harnex-history--list-completed-dispatches"><a class="anchor" href="#harnex-history--list-completed-dispatches"><code>harnex history</code> — List completed dispatches</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex <span class="nb">history
+</span>harnex <span class="nb">history</span> <span class="nt">--json</span> | jq <span class="nb">.</span>
+</code></pre></div>
+
+<p>Reads the canonical v2 stream at <code>&lt;git-root&gt;/.harnex/dispatch.jsonl</code>; use
+<code>--global</code> for <code>~/.local/state/harnex/dispatch.jsonl</code> outside a repo. Each run
+has one <code>dispatch_start</code> plus one rich <code>dispatch_end</code>. That stream is the only
+destination; no flag mirrors the end row into a second file.</p>
+
+<h3 id="harnex-logs--read-session-transcripts"><a class="anchor" href="#harnex-logs--read-session-transcripts"><code>harnex logs</code> — Read session transcripts</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex logs <span class="nt">--id</span> worker <span class="nt">--lines</span> 50
+harnex logs <span class="nt">--id</span> worker <span class="nt">--follow</span>
+</code></pre></div>
+
+<h3 id="harnex-pane--capture-a-tmux-screen-snapshot"><a class="anchor" href="#harnex-pane--capture-a-tmux-screen-snapshot"><code>harnex pane</code> — Capture a tmux screen snapshot</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex pane <span class="nt">--id</span> worker <span class="nt">--lines</span> 40
+harnex pane <span class="nt">--id</span> worker <span class="nt">--follow</span>
+harnex pane <span class="nt">--id</span> worker <span class="nt">--json</span>
+</code></pre></div>
+
+<p>Notes:</p>
+<ul>
+  <li>Works only for tmux-backed sessions</li>
+  <li>Resolves against the live tmux pane target, not just the harnex session ID</li>
+  <li>If a session was started from another worktree, <code>pane</code> can fall back to a
+unique cross-repo ID match; use <code>--repo</code> when the same ID exists in more
+than one repo root</li>
+</ul>
+
+<h2 id="usage-patterns"><a class="anchor" href="#usage-patterns">Usage Patterns</a></h2>
+
+<h3 id="atomic-sendwait"><a class="anchor" href="#atomic-sendwait">Atomic send+wait</a></h3>
+
+<p>Use <code>--wait-for-idle</code> instead of separate send + sleep + wait:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code><span class="c"># Replaces: send → sleep 5 → wait --until prompt</span>
+harnex send <span class="nt">--id</span> pi-i-13 <span class="nt">--message</span> <span class="s2">"implement the plan"</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+</code></pre></div>
+
+<p>With Pi, <code>--wait-done</code> returns the result of the turn the message started.</p>
+
+<h3 id="agents-talking-to-each-other"><a class="anchor" href="#agents-talking-to-each-other">Agents talking to each other</a></h3>
+
+<p>When one harnex agent sends to another, the receiver sees a
+relay header automatically:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>[harnex relay from=claude id=supervisor at=2026-03-14T12:00]
+implement A
+</code></pre></div>
+
+<p>Messages to a busy agent queue (Pi: become follow-ups) and
+auto-deliver when ready.</p>
+
+<h3 id="background-agents"><a class="anchor" href="#background-agents">Background agents</a></h3>
+
+<p><strong>tmux</strong> (observable):</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--tmux</span> pi-i-13
+</code></pre></div>
+
+<p><strong>Headless</strong> (no terminal):</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--detach</span>
+</code></pre></div>
+
+<h3 id="supervisor-pattern"><a class="anchor" href="#supervisor-pattern">Supervisor pattern</a></h3>
+
+<p>One agent manages others, one worktree lane per worker:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-1 <span class="nt">--tmux</span> pi-i-1 <span class="nt">--cwd</span> ~/wt-a <span class="nt">--root</span> ~/repo
+harnex run pi <span class="nt">--id</span> pi-i-2 <span class="nt">--tmux</span> pi-i-2 <span class="nt">--cwd</span> ~/wt-b <span class="nt">--root</span> ~/repo
+
+harnex send <span class="nt">--id</span> pi-i-1 <span class="nt">--message</span> <span class="s2">"implement feature A"</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+harnex send <span class="nt">--id</span> pi-i-2 <span class="nt">--message</span> <span class="s2">"implement feature B"</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 600
+
+harnex run claude <span class="nt">--id</span> cl-r-1 <span class="nt">--tmux</span> cl-r-1
+harnex send <span class="nt">--id</span> cl-r-1 <span class="nt">--message</span> <span class="s2">"review changes"</span> <span class="nt">--wait-for-idle</span> <span class="nt">--timeout</span> 300
+</code></pre></div>
+
+<p>With <code>--context ... --auto-stop</code> on each lane, a Claude Code or Pi supervisor
+can collect every result with <code>harnex watch --owner --until-idle</code>.</p>
+
+<h3 id="context-on-startup"><a class="anchor" href="#context-on-startup">Context on startup</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-1 <span class="nt">--tmux</span> pi-i-1 <span class="nt">--cwd</span> ~/repo/worktree <span class="nt">--root</span> ~/repo <span class="se">\</span>
+  <span class="nt">--context</span> <span class="s2">"Implement the auth feature. Commit when done."</span>
+
+harnex run pi <span class="nt">--id</span> pi-i-1 <span class="nt">--tmux</span> pi-i-1 <span class="se">\</span>
+  <span class="nt">--context-file</span> koder/briefs/1.md <span class="nt">--context-section</span> <span class="s2">"## Task"</span> <span class="se">\</span>
+  <span class="nt">--auto-stop</span> <span class="nt">--wait-done</span> <span class="nt">--wait-timeout</span> 9m
+</code></pre></div>
+
+<h3 id="file-watching"><a class="anchor" href="#file-watching">File watching</a></h3>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex run pi <span class="nt">--id</span> pi-i-13 <span class="nt">--watch-file</span> ./tmp/status.jsonl
+</code></pre></div>
+
+<p>Agent gets notified when the file changes. File doesn’t need to
+exist at startup.</p>
+
+<p>Legacy compatibility: <code>--watch PATH</code> and <code>--watch=PATH</code> still configure
+file-hook mode.</p>
+
+<h2 id="harnex-events"><a class="anchor" href="#harnex-events">harnex events</a></h2>
+
+<p><code>harnex events</code> streams structured per-session JSONL for orchestrators and
+monitoring tooling.</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex events <span class="nt">--id</span> worker
+harnex events <span class="nt">--id</span> worker <span class="nt">--snapshot</span>
+harnex events <span class="nt">--id</span> worker <span class="nt">--from</span> 2026-04-29T10:00:00Z
+harnex events <span class="nt">--id</span> worker | jq <span class="nt">-c</span> <span class="s1">'.'</span>
+</code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>--id ID</code></td>
+      <td>Session ID to inspect (required)</td>
+    </tr>
+    <tr>
+      <td><code>--[no-]follow</code></td>
+      <td>Stream appended events (default: follow)</td>
+    </tr>
+    <tr>
+      <td><code>--snapshot</code></td>
+      <td>Print current event file and exit (<code>--no-follow</code>)</td>
+    </tr>
+    <tr>
+      <td><code>--from TS</code></td>
+      <td>Replay floor (ISO-8601, inclusive; <code>ts &gt;= from</code>)</td>
+    </tr>
+    <tr>
+      <td><code>--repo PATH</code></td>
+      <td>Resolve ID from a specific repo root</td>
+    </tr>
+    <tr>
+      <td><code>--cli CLI</code></td>
+      <td>Filter active-session resolution by CLI</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Exit codes:</p>
+
+<ul>
+  <li><code>0</code> — snapshot completed, or follow mode observed <code>type: "exited"</code></li>
+  <li><code>1</code> — operational error (missing stream/session, invalid <code>--from</code>,
+stream truncated/disappeared, lookup failure)</li>
+</ul>
+
+<p>Transport file (append-only JSONL):</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>~/.local/state/harnex/events/&lt;repo_hash&gt;--&lt;id&gt;.jsonl
+</code></pre></div>
+
+<p>Each row uses schema v1 with envelope fields <code>schema_version</code>, <code>seq</code>, <code>ts</code>,
+<code>id</code>, and <code>type</code>. Lifecycle, send, usage, git, summary, attempt, completion,
+and adapter-specific events are additive; consumers must ignore unknown event
+types. <code>send.msg</code> is a 200-character preview with <code>msg_truncated</code> when shortened.</p>
+
+<p>Schema details and compatibility guarantees are in <a href="/docs/events">docs/events.md</a>.</p>
+
+<h2 id="architecture"><a class="anchor" href="#architecture">Architecture</a></h2>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code> bin/harnex
+   │
+   └── lib/harnex.rb (loader)
+         │
+         ├── CLI          dispatch: run / send / status / wait / stop
+         ├── Runner        spawn sessions (foreground/detach/tmux)
+         ├── Sender        resolve target, inject text
+         ├── Status        list live sessions
+         ├── Waiter        block until session exits
+         ├── Stopper       send stop sequence
+         │
+         ├── Session       PTY or Pi RPC lifecycle, HTTP server, registry
+         ├── SessionState  state machine (prompt/busy/blocked)
+         ├── Inbox         per-session message queue
+         ├── Message       queued message struct
+         │
+         ├── FileChangeHook   inotify file watcher
+         └── LinuxInotify     raw inotify via Fiddle
+
+ lib/harnex/adapters.rb   registry: claude, opencode, pi; anything else → generic
+ lib/harnex/adapters/
+   ├── base.rb      adapter interface (PTY transport by default)
+   ├── claude.rb    Claude Code PTY behavior
+   ├── generic.rb   PTY fallback for any CLI
+   ├── opencode.rb  OpenCode PTY behavior
+   └── pi.rb        Pi JSONL RPC adapter (`pi --mode rpc`, default worker)
+</code></pre></div>
+
+<h2 id="lanes-and-mcp"><a class="anchor" href="#lanes-and-mcp">Lanes and MCP</a></h2>
+
+<p>Lanes sit on top of sessions; they add a record, git plumbing and text output,
+not a new runtime.</p>
+
+<ul>
+  <li><strong>Records</strong> (<code>lib/harnex/lanes.rb</code>) live in <code>STATE_DIR/lanes/&lt;repo_key&gt;--&lt;name&gt;.json</code>:
+kind (<code>ask</code>/<code>delegate</code>), main-checkout root, run root, cwd, worktree, branch,
+base sha, owner (<code>CLAUDE_CODE_SESSION_ID</code>/<code>PI_SESSION_ID</code>), requested model,
+Pi <code>agent_session_id</code>, accumulated cost, launch time and the last turn’s result.
+States: <code>running</code> (a turn is out and uncollected), <code>done</code>, <code>failed</code>, <code>landed</code>,
+<code>discarded</code>.</li>
+  <li><strong>Launching:</strong> the verbs shell out to the low-level CLI. <code>delegate</code> runs
+<code>harnex run pi --id NAME --tmux NAME --cwd WORKDIR --root ROOT --auto-stop</code>
+with a brief file (<code>--context-file</code>); with <code>--wait-done</code> it blocks on the
+first result. <code>result</code> runs <code>harnex wait --until done --since LAUNCHED_AT</code>
+(each relaunch restarts the events-log <code>seq</code>, so <code>--since</code> keeps an earlier
+launch’s result from matching) plus <code>--after-seq</code> for a follow-up sent to a
+live lane.</li>
+  <li><strong>Follow-ups:</strong> <code>reply</code> sends to a live worker (<code>harnex send --wait-done</code>);
+a finished lane is relaunched under the same id with `– –session
+    <agent_session_id>`, so Pi resumes the conversation.
+</agent_session_id>
+  </li>
+  <li><strong>Settling:</strong> after a turn, the lane reads the launch’s <code>usage</code> event (cost,
+<code>agent_session_id</code>) and records the result; the footer adds commits and a
+diffstat from git (<code>base_sha..HEAD</code>).</li>
+  <li><strong>Worktrees:</strong> <code>.harnex/worktrees/NAME</code> on branch <code>harnex/NAME</code>; <code>.harnex/</code>
+is added to <code>&lt;git-common-dir&gt;/info/exclude</code> on the first write.
+<code>land</code> merges with <code>git merge --no-edit</code>, leaves conflicts in progress, and
+removes the worktree and branch; lanes merged by hand are swept on the next
+call.</li>
+  <li><strong>Progress:</strong> the Pi activity tracker records the current tool name and the
+per-turn tool count (never arguments); <code>lanes</code> and MCP progress read them from
+the session’s <code>GET /status</code>.</li>
+  <li><strong>MCP</strong> (<code>lib/harnex/mcp.rb</code>): newline-delimited JSON-RPC 2.0 over stdio.
+Each <code>tools/call</code> runs in its own thread and spawns the CLI verb in its own
+process group (a cancel kills the wait, never the worker); stdout writes are
+serialized; progress notifications go out every 15s when the call carries a
+<code>progressToken</code>.</li>
+  <li><strong>Worker guard:</strong> the Pi adapter adds <code>--exclude-tools mcp__harnex__…</code> to
+every worker (Pi &gt;= 0.99) and <code>--no-mcp</code> when a <code>--tools</code> allowlist is set
+(Pi &gt;= 1.0.4), so workers cannot start workers.</li>
+</ul>
+
+<h2 id="session-lifecycle"><a class="anchor" href="#session-lifecycle">Session Lifecycle</a></h2>
+
+<p>Foreground execution is the default operating mode for a human directly using
+<code>harnex run</code>. For agent-to-agent delegation, a visible tmux session is the
+preferred interactive mode because it keeps the peer’s work observable.</p>
+
+<p>Headless/background execution (<code>--detach</code>) should still be treated as opt-in.</p>
+
+<p>When you run <code>harnex run pi --id pi-i-13</code>:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code> 1. Parse wrapper options, build adapter
+ 2. Validate the target binary before spawn (Pi: version &gt;= 0.80.4)
+ 3. Spawn the agent: Pi as `pi --mode rpc` over stdio pipes;
+      other CLIs under a PTY (pseudoterminal)
+ 4. Generate a random bearer token for API auth
+ 5. Pick a port:
+      hash(repo_root + id) % port_span + base_port
+      walk forward until a free port is found
+ 6. Start HTTP server on 127.0.0.1:&lt;port&gt;
+ 7. Opportunistically enforce configured age/size retention for events/output/receipts,
+      preserving current and live-session files; then write registry file:
+      ~/.local/state/harnex/sessions/&lt;repo_hash&gt;--&lt;id&gt;.json
+      and open transcript file:
+      ~/.local/state/harnex/output/&lt;repo_hash&gt;--&lt;id&gt;.log
+      and open events file:
+      ~/.local/state/harnex/events/&lt;repo_hash&gt;--&lt;id&gt;.jsonl
+ 8. Start background threads:
+      - PTY reader (screen buffer) or Pi JSONL reader (RPC events)
+      - State machine (adapter parses screen, or Pi events, for state)
+      - Inbox delivery (queue -&gt; inject when prompt)
+      - File watcher (if --watch-file was given)
+ 9. PTY: relay terminal I/O between user and agent;
+      Pi: send the --context prompt and print a synthesized transcript
+10. On exit: clean up registry, write exit status
+</code></pre></div>
+
+<h2 id="pty-and-screen-parsing"><a class="anchor" href="#pty-and-screen-parsing">PTY and Screen Parsing</a></h2>
+
+<p>Harnex spawns the agent inside a pseudoterminal (PTY). This
+preserves the agent’s full terminal UI while letting harnex:</p>
+
+<ul>
+  <li>Read screen output into a ring buffer</li>
+  <li>Feed the buffer to the adapter for state detection</li>
+  <li>Inject text by writing to the PTY input</li>
+</ul>
+
+<p>The screen text includes raw terminal escape sequences. The
+adapter’s <code>normalized_screen_text</code> strips ANSI and OSC codes
+before parsing.</p>
+
+<p>Pi does not run under a PTY: its adapter speaks JSONL over stdio
+and takes state from RPC events (see the Pi adapter below).</p>
+
+<h2 id="adapter-contract"><a class="anchor" href="#adapter-contract">Adapter Contract</a></h2>
+
+<p>Each adapter in <code>lib/harnex/adapters/</code> implements:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>base_command</code></td>
+      <td>CLI args to launch the agent</td>
+    </tr>
+    <tr>
+      <td><code>input_state(screen)</code></td>
+      <td>Parse screen -&gt; state hash</td>
+    </tr>
+    <tr>
+      <td><code>build_send_payload(...)</code></td>
+      <td>Build injection with submit</td>
+    </tr>
+    <tr>
+      <td><code>inject_exit(writer)</code></td>
+      <td>Send adapter-specific stop text</td>
+    </tr>
+    <tr>
+      <td><code>infer_repo_path(argv)</code></td>
+      <td>Extract repo path from CLI args</td>
+    </tr>
+    <tr>
+      <td><code>wait_for_sendable(...)</code></td>
+      <td>Wait strategy before sending</td>
+    </tr>
+    <tr>
+      <td><code>transport</code></td>
+      <td><code>:pty</code> (PTY) or <code>:stdio_jsonl_rpc</code> (JSONL RPC)</td>
+    </tr>
+    <tr>
+      <td><code>validate_runtime!</code></td>
+      <td>Optional version gate (Pi &gt;= 0.80.4)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="input-states"><a class="anchor" href="#input-states">Input States</a></h3>
+
+<p>PTY adapters read the screen and return a state hash; Pi reports
+<code>prompt</code>, <code>busy</code>, or <code>disconnected</code> from RPC events:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>State</th>
+      <th><code>input_ready</code></th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>prompt</code></td>
+      <td><code>true</code></td>
+      <td>Ready for input</td>
+    </tr>
+    <tr>
+      <td><code>busy</code></td>
+      <td><code>false</code></td>
+      <td>Pi turn in progress</td>
+    </tr>
+    <tr>
+      <td><code>workspace-trust-prompt</code></td>
+      <td><code>false</code></td>
+      <td>Needs Enter to confirm</td>
+    </tr>
+    <tr>
+      <td><code>confirmation</code></td>
+      <td><code>false</code></td>
+      <td>Modal confirmation</td>
+    </tr>
+    <tr>
+      <td><code>unknown</code></td>
+      <td><code>nil</code></td>
+      <td>Can’t determine</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="pi-adapter-default--jsonl-rpc"><a class="anchor" href="#pi-adapter-default--jsonl-rpc">Pi Adapter (default — JSONL RPC)</a></h3>
+
+<ul>
+  <li><code>transport :stdio_jsonl_rpc</code> launches <code>pi --mode rpc</code> and speaks Pi’s
+strict LF-delimited JSONL protocol. It is not JSON-RPC 2.0.</li>
+  <li>Requires Pi &gt;= 0.80.4 and fails before spawn when the installed version
+cannot provide the final <code>agent_settled</code> fence. Verify with
+<code>harnex doctor --adapter pi</code>.</li>
+  <li><code>agent_end</code> remains busy because retry, compaction recovery, or a queued
+continuation may follow. <code>agent_settled</code> inspects the authoritative final
+assistant <code>stopReason</code>: <code>stop</code> completes; <code>error</code>, <code>aborted</code>, <code>length</code>, a
+missing reason, or an unknown reason fails closed.</li>
+  <li>Pi &gt;= 0.84 emits delta-only <code>message_update</code> events. Harnex correlates those
+deltas with <code>message_start</code> / <code>message_end</code> and does not depend on the removed
+cumulative message snapshot.</li>
+  <li>Harnex <code>--model</code> and <code>--effort</code> become Pi <code>--model</code> / <code>--thinking</code>
+startup flags and are verified with <code>get_state</code>; a model mismatch or clamped
+effort is rejected before prompting without persisting an RPC model switch
+into Pi’s user defaults.</li>
+  <li>Busy sends become Pi follow-ups (<code>streamingBehavior=followUp</code>), delivered
+when the current turn ends; forced busy sends use <code>streamingBehavior=steer</code>.</li>
+  <li><code>task_complete</code> carries <code>final_message</code> (the last assistant reply, up to
+4,000 characters, full text at <code>final_message_path</code>).</li>
+  <li><code>--tmux</code> shows Harnex’s synthesized RPC transcript, not Pi’s native TUI.</li>
+  <li>RPC requests have a 30-second response bound. Stderr is continuously drained
+into a bounded diagnostic tail, and subprocess status comes from Open3’s wait
+thread instead of racing it with another <code>waitpid</code>.</li>
+  <li>See <code>docs/pi-rpc.md</code> for trust policy, telemetry, and compatibility details.</li>
+</ul>
+
+<h3 id="claude-adapter"><a class="anchor" href="#claude-adapter">Claude Adapter</a></h3>
+
+<ul>
+  <li>Detects workspace trust prompt (“Quick safety check”)</li>
+  <li>Allows <code>--submit-only</code> to clear the trust prompt</li>
+  <li>Detects prompt via <code>--INSERT--</code> marker or <code>›</code> prefix</li>
+  <li>Multi-step submit: types text, then sends Enter after a
+short delay so pasted prompts are actually submitted</li>
+</ul>
+
+<h3 id="opencode-adapter"><a class="anchor" href="#opencode-adapter">OpenCode Adapter</a></h3>
+
+<ul>
+  <li>Uses optimistic PTY prompt detection to avoid inbox deadlock
+when OpenCode’s alternate-screen TUI omits stable plain-text
+prompt markers in snapshots.</li>
+  <li>Stop sequence sends a double Ctrl+C to match OpenCode’s native
+terminal shutdown path (interrupt first, force-quit second if
+needed).</li>
+  <li>Multi-step submit mirrors Claude’s PTY behavior: text first,
+then Enter with a short delay.</li>
+</ul>
+
+<h2 id="state-machine"><a class="anchor" href="#state-machine">State Machine</a></h2>
+
+<p><code>SessionState</code> tracks the agent’s readiness:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>                  ┌──────────┐
+       ┌─────────│  unknown  │──────────┐
+       │         └──────────┘           │
+       ▼                                ▼
+ ┌──────────┐    screen change    ┌──────────┐
+ │  prompt   │ &lt;───────────────── │   busy   │
+ │           │ ────────────────&gt;  │          │
+ └──────────┘    screen change    └──────────┘
+       │                                │
+       ▼                                ▼
+ ┌──────────┐                    ┌──────────┐
+ │ blocked  │                    │ blocked  │
+ └──────────┘                    └──────────┘
+</code></pre></div>
+
+<ul>
+  <li>Uses a Mutex + ConditionVariable for thread-safe access</li>
+  <li><code>wait_for_prompt(timeout)</code> blocks until state == <code>:prompt</code></li>
+  <li>State is updated by the PTY reader thread calling the
+adapter’s <code>input_state</code> on each screen change; for Pi, by
+RPC lifecycle events (<code>agent_start</code> busy, <code>agent_settled</code> prompt)</li>
+</ul>
+
+<h2 id="inbox-and-message-queue"><a class="anchor" href="#inbox-and-message-queue">Inbox and Message Queue</a></h2>
+
+<p>Each session has an <code>Inbox</code> with a background delivery thread:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code> harnex send ──&gt; POST /send ──&gt; Inbox#enqueue
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │                             │
+              prompt + empty queue?          otherwise
+                    │                             │
+              deliver_now()              push to @queue
+              return 200                 return 202
+                                              │
+                                    delivery_loop thread
+                                    wait_for_prompt()
+                                    deliver_now()
+</code></pre></div>
+
+<h3 id="message-lifecycle"><a class="anchor" href="#message-lifecycle">Message Lifecycle</a></h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>queued</code></td>
+      <td>In the queue, waiting for delivery</td>
+    </tr>
+    <tr>
+      <td><code>delivered</code></td>
+      <td>Injected into agent’s terminal</td>
+    </tr>
+    <tr>
+      <td><code>failed</code></td>
+      <td>Injection raised an error</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Poll status with <code>GET /messages/:id</code>.</p>
+
+<p>A send to a busy Pi worker skips the queue: it is handed to Pi at once
+as a follow-up (<code>delivery: "follow_up"</code>), so it cannot expire.</p>
+
+<h2 id="http-api"><a class="anchor" href="#http-api">HTTP API</a></h2>
+
+<p>All endpoints are on <code>127.0.0.1:&lt;port&gt;</code>. Every request needs
+the bearer token from the registry file.</p>
+
+<h3 id="get-status"><a class="anchor" href="#get-status"><code>GET /status</code></a></h3>
+
+<p>Returns JSON:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"ok"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc123"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"repo_root"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/path/to/repo"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"cli"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pi"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pi-i-13"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"implement auth module"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">12345</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"127.0.0.1"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"port"</span><span class="p">:</span><span class="w"> </span><span class="mi">43123</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"command"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"pi"</span><span class="p">,</span><span class="w"> </span><span class="s2">"--mode"</span><span class="p">,</span><span class="w"> </span><span class="s2">"rpc"</span><span class="p">],</span><span class="w">
+  </span><span class="nl">"started_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-03-13T20:45:00Z"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"last_injected_at"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"injected_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"input_state"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"prompt"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"input_ready"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="nl">"agent_state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"prompt"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"inbox"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"pending"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"delivered_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<h3 id="post-send"><a class="anchor" href="#post-send"><code>POST /send</code></a></h3>
+
+<p>Send JSON body:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"implement plan A"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"submit"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"enter_only"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"force"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<ul>
+  <li><strong>200</strong> with <code>"status": "delivered"</code> — sent immediately</li>
+  <li><strong>202</strong> with <code>"status": "queued"</code> and <code>message_id</code> — agent
+is busy, message will auto-deliver</li>
+  <li><strong>400</strong> — missing text or bad request</li>
+  <li><strong>409</strong> — agent not ready (use <code>--force</code> to override)</li>
+  <li><strong>503</strong> — inbox is full</li>
+</ul>
+
+<h3 id="post-stop"><a class="anchor" href="#post-stop"><code>POST /stop</code></a></h3>
+
+<p>Tells the session adapter to inject its stop sequence.
+The <code>harnex stop</code> CLI retries transient API failures for up
+to its <code>--timeout</code> budget before returning exit code 124.</p>
+
+<h3 id="get-messagesid"><a class="anchor" href="#get-messagesid"><code>GET /messages/:id</code></a></h3>
+
+<p>Check delivery status of a queued message.</p>
+
+<h3 id="get-health"><a class="anchor" href="#get-health"><code>GET /health</code></a></h3>
+
+<p>Alias for <code>/status</code>.</p>
+
+<h2 id="session-registry"><a class="anchor" href="#session-registry">Session Registry</a></h2>
+
+<p>Registry files at <code>~/.local/state/harnex/sessions/</code>:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>&lt;repo_hash&gt;--&lt;normalized_id&gt;.json
+</code></pre></div>
+
+<p>The repo hash is a hex digest of the git root path. The ID is
+normalized: lowercased, non-alphanumeric chars replaced with
+dashes, leading/trailing dashes stripped.</p>
+
+<p>Contents: port, PID, token, CLI, repo root, timestamps,
+injection counters, agent state, inbox stats.</p>
+
+<p>Cleaned up on normal exit. Stale files (dead PID) are ignored
+during lookups.</p>
+
+<h2 id="exit-status"><a class="anchor" href="#exit-status">Exit Status</a></h2>
+
+<p>When a session exits, harnex writes:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>~/.local/state/harnex/exits/&lt;repo_hash&gt;--&lt;normalized_id&gt;.json
+</code></pre></div>
+
+<p>This lets <code>harnex wait</code> return exit info even if the session
+registry entry is already gone.</p>
+
+<h2 id="output-transcript"><a class="anchor" href="#output-transcript">Output Transcript</a></h2>
+
+<p>Every session also writes a repo-keyed transcript:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>~/.local/state/harnex/output/&lt;repo_hash&gt;--&lt;normalized_id&gt;.log
+</code></pre></div>
+
+<ul>
+  <li>PTY output is appended as bytes are read; Pi sessions append
+the synthesized RPC transcript</li>
+  <li>The transcript is opened in append mode, so reusing an ID
+does not wipe prior output</li>
+  <li><code>output_log_path</code> is exposed via <code>status --json</code> and
+detached <code>run</code> responses</li>
+  <li>The transcript is the source of truth for the planned
+<code>harnex logs</code> operator interface</li>
+</ul>
+
+<h2 id="relay-headers"><a class="anchor" href="#relay-headers">Relay Headers</a></h2>
+
+<p>When <code>harnex send</code> detects it is running inside a harnex
+session (via <code>HARNEX_SESSION_ID</code> env) and the target is a
+different session, it prepends:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>[harnex relay from=&lt;cli&gt; id=&lt;sender_id&gt; at=&lt;timestamp&gt;]
+</code></pre></div>
+
+<p>Control with <code>--relay</code> (force) or <code>--no-relay</code> (suppress).</p>
+
+<p>Already-wrapped messages (starting with <code>[harnex relay</code>) are
+not double-wrapped.</p>
+
+<h2 id="file-watching-1"><a class="anchor" href="#file-watching-1">File Watching</a></h2>
+
+<p><code>--watch PATH</code> creates a <code>FileChangeHook</code> using Linux inotify
+(via Fiddle, no gem needed).</p>
+
+<ul>
+  <li>Watches the file’s parent directory for write/create events</li>
+  <li>1 second debounce: waits for quiet time before triggering</li>
+  <li>Injects <code>file-change-hook: read &lt;path&gt;</code> when triggered</li>
+  <li>Creates the parent directory if needed</li>
+  <li>File does not need to exist at startup</li>
+</ul>
+
+<h2 id="port-selection"><a class="anchor" href="#port-selection">Port Selection</a></h2>
+
+<p>Ports are deterministic to keep things predictable:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>hash = Digest::SHA256.hexdigest(repo_root + id)
+start = (hash[0..7].to_i(16) % port_span) + base_port
+</code></pre></div>
+
+<p>Then walks forward from <code>start</code> until a free port is found.</p>
+
+<p>Defaults: base <code>43000</code>, span <code>4000</code> (range 43000–46999).</p>
+
+<h2 id="concurrency"><a class="anchor" href="#concurrency">Concurrency</a></h2>
+
+<p>Harnex uses Ruby threads, not processes:</p>
+
+<ul>
+  <li><strong>PTY reader</strong> — reads agent output into screen buffer
+(Pi: <strong>JSONL reader</strong> for RPC events, plus a stderr drain)</li>
+  <li><strong>State poller</strong> — feeds screen to adapter for state</li>
+  <li><strong>Inbox delivery</strong> — dequeues messages when prompt detected</li>
+  <li><strong>HTTP server</strong> — one thread per connection</li>
+  <li><strong>File watcher</strong> — inotify read loop (if enabled)</li>
+</ul>
+
+<p>All shared state is protected by <code>Mutex</code>. The <code>SessionState</code>
+and <code>Inbox</code> classes use <code>ConditionVariable</code> for signaling.</p>
+
+<h2 id="agent-guides"><a class="anchor" href="#agent-guides">Agent Guides</a></h2>
+
+<p>Harnex ships agent-facing guidance as Markdown files packaged inside the gem:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>guides/01_dispatch.md
+guides/02_chain.md
+guides/03_buddy.md
+guides/04_monitoring.md
+guides/05_naming.md
+guides/06_claude.md
+</code></pre></div>
+
+<p>The files are exposed through the CLI:</p>
+
+<div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex agents-guide
+harnex agents-guide dispatch
+harnex agents-guide monitoring
+harnex agents-guide claude
+</code></pre></div>
+
+<h3 id="whats-in-the-guides"><a class="anchor" href="#whats-in-the-guides">What’s in the guides</a></h3>
+
+<p>The agent guides cover:</p>
+
+<ul>
+  <li>Detecting harnex session context through environment variables</li>
+  <li>Defining return channels before delegation</li>
+  <li>Short prompts that reference task files</li>
+  <li>Relay header behavior for harnex-to-harnex messages</li>
+  <li>Fire and Watch dispatch lifecycle</li>
+  <li>Chain implementation phase gates</li>
+  <li>Buddy monitoring for unattended work</li>
+  <li>Completion signals, event/log/pane monitoring, and wall-clock caps</li>
+  <li>Session ID, task file, and done marker naming conventions</li>
+  <li>Claude Code sessions and subagents using Pi workers as tools</li>
+</ul>
+
+<p>Older releases shipped <code>harnex skills install</code>; that installer was removed in
+0.6.1. Agents now discover harnex directly with <code>harnex --help</code> and
+<code>harnex agents-guide</code>.</p>
+
+<h2 id="known-limitations"><a class="anchor" href="#known-limitations">Known Limitations</a></h2>
+
+<ul>
+  <li>PTY prompt detection is heuristic-based. It works well
+but can misread unusual screen output. Pi state comes from
+RPC events, not the screen.</li>
+  <li>No read-only HTTP output endpoint for local dashboards (use
+<code>harnex pane --follow</code> or <code>harnex logs --follow</code> instead).</li>
+  <li>File watching: inotify on Linux, stat-polling fallback on
+macOS/other (works everywhere, inotify is just faster).</li>
+  <li>The HTTP server is a simple socket server, not a full
+framework. One thread per connection, no keep-alive.</li>
+</ul>
+
+<h2 id="dependencies"><a class="anchor" href="#dependencies">Dependencies</a></h2>
+
+<ul>
+  <li>Ruby 3.x standard library only</li>
+  <li>No gems required</li>
+  <li>Uses: <code>io/console</code>, <code>pty</code>, <code>open3</code>, <code>socket</code>, <code>json</code>, <code>net/http</code>,
+<code>digest</code>, <code>fileutils</code>, <code>shellwords</code>, <code>fiddle</code> (for inotify)</li>
+</ul>
+      <p class="edit">source: <a href="https://github.com/jikkuatwork/harnex/blob/main/TECHNICAL.md" rel="noopener">TECHNICAL.md</a> · <a href="/docs/technical.md">raw markdown</a></p>
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="/docs/cli">← CLI reference</a>
+        <a class="next" href="/docs/configuration">Configuration →</a>
+      </nav>
+    </article>
+  </div>
+</div>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <a class="holm" href="https://holmhq.com" rel="noopener"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M4.667 0h22.666A4.667 4.667 0 0 1 32 4.667v22.666A4.667 4.667 0 0 1 27.333 32H4.667A4.667 4.667 0 0 1 0 27.333V4.667A4.667 4.667 0 0 1 4.667 0Z"/><path fill="var(--bg)" d="M6.75 16h18.5c.414 0 .75.336.75.75v10.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v4.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-10.5c0-.414.336-.75.75-.75Zm0-12h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Zm14 0h4.5c.414 0 .75.336.75.75v7.5c0 .414-.336.75-.75.75h-4.5a.75.75 0 0 1-.75-.75v-7.5c0-.414.336-.75.75-.75Z"/></svg><span>A Holm app</span></a>
+    <span class="links">
+      <a href="https://github.com/jikkuatwork/harnex" rel="noopener">source</a>
+      <a href="https://rubygems.org/gems/harnex" rel="noopener">rubygems</a>
+      <a href="/changelog">changelog</a>
+      <a href="/llms.txt">llms.txt</a>
+      <a id="analytics" href="#" hidden>analytics</a>
+    </span>
+    <span>MIT · harnex 0.29.0</span>
+  </div>
+</footer>
+<script src="/assets/site.js?v=cefc697d77" defer></script>
+<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+</body>
+</html>
