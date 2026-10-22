@@ -161,3 +161,14 @@ Friction found:
 Bar revision: call budgets are measured against the minimal path. S3 is 3
 delegates + 1 result + up to 3 lands (landing one by one with checks
 between is good practice); S5 is delegate + reply + land.
+- **0.25.0:** workers never get harnex MCP tools (a read-only ask worker had
+  delegated a writable lane). Round r4: 28/28 pass, 0 leftovers; one harnex
+  usage error (`land {}`).
+  - Interactive Claude Code verified: an MCP `delegate` call auto-backgrounded
+    and Claude was notified on completion.
+  - The headless S4 failure was `claude -p`'s 10-minute background ceiling;
+    the evals lift it.
+- **0.26.0:** bare `land`; doctor `integrations`. Round A (r5): 27/28; fixes
+  in 0.27.0 (MCP argument synonyms; the `gpt` agent names `harnex lanes`).
+- **0.27.0:** rounds B and C must both meet the bar (r6, r7).
+
