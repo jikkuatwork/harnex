@@ -1,12 +1,19 @@
 # Harnex State
 
-Updated: 2026-10-22 | 05:46 PM | IST
+Updated: 2026-10-22 | 06:25 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
+- **0.29.0, the agent release, is installed locally, with docs and a
+  website.**
+  - Docs: lanes, MCP, coding agents, upgrading.
+  - The `gpt` agent ships in the gem.
+  - https://harnex.zyt.app is a Holm app built from the docs by
+    `site/build.rb` (app `holm_app_wQ4TB6JUhrTZ` on peer `zyt`).
+  - Record: `koder/releases/0.29.0.md`.
 - **#87 agent smoothness: done on 0.28.0 (installed locally).**
   - Two consecutive full eval rounds were clean on the same build: 28/28
     pass, no harnex-caused errors, no doc lookups, no leftovers. They
@@ -42,6 +49,14 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
+0. **Owner's go-ahead pending:**
+   - push `main` and tag `v0.29.0` to GitHub;
+   - publish the kept `harnex-0.29.0.gem` (SHA-256 in the release record)
+     with `bin/gem-push`. The 2FA secret is in the backup
+     `~/scrap/harnex/.env`; copy it to the repo `.env`, which git ignores.
+     The API key is in the environment;
+   - set the app CSP `security.csp.frame_src https://feedback.zyt.app` so
+     the feedback panel can open.
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).
 2. **Eval follow-ups:**
