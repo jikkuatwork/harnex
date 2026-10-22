@@ -14,8 +14,8 @@
 <meta property="og:url" content="https://harnex.zyt.app/docs/telemetry">
 <link rel="alternate" type="text/markdown" href="/docs/telemetry.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
-<script src="/assets/theme.js?v=cefc697d77"></script>
+<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
+<script src="/assets/theme.js?v=d0dcc6d600"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -112,13 +112,13 @@ alongside the work it describes.</p>
 
 <h2 id="cli-flags"><a class="anchor" href="#cli-flags">CLI flags</a></h2>
 
-<pre><code class="language-text">harnex run pi --meta '{"model":"openai/gpt-5.1","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>harnex run pi --meta '{"model":"openai/gpt-5.1","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
 harnex run pi --context 'Implement the task; Harnex writes the final receipt'
 harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
 harnex run pi --orchestration-run-id queue-005 --orchestration-generation-id gen-1 --orchestration-role worker
 harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
-</code></pre>
+</code></pre></div>
 
 <ul>
   <li><code>--meta JSON</code> must be a JSON object. The parsed object is echoed verbatim on
@@ -205,9 +205,9 @@ only <code>--apply</code> appends missing rich end rows, and then only after the
 stream and all source candidates have been parsed and conflict-checked. Apply
 uses one append lock, rechecks under that lock, and is idempotent.</p>
 
-<pre><code class="language-text">harnex telemetry assert-canonical [--canonical PATH | --global] [--source PATH ...] [--json]
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>harnex telemetry assert-canonical [--canonical PATH | --global] [--source PATH ...] [--json]
 harnex telemetry reconcile [--canonical PATH | --global] --source PATH [--source PATH ...] [--apply] [--json]
-</code></pre>
+</code></pre></div>
 
 <p>The default canonical path is the repo-local <code>.harnex/dispatch.jsonl</code>, or the
 global dispatch stream outside a git repo. <code>--canonical</code> and <code>--global</code> are
@@ -766,7 +766,7 @@ work verdict. Repo phase allowlists and runtime-log retention are documented in
     <span>MIT · harnex 0.29.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=cefc697d77" defer></script>
-<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=d0dcc6d600" defer></script>
+<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

@@ -122,8 +122,9 @@ def markdown_to_html(markdown, source)
     %(<div class="codeblock"><div class="head"><span>#{label}</span></div>#{Regexp.last_match(2)}</div>)
   end
   # Fences without a language come out bare; give them the same frame.
-  html = html.gsub(%r{(?<!<div class="head"><span>text</span></div>)<pre><code>(.*?)</code></pre>}m) do
-    %(<div class="codeblock"><div class="head"><span>text</span></div><pre><code>#{Regexp.last_match(1)}</code></pre></div>)
+  html = html.gsub(%r{<pre><code(?: class="language-([\w+-]+)")?>(.*?)</code></pre>}m) do
+    label = Regexp.last_match(1) || "text"
+    %(<div class="codeblock"><div class="head"><span>#{label}</span></div><pre><code>#{Regexp.last_match(2)}</code></pre></div>)
   end
   # Headings become links to themselves.
   html.gsub(%r{<(h[23]) id="([^"]+)">(.*?)</\1>}m) { %(<#{Regexp.last_match(1)} id="#{Regexp.last_match(2)}"><a class="anchor" href="##{Regexp.last_match(2)}">#{Regexp.last_match(3)}</a></#{Regexp.last_match(1)}>) }

@@ -14,8 +14,8 @@
 <meta property="og:url" content="https://harnex.zyt.app/docs/events">
 <link rel="alternate" type="text/markdown" href="/docs/events.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
-<script src="/assets/theme.js?v=cefc697d77"></script>
+<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
+<script src="/assets/theme.js?v=d0dcc6d600"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -79,9 +79,9 @@ or preset logic.</p>
 
 <h2 id="2-cli-usage"><a class="anchor" href="#2-cli-usage">2. CLI usage</a></h2>
 
-<pre><code class="language-text">harnex events --id ID [--repo PATH] [--cli CLI] [--from ISO8601]
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>harnex events --id ID [--repo PATH] [--cli CLI] [--from ISO8601]
 harnex events --id ID --snapshot
-</code></pre>
+</code></pre></div>
 
 <ul>
   <li><code>--id ID</code> is required.</li>
@@ -96,8 +96,8 @@ harnex events --id ID --snapshot
 
 <p>Events are append-only JSONL rows at:</p>
 
-<pre><code class="language-text">~/.local/state/harnex/events/&lt;repo_key&gt;--&lt;id_key&gt;.jsonl
-</code></pre>
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>~/.local/state/harnex/events/&lt;repo_key&gt;--&lt;id_key&gt;.jsonl
+</code></pre></div>
 
 <p>Writers append one event per line and flush after each append.
 Readers can snapshot + tail the same file.</p>
@@ -246,7 +246,7 @@ size retention is configurable; current/live-session files are protected. See
     <span>MIT · harnex 0.29.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=cefc697d77" defer></script>
-<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=d0dcc6d600" defer></script>
+<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

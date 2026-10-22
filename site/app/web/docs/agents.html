@@ -14,8 +14,8 @@
 <meta property="og:url" content="https://harnex.zyt.app/docs/agents">
 <link rel="alternate" type="text/markdown" href="/docs/agents.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
-<script src="/assets/theme.js?v=cefc697d77"></script>
+<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
+<script src="/assets/theme.js?v=d0dcc6d600"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -95,13 +95,13 @@ longer than two minutes moves to the background on its own; Claude keeps
 working and is notified when the result lands, so a <code>delegate</code> behaves like a
 background subagent without one:</p>
 
-<pre><code class="language-text">❯ Use the harnex delegate tool to have a GPT worker run the slow benchmark and tell me the score.
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>❯ Use the harnex delegate tool to have a GPT worker run the slow benchmark and tell me the score.
 ● Calling harnex…
   ⎿  pi-slow-bench: working 59s · 3 tool calls · now bash 44s
 ● The GPT worker is still running the benchmark. I'll report the score when it finishes.
 ● MCP task (harnex/delegate) completed.
 ● The score is 302926.
-</code></pre>
+</code></pre></div>
 
 <h3 id="the-gpt-subagent"><a class="anchor" href="#the-gpt-subagent">The <code>gpt</code> subagent</a></h3>
 
@@ -112,12 +112,12 @@ exactly, footer included. Use it for parallel work (several <code>Agent</code> c
 one message) and for follow-ups (<code>SendMessage</code> to the same agent reaches the
 same worker, with its context).</p>
 
-<pre><code class="language-text">Agent(subagent_type: "gpt", prompt: """
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>Agent(subagent_type: "gpt", prompt: """
 worktree: word-count
 
 Add TextKit.word_count(text) to lib/textkit.rb with a test; run bin/test.
 """)
-</code></pre>
+</code></pre></div>
 
 <p>Optional header lines, then a blank line, then the brief:</p>
 
@@ -236,7 +236,7 @@ evals/agents/run <span class="nt">--supervisor</span> claude,pi S2 S3
     <span>MIT · harnex 0.29.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=cefc697d77" defer></script>
-<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=d0dcc6d600" defer></script>
+<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

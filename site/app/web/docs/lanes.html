@@ -14,8 +14,8 @@
 <meta property="og:url" content="https://harnex.zyt.app/docs/lanes">
 <link rel="alternate" type="text/markdown" href="/docs/lanes.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=cefc697d77">
-<script src="/assets/theme.js?v=cefc697d77"></script>
+<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
+<script src="/assets/theme.js?v=d0dcc6d600"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -144,14 +144,14 @@ follow-up of the same worker, with everything it read still in context.</p>
 <p>The worker edits files, runs commands, and replies with a summary. harnex
 prints that reply and then a footer:</p>
 
-<pre><code class="language-text">Committed as `a6bf91e` on `harnex/word-count`.
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>Committed as `a6bf91e` on `harnex/word-count`.
 - Added `TextKit.word_count(text)` in `lib/textkit.rb`.
 - Ran `bin/test`: 3 tests, 6 assertions, all passing.
 
 ── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
    worktree .harnex/worktrees/word-count (branch harnex/word-count)
    next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
-</code></pre>
+</code></pre></div>
 
 <p>The footer always says what happened and what to do next: state, time, model,
 cost, commits and the next commands.</p>
@@ -205,9 +205,9 @@ by default, which fits under the 10-minute tool cap most coding agents have.
   </tbody>
 </table>
 
-<pre><code class="language-text">── slow-bench: still working (9m02s so far)
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>── slow-bench: still working (9m02s so far)
    keep waiting: harnex result slow-bench
-</code></pre>
+</code></pre></div>
 
 <p><code>harnex result NAME</code> blocks again (another 9 minutes by default) and prints the
 result in the same format once it lands, even if the worker finished between
@@ -264,10 +264,10 @@ The footer’s cost is the lane’s total so far.</p>
 
 <h2 id="when-a-model-fails"><a class="anchor" href="#when-a-model-fails">When a model fails</a></h2>
 
-<pre><code class="language-text">── word-count: FAILED after 3s (API error (404): model_not_found) · gpt-9 · $0.00 · 0 commits
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>── word-count: FAILED after 3s (API error (404): model_not_found) · gpt-9 · $0.00 · 0 commits
    next: `harnex reply word-count "Continue the same task from where you stopped" --model openai/gpt-5.1`
          (keeps the task; another model) or `harnex discard word-count`
-</code></pre>
+</code></pre></div>
 
 <p>For provider and model failures (not found, rate limited, out of capacity) the
 footer suggests continuing on Pi’s default model. <code>reply --model</code> resumes the
@@ -279,10 +279,10 @@ automatically.</p>
 <div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex lanes
 </code></pre></div>
 
-<pre><code class="language-text">NAME      STATE                  AGE    MODEL    BRANCH           NEXT
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>NAME      STATE                  AGE    MODEL    BRANCH           NEXT
 slugify   working (now bash 12s) 1m40s  gpt-5.1  harnex/slugify   harnex result slugify
 truncate  done                   2m03s  gpt-5.1  harnex/truncate  harnex land truncate
-</code></pre>
+</code></pre></div>
 
 <p>A working lane shows the tool it is running right now (tool names only; harnex
 never records tool arguments). <code>harnex pane --id NAME --lines 40</code> captures the
@@ -334,7 +334,7 @@ reference (<code>harnex help delegate</code>, <code>result</code>, <code>reply</
     <span>MIT · harnex 0.29.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=cefc697d77" defer></script>
-<script src="/assets/feedback.js?v=cefc697d77" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=d0dcc6d600" defer></script>
+<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>
