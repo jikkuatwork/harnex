@@ -17,7 +17,7 @@ module Harnex
       <<~TEXT
         Usage: harnex ask [options] [--] QUESTION...
                harnex ask --file PATH [--section TEXT] [options]
-               harnex ask --resume ID --repo ROOT [--timeout DUR] [--json]
+               harnex ask --resume ID [--timeout DUR] [--json]
 
         Ask a Pi worker one question and print its answer on stdout. The worker
         runs in a visible tmux window, reads the repository, and stops when it
@@ -38,11 +38,10 @@ module Harnex
           --write          Let the worker edit files and run commands (default:
                            read-only tools #{READ_ONLY_TOOLS})
           --id ID          Session id (default: pi-ask-<random>)
-          --timeout DUR    Cap the wait: 540, 9m or 8m30s (default: none). On 124
-                           stderr names the command that keeps waiting
-          --resume ID      Keep waiting on an ask that timed out and print its
-                           answer the same way (with --repo, as stderr names it)
-          --repo ROOT      With --resume: the root the ask recorded under
+          --timeout DUR    Cap the wait: 540, 9m or 8m30s (default 9m; `none` waits
+                           without a cap). On 124 the worker keeps going and stderr
+                           names the command that keeps waiting (`harnex result ID`)
+          --resume ID      Same as `harnex result ID` (kept for older callers)
           --detach         Run headless instead of in a tmux window
           --json           Print the full result JSON instead of the answer
           -h, --help       Show this help
@@ -64,7 +63,8 @@ module Harnex
       @err = err
       @harnex_command = harnex_command || [Gem.ruby, File.expand_path("../../../bin/harnex", __dir__)]
       @options = { model: nil, fallback_model: nil, effort: nil, cwd: nil, file: nil, section: nil, write: false,
-                   id: nil, timeout: nil, detach: false, json: false, help: false, resume: nil, repo: nil }
+                   id: nil, timeout: Lanes::DEFAULT_TIMEOUT, detach: false, json: false, help: false, resume: nil,
+                   repo: nil }
     end
 
     def run
@@ -91,13 +91,28 @@ module Harnex
 
     private
 
+    # Each ask is a lane (#87), so `harnex result ID` keeps waiting on it and
+    # `harnex reply ID "..."` follows up with the worker's context.
     def ask_once(question, model, id)
+      id ||= "pi-ask-#{SecureRandom.hex(2)}"
+      lane = register_lane(id, model)
       stdout, status = launch(question, model, id)
-      [parse_result(stdout), status.exitstatus]
+      result = parse_result(stdout)
+      Lanes.settle(lane, result["turn_result"] || {}, status.exitstatus) unless result.empty?
+      [result, status.exitstatus]
+    end
+
+    def register_lane(id, model)
+      cwd = File.expand_path(@options[:cwd] || Dir.pwd)
+      Lanes.save(
+        "name" => id, "kind" => "ask", "repo_root" => Lanes.main_root(cwd) || cwd, "run_root" => run_root,
+        "cwd" => cwd, "read_only" => !@options[:write], "owner" => Harnex.ambient_owner_id,
+        "requested_model" => model, "effort" => @options[:effort], "created_at" => Lanes.now,
+        "launched_at" => Lanes.now, "state" => "running", "turns" => 0
+      )
     end
 
     def launch(question, model, id)
-      id ||= "pi-ask-#{SecureRandom.hex(2)}"
       argv = @harnex_command + ["run", "pi", "--id", id]
       argv += @options[:detach] ? ["--detach"] : ["--tmux", id]
       argv += ["--cwd", File.expand_path(@options[:cwd] || Dir.pwd)]
@@ -124,6 +139,23 @@ module Harnex
     # 124 and the caller re-runs this until the answer lands. `wait` prints the
     # turn result unnested; nest it so the answer is reported like a fresh ask.
     def resume_once(id)
+      lane = begin
+        Lanes.resolve(id)
+      rescue OptionParser::InvalidArgument
+        nil
+      end
+      return legacy_resume(id) unless lane
+      return [{ "id" => id, "turn_result" => lane["last_turn"] || {} }, lane["state"] == "failed" ? 1 : 0] unless lane["state"] == "running"
+
+      turn, exit_code = Lanes.wait(lane, @harnex_command, timeout: @options[:timeout])
+      Lanes.settle(lane, turn, exit_code || 1)
+      [{ "id" => id, "turn_result" => turn }, exit_code || 1]
+    end
+
+    # Asks from before lanes (0.21.0) have no record; their resume line named --repo.
+    def legacy_resume(id)
+      raise OptionParser::InvalidArgument, "no lane named #{id.inspect}" unless @options[:repo]
+
       argv = @harnex_command + ["wait", "--id", id, "--repo", @options[:repo], "--until", "done"]
       argv += ["--timeout", @options[:timeout].to_s] if @options[:timeout]
       stdout, status = Open3.capture2(*argv)
@@ -131,7 +163,7 @@ module Harnex
     end
 
     def resume_command(id)
-      "#{Harnex.cli_command} ask --resume #{id} --repo #{Shellwords.escape(run_root)} --timeout 9m"
+      "#{Harnex.cli_command} result #{id}"
     end
 
     # The root `run` records under: ask_root for a consult, the work
@@ -201,7 +233,7 @@ module Harnex
         when "--model", "--effort", "--cwd", "--file", "--section", "--id", "--fallback-model", "--resume", "--repo"
           @options[arg.delete_prefix("--").tr("-", "_").to_sym] = value(index += 1, arg)
         when "--timeout"
-          @options[:timeout] = Harnex.parse_duration_seconds(value(index += 1, arg), option_name: arg)
+          @options[:timeout] = Lanes.parse_timeout(value(index += 1, arg), option_name: arg)
         when /\A--/
           raise OptionParser::InvalidOption, "harnex ask: unknown flag #{arg}; see harnex ask --help"
         else
@@ -212,8 +244,8 @@ module Harnex
       if @options[:section] && @options[:file].nil?
         raise OptionParser::InvalidOption, "harnex ask: --section requires --file"
       end
-      if @options[:resume] && (@options[:repo].nil? || !question.empty? || @options[:file])
-        raise OptionParser::InvalidOption, "harnex ask: --resume takes --repo and no question"
+      if @options[:resume] && (!question.empty? || @options[:file])
+        raise OptionParser::InvalidOption, "harnex ask: --resume takes a lane id and no question"
       end
       if @options[:repo] && @options[:resume].nil?
         raise OptionParser::InvalidOption, "harnex ask: --repo requires --resume"

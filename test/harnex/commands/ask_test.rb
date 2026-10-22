@@ -57,10 +57,7 @@ class AskTest < Minitest::Test
     timeout = { ok: false, id: "pi-ask-2", wait_result: "timeout", resume: "harnex wait --id pi-ask-2 --until done" }
     ask(["slow question"], timeout, 124) do |code, out, err, _argv|
       assert_equal [124, ""], [code, out]
-      assert_includes err, "ask --resume pi-ask-2 --repo #{File.join(Harnex::STATE_DIR, 'ask')} --timeout 9m"
-    end
-    ask(["--write", "--cwd", "/tmp/lane", "slow edit"], timeout, 124) do |_code, _out, err, _argv|
-      assert_includes err, "ask --resume pi-ask-2 --repo /tmp/lane --timeout 9m", "--write records under its work directory"
+      assert_includes err, "keep waiting with: #{Harnex.cli_command} result pi-ask-2"
     end
     failed = { ok: false, id: "pi-ask-3", turn_result: { last_error: "high demand", outcome_class: "provider_capacity" } }
     ask(["q"], failed, 1) do |code, _out, err, _argv|
@@ -98,26 +95,33 @@ class AskTest < Minitest::Test
     end
   end
 
-  def test_resume_keeps_waiting_and_prints_the_answer
+  def test_resume_keeps_waiting_on_the_lane_and_prints_the_answer
     Dir.mktmpdir do |dir|
       full = File.join(dir, "final.md")
       File.write(full, "the whole answer\n")
-      turn = { ok: true, id: "pi-ask-2", wait_result: "done", model: "gpt-6.1-sol",
+      timeout = { ok: false, id: "pi-ask-r1", wait_result: "timeout", turn_result: { wait_result: "timeout" } }
+      done = { ok: true, id: "pi-ask-r1", wait_result: "done", model: "gpt-6.1-sol",
                final_message: "the whole", final_message_truncated: true, final_message_path: full }
-      ask(["--resume", "pi-ask-2", "--repo", dir, "--timeout", "9m"], turn, 0) do |code, out, err, argv|
-        assert_equal [0, "the whole answer\n"], [code, out]
-        assert_equal ["wait", "--id", "pi-ask-2", "--repo", dir, "--until", "done", "--timeout", "540.0"], argv.last(9)
-        assert_match(/pi-ask-2 answered in \d+s \(model gpt-6.1-sol\)/, err)
-      end
+      command = fake_harnex(dir, nil, nil, results: [[timeout, 124], [done, 0]])
+      err = StringIO.new
+      first = Harnex::Ask.new(["--id", "pi-ask-r1", "slow question"], out: StringIO.new, err: err, harnex_command: command).run
+      assert_equal 124, first
+      assert_equal "running", Harnex::Lanes.resolve("pi-ask-r1")["state"]
+
+      out = StringIO.new
+      code = Harnex::Ask.new(["--resume", "pi-ask-r1"], out: out, err: StringIO.new, harnex_command: command).run
+      wait = JSON.parse(File.read(File.join(dir, "calls.json"))).last
+      assert_equal [0, "the whole answer\n"], [code, out.string]
+      assert_equal %w[wait --id pi-ask-r1 --repo], wait.first(4)
+      assert_includes wait, "--since"
+      assert_equal "done", Harnex::Lanes.resolve("pi-ask-r1")["state"]
     end
-    ask(["--resume", "pi-ask-2", "--repo", "/tmp/r"], { ok: false, wait_result: "timeout" }, 124) do |code, _out, err, _argv|
-      assert_equal 124, code
-      assert_includes err, "ask --resume pi-ask-2 --repo /tmp/r --timeout 9m"
-    end
-    gone = { ok: false, id: "pi-ask-x", status: "no_such_session" }
-    ask(["--resume", "pi-ask-x", "--repo", "/tmp/r"], gone, 3) do |code, _out, err, _argv|
-      assert_equal 3, code
-      assert_includes err, "no_such_session"
+  end
+
+  def test_resume_of_a_pre_lane_ask_uses_its_repo
+    ask(["--resume", "pi-ask-old", "--repo", "/tmp/r"], { ok: true, final_message: "old" }, 0) do |code, out, _err, argv|
+      assert_equal [0, "old\n"], [code, out]
+      assert_equal %w[wait --id pi-ask-old --repo /tmp/r --until done], argv.last(9).first(7)
     end
   end
 
@@ -125,7 +129,7 @@ class AskTest < Minitest::Test
     assert_raises(OptionParser::MissingArgument) { Harnex::Ask.new([]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--section", "x", "q"]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--bogus", "q"]).run }
-    assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--resume", "pi-ask-1"]).run }
+    assert_raises(OptionParser::InvalidArgument) { Harnex::Ask.new(["--resume", "pi-ask-unknown"]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--resume", "pi-ask-1", "--repo", "/r", "q"]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--repo", "/r", "q"]).run }
   end

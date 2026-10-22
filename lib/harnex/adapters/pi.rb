@@ -84,8 +84,13 @@ module Harnex
         ["pi", "--mode", "rpc"]
       end
 
+      TRUST_FLAGS = %w[--approve -a --no-approve -na].freeze
+
       def build_command
         args = cli_extra_args
+        # RPC cannot show Pi's project-trust prompt: ignore project-local
+        # resources unless the caller passes --approve (#87).
+        args = ["--no-approve"] + args unless args.any? { |arg| TRUST_FLAGS.include?(arg) }
         args += ["--model", @startup_model] if @startup_model
         args += ["--thinking", @startup_effort] if @startup_effort
         base_command + args

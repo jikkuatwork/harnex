@@ -219,9 +219,9 @@ Pi runs use structured RPC (`pi --mode rpc`) and require Pi >= 0.80.4; gate
 unattended work with `harnex doctor --adapter pi`. Harnex `--model` / `--effort`
 apply verified Pi startup controls before the prompt (e.g. `--model
 foundry-zyt/gpt-6.1-sol --effort high`). Pass other Pi startup flags after
-`--` (e.g. `harnex run pi --context "..." -- --no-approve`).
-Since RPC cannot display Pi's trust prompt, explicitly pass child `--approve`
-for reviewed project-local resources or `--no-approve` to ignore them.
+`--` (e.g. `harnex run pi --context "..." -- --approve`).
+Since RPC cannot display Pi's trust prompt, harnex starts Pi with
+`--no-approve` (project-local resources ignored) unless you pass `--approve`.
 
 ## Send
 

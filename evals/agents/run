@@ -248,10 +248,19 @@ def harnex_call?(call)
   call[:name].to_s.match?(/\A(Bash|bash)\z/) && command_of(call).match?(/(^|[\s;&|(])harnex\s/)
 end
 
+def doc_lookup?(call)
+  text = command_of(call)
+  return false if call[:name] == "Skill" || text.match?(%r{skills/harnex/(SKILL\.md|references/INDEX\.md)})
+
+  text.match?(/agents-guide|harnex\s+help|--help|\bman\s+harnex/) || text.match?(%r{/skills/[^/]+/})
+end
+
 def summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
   top = metrics[:calls].reject { |c| c[:sub] }
   harnex_calls = top.select { |c| harnex_call?(c) }
-  docs = top.select { |c| command_of(c).match?(/agents-guide|--help|SKILL\.md|references\/INDEX/) || c[:name] == "Skill" }
+  # The harnex skill's front door (SKILL.md + references/INDEX.md, or the
+  # Skill tool) is free; anything beyond it is doc hunting.
+  docs = top.select { |c| doc_lookup?(c) }
   failures = scenario[:check].call(repo, metrics[:final])
   {
     scenario: id, supervisor: kind, title: scenario[:title],

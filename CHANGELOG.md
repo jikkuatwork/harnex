@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.22.0] - 2026-10-22 | 03:07 PM | IST
+
+Owner-authorized local-only release (no RubyGems publication); breaking
+changes allowed (#87). Plan: `koder/plans/39_agent_smoothness.md`.
+
+### Added
+
+- **Lanes: a small agent-facing layer over Pi workers.**
+  - `harnex delegate [--worktree NAME] TASK`: one call hands a task to a
+    worker and prints its reply plus a lane footer: state, time, model, cost,
+    commits, diffstat and next commands. `--worktree NAME` creates
+    `.harnex/worktrees/NAME` on branch `harnex/NAME`. `--no-wait` starts
+    parallel lanes.
+  - `harnex result [NAME...]`: wait for lanes and print each result as it
+    lands. With no names it covers every uncollected lane the caller
+    started in this repo.
+  - `harnex reply NAME MESSAGE`: a follow-up. A busy worker takes it
+    mid-turn; a finished lane is relaunched on its own Pi session
+    (`pi --session`), so it keeps its context.
+  - `harnex land NAME`: merge `harnex/NAME` into the current branch, then
+    remove the worktree and branch. Leftovers are committed first; a
+    conflict leaves the merge in progress for the caller.
+  - `harnex discard NAME` and `harnex lanes`.
+  - Lane records live in `STATE_DIR/lanes/`. Blocking commands default to
+    `--timeout 9m`, and exit 124 names `harnex result NAME`.
+- `harnex wait --since TIME` ignores events from an earlier launch of the
+  same id (each launch restarts the events-log seq).
+- `harnex doctor` capabilities add `lanes`.
+- `evals/agents/run`: agent smoothness evals. Real supervisors (Claude Code
+  headless, Pi print mode) run five scenarios against a fixture repo,
+  scored for correctness, tool calls, errors, doc lookups and leftovers.
+
+### Changed
+
+- **Breaking:**
+  - `harnex ask` defaults to `--timeout 9m` (`none` for no cap).
+  - Every ask is a lane, so a timed-out ask names `harnex result ID`, and
+    `harnex reply ID "..."` follows up with the worker's context.
+    `ask --resume ID` still works and no longer needs `--repo`.
+  - Pi starts with `--no-approve` unless the caller passes `--approve`.
+- Top-level `harnex --help` leads with the agent verbs;
+  `harnex agents-guide claude` is rewritten around them.
+- Help examples use Pi session ids (`pi-i-42`) instead of Codex-era ones.
+
+### Fixed
+
+- Harnex state in a repo no longer shows up as untracked work: writing a
+  dispatch row under `.harnex/` adds `.harnex/` to the clone's
+  `info/exclude`. This also unblocks `git worktree remove` for lane
+  worktrees.
+
 ## [0.21.0] - 2026-10-22 | 12:40 PM | IST
 
 Owner-authorized local-only release (no RubyGems publication). Makes Pi/GPT

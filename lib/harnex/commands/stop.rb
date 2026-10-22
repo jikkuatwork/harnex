@@ -28,9 +28,9 @@ module Harnex
         Use `harnex wait --id ID` afterward to block until the session finishes.
 
         Common patterns:
-          #{program_name} --id cx-i-42
-          #{program_name} --id cx-i-42 --repo /path/to/repo
-          #{program_name} --id cx-i-42 --timeout 15
+          #{program_name} --id pi-i-42
+          #{program_name} --id pi-i-42 --repo /path/to/repo
+          #{program_name} --id pi-i-42 --timeout 15
 
         Gotchas:
           Stop only after verifying the worker's result landed.

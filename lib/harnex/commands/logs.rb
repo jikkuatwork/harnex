@@ -19,9 +19,9 @@ module Harnex
           -h, --help    Show this help
 
         Common patterns:
-          #{program_name} --id cx-i-42 --lines 80
-          #{program_name} --id cx-i-42 --follow
-          #{program_name} --id cx-i-42 --repo /path/to/repo --lines 200
+          #{program_name} --id pi-i-42 --lines 80
+          #{program_name} --id pi-i-42 --follow
+          #{program_name} --id pi-i-42 --repo /path/to/repo --lines 200
 
         Gotchas:
           logs reads the persisted transcript, not the live tmux screen.

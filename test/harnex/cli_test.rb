@@ -4,21 +4,24 @@ class CliTest < Minitest::Test
   def test_bare_harnex_returns_help
     cli = Harnex::CLI.new([])
     out, = capture_io { assert_equal 0, cli.run }
-    assert_match(/Usage:/, out)
-    assert_match(/harnex run <cli>/, out)
+    # #87: the agent verbs lead; low-level control follows.
+    assert_operator out.index("harnex delegate"), :<, out.index("harnex run <cli>")
+    %w[ask delegate result reply land discard lanes].each { |verb| assert_match(/^  harnex #{verb}\b/, out) }
     assert_match(/harnex watch --id ID/, out)
     assert_match(/harnex logs --id ID/, out)
     assert_match(/harnex events --id ID/, out)
     assert_match(/harnex pane --id ID/, out)
     assert_match(/harnex agents-guide \[topic\]/, out)
     assert_match(/harnex doctor/, out)
-    assert_match(/harnex orchestration sample\|report/, out)
-    assert_match(/logs\s+Read session output transcripts/, out)
-    assert_match(/events\s+Stream per-session JSONL runtime events/, out)
-    assert_match(/watch\s+Safely watch existing work/, out)
-    assert_match(/pane\s+Capture the current tmux pane/, out)
-    assert_match(/orchestration\s+Emit external primary samples/, out)
-    assert_match(/Working with agents .* harnex agents-guide/, out)
+    assert_match(/exit 124 if the worker is still/, out)
+  end
+
+  def test_help_lane_verbs
+    { "delegate" => "harnex delegate", "result" => "harnex result", "reply" => "harnex reply NAME",
+      "land" => "harnex land NAME", "discard" => "harnex discard NAME", "lanes" => "harnex lanes" }.each do |verb, usage|
+      out, = capture_io { assert_equal 0, Harnex::CLI.new(["help", verb]).run }
+      assert_includes out, "Usage: #{usage}"
+    end
   end
 
   def test_help_watch_returns_watch_usage

@@ -43,6 +43,28 @@ module Harnex
     File.expand_path(path)
   end
 
+  # #87: harnex state inside a repo (.harnex/: dispatch rows, lane worktrees)
+  # must never show up as untracked work, in the checkout or its worktrees.
+  # info/exclude in the common git dir is local to this clone and covers
+  # every worktree; nothing tracked changes.
+  def ensure_git_excluded(repo_root, entry = ".harnex/")
+    common, status = Open3.capture2("git", "-C", repo_root.to_s, "rev-parse", "--git-common-dir", err: File::NULL)
+    return false unless status.success?
+
+    path = File.join(File.expand_path(common.strip, repo_root.to_s), "info", "exclude")
+    existing = File.file?(path) ? File.read(path) : ""
+    return true if existing.lines.map(&:strip).include?(entry)
+
+    FileUtils.mkdir_p(File.dirname(path))
+    File.open(path, "a") do |file|
+      file.write("\n") unless existing.empty? || existing.end_with?("\n")
+      file.puts(entry)
+    end
+    true
+  rescue StandardError
+    false
+  end
+
   def parse_duration_seconds(value, option_name:)
     text = value.to_s.strip
     raise OptionParser::InvalidArgument, "#{option_name} requires a value" if text.empty?

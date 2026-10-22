@@ -100,6 +100,8 @@ module Harnex
 
     def append(path, record)
       FileUtils.mkdir_p(File.dirname(path))
+      state_dir = File.dirname(path)
+      Harnex.ensure_git_excluded(File.dirname(state_dir)) if File.basename(state_dir) == ".harnex"
       line = JSON.generate(portable_record(record)) + "\n"
       with_lock(path) do
         prepare_archive(path, line.bytesize)

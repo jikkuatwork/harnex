@@ -50,8 +50,8 @@ module Harnex
       <<~TEXT
         #{build_parser({}, program_name)}
         Common patterns:
-          #{program_name} --id cx-i-42 --message "Read /tmp/task-impl-42.md" --wait-for-idle --timeout 900
-          #{program_name} --id cx-i-42 --message "Continue with the current task." --force
+          #{program_name} --id pi-i-42 --message "Read /tmp/task-impl-42.md" --wait-for-idle --timeout 900
+          #{program_name} --id pi-i-42 --message "Continue with the current task." --force
           #{program_name} --id pi-i-42 --message "Continue the same task from where you stopped" --wait-done --timeout 540
           #{program_name} --id "$HARNEX_ID" --message "Worker finished; tests passed."
 

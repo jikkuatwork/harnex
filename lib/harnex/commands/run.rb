@@ -173,8 +173,8 @@ module Harnex
           --watch is foreground-only; do not combine it with --tmux or --detach.
           Use -- before child CLI flags when a flag could be parsed by harnex.
           Pi RPC requires Pi >= 0.80.4 (`harnex doctor --adapter pi`). Prefer
-            provider/model for Harnex --model, and explicitly pass child
-            --approve or --no-approve for deterministic project trust.
+            provider/model for Harnex --model. Pi runs with --no-approve
+            (project-local Pi resources ignored) unless you pass -- --approve.
       TEXT
     end
 

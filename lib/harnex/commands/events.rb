@@ -20,9 +20,9 @@ module Harnex
           -h, --help      Show this help
 
         Common patterns:
-          #{program_name} --id cx-i-42 --snapshot
-          #{program_name} --id cx-i-42
-          #{program_name} --id cx-i-42 --from 2026-05-06T10:00:00Z --snapshot
+          #{program_name} --id pi-i-42 --snapshot
+          #{program_name} --id pi-i-42
+          #{program_name} --id pi-i-42 --from 2026-05-06T10:00:00Z --snapshot
 
         Gotchas:
           events is structured JSONL; logs is human transcript text.

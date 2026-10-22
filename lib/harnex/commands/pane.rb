@@ -22,9 +22,9 @@ module Harnex
           -h, --help    Show this help
 
         Common patterns:
-          #{program_name} --id cx-i-42 --lines 40
-          #{program_name} --id cx-i-42 --lines 40 --json
-          #{program_name} --id cx-i-42 --follow --interval 2
+          #{program_name} --id pi-i-42 --lines 40
+          #{program_name} --id pi-i-42 --lines 40 --json
+          #{program_name} --id pi-i-42 --follow --interval 2
 
         Gotchas:
           pane requires a tmux-backed session.

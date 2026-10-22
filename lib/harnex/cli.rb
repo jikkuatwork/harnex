@@ -41,6 +41,18 @@ module Harnex
         Preflight.new(@argv.drop(1)).run
       when "ask"
         Ask.new(@argv.drop(1)).run
+      when "delegate"
+        Delegate.new(@argv.drop(1)).run
+      when "result"
+        LaneResult.new(@argv.drop(1)).run
+      when "reply"
+        Reply.new(@argv.drop(1)).run
+      when "land"
+        Land.new(@argv.drop(1)).run
+      when "discard"
+        Land.new(@argv.drop(1), discard: true).run
+      when "lanes"
+        LanesCommand.new(@argv.drop(1)).run
       when "orchestration"
         OrchestrationCommand.new(@argv.drop(1)).run
       when "artifact-report"
@@ -97,6 +109,18 @@ module Harnex
         Preflight.usage
       when "ask"
         Ask.usage
+      when "delegate"
+        Delegate.usage
+      when "result"
+        LaneResult.usage
+      when "reply"
+        Reply.usage
+      when "land"
+        Land.usage
+      when "discard"
+        Land.usage(discard: true)
+      when "lanes"
+        LanesCommand.usage
       when "orchestration"
         OrchestrationCommand.usage
       when "artifact-report"
@@ -110,7 +134,23 @@ module Harnex
 
     def usage
       <<~TEXT
-        Usage:
+        harnex: Pi workers (GPT models) as tools for you and your agents.
+
+        Hand work to a worker (each runs in a visible tmux window):
+          harnex ask QUESTION                 A read-only answer from another model
+          harnex delegate [--worktree NAME] TASK
+                                              A worker does the task; prints its reply
+          harnex delegate --no-wait ...       Start lanes in parallel, then:
+          harnex result [NAME...]             Wait for lanes and print their results
+          harnex reply NAME MESSAGE           Follow up; the worker keeps its context
+          harnex land NAME                    Merge a worktree lane, remove the worktree
+          harnex discard NAME                 Drop a lane and its worktree
+          harnex lanes                        Your lanes and what each needs next
+
+          Blocking commands wait 9m by default and exit 124 if the worker is still
+          going; run `harnex result NAME` to keep waiting. Exit 0 done, 1 failed.
+
+        Low-level session control:
           harnex run <cli> [options] [--] [cli-args...]
           harnex send --id ID [options] [text...]
           harnex wait --id ID [options]
@@ -121,68 +161,23 @@ module Harnex
           harnex events --id ID [options]
           harnex history [options]
           harnex pane --id ID [options]
-          harnex agents-guide [topic]
-          harnex doctor
-          harnex preflight ADAPTER [options] [--] [cli-args...]
-          harnex ask [options] [--] QUESTION...
+
+        Setup, docs and telemetry:
+          harnex doctor                       Check Pi and harnex setup
+          harnex preflight ADAPTER [options]  Prove an adapter with one tiny dispatch
+          harnex agents-guide [topic]         Agent guides (dispatch, chain, buddy, monitoring, naming, claude)
+          harnex guide | recipes              Getting started; workflow recipes
           harnex orchestration sample|report [options]
           harnex artifact-report init|validate PATH [options]
           harnex telemetry assert-canonical|reconcile [options]
           harnex help [command]
 
-        Commands:
-          run     Start a wrapped interactive session and local API
-          send    Send text to an active session
-          wait    Block until a session exits or reaches a state
-          watch   Safely watch existing work until done/task_failed/timeout
-          stop    Send the adapter stop sequence to a session
-          status  List live sessions
-          logs    Read session output transcripts
-          events  Stream per-session JSONL runtime events
-          history List completed dispatches from .harnex/dispatch.jsonl
-          pane    Capture the current tmux pane for a live session
-          recipes List and read workflow recipes
-          guide   Show the getting started guide
-          agents-guide
-                  Show agent dispatch, chain, buddy, monitoring, and naming guides
-          doctor  Run static adapter checks and optional read-only session sweep
-          preflight
-                  Prove an adapter end to end with one tiny dispatch (JSON verdict)
-          ask     Ask a Pi (GPT-backed) worker one question and print its answer
-          orchestration
-                  Emit external primary samples and report orchestration tax
-          artifact-report
-                  Validate harness-authored receipts or initialize legacy v1 documents
-          telemetry
-                  Assert or reconcile canonical dispatch telemetry
-          help    Show command help
-
-        New to harnex? Start with: harnex guide
-        Working with agents (dispatching tasks)? Read: harnex agents-guide
-
-        Notes:
-          CLIs with smart prompt detection: #{Adapters.known.join(', ')}
-          Any other CLI name is launched with generic wrapping.
-
         Examples:
-          harnex run pi
-          harnex run aider --id blue-cat
-          harnex run pi --tmux pi-i-42 --id pi-i-42 --context-file /tmp/task-42.md
-          harnex status
-          harnex watch --id main --until done --max-wait 15m
-          harnex logs --id main --follow
-          harnex events --id main --snapshot
-          harnex history --limit 20
-          harnex pane --id main --lines 40
-          harnex agents-guide dispatch
-          harnex doctor
-          harnex preflight pi --cwd . -- --no-approve
           harnex ask "Where is the dispatch row written, and is that path tested?"
-          harnex orchestration report --dispatch .harnex/dispatch.jsonl --run-id queue-005 --json
-          harnex artifact-report validate /path/from-dispatch-row.json --final
-          harnex artifact-report init .harnex/reports/legacy-v1.json
-          harnex telemetry assert-canonical --canonical .harnex/dispatch.jsonl --json
-          harnex send --id main --message "Summarize current progress."
+          harnex delegate --worktree word-count "Add TextKit.word_count with a test"
+          harnex land word-count
+          harnex delegate --no-wait --worktree fix-a "Fix A"; harnex delegate --no-wait --worktree fix-b "Fix B"; harnex result
+          harnex run pi --tmux pi-i-42 --id pi-i-42 --context-file /tmp/task-42.md
       TEXT
     end
   end

@@ -24,7 +24,7 @@ module Harnex
         Common patterns:
           #{program_name}
           #{program_name} --all
-          #{program_name} --id cx-i-42 --json
+          #{program_name} --id pi-i-42 --json
 
         Gotchas:
           By default, status filters to the current repo root.

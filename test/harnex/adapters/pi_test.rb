@@ -43,16 +43,21 @@ class PiAdapterTest < Minitest::Test
     )
 
     assert_equal [
-      "pi", "--mode", "rpc",
+      "pi", "--mode", "rpc", "--no-approve",
       "--model", "anthropic/claude-sonnet-4-5",
       "--thinking", "high"
     ], @adapter.build_command
   end
 
+  def test_project_trust_defaults_to_no_approve_unless_the_caller_chooses
+    assert_equal %w[pi --mode rpc --approve], Harnex::Adapters.build("pi", ["--approve"]).build_command
+    assert_equal %w[pi --mode rpc -na], Harnex::Adapters.build("pi", ["-na"]).build_command
+  end
+
   def test_build_returns_pi_adapter
     adapter = Harnex::Adapters.build("pi", ["--model", "anthropic/claude-sonnet-4-5"])
     assert_instance_of Harnex::Adapters::Pi, adapter
-    assert_equal ["pi", "--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
+    assert_equal ["pi", "--mode", "rpc", "--no-approve", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
   end
 
   def test_known_adapters_include_pi
@@ -83,7 +88,7 @@ class PiAdapterTest < Minitest::Test
       "[harnex session id=cx-i-44] implement task"
     ])
 
-    assert_equal ["pi", "--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
+    assert_equal ["pi", "--mode", "rpc", "--no-approve", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
     assert_equal "[harnex session id=cx-i-44] implement task", adapter.initial_prompt
   end
 

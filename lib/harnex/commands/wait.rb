@@ -56,6 +56,9 @@ module Harnex
                           event at or before events-log seq N (the after_seq that
                           `harnex send` reports), so the wait covers the turn that
                           message started or joined, not an earlier result.
+          --since TIME    With --until done: ignore events before TIME (ISO 8601),
+                          e.g. an earlier launch of a lane relaunched under the
+                          same id (each launch restarts the events-log seq)
           --stall-after DUR
                           With --until done: exit 4 when the live session shows no
                           progress for DUR (Pi/structured: model, tool or turn
@@ -64,12 +67,12 @@ module Harnex
           -h, --help      Show this help
 
         Common patterns:
-          #{program_name} --id cx-i-42 --until done --timeout 900
+          #{program_name} --id pi-i-42 --until done --timeout 900
           #{program_name} --id pi-i-42 --until done --stall-after 25m --timeout 4h
           #{program_name} --id pi-i-42 --until done --after-seq 812 --timeout 9m
-          #{program_name} --id cx-i-42 --until task_complete --timeout 900
-          #{program_name} --id cx-i-42 --until prompt --timeout 120
-          #{program_name} --id cx-i-42
+          #{program_name} --id pi-i-42 --until task_complete --timeout 900
+          #{program_name} --id pi-i-42 --until prompt --timeout 120
+          #{program_name} --id pi-i-42
 
         Exit codes for --until done:
           0    completed with accepted work
@@ -126,6 +129,7 @@ module Harnex
         heartbeat: nil,
         stall_after: nil,
         after_seq: nil,
+        since: nil,
         help: false
       }
     end
@@ -562,7 +566,7 @@ module Harnex
         end
 
         status, offset, task_complete_seen =
-          scan_events(events_path, offset, "done", task_complete_seen, start_time, min_ts: session_started_at)
+          scan_events(events_path, offset, "done", task_complete_seen, start_time, min_ts: done_min_ts(session_started_at))
         return status if status
 
         if @options[:stall_after] && live && (next_stall_check.nil? || monotonic >= next_stall_check)
@@ -594,6 +598,10 @@ module Harnex
 
         sleep EVENT_POLL_INTERVAL
       end
+    end
+
+    def done_min_ts(session_started_at)
+      [session_started_at, @options[:since]].compact.max
     end
 
     def stall_poll_interval
@@ -644,7 +652,7 @@ module Harnex
       await_exit_status(exit_path)
 
       status, _offset, _seen =
-        scan_events(events_path, offset, "done", task_complete_seen, start_time, min_ts: session_started_at)
+        scan_events(events_path, offset, "done", task_complete_seen, start_time, min_ts: done_min_ts(session_started_at))
       return status if status
 
       if File.exist?(exit_path) && fresh_exit_status?(exit_path, observed_live, session_started_at)
@@ -985,6 +993,10 @@ module Harnex
           raise OptionParser::InvalidArgument, "--after-seq must be 0 or greater" if value.negative?
 
           @options[:after_seq] = value
+        end
+        opts.on("--since TIME", "With --until done: ignore events before TIME") do |value|
+          @options[:since] = parse_wait_time(value) ||
+                             raise(OptionParser::InvalidArgument, "--since must be an ISO 8601 time")
         end
         opts.on("--stall-after DUR", "With --until done: exit 4 after DUR without progress") do |value|
           @options[:stall_after] = self.class.duration(value, option_name: "--stall-after")
