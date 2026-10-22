@@ -199,6 +199,7 @@ module Harnex
     # Lanes whose branch the caller merged by hand: once harnex/NAME is in
     # HEAD and the worktree is clean, the lane is landed; tidy it (#87).
     def sweep_merged(root)
+      prune_closed
       return [] unless root
 
       tidied = all.select { |lane| lane["repo_root"] == root && sweepable?(lane) }
@@ -212,6 +213,25 @@ module Harnex
         save(lane)
       end
       tidied.map { |lane| lane["name"] }
+    end
+
+    CLOSED_RETENTION_DAYS = 30
+
+    # Landed and discarded lanes leave only their record and brief; drop
+    # both once they are a month old. Open lanes are never pruned.
+    def prune_closed(now: Time.now)
+      cutoff = now - CLOSED_RETENTION_DAYS * 86_400
+      all.each do |lane|
+        next unless CLOSED_STATES.include?(lane["state"])
+
+        closed_at = Time.iso8601((lane["landed_at"] || lane["updated_at"]).to_s)
+        next if closed_at > cutoff
+
+        FileUtils.rm_f(path(lane["repo_root"], lane["name"]))
+        FileUtils.rm_f(File.join(dir, "briefs", "#{Harnex.repo_key(lane['repo_root'])}--#{lane['name']}.md"))
+      rescue ArgumentError
+        next
+      end
     end
 
     def sweepable?(lane)

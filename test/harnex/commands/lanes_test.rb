@@ -212,6 +212,17 @@ class LanesTest < Minitest::Test
     assert_equal 0, cli(Harnex::Land, ["noop"]).first
   end
 
+  def test_closed_lanes_are_pruned_after_a_month_open_ones_never
+    respond([done, 0], [done, 0])
+    cli(Harnex::Delegate, ["--worktree", "old", "Old"])
+    cli(Harnex::Delegate, ["--worktree", "stale-open", "Open"])
+    cli(Harnex::Land, ["old"], discard: true)
+    later = Time.now + 31 * 86_400
+    Harnex::Lanes.prune_closed(now: later)
+    assert_nil Harnex::Lanes.load(@repo, "old")
+    refute_nil Harnex::Lanes.load(@repo, "stale-open"), "open lanes keep their record however old"
+  end
+
   def test_discard_drops_the_worktree_and_branch
     respond([done, 0, commit_work("x.rb", "x")])
     cli(Harnex::Delegate, ["--worktree", "nope", "X"])
