@@ -1,21 +1,23 @@
 # Harnex State
 
-Updated: 2026-10-22 | 02:07 AM | IST
+Updated: 2026-10-22 | 01:05 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.20.0 is installed locally and verified on PATH: harnex is Pi + GPT
-  only.** Codex adapters, the JSON-RPC transport, `--fast`/`--legacy-pty` and
-  Codex docs/tests are gone; shared behavior is tested through Pi. Record:
-  `koder/releases/0.20.0.md`. Same day: 0.19.0 (#85, Pi/GPT workers as native
-  Claude tools — `ask`, `run --wait-done`, `final_message`, `--owner-tag`,
-  `--until-idle`) and 0.18.0 (#79-#84).
+- **0.21.0 is installed locally; #86 slice 1 is done.** The `gpt` Claude Code
+  agent type (`~/Projects/pi/.claude/agents/gpt.md`, linked as
+  `~/.claude/agents/gpt.md`) is a Haiku relay over `harnex ask`. The new
+  `ask --resume` lets it outlast the 10-minute Bash cap. An 8-lane stress test
+  passed (long task, worktree writers, models, fallback). Record:
+  `koder/releases/0.21.0.md`.
+- 0.20.0 made harnex Pi + GPT only (`koder/releases/0.20.0.md`); 0.19.0 (#85)
+  and 0.18.0 (#79-#84) shipped the same week.
 - Owner skills live in `~/Projects/pi/.pi/skills` (`harnex` skill added,
   `koder-pattern` ported to Pi-only; linked for Claude and Pi).
-- Suite: 787 runs / 3,916 assertions, no failures.
+- Suite: 788 runs / 3,931 assertions, no failures; Pi 1.4.0 contract test green.
 
 ## Present
 
@@ -25,15 +27,16 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
   version/CHANGELOG → `gem build` → `gem install --local` → installed smoke →
   `koder/releases/<v>.md` → STATE.
 - Pi is the only worker adapter that matters; run `pi update` first.
+- Claude Code loads agent types at session start. Background subagent results
+  reach the parent XML-escaped (`&amp;`); the relay's own text is exact.
 - The `harnex`/`ruby` mise shims need a directory with a Ruby version; a
   scratch dir outside `$HOME` needs its own `.tool-versions` (`ruby 3.3.0`).
 
 ## Future (suggested order)
 
-1. **#86 GPT subagents in Claude Code** (owner's next session): build the
-   `gpt` agent type (Haiku bridge in `~/Projects/pi`, linked into
-   `~/.claude/agents/`) and stress-test it with parallel subagents; then
-   `harnex mcp`; then `--worktree` lane shorthand + capacity retry/fallback.
+1. **#86 slice 2:** `harnex mcp` (stdio MCP: `ask`, `delegate`, `send`,
+   `status`); then slice 3, the `--worktree` lane shorthand plus capacity
+   retry and fallback for `run`.
 2. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
 3. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
 4. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +

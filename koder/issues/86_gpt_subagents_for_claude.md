@@ -81,5 +81,15 @@ is the native invocation surface. Take up in a new session.
     parent printed `&amp;` and `&gt;` although the relay's text was exact.
   - Until a release with `ask --resume` is installed, the relay on PATH
     (0.20.0) cannot loop on asks longer than 9 minutes.
-- **Next:** cut 0.21.0 locally, then test the 124 loop through the relay
-  with a task longer than 9 minutes. After that, slice 2 (`harnex mcp`).
+
+### 2026-10-22: 0.21.0 installed; slice 1 done
+
+- `ask --resume` shipped in 0.21.0, installed locally.
+- Stress test: 8 `gpt` subagents launched at once from an interactive
+  session. It covered an 11-minute task (124, then resume, then answer),
+  parallel worktree writers, three models, a 4.4 KB verbatim relay, a bad
+  model (reported, not answered) and a rate limit recovered with
+  `fallback:`.
+- Record: `koder/releases/0.21.0.md`.
+- **Next:** slice 2 (`harnex mcp`). Optional polish: report the whole ask's
+  time after a resume.
