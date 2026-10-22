@@ -1,0 +1,156 @@
+module Harnex
+  # `harnex mcp` (#87): serve the lane verbs over MCP stdio, or register that
+  # server with Claude Code (user scope) and Pi (~/.pi/agent/mcp.json).
+  class MCPCommand
+    SERVER_NAME = "harnex".freeze
+    PI_TIMEOUT_SECONDS = 7200
+
+    def self.usage
+      <<~TEXT
+        Usage: harnex mcp                  Serve MCP over stdio (what MCP clients run)
+               harnex mcp install [--claude] [--pi] [--dry-run]
+               harnex mcp uninstall [--claude] [--pi]
+               harnex mcp status
+
+        Exposes ask, delegate, result, reply, land, discard and lanes as native tools.
+        install registers the server for Claude Code (`claude mcp add --scope user`)
+        and Pi (#{pi_config_path}, exposure direct). With neither flag it does both
+        (each only when that CLI is installed). Restart running sessions afterwards.
+      TEXT
+    end
+
+    def self.pi_config_path
+      dir = ENV["PI_AGENT_DIR"] || ENV["PI_CODING_AGENT_DIR"] || File.expand_path("~/.pi/agent")
+      File.join(dir, "mcp.json")
+    end
+
+    def initialize(argv, out: $stdout, err: $stderr)
+      @argv = argv.dup
+      @out = out
+      @err = err
+    end
+
+    def run
+      action = @argv.first.to_s.start_with?("-") || @argv.empty? ? "serve" : @argv.shift
+      if @argv.include?("-h") || @argv.include?("--help") || action == "help"
+        @out.puts self.class.usage
+        return 0
+      end
+
+      case action
+      when "serve" then MCP::Server.new.run
+      when "install" then install
+      when "uninstall" then uninstall
+      when "status" then status
+      else
+        raise OptionParser::InvalidArgument, "harnex mcp: unknown action #{action.inspect}; see harnex mcp --help"
+      end
+    end
+
+    private
+
+    def targets
+      chosen = %w[claude pi].select { |name| @argv.include?("--#{name}") }
+      chosen.empty? ? %w[claude pi] : chosen
+    end
+
+    def dry_run?
+      @argv.include?("--dry-run")
+    end
+
+    # The RubyGems wrapper next to this Ruby runs the newest installed harnex
+    # without depending on a version-manager shim or the client's cwd.
+    def server_command
+      wrapper = File.join(Gem.bindir, "harnex")
+      File.executable?(wrapper) ? wrapper : "harnex"
+    end
+
+    def install
+      targets.map { |target| send("install_#{target}") }.max
+    end
+
+    def uninstall
+      targets.map { |target| send("uninstall_#{target}") }.max
+    end
+
+    def install_claude
+      return skip("claude", "the claude CLI is not on PATH") unless which("claude")
+
+      command = ["claude", "mcp", "add", "--transport", "stdio", "--scope", "user", SERVER_NAME, "--", server_command, "mcp"]
+      return say("claude", "would run: #{command.join(' ')}") if dry_run?
+
+      Open3.capture3("claude", "mcp", "remove", SERVER_NAME, "--scope", "user")
+      out, status = Open3.capture2e(*command)
+      return say("claude", "registered (user scope): #{server_command} mcp") if status.success?
+
+      @err.puts("harnex mcp: claude mcp add failed: #{out.strip}")
+      1
+    end
+
+    def uninstall_claude
+      return skip("claude", "the claude CLI is not on PATH") unless which("claude")
+
+      out, status = Open3.capture2e("claude", "mcp", "remove", SERVER_NAME, "--scope", "user")
+      say("claude", status.success? ? "removed" : "not registered (#{out.strip.lines.last.to_s.strip})")
+    end
+
+    def install_pi
+      path = self.class.pi_config_path
+      return skip("pi", "#{File.dirname(path)} does not exist") unless File.directory?(File.dirname(path))
+
+      config = read_json(path)
+      config["mcpServers"] ||= {}
+      config["mcpServers"][SERVER_NAME] = {
+        "command" => server_command, "args" => ["mcp"], "exposure" => "direct", "timeout" => PI_TIMEOUT_SECONDS,
+        "description" => "Hand work to Pi workers (GPT models): ask, delegate, result, reply, land, discard, lanes"
+      }
+      return say("pi", "would write #{path}: #{JSON.generate(config['mcpServers'][SERVER_NAME])}") if dry_run?
+
+      Harnex.atomic_write_json(path, config)
+      say("pi", "registered in #{path} (exposure direct, timeout #{PI_TIMEOUT_SECONDS}s)")
+    end
+
+    def uninstall_pi
+      path = self.class.pi_config_path
+      config = read_json(path)
+      return say("pi", "not registered") unless config.dig("mcpServers", SERVER_NAME)
+
+      config["mcpServers"].delete(SERVER_NAME)
+      Harnex.atomic_write_json(path, config)
+      say("pi", "removed from #{path}")
+    end
+
+    def status
+      claude = if which("claude")
+                 out, ok = Open3.capture2e("claude", "mcp", "get", SERVER_NAME)
+                 ok.success? ? "registered: #{out.lines.grep(/Command|Args|Scope/i).map(&:strip).join('; ')}" : "not registered"
+               else
+                 "claude CLI not found"
+               end
+      pi = read_json(self.class.pi_config_path).dig("mcpServers", SERVER_NAME)
+      @out.puts "claude: #{claude}"
+      @out.puts "pi: #{pi ? "registered: #{pi['command']} #{Array(pi['args']).join(' ')} (exposure #{pi['exposure'] || 'codemode'})" : 'not registered'}"
+      0
+    end
+
+    def read_json(path)
+      JSON.parse(File.read(path))
+    rescue Errno::ENOENT
+      {}
+    end
+
+    def which(name)
+      ENV["PATH"].to_s.split(File::PATH_SEPARATOR).any? { |dir| File.executable?(File.join(dir, name)) }
+    end
+
+    def say(target, text)
+      @out.puts "#{target}: #{text}"
+      0
+    end
+
+    def skip(target, reason)
+      @out.puts "#{target}: skipped (#{reason})"
+      0
+    end
+  end
+end

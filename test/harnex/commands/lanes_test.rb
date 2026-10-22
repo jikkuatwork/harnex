@@ -236,6 +236,23 @@ class LanesTest < Minitest::Test
     assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--worktree", "bad name", "x"]) }
   end
 
+  def test_low_level_habits_are_accepted
+    respond([done, 0])
+    code, = cli(Harnex::Delegate, ["--id", "habit", "--tmux", "habit", "--auto-stop", "--wait-done", "--wait-timeout", "5m",
+                                   "--context", "Do the thing"])
+    assert_equal 0, code
+    run = calls.last
+    assert_equal %w[run pi --id habit --tmux habit], run.first(6)
+    assert_equal "300.0", run[run.index("--wait-timeout") + 1]
+    assert_includes File.read(run[run.index("--context-file") + 1]), "Do the thing"
+
+    respond([done("again"), 0])
+    code, out, = cli(Harnex::Reply, ["--message", "More", "--id", "habit", "--wait-done"])
+    assert_equal 0, code
+    assert_includes out, "again"
+    assert_equal "More", calls.last[calls.last.index("--context") + 1]
+  end
+
   def test_lanes_lists_what_each_needs_next
     respond([done, 0, commit_work("y.rb", "y")])
     cli(Harnex::Delegate, ["--worktree", "ylane", "Y"])

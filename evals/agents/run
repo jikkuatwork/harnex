@@ -145,15 +145,24 @@ def clean_env
   ENV.to_h.reject { |k, _| k.start_with?("HARNEX_", "CLAUDE_CODE_", "CLAUDECODE") || k == "PI_SESSION_ID" }
 end
 
+# Routes: `claude` and `pi` run as the owner's environment is configured
+# (MCP included); `claude-cli` and `pi-cli` hide harnex MCP (and the gpt
+# agent) so only the shell CLI and skill remain.
+SUPERVISORS = %w[claude claude-cli pi pi-cli].freeze
+
 def supervisor_command(kind, opts, prompt)
   case kind
-  when "claude"
-    [["claude", "-p", "--model", opts[:claude_model], "--permission-mode", "bypassPermissions",
-      "--output-format", "stream-json", "--verbose"], prompt]
-  when "pi"
-    [["pi", "-p", "--mode", "json", "--no-session", "--model", opts[:pi_model], prompt], nil]
+  when "claude", "claude-cli"
+    argv = ["claude", "-p", "--model", opts[:claude_model], "--permission-mode", "bypassPermissions",
+            "--output-format", "stream-json", "--verbose"]
+    argv += ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disallowedTools", "Agent(gpt)"] if kind == "claude-cli"
+    [argv, prompt]
+  when "pi", "pi-cli"
+    argv = ["pi", "-p", "--mode", "json", "--no-session", "--model", opts[:pi_model]]
+    argv << "--no-mcp" if kind == "pi-cli"
+    [argv + [prompt], nil]
   else
-    abort "unknown supervisor #{kind}"
+    abort "unknown supervisor #{kind}; one of #{SUPERVISORS.join(', ')}"
   end
 end
 
@@ -297,7 +306,7 @@ opts = { supervisors: %w[claude pi], claude_model: "sonnet", pi_model: "foundry-
          timeout: 45 * 60, jobs: 4, out: nil }
 OptionParser.new do |o|
   o.banner = "Usage: evals/agents/run [options] [SCENARIO...]"
-  o.on("--supervisor LIST", "claude, pi or claude,pi (default both)") { |v| opts[:supervisors] = v.split(",") }
+  o.on("--supervisor LIST", "comma list of #{SUPERVISORS.join(', ')} (default claude,pi)") { |v| opts[:supervisors] = v.split(",") }
   o.on("--claude-model M", "default sonnet") { |v| opts[:claude_model] = v }
   o.on("--pi-model M", "default foundry-zyt/gpt-6.1-sol") { |v| opts[:pi_model] = v }
   o.on("--timeout MIN", Integer, "per scenario (default 45)") { |v| opts[:timeout] = v * 60 }
@@ -330,7 +339,7 @@ workers = Array.new([opts[:jobs], jobs.length].min) do
       scenario = SCENARIOS.fetch(id)
       exit_code, seconds = run_supervisor(kind, opts, scenario[:prompt], repo, File.join(dir, "stream.jsonl"))
       events = parse_events(File.join(dir, "stream.jsonl"))
-      metrics = kind == "claude" ? claude_metrics(events) : pi_metrics(events)
+      metrics = kind.start_with?("claude") ? claude_metrics(events) : pi_metrics(events)
       result = summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
       File.write(File.join(dir, "metrics.json"), JSON.pretty_generate(result))
       lock.synchronize do

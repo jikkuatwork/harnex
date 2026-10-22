@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.23.0] - 2026-10-22 | 03:28 PM | IST
+
+Owner-authorized local-only release (#87).
+
+### Added
+
+- `harnex mcp`: a stdio MCP server exposing `ask`, `delegate`, `result`,
+  `reply`, `land`, `discard` and `lanes` as native tools for Claude Code, Pi
+  and any MCP client. Each tool runs the CLI verb and returns its text.
+  - Blocking calls send `notifications/progress` every 15s; the default wait
+    is 25 minutes.
+  - Calls run concurrently.
+  - A cancel stops the wait, never the worker.
+- `harnex mcp install|uninstall|status`: register the server for Claude Code
+  (`claude mcp add --scope user`) and Pi (`~/.pi/agent/mcp.json`, exposure
+  `direct`, 2h request timeout). It registers the RubyGems wrapper, so no
+  version-manager shim or client cwd is involved.
+- `harnex doctor` capabilities add `mcp`.
+- Lane verbs accept habits from `harnex run` instead of refusing them:
+  - `--id` and `--tmux [NAME]` name the lane;
+  - `--auto-stop` and `--wait-done` are accepted and ignored;
+  - `--wait-timeout` is an alias for `--timeout`;
+  - `--context` and `--context-file` give the task;
+  - `reply` takes `--id` and `--message`.
+- `evals/agents/run` routes: `claude-cli` (no MCP, no `gpt` agent) and
+  `pi-cli` (`--no-mcp`) beside the configured `claude` and `pi`.
+
 ## [0.22.0] - 2026-10-22 | 03:07 PM | IST
 
 Owner-authorized local-only release (no RubyGems publication); breaking

@@ -232,6 +232,19 @@ module Harnex
         when "--json" then @options[:json] = true
         when "--model", "--effort", "--cwd", "--file", "--section", "--id", "--fallback-model", "--resume", "--repo"
           @options[arg.delete_prefix("--").tr("-", "_").to_sym] = value(index += 1, arg)
+        # Habits from `harnex run` (#87): an ask already runs in a tmux window
+        # named after its id and stops after answering.
+        when "--tmux"
+          following = @argv[index + 1]
+          if following&.match?(Lanes::NAME) && !following.start_with?("-") && @argv.length > index + 2
+            @options[:id] ||= following
+            index += 1
+          end
+        when "--auto-stop", "--wait-done" then nil
+        when "--wait-timeout"
+          @options[:timeout] = Lanes.parse_timeout(value(index += 1, arg), option_name: arg)
+        when "--context" then question << value(index += 1, arg)
+        when "--context-file" then @options[:file] = value(index += 1, arg)
         when "--timeout"
           @options[:timeout] = Lanes.parse_timeout(value(index += 1, arg), option_name: arg)
         when /\A--/

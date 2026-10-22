@@ -103,8 +103,13 @@ module Harnex
         when "--json" then @options[:json] = true
         when "--model"
           @options[:model] = @argv[index += 1] || raise(OptionParser::MissingArgument, arg)
-        when "--timeout"
+        when "--timeout", "--wait-timeout"
           @options[:timeout] = Lanes.parse_timeout(@argv[index += 1] || raise(OptionParser::MissingArgument, arg))
+        when "--id"
+          @options[:name] = @argv[index += 1] || raise(OptionParser::MissingArgument, arg)
+        when "--message"
+          @options[:message] = @argv[index += 1] || raise(OptionParser::MissingArgument, arg)
+        when "--wait-done", "--tmux" then nil
         when /\A--/
           raise OptionParser::InvalidOption, "harnex reply: unknown flag #{arg}; see harnex reply --help"
         else
@@ -112,6 +117,8 @@ module Harnex
         end
         index += 1
       end
+      words.unshift(@options[:name]) if @options[:name]
+      words << @options[:message] if @options[:message]
       [words.first, words.drop(1).join(" ")]
     end
   end

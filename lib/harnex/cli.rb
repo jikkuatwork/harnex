@@ -53,6 +53,8 @@ module Harnex
         Land.new(@argv.drop(1), discard: true).run
       when "lanes"
         LanesCommand.new(@argv.drop(1)).run
+      when "mcp"
+        MCPCommand.new(@argv.drop(1)).run
       when "orchestration"
         OrchestrationCommand.new(@argv.drop(1)).run
       when "artifact-report"
@@ -121,6 +123,8 @@ module Harnex
         Land.usage(discard: true)
       when "lanes"
         LanesCommand.usage
+      when "mcp"
+        MCPCommand.usage
       when "orchestration"
         OrchestrationCommand.usage
       when "artifact-report"
@@ -161,6 +165,10 @@ module Harnex
           harnex events --id ID [options]
           harnex history [options]
           harnex pane --id ID [options]
+
+        The same verbs as native MCP tools (Claude Code, Pi):
+          harnex mcp install                  Register the harnex MCP server
+          harnex mcp                          Serve MCP over stdio (clients run this)
 
         Setup, docs and telemetry:
           harnex doctor                       Check Pi and harnex setup

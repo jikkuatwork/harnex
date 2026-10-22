@@ -166,8 +166,16 @@ module Harnex
         when "--json" then @options[:json] = true
         when "--worktree", "--name", "--cwd", "--file", "--model", "--effort"
           @options[arg.delete_prefix("--").to_sym] = value(index += 1, arg)
-        when "--timeout"
+        when "--timeout", "--wait-timeout"
           @options[:timeout] = Lanes.parse_timeout(value(index += 1, arg))
+        # Habits from `harnex run`: a lane already runs in a tmux window named
+        # after it, stops after its reply and waits for it, so these are
+        # accepted rather than refused.
+        when "--id" then @options[:name] = value(index += 1, arg)
+        when "--tmux" then index += 1 if lane_name_follows?(index) && (@options[:name] ||= @argv[index + 1])
+        when "--auto-stop", "--wait-done" then nil
+        when "--context" then task << value(index += 1, arg)
+        when "--context-file" then @options[:file] = value(index += 1, arg)
         when /\A--/
           raise OptionParser::InvalidOption, "harnex delegate: unknown flag #{arg}; see harnex delegate --help"
         else
@@ -176,6 +184,11 @@ module Harnex
         index += 1
       end
       task.join(" ")
+    end
+
+    def lane_name_follows?(index)
+      following = @argv[index + 1]
+      !following.nil? && following.match?(Lanes::NAME) && !following.start_with?("-")
     end
 
     def value(index, name)
