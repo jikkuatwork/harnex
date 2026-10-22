@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Slow benchmark: takes about 11 minutes, then prints the score.
+sleep "${BENCH_SECONDS:-660}"
+echo "score: 4242"

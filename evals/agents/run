@@ -1,0 +1,342 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Agent smoothness evals: drive real supervisor agents (Claude Code headless,
+# Pi print mode) through harnex scenarios against a fresh copy of the fixture
+# repo, then check the outcome and measure the friction on the way there.
+#
+#   evals/agents/run                     all scenarios, both supervisors
+#   evals/agents/run S2 S3               chosen scenarios
+#   evals/agents/run --supervisor claude --claude-model opus S1
+#   evals/agents/run --list
+#
+# Results: ~/.cache/harnex-evals/<stamp>/ (one directory per run, with the
+# supervisor's event stream, metrics.json and summary.md).
+
+require "fileutils"
+require "json"
+require "open3"
+require "optparse"
+require "shellwords"
+require "time"
+
+ROOT = File.expand_path(__dir__)
+FIXTURE = File.join(ROOT, "fixture")
+OUT_BASE = File.expand_path("~/.cache/harnex-evals")
+
+# Each check returns a list of failure strings (empty: passed).
+module Checks
+  module_function
+
+  def sh(repo, *cmd)
+    out, status = Open3.capture2e(*cmd, chdir: repo)
+    [out, status.success?]
+  end
+
+  def ruby_value(repo, expr)
+    out, ok = sh(repo, "ruby", "-Ilib", "-rtextkit", "-e", "p(#{expr})")
+    ok ? out.strip : "ERROR: #{out.lines.last.to_s.strip}"
+  end
+
+  def expect(repo, expr, want)
+    got = ruby_value(repo, expr)
+    got == want.inspect ? [] : ["#{expr} on main: want #{want.inspect}, got #{got}"]
+  end
+
+  def tests_pass(repo)
+    out, ok = sh(repo, "bin/test")
+    ok ? [] : ["bin/test fails on main: #{out.lines.last(3).join.strip}"]
+  end
+
+  def on_main(repo)
+    branch, = sh(repo, "git", "branch", "--show-current")
+    branch.strip == "main" ? [] : ["main checkout is on #{branch.strip.inspect}, not main"]
+  end
+
+  def answer_matches(final, pattern, what)
+    final.to_s.match?(pattern) ? [] : ["final answer does not mention #{what}"]
+  end
+end
+
+# Leftovers are friction, not failure: things the supervisor or harnex left
+# behind in the user's repo or process table.
+def leftovers(repo)
+  found = []
+  dirty, = Checks.sh(repo, "git", "status", "--porcelain")
+  found << "dirty main checkout: #{dirty.lines.map(&:strip).join(', ')}" unless dirty.strip.empty?
+  worktrees, = Checks.sh(repo, "git", "worktree", "list", "--porcelain")
+  extra = worktrees.lines.grep(/\Aworktree /).map { |l| l.split(" ", 2).last.strip } - [repo]
+  found << "worktrees left: #{extra.join(', ')}" unless extra.empty?
+  status, = Open3.capture2("harnex", "status", "--all", "--json")
+  sessions = begin
+    Array(JSON.parse(status)).select { |s| s.to_s.include?(repo) }
+  rescue JSON::ParserError
+    []
+  end
+  found << "live harnex sessions: #{sessions.map { |s| s['id'] }.join(', ')}" unless sessions.empty?
+  found
+end
+
+SCENARIOS = {
+  "S1" => {
+    title: "ask for a second opinion",
+    prompt: "Ask GPT for a quick review of lib/textkit.rb: what is the most important bug? " \
+            "Tell me GPT's answer in one or two sentences.",
+    check: ->(repo, final) { Checks.answer_matches(final, /punctuat|comma|exclamation|non-?alphanumeric|special char/i, "the slugify punctuation bug") }
+  },
+  "S2" => {
+    title: "delegate one change",
+    prompt: "Have a GPT worker add TextKit.word_count(text), the number of whitespace-separated " \
+            "words, with a test. Check its work, then make sure it is committed on main.",
+    check: lambda { |repo, _final|
+      Checks.on_main(repo) + Checks.tests_pass(repo) +
+        Checks.expect(repo, 'TextKit.word_count("a b  c")', 3)
+    }
+  },
+  "S3" => {
+    title: "three parallel workers",
+    prompt: "Use three GPT workers in parallel, one task each, each in its own git worktree: " \
+            "(1) fix TextKit.slugify so punctuation is dropped (\"Hello, World!\" becomes \"hello-world\"); " \
+            "(2) add TextKit.truncate(text, n) that keeps the first n characters and appends \"…\" only when it cut something; " \
+            "(3) add TextKit.titleize(text) that capitalizes each word. Each with tests. " \
+            "Verify their work and merge all three into main.",
+    check: lambda { |repo, _final|
+      Checks.on_main(repo) + Checks.tests_pass(repo) +
+        Checks.expect(repo, 'TextKit.slugify("Hello, World!")', "hello-world") +
+        Checks.expect(repo, 'TextKit.truncate("abcdef", 3)', "abc…") +
+        Checks.expect(repo, 'TextKit.truncate("abc", 3)', "abc") +
+        Checks.expect(repo, 'TextKit.titleize("hello big world")', "Hello Big World")
+    }
+  },
+  "S4" => {
+    title: "task longer than 10 minutes",
+    prompt: "Have a GPT worker run bin/slow-bench (it takes about 11 minutes) and tell me the " \
+            "score it prints. Do not run it yourself.",
+    check: ->(repo, final) { Checks.answer_matches(final, /4242/, "the score 4242") }
+  },
+  "S5" => {
+    title: "follow-up to the same worker",
+    prompt: "Start a GPT worker that adds TextKit.word_count(text) (whitespace-separated words) with a " \
+            "test, in its own git worktree. When it reports back, send that same worker a follow-up " \
+            "asking it to also add TextKit.char_count(text), the number of non-whitespace characters, " \
+            "with a test. Then verify both and get them committed on main.",
+    check: lambda { |repo, _final|
+      Checks.on_main(repo) + Checks.tests_pass(repo) +
+        Checks.expect(repo, 'TextKit.word_count("a b  c")', 3) +
+        Checks.expect(repo, 'TextKit.char_count("a b  c")', 3)
+    }
+  }
+}.freeze
+
+def prepare_repo(dir)
+  FileUtils.mkdir_p(File.dirname(dir))
+  FileUtils.cp_r(FIXTURE, dir)
+  git = ->(*args) { system("git", *args, chdir: dir, out: File::NULL, err: File::NULL) || abort("git #{args.join(' ')} failed in #{dir}") }
+  git.call("init", "-q", "-b", "main")
+  git.call("add", "-A")
+  git.call("-c", "user.name=eval", "-c", "user.email=eval@local", "commit", "-qm", "textkit fixture")
+  # Workers and supervisors commit here; give the repo an identity.
+  git.call("config", "user.name", "eval")
+  git.call("config", "user.email", "eval@local")
+end
+
+# The supervisor must not inherit this shell's harnex or Claude session ids.
+def clean_env
+  ENV.to_h.reject { |k, _| k.start_with?("HARNEX_", "CLAUDE_CODE_", "CLAUDECODE") || k == "PI_SESSION_ID" }
+end
+
+def supervisor_command(kind, opts, prompt)
+  case kind
+  when "claude"
+    [["claude", "-p", "--model", opts[:claude_model], "--permission-mode", "bypassPermissions",
+      "--output-format", "stream-json", "--verbose"], prompt]
+  when "pi"
+    [["pi", "-p", "--mode", "json", "--no-session", "--model", opts[:pi_model], prompt], nil]
+  else
+    abort "unknown supervisor #{kind}"
+  end
+end
+
+def run_supervisor(kind, opts, prompt, repo, stream_path)
+  argv, stdin_data = supervisor_command(kind, opts, prompt)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  File.open(stream_path, "w") do |stream|
+    Open3.popen3(clean_env, *argv, chdir: repo, unsetenv_others: true, pgroup: true) do |stdin, stdout, stderr, wait|
+      stdin.write(stdin_data) if stdin_data
+      stdin.close
+      err_reader = Thread.new { stderr.read }
+      out_reader = Thread.new { stdout.each_line { |line| stream.write(line) } }
+      unless wait.join(opts[:timeout])
+        Process.kill("-TERM", wait.pid) rescue nil
+        wait.join(10)
+        stream.puts JSON.generate(type: "eval_timeout", seconds: opts[:timeout])
+      end
+      out_reader.join(5)
+      File.write("#{stream_path}.stderr", err_reader.value.to_s) if err_reader.join(5)
+      return [wait.value&.exitstatus, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started]
+    end
+  end
+end
+
+def parse_events(path)
+  File.readlines(path).filter_map do |line|
+    JSON.parse(line)
+  rescue JSON::ParserError
+    nil
+  end
+end
+
+def text_of(content)
+  Array(content).select { |c| c.is_a?(Hash) && c["type"] == "text" }.map { |c| c["text"] }.join
+end
+
+# One call record per tool use: {name, input, error, sub} (sub: inside a
+# Claude subagent rather than the supervisor itself).
+def claude_metrics(events)
+  calls = {}
+  results = events.select { |e| e["type"] == "result" }
+  events.each do |e|
+    content = e.dig("message", "content")
+    next unless content.is_a?(Array)
+
+    content.each do |c|
+      if c["type"] == "tool_use"
+        calls[c["id"]] = { name: c["name"], input: c["input"], error: false, sub: !e["parent_tool_use_id"].nil? }
+      elsif c["type"] == "tool_result" && calls[c["tool_use_id"]]
+        calls[c["tool_use_id"]][:error] = c["is_error"] == true
+        calls[c["tool_use_id"]][:output] = c["content"].is_a?(String) ? c["content"] : text_of(c["content"])
+      end
+    end
+  end
+  {
+    calls: calls.values,
+    final: results.last&.dig("result").to_s,
+    cost_usd: results.filter_map { |r| r["total_cost_usd"] }.max
+  }
+end
+
+def pi_metrics(events)
+  calls = {}
+  events.each do |e|
+    case e["type"]
+    when "tool_execution_start"
+      calls[e["toolCallId"]] = { name: e["toolName"], input: e["args"], error: false, sub: false }
+    when "tool_execution_end"
+      next unless calls[e["toolCallId"]]
+
+      calls[e["toolCallId"]][:error] = e["isError"] == true
+      calls[e["toolCallId"]][:output] = text_of(e.dig("result", "content"))
+    end
+  end
+  assistant = events.select { |e| e["type"] == "message_end" && e.dig("message", "role") == "assistant" }
+  {
+    calls: calls.values,
+    final: text_of(assistant.last&.dig("message", "content")),
+    cost_usd: assistant.sum { |e| e.dig("message", "usage", "cost", "total").to_f }.round(4)
+  }
+end
+
+def command_of(call)
+  input = call[:input].is_a?(Hash) ? call[:input] : {}
+  (input["command"] || input["prompt"] || input["file_path"] || input["path"] || input.to_json).to_s
+end
+
+def harnex_call?(call)
+  return true if call[:name].to_s.start_with?("mcp__harnex")
+  return true if call[:name] == "Agent" && call[:input].is_a?(Hash) && call[:input]["subagent_type"] == "gpt"
+
+  call[:name].to_s.match?(/\A(Bash|bash)\z/) && command_of(call).match?(/(^|[\s;&|(])harnex\s/)
+end
+
+def summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
+  top = metrics[:calls].reject { |c| c[:sub] }
+  harnex_calls = top.select { |c| harnex_call?(c) }
+  docs = top.select { |c| command_of(c).match?(/agents-guide|--help|SKILL\.md|references\/INDEX/) || c[:name] == "Skill" }
+  failures = scenario[:check].call(repo, metrics[:final])
+  {
+    scenario: id, supervisor: kind, title: scenario[:title],
+    pass: failures.empty?, failures: failures, leftovers: leftovers(repo),
+    seconds: seconds.round, exit_code: exit_code, cost_usd: metrics[:cost_usd],
+    tool_calls: top.length, harnex_calls: harnex_calls.length,
+    harnex_errors: harnex_calls.count { |c| c[:error] },
+    tool_errors: top.count { |c| c[:error] },
+    doc_lookups: docs.length,
+    subagent_calls: metrics[:calls].count { |c| c[:sub] },
+    final: metrics[:final].to_s[0, 600],
+    harnex_commands: harnex_calls.map { |c| { cmd: command_of(c)[0, 400], error: c[:error], output: c[:output].to_s[0, 300] } }
+  }
+end
+
+def markdown(results)
+  lines = ["| Scen | Sup | Pass | Time | Calls | harnex | Err | Docs | Leftovers |", "|---|---|---|---|---|---|---|---|---|"]
+  results.each do |r|
+    lines << "| #{r[:scenario]} | #{r[:supervisor]} | #{r[:pass] ? 'yes' : 'NO'} | #{r[:seconds]}s | #{r[:tool_calls]} | " \
+             "#{r[:harnex_calls]} | #{r[:tool_errors]} | #{r[:doc_lookups]} | #{r[:leftovers].length} |"
+  end
+  results.each do |r|
+    next if r[:pass] && r[:leftovers].empty? && r[:tool_errors].zero?
+
+    lines << "" << "**#{r[:scenario]}/#{r[:supervisor]}**"
+    r[:failures].each { |f| lines << "- fail: #{f}" }
+    r[:leftovers].each { |f| lines << "- leftover: #{f}" }
+    lines << "- tool errors: #{r[:tool_errors]}" if r[:tool_errors].positive?
+  end
+  lines.join("\n")
+end
+
+opts = { supervisors: %w[claude pi], claude_model: "sonnet", pi_model: "foundry-zyt/gpt-6.1-sol",
+         timeout: 45 * 60, jobs: 4, out: nil }
+OptionParser.new do |o|
+  o.banner = "Usage: evals/agents/run [options] [SCENARIO...]"
+  o.on("--supervisor LIST", "claude, pi or claude,pi (default both)") { |v| opts[:supervisors] = v.split(",") }
+  o.on("--claude-model M", "default sonnet") { |v| opts[:claude_model] = v }
+  o.on("--pi-model M", "default foundry-zyt/gpt-6.1-sol") { |v| opts[:pi_model] = v }
+  o.on("--timeout MIN", Integer, "per scenario (default 45)") { |v| opts[:timeout] = v * 60 }
+  o.on("--jobs N", Integer, "scenarios at once (default 4)") { |v| opts[:jobs] = v }
+  o.on("--out DIR", "results directory") { |v| opts[:out] = File.expand_path(v) }
+  o.on("--list", "list scenarios") do
+    SCENARIOS.each { |id, s| puts "#{id}  #{s[:title]}" }
+    exit
+  end
+end.parse!
+
+ids = ARGV.empty? ? SCENARIOS.keys : ARGV.map(&:upcase)
+ids.each { |id| SCENARIOS.key?(id) || abort("unknown scenario #{id}; see --list") }
+out = opts[:out] || File.join(OUT_BASE, Time.now.strftime("%Y%m%d-%H%M%S"))
+FileUtils.mkdir_p(out)
+puts "harnex #{`harnex --version`.strip} · results in #{out}"
+
+jobs = ids.product(opts[:supervisors])
+queue = Queue.new
+jobs.each { |j| queue << j }
+results = []
+lock = Mutex.new
+workers = Array.new([opts[:jobs], jobs.length].min) do
+  Thread.new do
+    loop do
+      id, kind = queue.pop(true) rescue break
+      dir = File.join(out, "#{id}-#{kind}")
+      repo = File.join(dir, "repo")
+      prepare_repo(repo)
+      scenario = SCENARIOS.fetch(id)
+      exit_code, seconds = run_supervisor(kind, opts, scenario[:prompt], repo, File.join(dir, "stream.jsonl"))
+      events = parse_events(File.join(dir, "stream.jsonl"))
+      metrics = kind == "claude" ? claude_metrics(events) : pi_metrics(events)
+      result = summarize(id, kind, scenario, repo, exit_code, seconds, metrics)
+      File.write(File.join(dir, "metrics.json"), JSON.pretty_generate(result))
+      lock.synchronize do
+        results << result
+        puts "#{id}/#{kind}: #{result[:pass] ? 'PASS' : 'FAIL'} in #{result[:seconds]}s, " \
+             "#{result[:tool_calls]} calls (#{result[:harnex_calls]} harnex, #{result[:tool_errors]} errors), " \
+             "#{result[:leftovers].length} leftovers"
+      end
+    end
+  end
+end
+workers.each(&:join)
+results.sort_by! { |r| [r[:scenario], r[:supervisor]] }
+summary = markdown(results)
+File.write(File.join(out, "summary.md"), summary + "\n")
+File.write(File.join(out, "results.json"), JSON.pretty_generate(results))
+puts "", summary
+exit(results.all? { |r| r[:pass] } ? 0 : 1)
