@@ -44,7 +44,7 @@ alongside the work it describes.
 ## CLI flags
 
 ```text
-harnex run pi --meta '{"model":"foundry-zyt/gpt-6.1-sol","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
+harnex run pi --meta '{"model":"openai/gpt-5.1","effort":"high","predicted":{"input_tokens":[200000,800000]}}'
 harnex run pi --context 'Implement the task; Harnex writes the final receipt'
 harnex run pi --artifact-report .harnex/receipts/pi-r-64.json --context 'Optionally write review claims to $HARNEX_ARTIFACT_CLAIMS_PATH'
 harnex run pi --project-id harnex --queue-id queue-005 --entry-id SP-4 --phase implement --intent queue-work --require-attribution
@@ -218,9 +218,9 @@ routing details; legacy `meta.agent*` and `actual.model` stay for compatibility:
 {
   "agent": {
     "cli": "pi",
-    "provider": "foundry-zyt",
-    "model_requested": "foundry-zyt/gpt-6.1-sol",
-    "model_effective": "gpt-6.1-sol",
+    "provider": "openai",
+    "model_requested": "openai/gpt-5.1",
+    "model_effective": "gpt-5.1",
     "reasoning_effort": "high",
     "service_tier": null,
     "adapter_transport": "stdio_jsonl_rpc"

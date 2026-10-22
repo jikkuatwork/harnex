@@ -2,6 +2,9 @@
 
 Pi workers (GPT models by default) as tools for you and your coding agents.
 
+**Website and docs: [harnex.zyt.app](https://harnex.zyt.app)** ·
+upgrading from an older release: [docs/upgrading-to-0.29.md](docs/upgrading-to-0.29.md)
+
 Harnex runs Pi workers in visible tmux windows and hands their results back
 in one call: ask another model a question, delegate a task into its own git
 worktree and land it, run several workers in parallel, and follow up with a
@@ -40,11 +43,13 @@ still working (`harnex result NAME` keeps waiting; the default wait is 9
 minutes, under a 10-minute agent tool cap).
 
 - **MCP:** `harnex mcp install` registers `harnex mcp` for Claude Code (user
-  scope) and Pi. The tools `ask`, `delegate`, `result`, `reply`, `land`,
-  `discard` and `lanes` then appear natively. Long calls report progress;
-  Claude Code moves them to the background after two minutes.
-- **Guides:** `harnex agents-guide claude` is the agent-facing guide;
-  `harnex --help` lists everything.
+  scope) and Pi, and installs a `gpt` subagent for Claude Code. The tools
+  `ask`, `delegate`, `result`, `reply`, `land`, `discard` and `lanes` then
+  appear natively. Long calls report progress; Claude Code moves them to the
+  background after two minutes.
+- **Docs:** [lanes](docs/lanes.md), [MCP server](docs/mcp.md),
+  [coding agents](docs/agents.md); `harnex agents-guide claude` is the
+  agent-facing guide and `harnex --help` lists everything.
 
 ## Low-level control
 
@@ -134,7 +139,7 @@ an explicit working-directory/root selector for automation.
 flags become Pi `--model` / `--thinking` startup controls and are verified over
 RPC before the prompt; use a deterministic `provider/model` value. Pass other
 Pi startup flags after the separator, for example:
-`harnex run pi --model foundry-zyt/gpt-6.1-sol --effort high --context "Implement X" -- --no-approve`.
+`harnex run pi --model openai/gpt-5.1 --effort high --context "Implement X" -- --no-approve`.
 For unattended runs, explicitly choose Pi project trust with child
 `--approve` or `--no-approve`; Harnex never auto-trusts repository code.
 See [docs/pi-rpc.md](docs/pi-rpc.md) for lifecycle, compatibility, and failure

@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.29.0] - 2026-10-22 | 06:08 PM | IST
+
+**The agent release.** harnex becomes a tool your coding agents use directly:
+hand a question or a task to a Pi worker (GPT by default) and get the reply
+back as plain text, with a footer saying what happened and what to do next.
+This entry summarizes 0.22.0–0.29.0, the first public release since 0.12.0.
+Website and docs: <https://harnex.zyt.app>. Upgrading:
+`docs/upgrading-to-0.29.md`.
+
+### Highlights
+
+- **Lanes** (0.22):
+  - `harnex delegate [--worktree NAME]` hands a task to a worker, optionally
+    in its own git worktree;
+  - `result` collects parallel lanes;
+  - `reply` follows up with the worker's context (a finished lane resumes its
+    Pi session);
+  - `land` merges and cleans up; `discard` drops a lane; `lanes` shows what
+    each worker is doing right now.
+- **`harnex mcp`** (0.23): the same verbs as native MCP tools for Claude Code,
+  Pi and any MCP client. Long calls report progress, and Claude Code moves them
+  to the background and notifies on completion. `harnex mcp install`
+  registers it for both clients.
+- **The `gpt` subagent for Claude Code** (0.21, MCP relay since 0.23): ships
+  as `agents/gpt.md`, and `harnex mcp install` installs it.
+- **Smoothness work** (0.24–0.28), measured with `evals/agents/run`. Real
+  Claude Code and Pi supervisors, with and without MCP, run seven scenarios;
+  0.28 passed two consecutive full rounds (28/28 each) with no harnex usage
+  errors, no doc lookups and nothing left behind. Along the way:
+  - progress detail;
+  - the hand-merge sweep;
+  - model-failure next steps;
+  - forgiving flags and MCP arguments;
+  - workers never see harnex's own MCP tools.
+
+### Breaking (since 0.12.0)
+
+- Codex adapters, the JSON-RPC transport, `run --fast`/`--legacy-pty` and
+  `preflight --legacy-pty` were removed (0.20); harnex is Pi + GPT first.
+- `harnex ask` waits 9 minutes by default (0.22); use `--timeout none` for no
+  cap.
+- Pi starts with `--no-approve` unless `-- --approve` is passed (0.22).
+
+### Added in 0.29.0
+
+- **Docs:**
+  - `docs/lanes.md`, `docs/mcp.md`, `docs/agents.md` and
+    `docs/upgrading-to-0.29.md`;
+  - `GUIDE.md` now starts with lanes;
+  - `TECHNICAL.md` gains a "Lanes and MCP" architecture section.
+- **The website** `site/`: a monospace, terminal-styled site built from these
+  docs and the live CLI help, deployed as a Holm app to harnex.zyt.app.
+- **The `gpt` agent ships in the gem** (`agents/gpt.md`). `harnex mcp
+  install` installs it at `~/.claude/agents/gpt.md` unless one exists
+  (`--no-agent` skips it). `uninstall` removes only an unmodified copy.
+- **Gem metadata:** a new summary and description, plus documentation and
+  changelog links.
+
+### Changed
+
+- Examples use generic model names (`openai/gpt-5.1`).
+
 ## [0.28.0] - 2026-10-22 | 05:15 PM | IST
 
 Owner-authorized local-only release (#87): fixes from round B on 0.27.0.

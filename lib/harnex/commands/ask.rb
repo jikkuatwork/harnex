@@ -53,7 +53,7 @@ module Harnex
 
         Examples:
           harnex ask "Which module parses the dispatch rows, and is it tested?"
-          harnex ask --model foundry-zyt/gpt-6.1-sol --file /tmp/review.md --timeout 9m
+          harnex ask --model openai/gpt-5.1 --file /tmp/review.md --timeout 9m
           harnex ask --write --cwd ../lane "Fix the failing test and commit"
       TEXT
     end

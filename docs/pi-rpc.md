@@ -49,7 +49,7 @@ Harnex model and effort flags are active controls, not telemetry-only labels:
 
 ```bash
 harnex run pi \
-  --model foundry-zyt/gpt-6.1-sol --effort high \
+  --model openai/gpt-5.1 --effort high \
   --context "Review the change" --auto-stop
 ```
 
@@ -66,7 +66,7 @@ Pass Pi startup flags after `--`:
 
 ```bash
 harnex run pi --context "Implement X" --auto-stop -- \
-  --no-session --no-extensions --model foundry-zyt/gpt-6.1-sol
+  --no-session --no-extensions --model openai/gpt-5.1
 ```
 
 When both Harnex `--model` and a Pi child `--model` are supplied, the Harnex

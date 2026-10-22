@@ -2,7 +2,72 @@
 
 You've installed harnex. Here's how to actually use it.
 
-## Recommended mental model
+harnex hands work to Pi workers (GPT models by default) and gives you, or the
+agent you are working with, the result back as plain text. Each worker runs in
+a visible tmux window you can switch to at any time.
+
+## Check the setup
+
+```bash
+harnex doctor          # Pi 0.80.4+ on PATH, tmux, retention; MCP integrations
+harnex mcp install     # optional: native tools for Claude Code and Pi
+```
+
+## Your first lanes
+
+Ask another model a question. The worker reads the repository, answers and
+stops:
+
+```bash
+harnex ask "Which module parses the dispatch rows, and is it tested?"
+```
+
+Hand a worker a task in its own git worktree, review it, and land it:
+
+```bash
+harnex delegate --worktree word-count \
+  "Add TextKit.word_count(text) with a test; run bin/test."
+git diff HEAD...harnex/word-count
+harnex land word-count
+```
+
+The worker's reply comes back with a footer that says what happened and what
+to do next:
+
+```text
+── word-count: done in 49s · gpt-5.1 · $0.03 · 1 commit, 2 files (+12 -0)
+   worktree .harnex/worktrees/word-count (branch harnex/word-count)
+   next: review `git diff HEAD...harnex/word-count`, then `harnex land word-count` ...
+```
+
+Follow up with the same worker; it keeps its context:
+
+```bash
+harnex reply word-count "Also add TextKit.char_count(text)."
+```
+
+Run several at once, then collect them:
+
+```bash
+harnex delegate --no-wait --worktree a "Task A"
+harnex delegate --no-wait --worktree b "Task B"
+harnex result
+harnex land
+```
+
+Commands wait up to 9 minutes; if a worker is still going they exit 124 and
+`harnex result NAME` keeps waiting. `harnex lanes` shows what each worker is
+doing right now. The full guide is [docs/lanes.md](docs/lanes.md); for
+driving harnex from Claude Code or Pi, see [docs/agents.md](docs/agents.md)
+and [docs/mcp.md](docs/mcp.md).
+
+## Sessions: the layer underneath
+
+Lanes are built on ordinary harnex sessions. The rest of this guide covers
+that layer, which you need for custom orchestration, long-lived interactive
+workers, and wrapping other terminal agents.
+
+### Recommended mental model
 
 Treat harnex as a local supervisor harness, not as a conversation
 bus between agents.
@@ -18,7 +83,7 @@ For multi-step flows, chain fresh workers with file handoffs:
 Pi writes a plan, a fresh Pi implements it, Claude (or a fresh Pi
 lane) reviews it, another fresh Pi fixes it.
 
-## Your first session
+### Your first session
 
 Pi is the default worker. Check that the installed Pi is new enough
 (0.80.4 or later), then start it through harnex:
@@ -45,7 +110,7 @@ Session IDs follow `<cli>-<role>-<tag>`: `pi-p-13` plans issue 13,
 `pi-i-13` implements it, `pi-f-13` fixes it, and `cl-r-13` is a
 Claude reviewer. See `harnex agents-guide naming`.
 
-## Sending messages
+### Sending messages
 
 From another terminal:
 
@@ -76,11 +141,12 @@ the `resume` command the output names.
 ```bash
 harnex run pi --id pi-i-13 --tmux pi-i-13 \
   --context "Read and execute /tmp/task-impl-13.md" \
-  --auto-stop --wait-done --wait-timeout 9m -- --no-approve
+  --auto-stop --wait-done --wait-timeout 9m
 ```
 
-Pi RPC cannot show Pi's project-trust prompt, so unattended runs pass
-Pi `--approve` or `--no-approve` after `--`.
+Pi RPC cannot show Pi's project-trust prompt, so harnex starts Pi with
+`--no-approve` (project-local Pi resources ignored); pass `-- --approve` to
+load them.
 
 `harnex run --watch --preset impl` is a separate foreground launch-and-stall
 babysitter; do not combine it with `--tmux` or `--detach`. For full flag
@@ -88,21 +154,7 @@ behavior and event-stream consumers, see
 [TECHNICAL.md](TECHNICAL.md) and the built-in monitoring section in
 [README.md](README.md).
 
-## Asking a quick question
-
-For a read-only question — a second opinion, an explanation, a quick
-review — `harnex ask` runs a Pi worker in a tmux window and prints
-only its answer:
-
-```bash
-harnex ask "Which module parses the dispatch rows, and is it tested?"
-harnex ask --model foundry-zyt/gpt-6.1-sol --file /tmp/question.md --timeout 9m
-```
-
-The worker gets read-only tools and stops when it has answered. Add
-`--write` to let it edit files and run commands.
-
-## Seeing what's running
+### Seeing what's running
 
 ```bash
 harnex status
@@ -111,7 +163,7 @@ harnex status
 Shows all live sessions for the current repo with their ID, CLI
 type, age, and state (prompt/busy).
 
-## Running agents in tmux
+### Running agents in tmux
 
 This is the recommended way to run multiple agents. Each one gets
 its own tmux window you can switch to anytime:
@@ -143,12 +195,12 @@ Or watch it live from your current terminal:
 harnex pane --id pi-i-13 --follow
 ```
 
-## Parallel lanes in worktrees
+### Raw parallel sessions in worktrees
 
-To run several workers at once, give each lane its own git worktree.
-`--cwd` starts Pi in the worktree, `--root` keeps the session
-attributed to your main checkout, and harnex credits each lane with
-its own commits:
+`harnex delegate --worktree` creates and cleans up worktrees for you. To
+manage them yourself with raw sessions, give each its own git worktree.
+`--cwd` starts Pi in the worktree, `--root` keeps the session attributed to
+your main checkout, and harnex credits each session with its own commits:
 
 ```bash
 git worktree add ../wt-13 -b issue-13
@@ -170,7 +222,7 @@ A Claude Code subagent shares its parent's session ID; it passes the
 same `--owner-tag TAG` to `harnex run` and `harnex watch --owner` so
 it sees only its own lanes (`harnex agents-guide claude`).
 
-## Sending work and waiting for it to finish
+### Sending work and waiting for it to finish
 
 Use `--wait-for-idle` to block until the agent finishes
 processing:
@@ -195,7 +247,7 @@ Treat `--wait-for-idle` as the fence, not the report. After the
 send returns, use `harnex pane` or `harnex logs` to inspect what
 actually happened.
 
-## Sending large prompts
+### Sending large prompts
 
 Shell quoting and terminal input don't love multi-kilobyte inline
 messages. For anything longer than a few sentences, write the
@@ -234,7 +286,7 @@ harnex run pi --id pi-i-13 --tmux pi-i-13 \
 This is more reliable, easier to debug (you can read the file to
 see exactly what was sent), and avoids quoting headaches.
 
-## Capturing results
+### Capturing results
 
 For dependable multi-step work, prefer file handoffs over reply
 messages.
@@ -279,7 +331,7 @@ If you're inside a harnex-managed session, you can also use
 `$HARNEX_ID` as the return address with `harnex send`. But file
 handoffs remain the preferred primary control flow.
 
-## Stopping agents
+### Stopping agents
 
 ```bash
 harnex stop --id pi-i-13
@@ -289,7 +341,7 @@ For Pi, harnex aborts any running turn and ends the `pi --mode rpc`
 process. PTY agents get their native exit sequence (e.g. `/exit` for
 Claude). Either way the agent shuts down cleanly.
 
-## A reliable supervised workflow
+### A reliable supervised workflow
 
 Use fresh instances for each stage. Pi plans, implements, and fixes.
 Claude (or a fresh Pi lane) only reviews.
@@ -325,8 +377,10 @@ Each Pi step can also be one blocking call:
 
 ## Teaching agents about harnex
 
-Harnex ships its agent guidance in the CLI. No skill install or
-project-local docs are required:
+The smoothest way is `harnex mcp install`: Claude Code and Pi get the lane
+commands as native tools, and Claude Code gets a `gpt` subagent (see
+[docs/agents.md](docs/agents.md)). Harnex also ships its agent guidance in the
+CLI; no skill install or project-local docs are required:
 
 ```bash
 harnex agents-guide             # list all agent guide topics
@@ -362,6 +416,9 @@ harnex agents-guide        # deeper agent-facing guidance
 
 ## What's next
 
+For lanes, MCP and coding agents, see [docs/lanes.md](docs/lanes.md),
+[docs/mcp.md](docs/mcp.md) and [docs/agents.md](docs/agents.md); upgrading
+from an older release, [docs/upgrading-to-0.29.md](docs/upgrading-to-0.29.md).
 For the full command reference, flags, HTTP API, and internals,
 see [TECHNICAL.md](TECHNICAL.md). The packaged
 [dispatch telemetry](docs/dispatch-telemetry.md) and

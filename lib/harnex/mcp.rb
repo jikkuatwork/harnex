@@ -24,7 +24,7 @@ module Harnex
       naming the lane's state and next steps.
     TEXT
 
-    MODEL = { "type" => "string", "description" => "Pi model as provider/model (default: Pi's default, e.g. foundry-zyt/gpt-6.1-sol)" }.freeze
+    MODEL = { "type" => "string", "description" => "Pi model as provider/model (default: Pi's own default model)" }.freeze
     EFFORT = { "type" => "string", "enum" => %w[off minimal low medium high xhigh max], "description" => "Reasoning effort" }.freeze
     WAIT_MINUTES = { "type" => "number", "description" => "How long to wait before returning \"still working\" (default #{DEFAULT_WAIT_MINUTES}); the worker keeps going, collect it later with result" }.freeze
     CWD = { "type" => "string", "description" => "Directory to work in (default: the server's working directory, usually the project root)" }.freeze

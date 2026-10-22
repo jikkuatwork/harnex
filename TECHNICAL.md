@@ -6,11 +6,40 @@ and internals.
 
 ## Commands
 
+### Lanes — `ask`, `delegate`, `result`, `reply`, `land`, `discard`, `lanes`
+
+The agent-facing layer. Each verb prints plain text (the worker's reply, then
+a `── NAME:` footer with state, model, cost, commits and next commands) and
+shares exit codes: 0 done, 1 failed, 2 usage error, 124 still working.
+Blocking verbs default to `--timeout 9m`. See [docs/lanes.md](docs/lanes.md)
+and `harnex help <verb>`.
+
+```bash
+harnex ask "QUESTION" [--model M] [--write] [--fallback-model M]
+harnex delegate [--worktree NAME | --name NAME] [--no-wait] [--model M] "TASK"
+harnex result [NAME...]
+harnex reply NAME "MESSAGE" [--model M]
+harnex land [NAME...]
+harnex discard NAME...
+harnex lanes [--all] [--closed] [--json]
+```
+
+### `harnex mcp` — The lane verbs as MCP tools
+
+```bash
+harnex mcp install [--claude] [--pi] [--no-agent] [--dry-run]
+harnex mcp status
+harnex mcp uninstall
+harnex mcp            # stdio server (what clients run)
+```
+
+See [docs/mcp.md](docs/mcp.md).
+
 ### `harnex run` — Start an agent
 
 ```bash
 harnex run pi
-harnex run pi --id pi-i-13 --tmux pi-i-13 --model foundry-zyt/gpt-6.1-sol
+harnex run pi --id pi-i-13 --tmux pi-i-13 --model openai/gpt-5.1
 harnex run pi --cwd ../wt-13 --root . -- --no-approve
 harnex run claude --id cl-r-13 --tmux cl-r-13
 ```
@@ -75,7 +104,7 @@ and live-session files. See [docs/configuration.md](docs/configuration.md).
 
 ```bash
 harnex preflight pi --cwd ~/repo -- --no-approve
-harnex preflight pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol -- --no-approve
+harnex preflight pi --cwd ~/repo --commit-check --model openai/gpt-5.1 -- --no-approve
 ```
 
 Spends one real model turn (two with `--commit-check`, which commits in a
@@ -190,7 +219,7 @@ narrows to lanes launched with `run --owner-tag`.
 
 ```bash
 harnex ask "Which module parses the dispatch rows, and is it tested?"
-harnex ask --model foundry-zyt/gpt-6.1-sol --file /tmp/review.md --timeout 9m
+harnex ask --model openai/gpt-5.1 --file /tmp/review.md --timeout 9m
 ```
 
 Runs a Pi worker in a tmux window with read-only tools, prints its answer on
@@ -383,6 +412,47 @@ Schema details and compatibility guarantees are in [docs/events.md](docs/events.
    ├── opencode.rb  OpenCode PTY behavior
    └── pi.rb        Pi JSONL RPC adapter (`pi --mode rpc`, default worker)
 ```
+
+## Lanes and MCP
+
+Lanes sit on top of sessions; they add a record, git plumbing and text output,
+not a new runtime.
+
+- **Records** (`lib/harnex/lanes.rb`) live in `STATE_DIR/lanes/<repo_key>--<name>.json`:
+  kind (`ask`/`delegate`), main-checkout root, run root, cwd, worktree, branch,
+  base sha, owner (`CLAUDE_CODE_SESSION_ID`/`PI_SESSION_ID`), requested model,
+  Pi `agent_session_id`, accumulated cost, launch time and the last turn's result.
+  States: `running` (a turn is out and uncollected), `done`, `failed`, `landed`,
+  `discarded`.
+- **Launching:** the verbs shell out to the low-level CLI. `delegate` runs
+  `harnex run pi --id NAME --tmux NAME --cwd WORKDIR --root ROOT --auto-stop`
+  with a brief file (`--context-file`); with `--wait-done` it blocks on the
+  first result. `result` runs `harnex wait --until done --since LAUNCHED_AT`
+  (each relaunch restarts the events-log `seq`, so `--since` keeps an earlier
+  launch's result from matching) plus `--after-seq` for a follow-up sent to a
+  live lane.
+- **Follow-ups:** `reply` sends to a live worker (`harnex send --wait-done`);
+  a finished lane is relaunched under the same id with `-- --session
+  <agent_session_id>`, so Pi resumes the conversation.
+- **Settling:** after a turn, the lane reads the launch's `usage` event (cost,
+  `agent_session_id`) and records the result; the footer adds commits and a
+  diffstat from git (`base_sha..HEAD`).
+- **Worktrees:** `.harnex/worktrees/NAME` on branch `harnex/NAME`; `.harnex/`
+  is added to `<git-common-dir>/info/exclude` on the first write.
+  `land` merges with `git merge --no-edit`, leaves conflicts in progress, and
+  removes the worktree and branch; lanes merged by hand are swept on the next
+  call.
+- **Progress:** the Pi activity tracker records the current tool name and the
+  per-turn tool count (never arguments); `lanes` and MCP progress read them from
+  the session's `GET /status`.
+- **MCP** (`lib/harnex/mcp.rb`): newline-delimited JSON-RPC 2.0 over stdio.
+  Each `tools/call` runs in its own thread and spawns the CLI verb in its own
+  process group (a cancel kills the wait, never the worker); stdout writes are
+  serialized; progress notifications go out every 15s when the call carries a
+  `progressToken`.
+- **Worker guard:** the Pi adapter adds `--exclude-tools mcp__harnex__…` to
+  every worker (Pi >= 0.99) and `--no-mcp` when a `--tools` allowlist is set
+  (Pi >= 1.0.4), so workers cannot start workers.
 
 ## Session Lifecycle
 

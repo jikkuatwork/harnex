@@ -73,7 +73,7 @@ module Harnex
 
         Common patterns:
           #{program_name} pi --cwd ~/repo -- --no-approve
-          #{program_name} pi --cwd ~/repo --commit-check --model foundry-zyt/gpt-6.1-sol -- --no-approve
+          #{program_name} pi --cwd ~/repo --commit-check --model openai/gpt-5.1 -- --no-approve
           #{program_name} pi --cwd ~/repo && harnex run pi --cwd ~/repo --context "..."
 
         Gotchas:
