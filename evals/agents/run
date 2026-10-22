@@ -132,7 +132,9 @@ SCENARIOS = {
             "the score. While it is running, check on it once and tell me what it is doing. Then wait for it and " \
             "tell me the score.",
     check: lambda { |_repo, final, calls|
-      peeked = calls.any? { |c| command_of(c).match?(/harnex\s+(lanes|status|pane|logs)|mcp__harnex__lanes/) || c[:name].to_s.end_with?("__lanes") }
+      peeked = calls.any? do |c|
+        command_of(c).match?(/harnex\s+(lanes|status|pane|logs|events)|tmux\s+capture-pane/) || c[:name].to_s.end_with?("__lanes")
+      end
       Checks.answer_matches(final, /4242/, "the score 4242") + (peeked ? [] : ["never checked on the running worker"])
     }
   },
@@ -187,9 +189,13 @@ end
 
 def run_supervisor(kind, opts, prompt, repo, stream_path)
   argv, stdin_data = supervisor_command(kind, opts, prompt)
+  env = clean_env
+  # Print mode stops background work 10 idle minutes after the main turn;
+  # an interactive session has no such ceiling, so the evals lift it.
+  env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0" if kind.start_with?("claude")
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   File.open(stream_path, "w") do |stream|
-    Open3.popen3(clean_env, *argv, chdir: repo, unsetenv_others: true, pgroup: true) do |stdin, stdout, stderr, wait|
+    Open3.popen3(env, *argv, chdir: repo, unsetenv_others: true, pgroup: true) do |stdin, stdout, stderr, wait|
       stdin.write(stdin_data) if stdin_data
       stdin.close
       err_reader = Thread.new { stderr.read }

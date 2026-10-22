@@ -3,7 +3,14 @@ require "json"
 
 class PiAdapterTest < Minitest::Test
   def setup
-    @adapter = Harnex::Adapters::Pi.new
+    @adapter = pinned(Harnex::Adapters::Pi.new)
+  end
+
+  # Command-shape tests pin a Pi from before MCP (0.99.0), so they do not
+  # depend on the Pi installed on this machine.
+  def pinned(adapter, version = "0.98.0")
+    adapter.instance_variable_set(:@agent_version, version)
+    adapter
   end
 
   def test_reader_drain_still_bounds_an_actual_blocked_read
@@ -50,12 +57,12 @@ class PiAdapterTest < Minitest::Test
   end
 
   def test_project_trust_defaults_to_no_approve_unless_the_caller_chooses
-    assert_equal %w[pi --mode rpc --approve], Harnex::Adapters.build("pi", ["--approve"]).build_command
-    assert_equal %w[pi --mode rpc -na], Harnex::Adapters.build("pi", ["-na"]).build_command
+    assert_equal %w[pi --mode rpc --approve], pinned(Harnex::Adapters.build("pi", ["--approve"])).build_command
+    assert_equal %w[pi --mode rpc -na], pinned(Harnex::Adapters.build("pi", ["-na"])).build_command
   end
 
   def test_build_returns_pi_adapter
-    adapter = Harnex::Adapters.build("pi", ["--model", "anthropic/claude-sonnet-4-5"])
+    adapter = pinned(Harnex::Adapters.build("pi", ["--model", "anthropic/claude-sonnet-4-5"]))
     assert_instance_of Harnex::Adapters::Pi, adapter
     assert_equal ["pi", "--mode", "rpc", "--no-approve", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
   end
@@ -82,14 +89,27 @@ class PiAdapterTest < Minitest::Test
     assert_includes description.fetch(:events), "summarization_retry_scheduled"
   end
 
+  def test_workers_never_get_harnex_mcp_tools
+    tools = Harnex::Adapters::Pi::HARNEX_MCP_TOOLS.join(",")
+    assert_equal %W[pi --mode rpc --no-approve --exclude-tools #{tools}],
+                 pinned(Harnex::Adapters::Pi.new([]), "1.4.0").build_command
+    assert_equal %W[pi --mode rpc --no-approve --exclude-tools bash,#{tools}],
+                 pinned(Harnex::Adapters::Pi.new(["--exclude-tools", "bash"]), "1.4.0").build_command
+    assert_equal %w[pi --mode rpc --no-approve --tools read,grep --no-mcp],
+                 pinned(Harnex::Adapters::Pi.new(["--tools", "read,grep"]), "1.4.0").build_command,
+                 "a read-only allowlist keeps MCP tools in Pi >= 1.0.4, so MCP is off"
+    assert_equal %W[pi --mode rpc --no-approve --tools read --exclude-tools #{tools}],
+                 pinned(Harnex::Adapters::Pi.new(["--tools", "read"]), "1.0.0").build_command
+  end
+
   def test_build_command_strips_harnex_context_marker
-    adapter = Harnex::Adapters::Pi.new([
+    adapter = pinned(Harnex::Adapters::Pi.new([
       "--model", "anthropic/claude-sonnet-4-5",
-      "[harnex session id=cx-i-44] implement task"
-    ])
+      "[harnex session id=pi-i-44] implement task"
+    ]))
 
     assert_equal ["pi", "--mode", "rpc", "--no-approve", "--model", "anthropic/claude-sonnet-4-5"], adapter.build_command
-    assert_equal "[harnex session id=cx-i-44] implement task", adapter.initial_prompt
+    assert_equal "[harnex session id=pi-i-44] implement task", adapter.initial_prompt
   end
 
   def test_dispatch_sends_prompt_command

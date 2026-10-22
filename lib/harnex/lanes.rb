@@ -83,8 +83,12 @@ module Harnex
          .sort_by { |lane| lane["launched_at"].to_s }
     end
 
+    FILLER = %w[a an the this that these those to of in on at for from with and or but it its please
+                run use add make have has can could would should will do does just then also your you
+                our my me i we gpt worker workers task repo repository git command file files code].freeze
+
     def generate_name(root, task, prefix: "pi")
-      words = task.to_s.downcase.scan(/[a-z0-9]+/).first(4)
+      words = task.to_s.downcase.scan(/[a-z0-9]+/).reject { |word| FILLER.include?(word) }.first(4)
       base = ([prefix] + words).join("-")[0, 40].sub(/-+\z/, "")
       name = base
       index = 2
@@ -122,7 +126,7 @@ module Harnex
 
       line += " · #{act['tool_calls']} tool call#{act['tool_calls'] == 1 ? '' : 's'}" if act["tool_calls"].to_i.positive?
       if act["current_tool"]
-        line + " · now #{act['current_tool']} (#{act['current_tool_s'].to_i}s)"
+        line + " · now #{act['current_tool']} #{act['current_tool_s'].to_i}s"
       elsif act["model_active"]
         line + " · thinking"
       else

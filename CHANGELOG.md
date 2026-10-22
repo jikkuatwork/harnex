@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.25.0] - 2026-10-22 | 04:14 PM | IST
+
+Owner-authorized local-only release (#87).
+
+### Fixed
+
+- **Workers never get harnex's own MCP tools.** With harnex MCP registered
+  in Pi, every harnex-launched Pi worker also saw `delegate` and the other
+  harnex tools, and Pi 1.4.0 keeps MCP tools despite a `--tools` allowlist.
+  In an eval, a read-only ask worker used `delegate` to launch a writable
+  lane. Now:
+  - Pi workers start with `--exclude-tools mcp__harnex__…` (merged with the
+    caller's own exclusions; Pi >= 0.99);
+  - allowlisted (read-only) workers start with `--no-mcp` (Pi >= 1.0.4).
+
+### Changed
+
+- Progress lines read `now bash 12s`, without nested parentheses.
+- Lane names generated from a task skip filler words (`pi-slow-bench`, not
+  `pi-run-the-slow-bench`).
+- Evals lift Claude print mode's 10-minute background ceiling
+  (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`), as interactive sessions have
+  none. S6 accepts `tmux capture-pane` as checking on a worker.
+
 ## [0.24.0] - 2026-10-22 | 03:51 PM | IST
 
 Owner-authorized local-only release (#87): fixes from the 0.23.0 agent evals.

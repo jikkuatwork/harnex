@@ -85,15 +85,37 @@ module Harnex
       end
 
       TRUST_FLAGS = %w[--approve -a --no-approve -na].freeze
+      HARNEX_MCP_TOOLS = %w[ask delegate result reply land discard lanes].map { |tool| "mcp__harnex__#{tool}" }.freeze
+      MCP_VERSION = Gem::Version.new("0.99.0")
+      NO_MCP_VERSION = Gem::Version.new("1.0.4")
 
       def build_command
         args = cli_extra_args
         # RPC cannot show Pi's project-trust prompt: ignore project-local
         # resources unless the caller passes --approve (#87).
         args = ["--no-approve"] + args unless args.any? { |arg| TRUST_FLAGS.include?(arg) }
+        args = guard_mcp(args)
         args += ["--model", @startup_model] if @startup_model
         args += ["--thinking", @startup_effort] if @startup_effort
         base_command + args
+      end
+
+      # #87: a worker never gets harnex's own MCP tools, so it cannot launch
+      # more workers (recursion) or escape a read-only ask through delegate.
+      # Pi >= 1.0.4 keeps MCP tools despite a --tools allowlist, so an
+      # allowlisted (read-only) worker runs with --no-mcp.
+      def guard_mcp(args)
+        version = parsed_agent_version
+        return args unless version && version >= MCP_VERSION
+        return args if args.include?("--no-mcp")
+        return args + ["--no-mcp"] if version >= NO_MCP_VERSION && (args & %w[--tools -t]).any?
+
+        index = args.index("--exclude-tools") || args.index("-xt")
+        return args + ["--exclude-tools", HARNEX_MCP_TOOLS.join(",")] unless index && args[index + 1]
+
+        merged = args.dup
+        merged[index + 1] = ([args[index + 1]] + HARNEX_MCP_TOOLS).join(",")
+        merged
       end
 
       def configure_startup(model: nil, effort: nil)

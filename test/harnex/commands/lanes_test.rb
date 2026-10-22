@@ -302,7 +302,7 @@ class LanesTest < Minitest::Test
     respond([done, 0])
     code, out, = cli(Harnex::Delegate, ["Run the slow bench please"])
     assert_equal 0, code
-    assert_includes out, "── pi-run-the-slow-bench:"
+    assert_includes out, "── pi-slow-bench:"
     assert_includes out, "worked in place"
   end
 end

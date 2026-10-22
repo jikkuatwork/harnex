@@ -1,46 +1,47 @@
 # Harnex State
 
-Updated: 2026-10-22 | 01:05 PM | IST
+Updated: 2026-10-22 | 04:14 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.21.0 is installed locally; #86 slice 1 is done.** The `gpt` Claude Code
-  agent type (`~/Projects/pi/.claude/agents/gpt.md`, linked as
-  `~/.claude/agents/gpt.md`) is a Haiku relay over `harnex ask`. The new
-  `ask --resume` lets it outlast the 10-minute Bash cap. An 8-lane stress test
-  passed (long task, worktree writers, models, fallback). Record:
-  `koder/releases/0.21.0.md`.
-- 0.20.0 made harnex Pi + GPT only (`koder/releases/0.20.0.md`); 0.19.0 (#85)
-  and 0.18.0 (#79-#84) shipped the same week.
-- Owner skills live in `~/Projects/pi/.pi/skills` (`harnex` skill added,
-  `koder-pattern` ported to Pi-only; linked for Claude and Pi).
-- Suite: 788 runs / 3,931 assertions, no failures; Pi 1.4.0 contract test green.
+- **#87 agent smoothness, in progress** (owner mandate 2026-10-22: work
+  autonomously until harnex is "butter smooth with agents"; breaking changes
+  and local releases allowed). 0.22.0–0.24.0 are installed locally:
+  - lanes: `delegate`, `result`, `reply`, `land`, `discard` and `lanes`;
+  - `harnex mcp` with `harnex mcp install`, registered for Claude Code
+    (user scope) and Pi;
+  - the `gpt` agent relays over the MCP tools;
+  - the eval harness `evals/agents/run` covers 7 scenarios × 4 routes.
+  - Plan, bar and progress log: `koder/plans/39_agent_smoothness.md`;
+    records: `koder/releases/0.22.0.md`, `0.23.0.md`.
+- 0.21.0 (#86 slice 1, `gpt` agent, `ask --resume`) and 0.20.0 (Pi + GPT
+  only) shipped the same day.
 
 ## Present
 
-- **Owner direction (2026-10-20): exclusively Pi + GPT models.** Do not
-  reintroduce Codex; design and verify against Pi.
-- **Releases are local only** (no RubyGems, tag or push): suite green →
-  version/CHANGELOG → `gem build` → `gem install --local` → installed smoke →
-  `koder/releases/<v>.md` → STATE.
-- Pi is the only worker adapter that matters; run `pi update` first.
-- Claude Code loads agent types at session start. Background subagent results
-  reach the parent XML-escaped (`&amp;`); the relay's own text is exact.
-- The `harnex`/`ruby` mise shims need a directory with a Ruby version; a
-  scratch dir outside `$HOME` needs its own `.tool-versions` (`ruby 3.3.0`).
+- **Owner direction:** exclusively Pi + GPT models. Releases are local only
+  (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
+  smoke → `koder/releases/<v>.md` → STATE). Run `pi update` first.
+- **Unreleased in the tree:**
+  - workers launch without harnex's own MCP tools; a read-only ask runs with
+    `--no-mcp`. Pi keeps MCP tools despite `--tools`, so a read-only ask
+    worker delegated a writable lane through harnex MCP in an eval;
+  - progress formatting and lane-name generation are tidied;
+  - the evals lift Claude's print-mode background ceiling
+    (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`).
+- **Claude Code facts that matter:**
+  - agent types and MCP servers load at session start;
+  - background results reach the parent XML-escaped;
+  - `claude -p` stops background work 10 idle minutes after the main turn;
+  - `CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS` (10m) may also apply to
+    subagents.
 
 ## Future (suggested order)
 
-1. **#86 slice 2:** `harnex mcp` (stdio MCP: `ask`, `delegate`, `send`,
-   `status`); then slice 3, the `--worktree` lane shorthand plus capacity
-   retry and fallback for `run`.
-2. **#41 Slice C:** `docs/public_api.md` (docs only; closes #41).
-3. **#78:** pane time markers; verify live in a Pi `--tmux` pane.
-4. **#17**, then **#16** (macOS portability), then **#59** (conveyor plan +
-   first slice; it also owns `--retry-on capacity` from #82).
-5. Open questions for the owner: point Pi's `holm-app` skill at Holm's
-   canonical `knowledge-base/skills/app` (Claude already uses it); link the
-   untracked `feedback` skill for Pi.
+1. Release 0.25.0 with the MCP guard. Then rerun the evals until two
+   consecutive full runs meet the bar in plan 39.
+2. #86 slice 3: `run` capacity retry/fallback (with #59/#82).
+3. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16, #59.
