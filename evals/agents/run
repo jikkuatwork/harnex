@@ -53,6 +53,15 @@ module Checks
     branch.strip == "main" ? [] : ["main checkout is on #{branch.strip.inspect}, not main"]
   end
 
+  # bin/slow-bench prints a random score and records it in .git, so only an
+  # answer from a real run can quote it.
+  def bench_score(repo, final)
+    score = File.read(File.join(repo, ".git", "bench-last-score")).strip
+    final.to_s.include?(score) ? [] : ["final answer does not quote the benchmark's score #{score}"]
+  rescue Errno::ENOENT
+    ["bin/slow-bench never ran to completion"]
+  end
+
   def answer_matches(final, pattern, what)
     final.to_s.match?(pattern) ? [] : ["final answer does not mention #{what}"]
   end
@@ -112,7 +121,7 @@ SCENARIOS = {
     title: "task longer than 10 minutes",
     prompt: "Have a GPT worker run bin/slow-bench (it takes about 11 minutes) and tell me the " \
             "score it prints. Do not run it yourself.",
-    check: ->(repo, final) { Checks.answer_matches(final, /4242/, "the score 4242") }
+    check: ->(repo, final) { Checks.bench_score(repo, final) }
   },
   "S5" => {
     title: "follow-up to the same worker",
@@ -131,11 +140,11 @@ SCENARIOS = {
     prompt: "Start a GPT worker, without waiting for it, that runs `BENCH_SECONDS=120 bin/slow-bench` and reports " \
             "the score. While it is running, check on it once and tell me what it is doing. Then wait for it and " \
             "tell me the score.",
-    check: lambda { |_repo, final, calls|
+    check: lambda { |repo, final, calls|
       peeked = calls.any? do |c|
         command_of(c).match?(/harnex\s+(lanes|status|pane|logs|events)|tmux\s+capture-pane/) || c[:name].to_s.end_with?("__lanes")
       end
-      Checks.answer_matches(final, /4242/, "the score 4242") + (peeked ? [] : ["never checked on the running worker"])
+      Checks.bench_score(repo, final) + (peeked ? [] : ["never checked on the running worker"])
     }
   },
   "S7" => {

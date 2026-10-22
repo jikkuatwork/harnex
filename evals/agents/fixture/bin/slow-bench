@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 # Slow benchmark: takes about 11 minutes, then prints the score.
 sleep "${BENCH_SECONDS:-660}"
-echo "score: 4242"
+score=$(( (RANDOM << 15 | RANDOM) % 900000 + 100000 ))
+echo "$score" > "$(git rev-parse --git-common-dir)/bench-last-score"
+echo "score: $score"

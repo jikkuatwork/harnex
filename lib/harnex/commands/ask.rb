@@ -20,8 +20,9 @@ module Harnex
                harnex ask --resume ID [--timeout DUR] [--json]
 
         Ask a Pi worker one question and print its answer on stdout. The worker
-        runs in a visible tmux window, reads the repository, and stops when it
-        has answered. stderr gets one line naming the lane, its time and model.
+        runs in a visible tmux window, reads the repository (it cannot run
+        commands unless --write; to run things use `harnex delegate`), and stops
+        when it has answered. stderr gets one line naming the lane, its time and model.
         A read-only ask records its dispatch in the global harnex stream, so the
         repository stays untouched; --write records in the repository.
 

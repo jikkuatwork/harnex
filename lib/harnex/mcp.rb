@@ -34,7 +34,8 @@ module Harnex
         "name" => "ask",
         "title" => "Ask a GPT worker",
         "description" => "Ask a Pi worker (GPT by default) a question and get its answer. Read-only by default: it reads the " \
-                         "repository but changes nothing. Use for second opinions, explanations and code review.",
+                         "repository but cannot run commands or change anything. Use for second opinions, explanations " \
+                         "and code review; to run tests, scripts or benchmarks, use delegate.",
         "inputSchema" => { "type" => "object", "required" => ["question"], "properties" => {
           "question" => { "type" => "string", "description" => "Self-contained question; the worker has not seen this conversation" },
           "model" => MODEL, "effort" => EFFORT,

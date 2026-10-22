@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.28.0] - 2026-10-22 | 05:15 PM | IST
+
+Owner-authorized local-only release (#87): fixes from round B on 0.27.0.
+
+### Changed
+
+- The MCP `ask` tool description, `harnex ask --help` and the skill index
+  say that an ask worker only reads and cannot run commands; to run tests,
+  scripts or benchmarks, use `delegate`. In round B, a relay sent "run
+  bin/slow-bench" to a read-only ask, and the worker could only read the
+  script.
+- Outside this repo: the `gpt` relay routes a brief that asks to run
+  something or change files to `delegate` (in place), questions and reviews
+  to `ask`, and honours `mode: read`.
+- Evals: `bin/slow-bench` prints a random score and records it in
+  `.git/bench-last-score`. S4 and S6 pass only when the benchmark really
+  ran and the answer quotes that score; a fixed score in the script could
+  be read without running it.
+
 ## [0.27.0] - 2026-10-22 | 04:58 PM | IST
 
 Owner-authorized local-only release (#87): fixes from round A on 0.26.0
