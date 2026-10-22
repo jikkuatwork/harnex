@@ -354,11 +354,33 @@ OptionParser.new do |o|
   o.on("--timeout MIN", Integer, "per scenario (default 45)") { |v| opts[:timeout] = v * 60 }
   o.on("--jobs N", Integer, "scenarios at once (default 4)") { |v| opts[:jobs] = v }
   o.on("--out DIR", "results directory") { |v| opts[:out] = File.expand_path(v) }
+  o.on("--resummarize DIR", "recompute metrics and summary of an earlier run from its streams") do |v|
+    opts[:resummarize] = File.expand_path(v)
+  end
   o.on("--list", "list scenarios") do
     SCENARIOS.each { |id, s| puts "#{id}  #{s[:title]}" }
     exit
   end
 end.parse!
+
+if opts[:resummarize]
+  results = Dir.glob(File.join(opts[:resummarize], "*", "stream.jsonl")).sort.filter_map do |stream|
+    dir = File.dirname(stream)
+    id, kind = File.basename(dir).split("-", 2)
+    next unless SCENARIOS.key?(id)
+
+    old = JSON.parse(File.read(File.join(dir, "metrics.json"))) rescue {}
+    events = parse_events(stream)
+    metrics = kind.start_with?("claude") ? claude_metrics(events) : pi_metrics(events)
+    result = summarize(id, kind, SCENARIOS.fetch(id), File.join(dir, "repo"), old["exit_code"], old["seconds"].to_i, metrics)
+    File.write(File.join(dir, "metrics.json"), JSON.pretty_generate(result))
+    result
+  end
+  summary = markdown(results)
+  File.write(File.join(opts[:resummarize], "summary.md"), summary + "\n")
+  puts summary
+  exit(results.all? { |r| r[:pass] } ? 0 : 1)
+end
 
 ids = ARGV.empty? ? SCENARIOS.keys : ARGV.map(&:upcase)
 ids.each { |id| SCENARIOS.key?(id) || abort("unknown scenario #{id}; see --list") }
