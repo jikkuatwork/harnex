@@ -93,3 +93,18 @@ is the native invocation surface. Take up in a new session.
 - Record: `koder/releases/0.21.0.md`.
 - **Next:** slice 2 (`harnex mcp`). Optional polish: report the whole ask's
   time after a resume.
+
+### 2026-10-22: slices 1–2 done; slice 3 mostly done (via #87)
+
+- **Slice 2:** `harnex mcp` shipped in 0.23.0 with `ask`, `delegate`,
+  `result`, `reply`, `land`, `discard` and `lanes`. It is registered for
+  Claude Code and Pi by `harnex mcp install`. The `gpt` agent now relays
+  over these tools, so it needs no Bash, no 124 loop, and follow-ups keep
+  their context.
+- **Slice 3:**
+  - Lane shorthand: `harnex delegate --worktree NAME` (0.22.0).
+  - Capacity retry: manual for now. The failure footer suggests
+    `harnex reply NAME "Continue…" --model <Pi default>`, which resumes the
+    session. `ask --fallback-model` is automatic.
+  - Still open: automatic retry/fallback for `delegate`/`run` (with #59/#82).
+

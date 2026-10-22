@@ -171,4 +171,27 @@ between is good practice); S5 is delegate + reply + land.
 - **0.26.0:** bare `land`; doctor `integrations`. Round A (r5): 27/28; fixes
   in 0.27.0 (MCP argument synonyms; the `gpt` agent names `harnex lanes`).
 - **0.27.0:** rounds B and C must both meet the bar (r6, r7).
+- **0.28.0, bar met.** The `gpt` relay routes briefs that run something to
+  `delegate`; the bench score is random so it can't be gamed. Rounds C (r7)
+  and D (r8) each scored 28/28 pass, HxErr 0, 0 doc lookups, 0 leftovers on
+  all four routes, on the same build.
+
+## Outcome
+
+The bar is met on 0.28.0 (2026-10-22).
+
+| | 0.21.0 | 0.28.0 |
+|---|---|---|
+| Pass | 10/10 (5 scenarios × 2 routes) | 28/28 × 2 rounds (7 × 4 routes) |
+| Leftovers | 8 | 0 |
+| Doc lookups per Pi task | 4–6 | 0 |
+| Pi calls, S3 parallel | 25 | 16–17 |
+| Claude S3 time | 252s | 86–117s |
+
+Follow-ups worth doing later are not blockers:
+
+- automatic capacity fallback for `delegate` (today it's manual:
+  `reply --model`);
+- worktree bootstrap for repos that need `.env` or dependencies;
+- an Opus-supervisor eval round.
 
