@@ -57,7 +57,10 @@ class AskTest < Minitest::Test
     timeout = { ok: false, id: "pi-ask-2", wait_result: "timeout", resume: "harnex wait --id pi-ask-2 --until done" }
     ask(["slow question"], timeout, 124) do |code, out, err, _argv|
       assert_equal [124, ""], [code, out]
-      assert_includes err, "harnex wait --id pi-ask-2 --until done"
+      assert_includes err, "ask --resume pi-ask-2 --repo #{File.join(Harnex::STATE_DIR, 'ask')} --timeout 9m"
+    end
+    ask(["--write", "--cwd", "/tmp/lane", "slow edit"], timeout, 124) do |_code, _out, err, _argv|
+      assert_includes err, "ask --resume pi-ask-2 --repo /tmp/lane --timeout 9m", "--write records under its work directory"
     end
     failed = { ok: false, id: "pi-ask-3", turn_result: { last_error: "high demand", outcome_class: "provider_capacity" } }
     ask(["q"], failed, 1) do |code, _out, err, _argv|
@@ -95,9 +98,35 @@ class AskTest < Minitest::Test
     end
   end
 
+  def test_resume_keeps_waiting_and_prints_the_answer
+    Dir.mktmpdir do |dir|
+      full = File.join(dir, "final.md")
+      File.write(full, "the whole answer\n")
+      turn = { ok: true, id: "pi-ask-2", wait_result: "done", model: "gpt-6.1-sol",
+               final_message: "the whole", final_message_truncated: true, final_message_path: full }
+      ask(["--resume", "pi-ask-2", "--repo", dir, "--timeout", "9m"], turn, 0) do |code, out, err, argv|
+        assert_equal [0, "the whole answer\n"], [code, out]
+        assert_equal ["wait", "--id", "pi-ask-2", "--repo", dir, "--until", "done", "--timeout", "540.0"], argv.last(9)
+        assert_match(/pi-ask-2 answered in \d+s \(model gpt-6.1-sol\)/, err)
+      end
+    end
+    ask(["--resume", "pi-ask-2", "--repo", "/tmp/r"], { ok: false, wait_result: "timeout" }, 124) do |code, _out, err, _argv|
+      assert_equal 124, code
+      assert_includes err, "ask --resume pi-ask-2 --repo /tmp/r --timeout 9m"
+    end
+    gone = { ok: false, id: "pi-ask-x", status: "no_such_session" }
+    ask(["--resume", "pi-ask-x", "--repo", "/tmp/r"], gone, 3) do |code, _out, err, _argv|
+      assert_equal 3, code
+      assert_includes err, "no_such_session"
+    end
+  end
+
   def test_usage_errors
     assert_raises(OptionParser::MissingArgument) { Harnex::Ask.new([]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--section", "x", "q"]).run }
     assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--bogus", "q"]).run }
+    assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--resume", "pi-ask-1"]).run }
+    assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--resume", "pi-ask-1", "--repo", "/r", "q"]).run }
+    assert_raises(OptionParser::InvalidOption) { Harnex::Ask.new(["--repo", "/r", "q"]).run }
   end
 end

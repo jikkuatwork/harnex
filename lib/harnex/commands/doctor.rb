@@ -79,7 +79,8 @@ module Harnex
           preflight: 1,
           ask: 1,
           final_message: 1,
-          owner_tag: 1
+          owner_tag: 1,
+          ask_resume: 1
         }
       }
       summary[:sweep] = sweep_payload if @options[:sweep]

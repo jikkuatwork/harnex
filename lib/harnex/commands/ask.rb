@@ -17,6 +17,7 @@ module Harnex
       <<~TEXT
         Usage: harnex ask [options] [--] QUESTION...
                harnex ask --file PATH [--section TEXT] [options]
+               harnex ask --resume ID --repo ROOT [--timeout DUR] [--json]
 
         Ask a Pi worker one question and print its answer on stdout. The worker
         runs in a visible tmux window, reads the repository, and stops when it
@@ -39,6 +40,9 @@ module Harnex
           --id ID          Session id (default: pi-ask-<random>)
           --timeout DUR    Cap the wait: 540, 9m or 8m30s (default: none). On 124
                            stderr names the command that keeps waiting
+          --resume ID      Keep waiting on an ask that timed out and print its
+                           answer the same way (with --repo, as stderr names it)
+          --repo ROOT      With --resume: the root the ask recorded under
           --detach         Run headless instead of in a tmux window
           --json           Print the full result JSON instead of the answer
           -h, --help       Show this help
@@ -60,7 +64,7 @@ module Harnex
       @err = err
       @harnex_command = harnex_command || [Gem.ruby, File.expand_path("../../../bin/harnex", __dir__)]
       @options = { model: nil, fallback_model: nil, effort: nil, cwd: nil, file: nil, section: nil, write: false,
-                   id: nil, timeout: nil, detach: false, json: false, help: false }
+                   id: nil, timeout: nil, detach: false, json: false, help: false, resume: nil, repo: nil }
     end
 
     def run
@@ -69,11 +73,13 @@ module Harnex
         @out.puts self.class.usage
         return 0
       end
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return report(*resume_once(@options[:resume]), Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) if @options[:resume]
+
       if question.empty? && @options[:file].nil?
         raise OptionParser::MissingArgument, "QUESTION (or --file PATH)"
       end
 
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       result, exit_code = ask_once(question, @options[:model], @options[:id])
       if exit_code == 1 && @options[:fallback_model] && result.dig("turn_result", "outcome_class") == "provider_capacity"
         @err.puts("harnex ask: #{result['id']} hit provider capacity; asking #{@options[:fallback_model]} instead")
@@ -114,6 +120,28 @@ module Harnex
       [stdout, status]
     end
 
+    # A subagent's Bash call is capped at 10 minutes, so a long ask comes back
+    # 124 and the caller re-runs this until the answer lands. `wait` prints the
+    # turn result unnested; nest it so the answer is reported like a fresh ask.
+    def resume_once(id)
+      argv = @harnex_command + ["wait", "--id", id, "--repo", @options[:repo], "--until", "done"]
+      argv += ["--timeout", @options[:timeout].to_s] if @options[:timeout]
+      stdout, status = Open3.capture2(*argv)
+      [{ "id" => id, "turn_result" => parse_result(stdout) }, status.exitstatus]
+    end
+
+    def resume_command(id)
+      "#{Harnex.cli_command} ask --resume #{id} --repo #{Shellwords.escape(run_root)} --timeout 9m"
+    end
+
+    # The root `run` records under: ask_root for a consult, the work
+    # directory for --write (run takes --cwd as the root when --root is absent).
+    def run_root
+      return @options[:repo] if @options[:resume]
+
+      @options[:write] ? File.expand_path(@options[:cwd] || Dir.pwd) : ask_root
+    end
+
     def parse_result(stdout)
       JSON.parse(stdout.to_s.lines.last.to_s)
     rescue JSON::ParserError
@@ -139,10 +167,10 @@ module Harnex
         @out.puts answer.to_s
         @err.puts("harnex ask: #{result['id']} answered in #{elapsed.round}s (model #{turn['model'] || 'Pi default'})")
       when Waiter::DONE_EXIT_TIMEOUT
-        @err.puts("harnex ask: #{result['id']} is still working; keep waiting with: #{result['resume']}")
+        @err.puts("harnex ask: #{result['id']} is still working; keep waiting with: #{resume_command(result['id'])}")
       else
         @out.puts answer unless answer.to_s.empty?
-        reason = turn["last_error"] || turn["outcome_class"] || result["error"] || "no result"
+        reason = turn["last_error"] || turn["outcome_class"] || turn["status"] || result["error"] || "no result"
         @err.puts("harnex ask: #{result['id'] || 'the worker'} did not answer (#{reason})")
       end
       exit_code
@@ -170,7 +198,7 @@ module Harnex
         when "--write" then @options[:write] = true
         when "--detach" then @options[:detach] = true
         when "--json" then @options[:json] = true
-        when "--model", "--effort", "--cwd", "--file", "--section", "--id", "--fallback-model"
+        when "--model", "--effort", "--cwd", "--file", "--section", "--id", "--fallback-model", "--resume", "--repo"
           @options[arg.delete_prefix("--").tr("-", "_").to_sym] = value(index += 1, arg)
         when "--timeout"
           @options[:timeout] = Harnex.parse_duration_seconds(value(index += 1, arg), option_name: arg)
@@ -183,6 +211,12 @@ module Harnex
       end
       if @options[:section] && @options[:file].nil?
         raise OptionParser::InvalidOption, "harnex ask: --section requires --file"
+      end
+      if @options[:resume] && (@options[:repo].nil? || !question.empty? || @options[:file])
+        raise OptionParser::InvalidOption, "harnex ask: --resume takes --repo and no question"
+      end
+      if @options[:repo] && @options[:resume].nil?
+        raise OptionParser::InvalidOption, "harnex ask: --repo requires --resume"
       end
 
       question.join(" ")

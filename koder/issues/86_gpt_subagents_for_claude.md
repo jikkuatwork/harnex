@@ -49,3 +49,37 @@ is the native invocation surface. Take up in a new session.
    `status` as native tools; long lanes still report via `Monitor`. (~a day)
 3. **Lane shorthand + retry/fallback:** `--worktree NAME` and
    `--retry-on capacity --fallback-model` (with #59/#82).
+
+## Progress
+
+### 2026-10-22: slice 1 built, first parallel stress test passed
+
+- **Agent:** `~/Projects/pi/.claude/agents/gpt.md` (`model: haiku`,
+  `tools: Bash`), linked as `~/.claude/agents/gpt.md`. It splits optional
+  header lines (`model:`, `effort:`, `mode: write`, `cwd:`, `fallback:`),
+  writes the brief through a quoted heredoc, runs
+  `harnex ask --file … --timeout 9m`, loops on 124, and returns stdout
+  verbatim plus a `— gpt: <lane, time, model>` line.
+- **Harnex:** `ask --resume ID --repo ROOT` (unreleased). A timed-out ask now
+  names an ask-shaped resume that prints the answer text, so the relay never
+  parses JSON. Live check: forced 124 at 15s, the lane finished and
+  auto-stopped, and the resume printed the full answer (exit 0).
+- **Stress test** (headless `claude -p`, four `gpt` subagents in one message):
+  all four returned in about 110s, and the parent was notified as each one
+  finished.
+  - **A, read-only:** correct in 14s.
+  - **B, `model: foundry-zyt/gpt-6-luna`, `effort: low`:** correct in 96s, on
+    the requested model.
+  - **C, shell metacharacters:** the brief reached the worker and the relay's
+    reply came back byte for byte.
+  - **D, `mode: write` in a scratch repo:** fixed the bug, verified it and
+    committed (22s).
+- **Caveats:**
+  - Claude Code loads agent types at session start; a session opened before
+    the link existed cannot launch `gpt`.
+  - The parent session receives background results XML-escaped. In C, the
+    parent printed `&amp;` and `&gt;` although the relay's text was exact.
+  - Until a release with `ask --resume` is installed, the relay on PATH
+    (0.20.0) cannot loop on asks longer than 9 minutes.
+- **Next:** cut 0.21.0 locally, then test the 124 loop through the relay
+  with a task longer than 9 minutes. After that, slice 2 (`harnex mcp`).

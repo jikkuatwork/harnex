@@ -31,6 +31,11 @@ dispatch in the global harnex stream, so the repository stays untouched. Add
 another model when the first fails on provider capacity or rate limits (that
 failure arrives only after Pi's own retries, often a couple of minutes).
 
+On exit 124 the worker keeps going and stderr names
+`harnex ask --resume ID --repo ROOT --timeout 9m`. Run it, again and again
+while it exits 124: it prints the answer and exits just like the original ask,
+even when the worker finished between calls.
+
 ### Delegate One Task
 
 ```bash

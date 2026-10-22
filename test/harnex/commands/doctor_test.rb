@@ -28,7 +28,7 @@ class DoctorTest < Minitest::Test
         out, = capture_io { assert_equal 0, doctor.run }
         payload = JSON.parse(out)
         assert_equal ["pi"], payload.fetch("checks").map { |check| check.fetch("name") }, argv.inspect
-        assert_equal [1, 1, 1], payload.fetch("capabilities").values_at("ask", "final_message", "owner_tag")
+        assert_equal [1, 1, 1, 1], payload.fetch("capabilities").values_at("ask", "final_message", "owner_tag", "ask_resume")
       end
     end
   end

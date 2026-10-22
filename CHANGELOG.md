@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.21.0] - 2026-10-22 | 12:40 PM | IST
+
+Owner-authorized local-only release (no RubyGems publication). Makes Pi/GPT
+workers usable as a Claude Code subagent type (#86 slice 1): the `gpt` agent
+(kept in `~/Projects/pi/.claude/agents/gpt.md`) relays briefs through
+`harnex ask` and needs `ask --resume` to outlast the 10-minute Bash cap.
+
+### Added
+
+- `harnex ask --resume ID --repo ROOT [--timeout DUR]` (#86): keep waiting on
+  an ask that timed out and print its answer like the original ask (same
+  exit codes, the full answer even when truncated in the result). A timed-out
+  ask now names this command on stderr instead of a raw `harnex wait`, so a
+  Claude Code subagent loops on one command shape under the 10-minute Bash
+  cap. `--json` output still carries the run's own `resume` field.
+- `harnex doctor` capabilities add `ask_resume`.
+
 ## [0.20.0] - 2026-10-20 | 09:55 PM | +04
 
 Owner-authorized local-only release (no RubyGems publication). Harnex is now
