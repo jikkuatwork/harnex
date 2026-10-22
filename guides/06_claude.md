@@ -45,7 +45,8 @@ harnex land word-count
 branch into the main checkout's current branch, then removes the worktree and
 branch; leftover uncommitted changes are committed first. On a merge conflict
 the merge stays in progress: resolve, `git commit`, and run `harnex land NAME`
-again to clean up. `harnex discard NAME` drops the lane's work. Without
+again to clean up. `harnex land` with no name lands every finished worktree
+lane you started in this repo. `harnex discard NAME` drops the lane's work. Without
 `--worktree`, the worker edits the current directory in place.
 
 ### Parallel Lanes

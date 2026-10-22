@@ -15,10 +15,11 @@ module Harnex
         TEXT
       else
         <<~TEXT
-          Usage: harnex land NAME...
+          Usage: harnex land [NAME...]
 
           Merge a worktree lane (branch harnex/NAME) into the current branch of the
-          main checkout, then remove its worktree and branch. Uncommitted changes
+          main checkout, then remove its worktree and branch. With no NAME: every
+          finished worktree lane you started in this repo, oldest first. Uncommitted changes
           in the lane are committed first. On a merge conflict the merge stays in
           progress: resolve it, `git commit`, and run `harnex land NAME` again to
           clean up (or `git merge --abort`).
@@ -37,17 +38,30 @@ module Harnex
     end
 
     def run
-      if @argv.empty? || @argv.any? { |arg| %w[-h --help].include?(arg) }
+      if (@argv.empty? && @discard) || @argv.any? { |arg| %w[-h --help].include?(arg) }
         @out.puts self.class.usage(discard: @discard)
         return @argv.empty? ? 2 : 0
       end
       flag = @argv.find { |arg| arg.start_with?("-") }
       raise OptionParser::InvalidOption, "harnex #{verb}: unknown flag #{flag}" if flag
 
-      @argv.map { |name| @discard ? discard(Lanes.resolve(name)) : land(Lanes.resolve(name)) }.max
+      lanes = @argv.empty? ? finished_lanes : @argv.map { |name| Lanes.resolve(name) }
+      if lanes.empty?
+        @out.puts "no finished worktree lanes to land (see `harnex lanes`)"
+        return 0
+      end
+      lanes.map { |lane| @discard ? discard(lane) : land(lane) }.max
     end
 
     private
+
+    # `harnex land` alone: the caller's finished worktree lanes in this repo.
+    def finished_lanes
+      root = Lanes.main_root(Dir.pwd)
+      owner = Harnex.ambient_owner_id
+      Lanes.all.select { |lane| lane["repo_root"] == root && lane["owner"] == owner && lane["branch"] && lane["state"] == "done" }
+           .sort_by { |lane| lane["created_at"].to_s }
+    end
 
     def verb
       @discard ? "discard" : "land"

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.26.0] - 2026-10-22 | 04:40 PM | IST
+
+Owner-authorized local-only release (#87): fixes from the first full 0.25.0
+eval round (28/28 pass).
+
+### Added
+
+- `harnex land` with no name, and the MCP `land` tool without `names`,
+  land every finished worktree lane the caller started in this repo,
+  oldest first. A supervisor called `land {}` expecting this. `discard`
+  still requires names.
+- `harnex doctor` reports `integrations`: whether the harnex MCP server is
+  registered for Claude Code and Pi, whether the `gpt` agent is linked, and
+  a hint to run `harnex mcp install`.
+- Closed lane records and their briefs are pruned after 30 days; open lanes
+  never are.
+
+### Changed
+
+- README: `harnex mcp uninstall` before `gem uninstall`.
+
 ## [0.25.0] - 2026-10-22 | 04:14 PM | IST
 
 Owner-authorized local-only release (#87).

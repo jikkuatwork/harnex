@@ -223,6 +223,19 @@ class LanesTest < Minitest::Test
     refute_nil Harnex::Lanes.load(@repo, "stale-open"), "open lanes keep their record however old"
   end
 
+  def test_land_without_names_lands_my_finished_lanes
+    respond([done, 0, commit_work("one.rb", "1")], [done, 0, commit_work("two.rb", "2")])
+    cli(Harnex::Delegate, ["--worktree", "first", "One"])
+    cli(Harnex::Delegate, ["--worktree", "second", "Two"])
+    code, out, = cli(Harnex::Land, [])
+    assert_equal 0, code, out
+    assert_includes out, "── first: merged"
+    assert_includes out, "── second: merged"
+    assert File.exist?(File.join(@repo, "two.rb"))
+    _code, out, = cli(Harnex::Land, [])
+    assert_includes out, "no finished worktree lanes to land"
+  end
+
   def test_discard_drops_the_worktree_and_branch
     respond([done, 0, commit_work("x.rb", "x")])
     cli(Harnex::Delegate, ["--worktree", "nope", "X"])

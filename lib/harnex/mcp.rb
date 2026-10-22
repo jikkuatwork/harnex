@@ -90,10 +90,11 @@ module Harnex
         "name" => "land",
         "title" => "Land worktree lanes",
         "description" => "Merge worktree lanes (branch harnex/NAME) into the current branch of the main checkout and " \
-                         "remove their worktrees and branches. On a merge conflict the merge is left in progress: " \
-                         "resolve it, git commit, then call land again to clean up.",
-        "inputSchema" => { "type" => "object", "required" => ["names"], "properties" => {
-          "names" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Lane names, landed in this order" },
+                         "remove their worktrees and branches. Without names: every finished worktree lane you " \
+                         "started in this repo. On a merge conflict the merge is left in progress: resolve it, git " \
+                         "commit, then call land again to clean up.",
+        "inputSchema" => { "type" => "object", "properties" => {
+          "names" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Lane names, landed in this order (default: all your finished worktree lanes)" },
           "cwd" => CWD
         } },
         "annotations" => { "readOnlyHint" => false, "destructiveHint" => false, "openWorldHint" => false }
@@ -210,8 +211,8 @@ module Harnex
           argv << "--no-wait" if args["wait"] == false
           argv + [required(args, "name"), "--", required(args, "message")]
         when "land", "discard"
-          names = Array(args["names"] || args["name"]).map(&:to_s)
-          raise ArgumentError, "#{name}: names is required" if names.empty?
+          names = Array(args["names"] || args["name"]).map(&:to_s).reject(&:empty?)
+          raise ArgumentError, "discard: names is required" if names.empty? && name == "discard"
 
           [name] + names
         when "lanes"

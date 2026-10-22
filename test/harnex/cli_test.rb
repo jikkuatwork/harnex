@@ -18,7 +18,7 @@ class CliTest < Minitest::Test
 
   def test_help_lane_verbs
     { "delegate" => "harnex delegate", "result" => "harnex result", "reply" => "harnex reply NAME",
-      "land" => "harnex land NAME", "discard" => "harnex discard NAME", "lanes" => "harnex lanes" }.each do |verb, usage|
+      "land" => "harnex land [NAME...]", "discard" => "harnex discard NAME", "lanes" => "harnex lanes" }.each do |verb, usage|
       out, = capture_io { assert_equal 0, Harnex::CLI.new(["help", verb]).run }
       assert_includes out, "Usage: #{usage}"
     end

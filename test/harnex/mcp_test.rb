@@ -73,6 +73,8 @@ class MCPServerTest < Minitest::Test
     assert_equal ["result", "--timeout", "1500", "a", "b"], argv
     serve(call(3, "land", { "names" => %w[a b] }))
     assert_equal %w[land a b], argv
+    serve(call(5, "land", {}))
+    assert_equal %w[land], argv, "no names: land my finished lanes"
     serve(call(4, "ask", { "question" => "Why?", "fallback_model" => "m2" }))
     assert_equal ["ask", "--timeout", "1500"], argv.first(3)
     assert_match(/\Api-ask-\h{4}\z/, argv[argv.index("--id") + 1], "named up front so progress can follow it")
