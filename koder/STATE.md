@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-22 | 06:48 PM | IST
+Updated: 2026-10-22 | 06:53 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -59,5 +59,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
    - an Opus-supervisor round;
    - worktree bootstrap for repos that need `.env` or dependencies;
    - rerun `evals/agents/run` after any agent-facing change.
-3. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
+3. **Site follow-ups:**
+   - check it in Safari and Firefox, and as an installed app on a phone;
+   - optionally a custom social card with the wordmark.
+4. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
    (macOS), #59.
