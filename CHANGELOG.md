@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.27.0] - 2026-10-22 | 04:58 PM | IST
+
+Owner-authorized local-only release (#87): fixes from round A on 0.26.0
+(27/28 pass, 0 leftovers, 0 doc lookups).
+
+### Changed
+
+- MCP tools accept the argument names agents reach for from their other
+  tools:
+  - `prompt`, `brief`, `message` or `instructions` for `task`;
+  - `prompt` or `query` for `question`;
+  - `prompt` or `text` for `message`;
+  - `lane`, `id` or `worktree` for `name`;
+  - `name` or `lanes` for `names`.
+
+  A supervisor passed `prompt` to `delegate` and got "task is required".
+- Evals: `--resummarize DIR`, and an `HxErr` column that counts harnex
+  usage friction apart from worker failures harnex reported properly.
+- Outside this repo: the `gpt` agent's description says that `harnex lanes`
+  (or the `lanes` tool) shows what a running worker is doing.
+
 ## [0.26.0] - 2026-10-22 | 04:40 PM | IST
 
 Owner-authorized local-only release (#87): fixes from the first full 0.25.0

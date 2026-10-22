@@ -81,6 +81,15 @@ class MCPServerTest < Minitest::Test
     assert_equal ["--fallback-model", "m2", "--", "Why?"], argv.last(4)
   end
 
+  def test_common_argument_synonyms_are_accepted
+    serve(call(1, "delegate", { "prompt" => "Add word count", "worktree" => "wc" }))
+    assert_equal "Add word count", argv.last
+    serve(call(2, "ask", { "query" => "Why?" }))
+    assert_equal "Why?", argv.last
+    serve(call(3, "reply", { "lane" => "wc", "prompt" => "More" }))
+    assert_equal %w[wc -- More], argv.last(3)
+  end
+
   def test_progress_notifications_while_the_call_runs
     replies = serve(call(7, "delegate", { "task" => "slow" }, meta: { "progressToken" => "tok" }), interval: 0.15)
     progress = replies.select { |r| r["method"] == "notifications/progress" }

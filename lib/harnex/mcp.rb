@@ -205,13 +205,13 @@ module Harnex
           argv << "--no-wait" if args["wait"] == false
           argv + ["--", required(args, "task")]
         when "result"
-          ["result"] + wait + Array(args["names"]).map(&:to_s)
+          ["result"] + wait + Array(args["names"] || args["name"]).map(&:to_s)
         when "reply"
           argv = ["reply"] + wait + opt(args, "model")
           argv << "--no-wait" if args["wait"] == false
           argv + [required(args, "name"), "--", required(args, "message")]
         when "land", "discard"
-          names = Array(args["names"] || args["name"]).map(&:to_s).reject(&:empty?)
+          names = Array(args["names"] || args["name"] || args["lanes"]).map(&:to_s).reject(&:empty?)
           raise ArgumentError, "discard: names is required" if names.empty? && name == "discard"
 
           [name] + names
@@ -227,8 +227,17 @@ module Harnex
         value.nil? || value.to_s.strip.empty? ? [] : [flag, value.to_s]
       end
 
+      # Agents reach for the argument names of their other tools (the Agent
+      # tool's `prompt`); accept the common synonyms instead of failing.
+      ALIASES = {
+        "task" => %w[prompt brief message instructions],
+        "question" => %w[prompt query message],
+        "message" => %w[prompt text task],
+        "name" => %w[lane id worktree]
+      }.freeze
+
       def required(args, key)
-        value = args[key].to_s
+        value = ([key] + ALIASES.fetch(key, [])).map { |k| args[k] }.find { |v| !v.to_s.strip.empty? }.to_s
         raise ArgumentError, "#{key} is required" if value.strip.empty?
 
         value
@@ -241,7 +250,7 @@ module Harnex
         when "delegate"
           if args["worktree"].to_s.empty? && args["name"].to_s.empty?
             root = Lanes.main_root(work_dir(args)) || work_dir(args)
-            args["name"] = Lanes.generate_name(root, args["task"])
+            args["name"] = Lanes.generate_name(root, args["task"] || args["prompt"] || args["brief"])
           end
         when "ask"
           args["id"] ||= "pi-ask-#{SecureRandom.hex(2)}"
