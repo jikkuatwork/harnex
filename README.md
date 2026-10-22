@@ -475,6 +475,7 @@ See [recipes/03_buddy.md](recipes/03_buddy.md) for the full pattern.
 ## Uninstalling
 
 ```bash
+harnex mcp uninstall     # if you ran harnex mcp install
 gem uninstall harnex
 ```
 

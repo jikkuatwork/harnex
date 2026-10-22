@@ -19,6 +19,25 @@ module Harnex
       TEXT
     end
 
+    # Where the agent-facing integrations stand (doctor reports this; it
+    # reads config files only, so it never starts a client).
+    def self.integrations
+      claude = begin
+        JSON.parse(File.read(File.expand_path("~/.claude.json"))).dig("mcpServers", SERVER_NAME)
+      rescue StandardError
+        nil
+      end
+      pi = begin
+        JSON.parse(File.read(pi_config_path)).dig("mcpServers", SERVER_NAME)
+      rescue StandardError
+        nil
+      end
+      result = { claude_mcp: !claude.nil?, pi_mcp: !pi.nil?,
+                 gpt_agent: File.exist?(File.expand_path("~/.claude/agents/gpt.md")) }
+      result[:hint] = "run `harnex mcp install` for native tools in Claude Code and Pi" unless claude && pi
+      result
+    end
+
     def self.pi_config_path
       dir = ENV["PI_AGENT_DIR"] || ENV["PI_CODING_AGENT_DIR"] || File.expand_path("~/.pi/agent")
       File.join(dir, "mcp.json")

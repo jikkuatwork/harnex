@@ -29,6 +29,7 @@ class DoctorTest < Minitest::Test
         payload = JSON.parse(out)
         assert_equal ["pi"], payload.fetch("checks").map { |check| check.fetch("name") }, argv.inspect
         assert_equal [1, 1, 1, 1, 1, 1], payload.fetch("capabilities").values_at("ask", "final_message", "owner_tag", "ask_resume", "lanes", "mcp")
+        assert_equal %w[claude_mcp gpt_agent pi_mcp], (payload.fetch("integrations").keys - ["hint"]).sort
       end
     end
   end

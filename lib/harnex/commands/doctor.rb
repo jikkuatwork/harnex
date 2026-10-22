@@ -66,6 +66,7 @@ module Harnex
         checks: checks,
         retention: retention,
         harnex_version: Harnex::VERSION,
+        integrations: MCPCommand.integrations,
         capabilities: {
           runtime_budget: 1,
           work_activity: 1,
