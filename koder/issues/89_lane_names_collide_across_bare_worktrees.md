@@ -44,3 +44,14 @@ Suggested fix (owner's suggestion first):
 
 Acceptance: three concurrent `gpt` agents with identical briefs in three sibling worktrees of a
 bare repo get three distinct names, and each relay's `result` collects its own lane.
+
+## Second observation (2026-10-24 ~00:46, same night)
+
+A `gpt` relay given only `cwd:` + `mode: write` headers (no `worktree:`) for a brief that said
+"in the sibling worktree /home/…/night-1024_s3_fix (branch night/1024_s3_fix)" named the lane
+`night-1024_s3_fix` and also created an empty harnex worktree,
+`<cwd>/.harnex/worktrees/night-1024_s3_fix` on `harnex/night-1024_s3_fix` (0 commits); the worker
+itself worked and committed in the cwd as asked. The relay (a small model) appears to infer
+`worktree` from brief prose. Suggested fix: `agents/gpt.md` never sets `worktree` unless a
+`worktree:` header line is present, and `delegate` refuses `worktree` when `cwd` is itself a
+linked worktree of the same repo.
