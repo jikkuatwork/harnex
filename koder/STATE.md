@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-23 | 10:45 AM | IST
+Updated: 2026-10-23 | 05:22 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -49,6 +49,11 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
   publishing; 0.29.0 was approved and published. Run `pi update` first.
 - **Site:** after a docs change, run `ruby site/build.rb`, then
   `holm @zyt app deploy site/app --spec-v1 --host harnex.zyt.app --force`.
+  - Feedback project `6jyd3ya4`: the form's logo is `site/app/web/icon-512.png`
+    (uploaded 2026-10-23; fallback icon `terminal`). Re-upload it if the
+    symbol changes.
+  - The launcher button still shows the feedback app's bubble mark. Swapping
+    it means patching `site/src/assets/feedback.js`; that was offered, not done.
 - **MCP is registered:**
   - Claude Code at user scope, as the RubyGems wrapper `.../bin/harnex mcp`;
   - Pi in `~/.pi/agent/mcp.json` (exposure direct);
