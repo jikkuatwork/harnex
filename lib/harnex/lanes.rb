@@ -19,6 +19,9 @@ module Harnex
     WORKTREES_DIR = File.join(".harnex", "worktrees").freeze
     CLOSED_STATES = %w[landed discarded].freeze
     DEFAULT_TIMEOUT = 540
+    # A lane's run is tagged meta.phase = its kind unless the caller names a
+    # phase; repo phase allowlists exempt these harnex-owned phases (#88).
+    PHASES = %w[delegate ask].freeze
 
     module_function
 
@@ -58,6 +61,16 @@ module Harnex
 
     def open?(lane)
       lane && !CLOSED_STATES.include?(lane["state"])
+    end
+
+    # Older harnex kept the record of a lane refused before it started (#88).
+    def never_started?(lane)
+      lane && lane["state"] == "failed" && lane["turns"].to_i.zero? && !live?(lane)
+    end
+
+    def forget(lane)
+      FileUtils.rm_f(path(lane["repo_root"], lane["name"]))
+      FileUtils.rm_f(brief_path(lane["repo_root"], lane["name"]))
     end
 
     # A name resolves to this repo's lane first, then to the only lane
@@ -227,8 +240,7 @@ module Harnex
         closed_at = Time.iso8601((lane["landed_at"] || lane["updated_at"]).to_s)
         next if closed_at > cutoff
 
-        FileUtils.rm_f(path(lane["repo_root"], lane["name"]))
-        FileUtils.rm_f(File.join(dir, "briefs", "#{Harnex.repo_key(lane['repo_root'])}--#{lane['name']}.md"))
+        forget(lane)
       rescue ArgumentError
         next
       end
@@ -253,8 +265,12 @@ module Harnex
 
     # ---- briefs ------------------------------------------------------------
 
+    def brief_path(repo_root, name)
+      File.join(dir, "briefs", "#{Harnex.repo_key(repo_root)}--#{name}.md")
+    end
+
     def write_brief(lane, task)
-      file = File.join(dir, "briefs", "#{Harnex.repo_key(lane['repo_root'])}--#{lane['name']}.md")
+      file = brief_path(lane["repo_root"], lane["name"])
       footer = if lane["branch"]
                  "You are working in a git worktree on branch #{lane['branch']}; the main checkout is not " \
                    "affected. When you are done, commit your changes on this branch, then reply with a short " \
@@ -275,6 +291,7 @@ module Harnex
     # done); without, returns [launch_payload, 0]. A launch that fails before
     # any result (bad flag, busy id, no tmux) raises with harnex's message.
     def launch(lane, harnex_command, context_args:, child_args: [], wait: true, timeout: DEFAULT_TIMEOUT, detach: false)
+      before = lane.slice(*RELAUNCH_KEYS)
       lane["launched_at"] = now
       lane["state"] = "running"
       lane.delete("after_seq")
@@ -283,7 +300,8 @@ module Harnex
 
       argv = harnex_command + ["run", "pi", "--id", lane["name"]]
       argv += detach ? ["--detach"] : ["--tmux", lane["name"]]
-      argv += ["--cwd", lane["cwd"], "--root", lane["run_root"], "--auto-stop", "--intent", lane["kind"]]
+      argv += ["--cwd", lane["cwd"], "--root", lane["run_root"], "--auto-stop", "--intent", lane["kind"],
+               "--phase", lane["phase"] || lane["kind"]]
       argv += context_args
       argv += ["--model", lane["requested_model"]] if lane["requested_model"]
       argv += ["--effort", lane["effort"]] if lane["effort"]
@@ -292,14 +310,31 @@ module Harnex
       stdout, stderr, status = Open3.capture3(*argv)
       payload = last_json(stdout)
       if payload.empty?
-        lane["state"] = "failed"
-        lane["last_error"] = stderr.strip.lines.last.to_s.strip
-        save(lane)
+        # 124: the worker did not register in time and may still come up.
+        status.exitstatus == Waiter::DONE_EXIT_TIMEOUT ? fail_launch(lane, stderr) : unlaunch(lane, before)
         raise LaunchError, "harnex could not start lane #{lane['name']}: #{stderr.strip.lines.last(3).join.strip}"
       end
       return [payload, 0] unless wait
 
       [payload["turn_result"] || payload, status.exitstatus]
+    end
+
+    RELAUNCH_KEYS = %w[state launched_at after_seq last_error].freeze
+
+    # A launch refused before the worker started (a bad flag, repo phase
+    # policy, a busy id) leaves no trace: a new lane's record goes, and a
+    # resumed lane keeps what its last turn left.
+    def unlaunch(lane, before)
+      return forget(lane) if lane["turns"].to_i.zero?
+
+      RELAUNCH_KEYS.each { |key| before.key?(key) ? lane[key] = before[key] : lane.delete(key) }
+      save(lane)
+    end
+
+    def fail_launch(lane, stderr)
+      lane["state"] = "failed"
+      lane["last_error"] = stderr.strip.lines.last.to_s.strip
+      save(lane)
     end
 
     def wait(lane, harnex_command, timeout: DEFAULT_TIMEOUT)

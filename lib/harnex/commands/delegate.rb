@@ -23,6 +23,9 @@ module Harnex
           --file PATH      Read the task from PATH
           --model NAME     Pi model (provider/model); default: Pi's own default
           --effort LEVEL   Reasoning effort / Pi thinking level
+          --phase NAME     Tag the run with a repo work phase (checked against the
+                           repo's .harnex/config.json allowlist); default: delegate,
+                           which every allowlist accepts
           --no-wait        Start the lane and return at once; collect with
                            `harnex result` (all your lanes) or `harnex result NAME`
           --timeout DUR    Wait at most DUR (default 9m, fits a 10-minute tool cap;
@@ -46,7 +49,7 @@ module Harnex
       @out = out
       @err = err
       @harnex_command = harnex_command || [Gem.ruby, File.expand_path("../../../bin/harnex", __dir__)]
-      @options = { worktree: nil, name: nil, cwd: nil, file: nil, model: nil, effort: nil, wait: true,
+      @options = { worktree: nil, name: nil, cwd: nil, file: nil, model: nil, effort: nil, phase: nil, wait: true,
                    timeout: Lanes::DEFAULT_TIMEOUT, detach: false, json: false, help: false }
     end
 
@@ -90,7 +93,7 @@ module Harnex
       lane = {
         "name" => name, "kind" => "delegate", "repo_root" => root, "run_root" => root, "cwd" => workdir,
         "owner" => Harnex.ambient_owner_id, "requested_model" => @options[:model], "effort" => @options[:effort],
-        "created_at" => Lanes.now, "turns" => 0
+        "phase" => @options[:phase], "created_at" => Lanes.now, "turns" => 0
       }
       if @options[:worktree]
         warn_uncommitted(root)
@@ -105,15 +108,18 @@ module Harnex
 
     # A lane that never started leaves nothing behind.
     def discard_unstarted
-      return unless @lane && @lane["worktree"] && @lane["turns"].to_i.zero?
+      return unless @lane && @lane["turns"].to_i.zero?
 
-      Lanes.remove_worktree(@lane, force: true)
-      @lane["state"] = "discarded"
-      Lanes.save(@lane)
+      Lanes.remove_worktree(@lane, force: true) if @lane["worktree"]
+      Lanes.forget(@lane)
     end
 
     def ensure_free!(root, name)
       existing = Lanes.load(root, name)
+      if Lanes.never_started?(existing)
+        Lanes.forget(existing)
+        existing = nil
+      end
       if Lanes.open?(existing)
         raise OptionParser::InvalidArgument,
               "lane #{name} already exists (#{existing['state']}): follow up with `harnex reply #{name} \"...\"`, " \
@@ -165,7 +171,7 @@ module Harnex
         when "--no-wait" then @options[:wait] = false
         when "--detach" then @options[:detach] = true
         when "--json" then @options[:json] = true
-        when "--worktree", "--name", "--cwd", "--file", "--model", "--effort"
+        when "--worktree", "--name", "--cwd", "--file", "--model", "--effort", "--phase"
           @options[arg.delete_prefix("--").to_sym] = value(index += 1, arg)
         when "--timeout", "--wait-timeout"
           @options[:timeout] = Lanes.parse_timeout(value(index += 1, arg))

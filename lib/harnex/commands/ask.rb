@@ -33,6 +33,8 @@ module Harnex
                            Ask once more with NAME when the first model fails on
                            provider capacity or rate limits (provider_capacity)
           --effort LEVEL   Reasoning effort / Pi thinking level
+          --phase NAME     Tag the run with a repo work phase (with --write, checked
+                           against the repo's allowlist); default: ask
           --cwd DIR        Directory the worker works in (default: current directory)
           --file PATH      Read the question from PATH (see run --context-file)
           --section TEXT   With --file: send only that section
@@ -63,7 +65,7 @@ module Harnex
       @out = out
       @err = err
       @harnex_command = harnex_command || [Gem.ruby, File.expand_path("../../../bin/harnex", __dir__)]
-      @options = { model: nil, fallback_model: nil, effort: nil, cwd: nil, file: nil, section: nil, write: false,
+      @options = { model: nil, fallback_model: nil, effort: nil, phase: nil, cwd: nil, file: nil, section: nil, write: false,
                    id: nil, timeout: Lanes::DEFAULT_TIMEOUT, detach: false, json: false, help: false, resume: nil,
                    repo: nil }
     end
@@ -99,7 +101,12 @@ module Harnex
       lane = register_lane(id, model)
       stdout, status = launch(question, model, id)
       result = parse_result(stdout)
-      Lanes.settle(lane, result["turn_result"] || {}, status.exitstatus) unless result.empty?
+      if !result.empty?
+        Lanes.settle(lane, result["turn_result"] || {}, status.exitstatus)
+      elsif status.exitstatus != Waiter::DONE_EXIT_TIMEOUT
+        # Refused before the worker started (#88); 124 may still come up.
+        Lanes.forget(lane)
+      end
       [result, status.exitstatus]
     end
 
@@ -108,8 +115,8 @@ module Harnex
       Lanes.save(
         "name" => id, "kind" => "ask", "repo_root" => Lanes.main_root(cwd) || cwd, "run_root" => run_root,
         "cwd" => cwd, "read_only" => !@options[:write], "owner" => Harnex.ambient_owner_id,
-        "requested_model" => model, "effort" => @options[:effort], "created_at" => Lanes.now,
-        "launched_at" => Lanes.now, "state" => "running", "turns" => 0
+        "requested_model" => model, "effort" => @options[:effort], "phase" => @options[:phase],
+        "created_at" => Lanes.now, "launched_at" => Lanes.now, "state" => "running", "turns" => 0
       )
     end
 
@@ -126,7 +133,7 @@ module Harnex
       else
         argv += ["--context", question]
       end
-      argv += ["--auto-stop", "--wait-done", "--intent", INTENT]
+      argv += ["--auto-stop", "--wait-done", "--intent", INTENT, "--phase", @options[:phase] || INTENT]
       argv += ["--wait-timeout", @options[:timeout].to_s] if @options[:timeout]
       argv += ["--model", model] if model
       argv += ["--effort", @options[:effort]] if @options[:effort]
@@ -231,7 +238,7 @@ module Harnex
         when "--write" then @options[:write] = true
         when "--detach" then @options[:detach] = true
         when "--json" then @options[:json] = true
-        when "--model", "--effort", "--cwd", "--file", "--section", "--id", "--fallback-model", "--resume", "--repo"
+        when "--model", "--effort", "--phase", "--cwd", "--file", "--section", "--id", "--fallback-model", "--resume", "--repo"
           @options[arg.delete_prefix("--").tr("-", "_").to_sym] = value(index += 1, arg)
         # Habits from `harnex run` (#87): an ask already runs in a tmux window
         # named after its id and stops after answering.

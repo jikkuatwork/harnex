@@ -486,8 +486,9 @@ module Harnex
       metadata = @options[:meta].is_a?(Hash) ? @options[:meta] : {}
       phase = metadata["phase"].to_s
       allowlist = phase_config.fetch("allowlist")
-      # `harnex preflight` tags its own probe; repo phase policy governs work.
-      return if allowlist.include?(phase) || phase == Preflight::PHASE
+      # Harnex tags its own runs (the `harnex preflight` probe, lanes); repo
+      # phase policy governs work phases.
+      return if allowlist.include?(phase) || phase == Preflight::PHASE || Lanes::PHASES.include?(phase)
 
       policy = phase_config.fetch("policy")
       message = "harnex run: meta.phase #{phase.empty? ? '(none)' : phase.inspect} " \

@@ -477,6 +477,19 @@ class RunnerTest < Minitest::Test
     end
   end
 
+  def test_repo_phase_policy_exempts_lane_phases
+    with_phase_policy_repo(policy: "reject", allowlist: ["implement"]) do |repo|
+      %w[delegate ask].each do |phase|
+        _out, err, result_path, id = run_phase_policy_probe(repo, "--phase", phase)
+
+        refute_match(/not allowlisted/, err)
+        assert_path_exists result_path
+        assert Harnex::DispatchHistory.latest_rows(Harnex::DispatchHistory.path_for(repo), id)[:end]
+        FileUtils.rm_f(result_path)
+      end
+    end
+  end
+
   def test_repo_phase_policy_rejects_before_spawn_and_rows
     with_phase_policy_repo(policy: "reject", allowlist: ["code-review"]) do |repo|
       result_path = File.join(repo, "spawned.json")

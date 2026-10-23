@@ -286,6 +286,52 @@ class LanesTest < Minitest::Test
     assert_includes err, "could not start lane broken"
     refute File.exist?(File.join(@repo, ".harnex", "worktrees", "broken"))
     refute_includes git("branch"), "harnex/broken"
+    assert_nil Harnex::Lanes.load(@repo, "broken")
+  end
+
+  # #88: a repo phase allowlist refused every lane, and the refused lane's
+  # record then blocked a retry under the same name.
+  def test_lanes_tag_their_phase_and_a_refused_lane_frees_its_name
+    File.write(@queue, JSON.generate([[nil, 2]]))
+    code, _out, err = cli(Harnex::Delegate, ["--name", "b2-red", "Task"])
+    assert_equal 1, code
+    assert_includes err, "could not start lane b2-red"
+    assert_nil Harnex::Lanes.load(@repo, "b2-red")
+    refute File.exist?(Harnex::Lanes.brief_path(@repo, "b2-red"))
+
+    respond([done, 0])
+    assert_equal 0, cli(Harnex::Delegate, ["--name", "b2-red", "Task"]).first
+    assert_equal "delegate", calls.last[calls.last.index("--phase") + 1]
+
+    respond([done, 0])
+    assert_equal 0, cli(Harnex::Delegate, ["--worktree", "impl", "--phase", "implement", "Task"]).first
+    assert_equal "implement", calls.last[calls.last.index("--phase") + 1]
+    respond([done("more"), 0])
+    assert_equal 0, cli(Harnex::Reply, ["impl", "More"]).first
+    assert_equal "implement", calls.last[calls.last.index("--phase") + 1]
+  end
+
+  def test_a_refused_reply_keeps_what_the_last_turn_left
+    respond([done, 0])
+    cli(Harnex::Delegate, ["--worktree", "kept", "Task"])
+    before = Harnex::Lanes.resolve("kept")
+
+    File.write(@queue, JSON.generate([[nil, 2]]))
+    code, _out, err = cli(Harnex::Reply, ["kept", "More"])
+    assert_equal 1, code
+    assert_includes err, "could not start lane kept"
+    lane = Harnex::Lanes.resolve("kept")
+    assert_equal ["done", 1, before["launched_at"]], lane.values_at("state", "turns", "launched_at")
+    assert_nil lane["last_error"]
+  end
+
+  def test_a_lane_older_harnex_kept_after_a_refused_start_frees_its_name
+    Harnex::Lanes.save("name" => "stuck", "kind" => "delegate", "repo_root" => @repo, "run_root" => @repo,
+                       "cwd" => @repo, "state" => "failed", "turns" => 0, "last_error" => "not allowlisted")
+    respond([done, 0])
+    code, out, = cli(Harnex::Delegate, ["--name", "stuck", "Task"])
+    assert_equal 0, code
+    assert_includes out, "── stuck: done"
   end
 
   def test_names_must_be_free

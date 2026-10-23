@@ -213,7 +213,8 @@ are present.
 Every dispatch writes one `dispatch_start` and one rich v2 `dispatch_end` row
 to the canonical repo/global dispatch stream, which is the only telemetry
 destination. Repo `.harnex/config.json` can warn on or reject non-canonical
-phase names before spawn.
+phase names before spawn; lanes (`delegate`, `ask`) and `preflight` are
+exempt unless a lane is given `--phase NAME`.
 
 Pi runs use structured RPC (`pi --mode rpc`) and require Pi >= 0.80.4; gate
 unattended work with `harnex doctor --adapter pi`. Harnex `--model` / `--effort`

@@ -1,12 +1,17 @@
 # Harnex State
 
-Updated: 2026-10-22 | 06:53 PM | IST
+Updated: 2026-10-23 | 10:45 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
+- **0.29.1 is installed locally (not published):** it fixes #88, where a repo
+  phase allowlist with `"policy": "reject"` refused every lane. Lanes now
+  run under the harnex-owned phases `delegate`/`ask` and accept `--phase
+  NAME`. A launch refused before it starts leaves no lane record. Record:
+  `koder/releases/0.29.1.md`.
 - **0.29.0, the agent release, is published:** GitHub `main` with tag
   `v0.29.0`, and RubyGems (the first public release since 0.12.0). It comes
   with docs and a website.
@@ -33,6 +38,11 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Present
 
+- **Public vs local:** RubyGems, GitHub `main`/`v0.29.0` and the site are
+  on 0.29.0; 0.29.1 exists only as local commits and the local install.
+  Publishing it needs the owner's OK. After publishing, rebuild and redeploy
+  the site, because `docs/lanes.md` and `docs/configuration.md` gained
+  `--phase`.
 - **Owner direction:** exclusively Pi + GPT models. Releases are local only
   (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
   smoke → `koder/releases/<v>.md` → STATE) unless the owner approves
@@ -53,6 +63,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
+0. **If the owner approves, publish 0.29.1:** `bin/gem-push`, tag, push, and
+   redeploy the site. Holm can then go back to `"policy": "reject"` (its
+   `warn` workaround is commit `7ed759c14`).
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).
 2. **Eval follow-ups:**

@@ -118,6 +118,20 @@ class AskTest < Minitest::Test
     end
   end
 
+  # #88: asks tag their run's phase; one refused before it started leaves no lane.
+  def test_asks_tag_their_phase_and_a_refused_ask_leaves_no_lane
+    ask(["--id", "pi-ask-p1", "q"], { ok: true, turn_result: { final_message: "a" } }, 0) do |_code, _out, _err, argv|
+      assert_equal "ask", argv.fetch(argv.index("--phase") + 1)
+    end
+    ask(["--write", "--phase", "code-review", "q"], { ok: true, turn_result: { final_message: "a" } }, 0) do |_code, _out, _err, argv|
+      assert_equal "code-review", argv.fetch(argv.index("--phase") + 1)
+    end
+    ask(["--write", "--id", "pi-ask-refused", "q"], {}, 2) do |code, _out, _err, _argv|
+      assert_equal 2, code
+      assert_raises(OptionParser::InvalidArgument) { Harnex::Lanes.resolve("pi-ask-refused") }
+    end
+  end
+
   def test_resume_of_a_pre_lane_ask_uses_its_repo
     ask(["--resume", "pi-ask-old", "--repo", "/tmp/r"], { ok: true, final_message: "old" }, 0) do |code, out, _err, argv|
       assert_equal [0, "old\n"], [code, out]

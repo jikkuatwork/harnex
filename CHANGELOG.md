@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.29.1] - 2026-10-23 | 10:31 AM | IST
+
+Local-only fix release for #88: lanes in repos with a phase allowlist.
+
+### Fixed
+
+- In a repo whose `.harnex/config.json` phase allowlist has
+  `"policy": "reject"`, harnex refused every `delegate`, `ask --write` and
+  `reply` (`meta.phase (none) is not allowlisted`). The run behind a lane
+  is now tagged with phase `delegate` or `ask`. These are harnex's own
+  phases, like `preflight`, so every allowlist accepts them.
+- A lane that harnex refused before the worker started left a `failed`
+  record, so a retry under the same name failed with `lane NAME already
+  exists (failed)` until `discard`. Now a refused new lane leaves no record
+  and no brief. A refused `reply` keeps the state the lane's last turn left.
+  The next `delegate` under the same name also clears a record left this way
+  by 0.29.0.
+
+### Added
+
+- `harnex delegate --phase NAME` and `harnex ask --phase NAME` tag a lane
+  with a work phase such as `implement`. The repo allowlist checks a named
+  phase, and `reply` reuses it.
+
 ## [0.29.0] - 2026-10-22 | 06:08 PM | IST
 
 **The agent release.** harnex becomes a tool your coding agents use directly:
