@@ -1,13 +1,21 @@
 # Harnex State
 
-Updated: 2026-10-23 | 05:22 PM | IST
+Updated: 2026-10-23 | 09:30 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **0.29.1 is installed locally (not published):** it fixes #88, where a repo
+- **Latest session (no harnex code change): downstream docs caught up.**
+  - pi repo harnex skill (`~/Projects/pi` = `pi-config`, commit `e2f6980`):
+    needs >= 0.29.1, documents `--phase`, points to `harnex doctor` /
+    `harnex mcp install` / the site, evals use the lane verbs.
+  - Holm Issue 1050 filed (Holm `8027a8691`): Holm's `knowledge-base/`
+    dispatch docs still teach `harnex run codex`; the issue holds the 0.29.1
+    lane facts, a line-level inventory and three owner decisions (lane
+    worktrees vs Holm's sibling-worktree rule first).
+- **0.29.1 is installed locally (not on RubyGems):** it fixes #88, where a repo
   phase allowlist with `"policy": "reject"` refused every lane. Lanes now
   run under the harnex-owned phases `delegate`/`ask` and accept `--phase
   NAME`. A launch refused before it starts leaves no lane record. Record:
@@ -38,11 +46,18 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Present
 
-- **Public vs local:** RubyGems, GitHub `main`/`v0.29.0` and the site are
-  on 0.29.0; 0.29.1 exists only as local commits and the local install.
-  Publishing it needs the owner's OK. After publishing, rebuild and redeploy
-  the site, because `docs/lanes.md` and `docs/configuration.md` gained
-  `--phase`.
+- **Owner direction (2026-10-23):** harnex work pauses until Holm starts
+  using lanes (Holm Issue 1050); come back with what Holm's usage surfaces.
+- **Public vs local:** RubyGems, tag `v0.29.0` and the site are on 0.29.0.
+  The 0.29.1 commits are on GitHub `main` (`6fec7e4`, checked with
+  `ls-remote`) but untagged and not on RubyGems. Publishing needs the owner's
+  OK. After publishing, rebuild and redeploy the site, because
+  `docs/lanes.md` and `docs/configuration.md` gained `--phase`.
+- **Holm already runs `"policy": "reject"` again** (Holm `35e126858`), which
+  needs 0.29.1: a machine on RubyGems 0.29.0 refuses every lane in Holm.
+- **pi repo is 18 commits ahead of `origin/master`, unpushed** (includes a
+  merge of the other machine's "Make it work with claude"). Pushing is the
+  owner's call.
 - **Owner direction:** exclusively Pi + GPT models. Releases are local only
   (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
   smoke → `koder/releases/<v>.md` → STATE) unless the owner approves
@@ -68,9 +83,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-0. **If the owner approves, publish 0.29.1:** `bin/gem-push`, tag, push, and
-   redeploy the site. Holm can then go back to `"policy": "reject"` (its
-   `warn` workaround is commit `7ed759c14`).
+0. **When Holm adopts lanes (Issue 1050):** fold its friction back into
+   harnex issues. If the owner approves, publish 0.29.1 (`v0.29.1` tag,
+   `bin/gem-push`, push the tag, redeploy the site).
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).
 2. **Eval follow-ups:**
