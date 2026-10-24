@@ -2,7 +2,7 @@
 status: open
 priority: P2
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-10-25
 tags: lanes, naming, worktrees, agents, mcp
 type: bug
 related: 86, 87
@@ -55,3 +55,14 @@ itself worked and committed in the cwd as asked. The relay (a small model) appea
 `worktree` from brief prose. Suggested fix: `agents/gpt.md` never sets `worktree` unless a
 `worktree:` header line is present, and `delegate` refuses `worktree` when `cwd` is itself a
 linked worktree of the same repo.
+
+## More evidence (Holm Queue 167, 2026-10-24/25)
+
+Names also collide **within one checkout** when briefs open alike. Three different planning
+lanes (an MCP design check, a Spaces plan and a proposal draft, each in its own sibling worktree)
+all became `pi-are-planning-lane-holm`, and two research lanes became
+`pi-are-reviewing-external-*`. The orchestrator worked only because the `gpt` relay keeps one
+agent per lane, so follow-ups reached the right worker. `harnex result <name>` and
+`harnex lanes` were ambiguous. Suggest folding in a short random or role-plus-path suffix, or
+letting the caller pass a name (a `name:` header key for the `gpt` agent).
+
