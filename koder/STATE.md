@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-25 | 02:20 AM | IST
+Updated: 2026-10-25 | 02:22 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -17,40 +17,17 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
     re-uploaded. How-to: `site/README.md`.
   - Checked: harnex needs nothing for new Pi models. `model: zai/glm-5.3`
     passes straight to `pi --model` (live ask ok, cost reported by Pi).
-- **Previous session (no harnex code change): downstream docs caught up.**
-  - pi repo harnex skill (`~/Projects/pi` = `pi-config`, commit `e2f6980`):
-    needs >= 0.29.1, documents `--phase`, points to `harnex doctor` /
-    `harnex mcp install` / the site, evals use the lane verbs.
-  - Holm Issue 1050 filed (Holm `8027a8691`): Holm's `knowledge-base/`
-    dispatch docs still teach `harnex run codex`; the issue holds the 0.29.1
-    lane facts, a line-level inventory and three owner decisions (lane
-    worktrees vs Holm's sibling-worktree rule first).
-- **0.29.1** fixes #88, where a repo phase allowlist with `"policy":
-  "reject"` refused every lane. Lanes now run under the harnex-owned phases
-  `delegate`/`ask` and accept `--phase NAME`.
-- **0.29.0, the agent release, is published:** GitHub `main` with tag
-  `v0.29.0`, and RubyGems (the first public release since 0.12.0). It comes
-  with docs and a website.
-  - Docs: lanes, MCP, coding agents, upgrading.
-  - The `gpt` agent ships in the gem.
-  - https://harnex.zyt.app is a Holm app built from the docs by
-    `site/build.rb` (app `holm_app_wQ4TB6JUhrTZ` on peer `zyt`).
-  - Record: `koder/releases/0.29.0.md`.
-- **#87 agent smoothness: done on 0.28.0 (installed locally).**
-  - Two consecutive full eval rounds were clean on the same build: 28/28
-    pass, no harnex-caused errors, no doc lookups, no leftovers. They
-    covered Claude Code and Pi, each with and without MCP.
-  - **Shipped in 0.22.0–0.28.0:**
-    - lanes: `delegate [--worktree]`, `result`, `reply` (resumes the
-      worker's Pi session), `land`, `discard`, `lanes`;
-    - `harnex mcp` with `harnex mcp install`, registered for both clients;
-    - workers never see harnex's own MCP tools;
-    - the `gpt` agent relays over MCP.
-  - Plan, bar and outcome: `koder/plans/39_agent_smoothness.md`.
-    Evidence: `koder/releases/0.22.0.md`–`0.28.0.md`. Evals:
-    `evals/agents/run` (results in `~/.cache/harnex-evals/`).
-- #86 slices 1–2 are done. In slice 3, the lane shorthand is done;
-  automatic capacity fallback is still open.
+- **Previous session:** pi repo harnex skill updated for 0.29.1 (`e2f6980`);
+  Holm Issue 1050 filed (Holm `8027a8691`) for Holm's codex-era dispatch
+  docs and the lane-worktree decisions.
+- **0.29.0, the agent release** (first public since 0.12.0): lane docs, the
+  `gpt` agent in the gem, and https://harnex.zyt.app (`site/build.rb`, app
+  `holm_app_wQ4TB6JUhrTZ` on peer `zyt`). Record: `koder/releases/0.29.0.md`.
+- **#87 agent smoothness, done on 0.22.0–0.28.0:** the lane verbs, `harnex
+  mcp`, the `gpt` agent; two clean 28/28 eval rounds (Claude Code and Pi,
+  with and without MCP). Plan: `koder/plans/39_agent_smoothness.md`; evals:
+  `evals/agents/run`.
+- #86 slices 1–2 are done; slice 3's capacity fallback is still open.
 
 ## Present
 
@@ -70,7 +47,7 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 - **Owner direction:** exclusively Pi + GPT models. Releases are local only
   (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
   smoke → `koder/releases/<v>.md` → STATE) unless the owner approves
-  publishing; 0.29.0 was approved and published. Run `pi update` first.
+  publishing, as for 0.29.0 and 0.29.1. Run `pi update` first.
 - **Site:** after a docs change, run `ruby site/build.rb`, then
   `holm @zyt app deploy site/app --spec-v1 --host harnex.zyt.app --force`.
   - Feedback project `6jyd3ya4`: the form's logo is `site/app/web/icon-512.png`
