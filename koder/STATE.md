@@ -10,8 +10,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 - **Latest session: 0.30.0, local install, fixes Holm's lane friction
   #89–#92** (Holm Queue 167). Record: `koder/releases/0.30.0.md`.
   - #89: a bare layout (`.bare` + sibling worktrees) is one lane namespace;
-    in-flight lane names are unique across repos; lanes in another worktree
-    are named after it; `gpt` agent: `name:` header, `cwd:` follows
+    generated names skip names in flight anywhere, chosen names are refused
+    while another repo's worker runs; lanes in another worktree are named
+    after it; `gpt` agent: `name:` header, `cwd:` follows
     `result`/`reply`, never a `worktree` from prose.
   - #90: `.harnex/config.json` `lanes.worktree_path`/`lanes.branch`
     templates (e.g. `../{name}`); `land`/`discard` follow them.

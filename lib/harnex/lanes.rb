@@ -74,8 +74,8 @@ module Harnex
     end
 
     # A name resolves to this repo's lane first, then to the only lane
-    # anywhere that is in flight (those names are unique, #89), then to the
-    # only open one, then to the only one.
+    # anywhere whose worker is running (those names are unique, #89), then
+    # in flight, open, or at all.
     def resolve(name, from: Dir.pwd)
       root = main_root(from)
       lane = root && load(root, name)
@@ -84,7 +84,8 @@ module Harnex
       matches = all.select { |candidate| candidate["name"] == name }
       raise OptionParser::InvalidArgument, "no lane named #{name.inspect} (see `harnex lanes`)" if matches.empty?
 
-      [matches.select { |l| in_flight?(l) }, matches.select { |l| open?(l) }, matches].each do |group|
+      [matches.select { |l| open?(l) && live?(l) }, matches.select { |l| in_flight?(l) },
+       matches.select { |l| open?(l) }, matches].each do |group|
         return group.first if group.one?
       end
       raise OptionParser::InvalidArgument,
@@ -98,11 +99,18 @@ module Harnex
         File.directory?(lane["repo_root"].to_s)
     end
 
-    # #89: the in-flight lane anywhere that holds `name`, if any. A name is
-    # free only when no repo has it in flight, so `harnex result NAME` and
-    # `reply NAME` find their lane from anywhere.
+    # #89: the in-flight lane anywhere that holds `name`, if any. Generated
+    # names skip these, so `harnex result NAME` and `reply NAME` find their
+    # lane from anywhere.
     def holder(name)
       all.find { |lane| lane["name"] == name && in_flight?(lane) }
+    end
+
+    # The lane anywhere whose worker is running under `name`, if any. A name
+    # someone chooses is refused only while another repo's worker has it, so
+    # stale lanes elsewhere (an old eval, an abandoned clone) never block it.
+    def live_holder(name)
+      all.find { |lane| lane["name"] == name && open?(lane) && live?(lane) }
     end
 
     # Lanes this caller started in this repo whose current turn nobody has

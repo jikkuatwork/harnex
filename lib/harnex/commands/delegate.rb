@@ -21,8 +21,8 @@ module Harnex
                            can move it: {"lanes": {"worktree_path": "../{name}",
                            "branch": "night/{mm}{dd}_{name}"}}
           --name NAME      Lane name without a worktree (default: the --cwd
-                           worktree's name, else from the task). A working or
-                           unlanded lane's name is unique across every repo
+                           worktree's name, else from the task). A working
+                           lane's name is unique across every repo
           --cwd DIR        Directory the worker works in (default: current directory)
           --file PATH      Read the task from PATH
           --model NAME     Pi model (provider/model); default: Pi's own default
@@ -130,11 +130,10 @@ module Harnex
               "lane #{name} already exists (#{existing['state']}): follow up with `harnex reply #{name} \"...\"`, " \
               "or `harnex land #{name}` / `harnex discard #{name}` first"
       end
-      if (other = Lanes.holder(name)) && other["repo_root"] != root
+      if (other = Lanes.live_holder(name)) && other["repo_root"] != root
         raise OptionParser::InvalidArgument,
-              "lane #{name} is in flight in #{other['repo_root']} (#{other['state']}); names of working and " \
-              "unlanded lanes are unique, so pick another name or finish that one " \
-              "(`harnex result #{name}`, `harnex land #{name}` or `harnex discard #{name}`)"
+              "a worker named #{name} is working in #{other['repo_root']}; working lanes' names are unique, " \
+              "so pick another name (or wait: `harnex result #{name}`)"
       end
       return unless Harnex.read_registry(root, name)
 

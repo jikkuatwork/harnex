@@ -12,9 +12,10 @@ Holm's first nights with lanes (Holm Queue 167): #89–#92. Local install.
   - A bare layout (`repo/.bare` plus sibling worktrees) is one repo: its main
     checkout is the worktree on the bare repo's `HEAD` branch, so every
     worktree shares one lane namespace and `harnex lanes` shows them all.
-  - A working lane's name, or an unlanded worktree lane's, is unique across
-    every repo: generated names skip it, `--name`/`--worktree`/`ask --id`
-    refuse it, and `result`/`reply` find such a lane from anywhere.
+  - Generated names skip every name another lane still holds in any repo
+    (working, uncollected, or an unlanded worktree); `--name`, `--worktree`
+    and `ask --id` refuse a name while another repo's worker runs under it;
+    `result`/`reply` find a working lane from anywhere.
   - A lane working in another worktree is named after it
     (`pi-night-1024_s3`); brief openers such as "You are a … lane" and "carry
     out the brief" no longer make the name.

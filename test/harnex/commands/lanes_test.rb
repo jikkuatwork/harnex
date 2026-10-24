@@ -420,20 +420,33 @@ class LanesTest < Minitest::Test
     assert_equal %w[pi-planning-holm-read-plan pi-planning-holm-read-plan-2], names
   end
 
-  def test_a_name_in_flight_in_another_repo_is_refused_a_settled_in_place_one_is_not
-    respond([done, 0], [done, 0], [done, 0])
-    cli(Harnex::Delegate, ["--worktree", "dup", "One"])
-    cli(Harnex::Delegate, ["--name", "solo", "One"])
+  # The eval that found it: unlanded lanes left in old eval repos refused
+  # `worktree: slugify` everywhere. Only a running worker holds a chosen name.
+  def test_a_name_whose_worker_runs_in_another_repo_is_refused_a_stale_one_is_not
+    respond([done, 0], [{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--worktree", "stale", "One"])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "busy", "Two"])
+    Harnex.write_registry(Harnex.registry_path(@repo, "busy"), "id" => "busy", "pid" => Process.pid)
     other = File.join(@tmp, "other")
     FileUtils.mkdir_p(other)
     git("init", "-q", "-b", "main", dir: other)
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", dir: other)
     Dir.chdir(other)
 
-    error = assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--worktree", "dup", "Two"]) }
-    assert_includes error.message, "lane dup is in flight in #{@repo}"
-    assert_equal 0, cli(Harnex::Delegate, ["--name", "solo", "Two"]).first, "a done in-place lane does not hold its name elsewhere"
-    assert_equal "dup", Harnex::Lanes.resolve("dup")["name"], "a lane in flight resolves from any repo"
+    error = assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--name", "busy", "Three"]) }
+    assert_includes error.message, "a worker named busy is working in #{@repo}"
+    assert_equal @repo, Harnex::Lanes.resolve("busy")["repo_root"], "a working lane resolves from any repo"
+    respond([done, 0])
+    assert_equal 0, cli(Harnex::Delegate, ["--worktree", "stale", "Four"]).first, "an unlanded lane elsewhere does not hold its name"
+    respond([{ ok: true, mode: "tmux" }, 0])
+    _code, out, = cli(Harnex::Delegate, ["--no-wait", "Run the bench"])
+    assert_includes out, "── pi-bench: started"
+    respond([{ ok: true, mode: "tmux" }, 0])
+    Dir.chdir(@repo)
+    _code, out, = cli(Harnex::Delegate, ["--no-wait", "Run the bench"])
+    assert_includes out, "── pi-bench-2: started", "generated names skip names in flight anywhere"
+  ensure
+    FileUtils.rm_f(Harnex.registry_path(@repo, "busy"))
   end
 
   def test_a_worktree_lane_cannot_start_inside_another_worktree

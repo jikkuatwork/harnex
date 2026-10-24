@@ -112,9 +112,8 @@ module Harnex
 
     def register_lane(id, model)
       cwd = File.expand_path(@options[:cwd] || Dir.pwd)
-      if (other = Lanes.holder(id))
-        raise OptionParser::InvalidArgument,
-              "lane #{id} is in flight in #{other['repo_root']} (#{other['state']}); pick another --id"
+      if (other = Lanes.live_holder(id))
+        raise OptionParser::InvalidArgument, "a worker named #{id} is working in #{other['repo_root']}; pick another --id"
       end
       Lanes.save(
         "name" => id, "kind" => "ask", "repo_root" => Lanes.main_root(cwd) || cwd, "run_root" => run_root,

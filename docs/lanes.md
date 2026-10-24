@@ -74,10 +74,11 @@ cost, commits and the next commands.
 - **Names.** `--name NAME` names the lane. Otherwise a lane working in another
   worktree of the repo is named after it (`--cwd ../night-1024_s3` gives
   `pi-night-1024_s3`), and any other lane after the task's first words
-  (`pi-slow-bench`, then `pi-slow-bench-2`). A working lane's name, or an
-  unlanded worktree lane's, is unique across every repo, so `harnex result
-  NAME` and `reply NAME` find it from anywhere; harnex refuses a name already
-  in flight.
+  (`pi-slow-bench`, then `pi-slow-bench-2`). Generated names skip every name
+  another lane still holds anywhere (working, uncollected, or a worktree not
+  yet landed), and a name you choose is refused while another repo's worker
+  is running under it, so `harnex result NAME` and `reply NAME` find a
+  working lane from anywhere.
 - **`--file PATH`** reads a long brief from a file. Briefs must be
   self-contained: the worker has not seen your conversation. Name the files, the
   expected behavior and how to verify it.

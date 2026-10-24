@@ -71,12 +71,14 @@ letting the caller pass a name (a `name:` header key for the `gpt` agent).
 - `Lanes.main_root` treats a bare layout as one repo: the main checkout is the
   worktree on the bare repo's `HEAD` branch (`holm/master`), so every sibling
   worktree shares one lane namespace and `harnex lanes` shows them all.
-- A lane *in flight* (running or uncollected, or a worktree lane not yet
-  landed) holds its name across every repo: generated names skip it, and
-  `delegate --name/--worktree` and `ask --id` refuse it. `resolve` prefers
-  the in-flight lane, so `result NAME` / `reply NAME` work from anywhere.
-  Settled in-place lanes (which stay open for `reply`) do not lock names
-  elsewhere, and a lane whose repo is gone holds nothing.
+- Generated names skip every name an in-flight lane (running or
+  uncollected, or a worktree lane not yet landed) holds in any repo.
+  `delegate --name/--worktree` and `ask --id` refuse a name only while
+  another repo's worker is running under it: refusing in-flight names too
+  blocked `worktree: slugify` in the agent eval, because old eval repos still
+  held unlanded `slugify` lanes. `resolve` prefers the live lane, then the
+  in-flight one, so `result NAME` / `reply NAME` work from anywhere. A lane
+  whose repo is gone holds nothing.
 - Generated names: a lane in another worktree is named after it
   (`pi-night-1024_s3`); "are", "carry", "out", "brief", "lane" and single
   letters are filler, so "You are a build lane in Holm's …" no longer names it.
