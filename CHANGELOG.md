@@ -2,7 +2,8 @@
 
 ## [0.29.1] - 2026-10-23 | 10:31 AM | IST
 
-Local-only fix release for #88: lanes in repos with a phase allowlist.
+Fix release for #88: lanes in repos with a phase allowlist. Published to
+RubyGems on 2026-10-25 | 02:14 AM | IST.
 
 ### Fixed
 

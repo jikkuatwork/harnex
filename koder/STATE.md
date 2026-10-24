@@ -1,13 +1,23 @@
 # Harnex State
 
-Updated: 2026-10-23 | 09:30 PM | IST
+Updated: 2026-10-25 | 02:20 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **Latest session (no harnex code change): downstream docs caught up.**
+- **Latest session: 0.29.1 published, and the site got its own mark.**
+  - RubyGems `harnex 0.29.1`, tag `v0.29.1` (on `875b2b1`), `main` pushed;
+    reinstalled from RubyGems. Record: `koder/releases/0.29.1.md`.
+  - Site: the MDI console icon gave way to a harnex mark (a prompt pane
+    beside two worker panes, Holm `deep` style) and a hand-made 1200x630
+    social card (`site/card.rb` → `site/src/assets/og.png`, named in
+    `og:image`). Redeployed with the 0.29.1 docs; feedback form logo
+    re-uploaded. How-to: `site/README.md`.
+  - Checked: harnex needs nothing for new Pi models. `model: zai/glm-5.3`
+    passes straight to `pi --model` (live ask ok, cost reported by Pi).
+- **Previous session (no harnex code change): downstream docs caught up.**
   - pi repo harnex skill (`~/Projects/pi` = `pi-config`, commit `e2f6980`):
     needs >= 0.29.1, documents `--phase`, points to `harnex doctor` /
     `harnex mcp install` / the site, evals use the lane verbs.
@@ -15,11 +25,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
     dispatch docs still teach `harnex run codex`; the issue holds the 0.29.1
     lane facts, a line-level inventory and three owner decisions (lane
     worktrees vs Holm's sibling-worktree rule first).
-- **0.29.1 is installed locally (not on RubyGems):** it fixes #88, where a repo
-  phase allowlist with `"policy": "reject"` refused every lane. Lanes now
-  run under the harnex-owned phases `delegate`/`ask` and accept `--phase
-  NAME`. A launch refused before it starts leaves no lane record. Record:
-  `koder/releases/0.29.1.md`.
+- **0.29.1** fixes #88, where a repo phase allowlist with `"policy":
+  "reject"` refused every lane. Lanes now run under the harnex-owned phases
+  `delegate`/`ask` and accept `--phase NAME`.
 - **0.29.0, the agent release, is published:** GitHub `main` with tag
   `v0.29.0`, and RubyGems (the first public release since 0.12.0). It comes
   with docs and a website.
@@ -48,13 +56,14 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 - **Owner direction (2026-10-23):** harnex work pauses until Holm starts
   using lanes (Holm Issue 1050); come back with what Holm's usage surfaces.
-- **Public vs local:** RubyGems, tag `v0.29.0` and the site are on 0.29.0.
-  The 0.29.1 commits are on GitHub `main` (`6fec7e4`, checked with
-  `ls-remote`) but untagged and not on RubyGems. Publishing needs the owner's
-  OK. After publishing, rebuild and redeploy the site, because
-  `docs/lanes.md` and `docs/configuration.md` gained `--phase`.
-- **Holm already runs `"policy": "reject"` again** (Holm `35e126858`), which
-  needs 0.29.1: a machine on RubyGems 0.29.0 refuses every lane in Holm.
+- **Public = local = 0.29.1:** RubyGems, tag `v0.29.1`, GitHub `main` and
+  the site.
+- **Holm runs `"policy": "reject"`** (Holm `35e126858`), which needs 0.29.1:
+  any other machine still on 0.29.0 needs `gem update harnex`.
+- **#89 is open (filed after the last handoff, from Holm's first lane
+  use):** lane names collide across sibling worktrees of a bare repo, so
+  `result NAME` fails; and the `gpt` relay invented a `worktree` from brief
+  prose. Cause and fixes: `koder/issues/89_lane_names_collide_across_bare_worktrees.md`.
 - **pi repo is 18 commits ahead of `origin/master`, unpushed** (includes a
   merge of the other machine's "Make it work with claude"). Pushing is the
   owner's call.
@@ -65,8 +74,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 - **Site:** after a docs change, run `ruby site/build.rb`, then
   `holm @zyt app deploy site/app --spec-v1 --host harnex.zyt.app --force`.
   - Feedback project `6jyd3ya4`: the form's logo is `site/app/web/icon-512.png`
-    (uploaded 2026-10-23; fallback icon `terminal`). Re-upload it if the
-    symbol changes.
+    (re-uploaded 2026-10-25 with the new mark). Re-upload it if the mark
+    changes.
   - The launcher button still shows the feedback app's bubble mark. Swapping
     it means patching `site/src/assets/feedback.js`; that was offered, not done.
 - **MCP is registered:**
@@ -83,9 +92,10 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-0. **When Holm adopts lanes (Issue 1050):** fold its friction back into
-   harnex issues. If the owner approves, publish 0.29.1 (`v0.29.1` tag,
-   `bin/gem-push`, push the tag, redeploy the site).
+0. **#89** (first Holm lane friction): one lane namespace per bare repo,
+   names unique across open lanes, `agents/gpt.md` carries `cwd:` into
+   `result`/`reply` and never infers `worktree`. Keep folding Holm Issue
+   1050 friction into harnex issues.
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).
 2. **Eval follow-ups:**
@@ -94,6 +104,6 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
    - rerun `evals/agents/run` after any agent-facing change.
 3. **Site follow-ups:**
    - check it in Safari and Firefox, and as an installed app on a phone;
-   - optionally a custom social card with the wordmark.
+   - check the new link preview in a real unfurler (Slack, X, iMessage).
 4. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
    (macOS), #59.

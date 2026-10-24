@@ -1,6 +1,6 @@
 // harnex.zyt.app service worker: an offline-capable shell. The build stamps
 // CACHE with a hash of the site, so each deploy starts a fresh cache.
-const CACHE = "harnex-0be958db24";
+const CACHE = "harnex-9af1ff7d07";
 const SHELL = ["/", "/docs/start", "/docs/lanes", "/docs/mcp", "/docs/agents", "/docs/cli",
   "/assets/site.css", "/assets/site.js", "/assets/theme.js",
   "/fonts/JetBrainsMono-Regular.woff2", "/fonts/JetBrainsMono-Bold.woff2", "/fonts/JetBrainsMono-ExtraBold.woff2"];
