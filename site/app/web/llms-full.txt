@@ -508,6 +508,10 @@ cost, commits and the next commands.
   expected behavior and how to verify it.
 - **`--model provider/model`** and **`--effort low|medium|high`** pick the
   model; the default is Pi's own default model.
+- **`--phase NAME`** tags the lane's dispatch rows with a work phase (for
+  example `implement`). Without it the phase is `delegate` (`ask` for an ask),
+  which a repo's phase allowlist always accepts; a named phase is checked
+  against the allowlist (see [configuration](configuration.md)).
 
 ### Waiting, and long tasks
 

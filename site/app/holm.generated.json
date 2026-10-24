@@ -1,27 +1,26 @@
 {
-  "digest": "sha256:bff9d504f035ae3f8bbcfe548c6ea72f2b3d52df6457a56712402b56c9f55e26",
+  "digest": "sha256:cf55b996078a7bd319336682ac5914dafd225fd4561e824fc66e08405f36e7c6",
   "inputs": {
-    "symbolHash": "sha256:584cbc248146b4d9ab33cbb902690b79ea3c6a4a772a4c548f17a512b4c0b298",
+    "symbolHash": "sha256:256ca01b6952fc79a23df7bad403883063b9a66e9d1edba3ba611c9d31bc3901",
     "themeColor": "#e8a33d",
     "name": "harnex",
     "subtitle": "Pi workers (GPT models) as tools for you and your coding agents: delegate tasks into git worktrees, follow up with context, land the result. CLI and MCP.",
-    "iconStyle": "night"
+    "iconStyle": "deep"
   },
   "generator": {
     "id": "holm app identity generate",
-    "version": "0.255.0",
+    "version": "0.258.0",
     "dependencies": {}
   },
   "outputs": {
-    "web/404.html": "sha256:c5f2484e87ad1e6d0037344cf177a784d803f16662d27b821ffa8113c40f50e8",
-    "web/apple-touch-icon.png": "sha256:7d3243486f8165cb122c7d576e5ed3075af039c502976f7e53b2167ce55c6f2b",
-    "web/favicon.ico": "sha256:92f9b85ca1d651ee8bdcde2d5ff6f5c635dbbb66883d0065be84decd88f8e6d5",
-    "web/favicon.png": "sha256:b12534bdad44163228602649db7a1ad77a1941af52003e0f7506b3a04745be6f",
-    "web/favicon.svg": "sha256:b48a69176bf81669bc16b6322d3bfa5d42d84e9a4bcf5020cef5a6f5511670eb",
-    "web/icon-192.png": "sha256:cd46142db1c0bfa5178453149715ba7e1972f01b223701bad76406890bf323d4",
-    "web/icon-512.png": "sha256:d19064ac68c766f3fbd071a6ca20f4e6d8e3cd8ca8087f147c7cbe44b92bafe4",
-    "web/icon-maskable-512.png": "sha256:ab9b3bd570ce1d14674d8c5567540ae80ba0c6f8a8f6167a3ea68a3af5d7d5d1",
-    "web/manifest.webmanifest": "sha256:44af3439a07283600dce5ae05a721d709ddcc258ba8a1919361119d8615a3700",
-    "web/social_preview.png": "sha256:c17d731ce3a4d412f85b437cbff921c168f2b04ee40d77da89ad4fdf3cbd1bcd"
+    "web/apple-touch-icon.png": "sha256:c808167cc5e64245b4cd27f5b968d4cd1a5ee8759798742eba2baa40cb6eda5f",
+    "web/favicon.ico": "sha256:8eb5fd97700734c0bd960a2ad28bf40d4150c0b55b0e665d8a8572ccdf25e363",
+    "web/favicon.png": "sha256:ec3da3bd259036fede7be1c2c0b8dd93bf1dc880da05274fe26e99899b9e7501",
+    "web/favicon.svg": "sha256:c908ea538086e551220aedbcc28c03a17b9dd3523b849c2cc2e72b7e29dce531",
+    "web/icon-192.png": "sha256:c31332f8d67373f083bbb7890c6ffc93b6c9d4228f713a044baa6bc9efbd7a10",
+    "web/icon-512.png": "sha256:e091065f501f466deb755d7ae24fe0cc026370adf7e465670088fae4ba78f28e",
+    "web/icon-maskable-512.png": "sha256:629006a21578d639d655bd9cdb5c8814e01a2ba26315883b03607dee4cbb6fa2",
+    "web/manifest.webmanifest": "sha256:696047a118b4cda1b06b1a8ed0e551379a90f4c865d81a3044f0d60c5ed4003c",
+    "web/social_preview.png": "sha256:959fed689faf875f7a40933a5ee940dbe5553b6f39d244e10aa69a277d65749c"
   }
 }

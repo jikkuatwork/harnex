@@ -1,4 +1,4 @@
-# CLI reference (harnex 0.29.0)
+# CLI reference (harnex 0.29.1)
 
 ```text
 harnex: Pi workers (GPT models) as tools for you and your agents.
@@ -72,6 +72,8 @@ Options:
                    Ask once more with NAME when the first model fails on
                    provider capacity or rate limits (provider_capacity)
   --effort LEVEL   Reasoning effort / Pi thinking level
+  --phase NAME     Tag the run with a repo work phase (with --write, checked
+                   against the repo's allowlist); default: ask
   --cwd DIR        Directory the worker works in (default: current directory)
   --file PATH      Read the question from PATH (see run --context-file)
   --section TEXT   With --file: send only that section
@@ -116,6 +118,9 @@ Options:
   --file PATH      Read the task from PATH
   --model NAME     Pi model (provider/model); default: Pi's own default
   --effort LEVEL   Reasoning effort / Pi thinking level
+  --phase NAME     Tag the run with a repo work phase (checked against the
+                   repo's .harnex/config.json allowlist); default: delegate,
+                   which every allowlist accepts
   --no-wait        Start the lane and return at once; collect with
                    `harnex result` (all your lanes) or `harnex result NAME`
   --timeout DUR    Wait at most DUR (default 9m, fits a 10-minute tool cap;

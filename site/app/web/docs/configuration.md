@@ -42,6 +42,10 @@ The effective value is the first-class `harnex run --phase TEXT` value, or
 - Allowlisted phase: dispatches silently.
 - `policy: "warn"`: prints a warning and dispatches.
 - `policy: "reject"`: exits non-zero before spawn and writes no dispatch row.
+- Harnex's own phases always pass: `preflight` (the `harnex preflight` probe)
+  and the lane phases `delegate` and `ask`. A lane runs under its kind's
+  phase unless `harnex delegate --phase NAME` (or `harnex ask --phase NAME`)
+  names a work phase, which the allowlist then checks.
 
 The allowlist must be an array of non-empty strings. Policy must be `warn` or
 `reject`.

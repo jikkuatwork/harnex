@@ -12,10 +12,17 @@
 <meta property="og:description" content="Every release, newest first.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/changelog">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=0be958db24">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=0be958db24">
 <link rel="alternate" type="text/markdown" href="/changelog.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
-<script src="/assets/theme.js?v=d0dcc6d600"></script>
+<link rel="stylesheet" href="/assets/site.css?v=0be958db24">
+<script src="/assets/theme.js?v=0be958db24"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -31,7 +38,7 @@
     <a href="/changelog" aria-current="page"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.29.0</span>
+    <span class="ver">v0.29.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -69,6 +76,34 @@
     <article class="doc">
       <p class="crumb"><a href="/docs/">docs</a> / changelog</p>
       <h1>Changelog</h1>
+<h2 id="0291---2026-10-23--1031-am--ist"><a class="anchor" href="#0291---2026-10-23--1031-am--ist">[0.29.1] - 2026-10-23 | 10:31 AM | IST</a></h2>
+
+<p>Local-only fix release for #88: lanes in repos with a phase allowlist.</p>
+
+<h3 id="fixed"><a class="anchor" href="#fixed">Fixed</a></h3>
+
+<ul>
+  <li>In a repo whose <code>.harnex/config.json</code> phase allowlist has
+<code>"policy": "reject"</code>, harnex refused every <code>delegate</code>, <code>ask --write</code> and
+<code>reply</code> (<code>meta.phase (none) is not allowlisted</code>). The run behind a lane
+is now tagged with phase <code>delegate</code> or <code>ask</code>. These are harnex’s own
+phases, like <code>preflight</code>, so every allowlist accepts them.</li>
+  <li>A lane that harnex refused before the worker started left a <code>failed</code>
+record, so a retry under the same name failed with <code>lane NAME already
+exists (failed)</code> until <code>discard</code>. Now a refused new lane leaves no record
+and no brief. A refused <code>reply</code> keeps the state the lane’s last turn left.
+The next <code>delegate</code> under the same name also clears a record left this way
+by 0.29.0.</li>
+</ul>
+
+<h3 id="added"><a class="anchor" href="#added">Added</a></h3>
+
+<ul>
+  <li><code>harnex delegate --phase NAME</code> and <code>harnex ask --phase NAME</code> tag a lane
+with a work phase such as <code>implement</code>. The repo allowlist checks a named
+phase, and <code>reply</code> reuses it.</li>
+</ul>
+
 <h2 id="0290---2026-10-22--0608-pm--ist"><a class="anchor" href="#0290---2026-10-22--0608-pm--ist">[0.29.0] - 2026-10-22 | 06:08 PM | IST</a></h2>
 
 <p><strong>The agent release.</strong> harnex becomes a tool your coding agents use directly:
@@ -200,7 +235,7 @@ usage friction apart from worker failures harnex reported properly.</li>
 <p>Owner-authorized local-only release (#87): fixes from the first full 0.25.0
 eval round (28/28 pass).</p>
 
-<h3 id="added"><a class="anchor" href="#added">Added</a></h3>
+<h3 id="added-1"><a class="anchor" href="#added-1">Added</a></h3>
 
 <ul>
   <li><code>harnex land</code> with no name, and the MCP <code>land</code> tool without <code>names</code>,
@@ -224,7 +259,7 @@ never are.</li>
 
 <p>Owner-authorized local-only release (#87).</p>
 
-<h3 id="fixed"><a class="anchor" href="#fixed">Fixed</a></h3>
+<h3 id="fixed-1"><a class="anchor" href="#fixed-1">Fixed</a></h3>
 
 <ul>
   <li><strong>Workers never get harnex’s own MCP tools.</strong> With harnex MCP registered
@@ -255,7 +290,7 @@ none. S6 accepts <code>tmux capture-pane</code> as checking on a worker.</li>
 
 <p>Owner-authorized local-only release (#87): fixes from the 0.23.0 agent evals.</p>
 
-<h3 id="added-1"><a class="anchor" href="#added-1">Added</a></h3>
+<h3 id="added-2"><a class="anchor" href="#added-2">Added</a></h3>
 
 <ul>
   <li><strong>What a worker is doing now.</strong> The live activity snapshot records the
@@ -294,7 +329,7 @@ a broken model);</li>
 
 <p>Owner-authorized local-only release (#87).</p>
 
-<h3 id="added-2"><a class="anchor" href="#added-2">Added</a></h3>
+<h3 id="added-3"><a class="anchor" href="#added-3">Added</a></h3>
 
 <ul>
   <li><code>harnex mcp</code>: a stdio MCP server exposing <code>ask</code>, <code>delegate</code>, <code>result</code>,
@@ -330,7 +365,7 @@ version-manager shim or client cwd is involved.</li>
 <p>Owner-authorized local-only release (no RubyGems publication); breaking
 changes allowed (#87). Plan: <code>koder/plans/39_agent_smoothness.md</code>.</p>
 
-<h3 id="added-3"><a class="anchor" href="#added-3">Added</a></h3>
+<h3 id="added-4"><a class="anchor" href="#added-4">Added</a></h3>
 
 <ul>
   <li><strong>Lanes: a small agent-facing layer over Pi workers.</strong>
@@ -379,7 +414,7 @@ scored for correctness, tool calls, errors, doc lookups and leftovers.</li>
   <li>Help examples use Pi session ids (<code>pi-i-42</code>) instead of Codex-era ones.</li>
 </ul>
 
-<h3 id="fixed-1"><a class="anchor" href="#fixed-1">Fixed</a></h3>
+<h3 id="fixed-2"><a class="anchor" href="#fixed-2">Fixed</a></h3>
 
 <ul>
   <li>Harnex state in a repo no longer shows up as untracked work: writing a
@@ -395,7 +430,7 @@ workers usable as a Claude Code subagent type (#86 slice 1): the <code>gpt</code
 (kept in <code>~/Projects/pi/.claude/agents/gpt.md</code>) relays briefs through
 <code>harnex ask</code> and needs <code>ask --resume</code> to outlast the 10-minute Bash cap.</p>
 
-<h3 id="added-4"><a class="anchor" href="#added-4">Added</a></h3>
+<h3 id="added-5"><a class="anchor" href="#added-5">Added</a></h3>
 
 <ul>
   <li><code>harnex ask --resume ID --repo ROOT [--timeout DUR]</code> (#86): keep waiting on
@@ -447,7 +482,7 @@ end to end) is now tested through Pi or adapter-neutral fakes.</li>
 (GPT-backed) workers usable as native tools from Claude Code sessions and
 subagents (#85), driven by live Claude-subagent stress runs.</p>
 
-<h3 id="added-5"><a class="anchor" href="#added-5">Added</a></h3>
+<h3 id="added-6"><a class="anchor" href="#added-6">Added</a></h3>
 
 <ul>
   <li><code>harnex ask "QUESTION"</code>: one blocking call that hands a question to a Pi
@@ -503,7 +538,7 @@ plain prompt, and follow-ups are counted for the turn they joined.</li>
 <p>Owner-authorized local-only release (no RubyGems publication). Closes the
 subagent-orchestration gaps found by Holm Queues 159/160 (#79-#84).</p>
 
-<h3 id="added-6"><a class="anchor" href="#added-6">Added</a></h3>
+<h3 id="added-7"><a class="anchor" href="#added-7">Added</a></h3>
 
 <ul>
   <li><code>harnex run --context-file PATH [--context-section TEXT]</code> sends a brief from
@@ -550,7 +585,7 @@ so long briefs no longer hit tmux’s command-length limit.</li>
 
 <p>Owner-authorized local-only release (no RubyGems publication).</p>
 
-<h3 id="added-7"><a class="anchor" href="#added-7">Added</a></h3>
+<h3 id="added-8"><a class="anchor" href="#added-8">Added</a></h3>
 
 <ul>
   <li><code>harnex watch --owner [ID]</code>: one owner-scoped stream of compact JSON lines
@@ -572,7 +607,7 @@ panel consumers.</li>
 
 <p>Owner-authorized local-only release (no RubyGems publication).</p>
 
-<h3 id="added-8"><a class="anchor" href="#added-8">Added</a></h3>
+<h3 id="added-9"><a class="anchor" href="#added-9">Added</a></h3>
 
 <ul>
   <li><code>harnex watch --stall-after DUR</code> (and <code>wait --until done --stall-after DUR</code>)
@@ -590,7 +625,7 @@ most recent turn-start/model/tool event during an active turn
 <p>Owner-authorized local-only release. Owner decision (2026-10-18): Harnex is
 installed locally and is not published to RubyGems.</p>
 
-<h3 id="added-9"><a class="anchor" href="#added-9">Added</a></h3>
+<h3 id="added-10"><a class="anchor" href="#added-10">Added</a></h3>
 
 <ul>
   <li>Final gates: <code>harnex run --final-gate '&lt;cmd&gt;'</code> (repeatable; or meta
@@ -648,7 +683,7 @@ races can be measured from the events log (#36/#37 follow-up). Readers that
 parse ISO-8601 are unaffected; older rows keep whole seconds.</li>
 </ul>
 
-<h3 id="fixed-2"><a class="anchor" href="#fixed-2">Fixed</a></h3>
+<h3 id="fixed-3"><a class="anchor" href="#fixed-3">Fixed</a></h3>
 
 <ul>
   <li>Two status tests that sat below a <code>private</code> keyword never ran; they run now.</li>
@@ -660,7 +695,7 @@ leaked by other suites, and the detached on-done smoke waits for teardown.</li>
 
 <p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
 
-<h3 id="added-10"><a class="anchor" href="#added-10">Added</a></h3>
+<h3 id="added-11"><a class="anchor" href="#added-11">Added</a></h3>
 
 <ul>
   <li>Pi RPC receipts now attest built-in <code>bash</code> commands: bounded command text,
@@ -676,7 +711,7 @@ teardown) are counted rather than inferred, and <code>validation.status</code> r
 should check it before treating Pi receipt commands as proof.</li>
 </ul>
 
-<h3 id="fixed-3"><a class="anchor" href="#fixed-3">Fixed</a></h3>
+<h3 id="fixed-4"><a class="anchor" href="#fixed-4">Fixed</a></h3>
 
 <ul>
   <li><code>wait</code>/<code>watch</code> observers no longer exit 1 when a sibling session’s registry
@@ -688,7 +723,7 @@ race); <code>doctor</code>’s registry sweep is guarded the same way (#75).</li
 
 <p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
 
-<h3 id="fixed-4"><a class="anchor" href="#fixed-4">Fixed</a></h3>
+<h3 id="fixed-5"><a class="anchor" href="#fixed-5">Fixed</a></h3>
 
 <ul>
   <li>New dispatch records and reconciliation repair appends store paths under the
@@ -703,7 +738,7 @@ repository roots, and retention still protects portable live-record paths.</li>
 
 <p>Owner-authorized local-only release; public publication, tag and push remain deferred.</p>
 
-<h3 id="fixed-5"><a class="anchor" href="#fixed-5">Fixed</a></h3>
+<h3 id="fixed-6"><a class="anchor" href="#fixed-6">Fixed</a></h3>
 
 <ul>
   <li>Explicit idle Pi shutdown preserves the latest settled accepted/no-change
@@ -715,7 +750,7 @@ exit-grace probes. A private observer process enforces the monotonic cap without
 stopping the worker; late results cannot override timeout (#71).</li>
 </ul>
 
-<h3 id="added-11"><a class="anchor" href="#added-11">Added</a></h3>
+<h3 id="added-12"><a class="anchor" href="#added-12">Added</a></h3>
 
 <ul>
   <li>Opt-in <code>wait/watch --heartbeat DUR</code> streams flushed diagnostics on stderr while
@@ -735,7 +770,7 @@ cleanup preserves accepted proof. Doctor exposes versioned capabilities (#71).</
 tag, and push are deferred; later publication must use the exact verified gem
 built from this commit rather than rebuilding version 0.13.0.</p>
 
-<h3 id="added-12"><a class="anchor" href="#added-12">Added</a></h3>
+<h3 id="added-13"><a class="anchor" href="#added-13">Added</a></h3>
 
 <ul>
   <li>Dispatch telemetry now has an opt-in local archive bridge. A stable sidecar
@@ -751,7 +786,7 @@ to trim active dispatch history against an older installed Harnex.</li>
 
 <h2 id="0121---2026-09-19--1230-pm--04"><a class="anchor" href="#0121---2026-09-19--1230-pm--04">[0.12.1] - 2026-09-19 | 12:30 PM | +04</a></h2>
 
-<h3 id="fixed-6"><a class="anchor" href="#fixed-6">Fixed</a></h3>
+<h3 id="fixed-7"><a class="anchor" href="#fixed-7">Fixed</a></h3>
 
 <ul>
   <li>Pi-launched dispatches now capture the invoking primary’s <code>PI_SESSION_ID</code>
@@ -767,7 +802,7 @@ Existing typed markers and optional <code>--on-done</code> hooks remain compatib
 
 <h2 id="0120---2026-09-03--1009-am--ist"><a class="anchor" href="#0120---2026-09-03--1009-am--ist">[0.12.0] - 2026-09-03 | 10:09 AM | IST</a></h2>
 
-<h3 id="added-13"><a class="anchor" href="#added-13">Added</a></h3>
+<h3 id="added-14"><a class="anchor" href="#added-14">Added</a></h3>
 
 <ul>
   <li>Registered sessions now atomically publish a typed completion marker under
@@ -788,7 +823,7 @@ the v2 dispatch envelope remain unchanged.</li>
 
 <h2 id="0110---2026-08-14--0103-pm--ist"><a class="anchor" href="#0110---2026-08-14--0103-pm--ist">[0.11.0] - 2026-08-14 | 01:03 PM | IST</a></h2>
 
-<h3 id="fixed-7"><a class="anchor" href="#fixed-7">Fixed</a></h3>
+<h3 id="fixed-8"><a class="anchor" href="#fixed-8">Fixed</a></h3>
 
 <ul>
   <li>Pi RPC completion now fences on Pi 0.80.4+’s <code>agent_settled</code> event instead of
@@ -826,7 +861,7 @@ minimal response fixtures still validate, so no Codex adapter behavior
 changes.</li>
 </ul>
 
-<h3 id="added-14"><a class="anchor" href="#added-14">Added</a></h3>
+<h3 id="added-15"><a class="anchor" href="#added-15">Added</a></h3>
 
 <ul>
   <li><code>harnex doctor --adapter pi</code> statically verifies the Pi RPC version;
@@ -871,7 +906,7 @@ after <code>0.10.0</code> removed the upstream telemetry mirror. The canonical
 <code>.harnex/dispatch.jsonl</code> stream remains the only writer; this release adds
 operator tooling to prove and repair that stream without schema migration.</p>
 
-<h3 id="added-15"><a class="anchor" href="#added-15">Added</a></h3>
+<h3 id="added-16"><a class="anchor" href="#added-16">Added</a></h3>
 
 <ul>
   <li><code>harnex telemetry assert-canonical</code> validates the canonical dispatch stream
@@ -897,7 +932,7 @@ registry corruption, a delivered send reported as failed, a corrupt registry
 entry crashing every session scan, and a closed stdout wedging the wrapped
 agent.</p>
 
-<h3 id="fixed-8"><a class="anchor" href="#fixed-8">Fixed</a></h3>
+<h3 id="fixed-9"><a class="anchor" href="#fixed-9">Fixed</a></h3>
 
 <ul>
   <li><strong>Concurrent registry writes no longer corrupt each other</strong> (#66).
@@ -944,7 +979,7 @@ rows, and <code>summary_out</code> no longer appears in <code>harnex status --js
 carries <code>mirror_path</code>.</li>
 </ul>
 
-<h3 id="added-16"><a class="anchor" href="#added-16">Added</a></h3>
+<h3 id="added-17"><a class="anchor" href="#added-17">Added</a></h3>
 
 <ul>
   <li><strong>Harness-authored observed-state receipts</strong> (#64): every dispatch now writes
@@ -1002,7 +1037,7 @@ dispatch/receipt files are excluded.</li>
 from a default destination to an explicit mirror, and retention/phase policy add
 operator-visible behavior.</p>
 
-<h3 id="added-17"><a class="anchor" href="#added-17">Added</a></h3>
+<h3 id="added-18"><a class="anchor" href="#added-18">Added</a></h3>
 
 <ul>
   <li><strong>Price-table cost for token-reporting adapters</strong> (#63, plan 33
@@ -1080,7 +1115,7 @@ use the same canonical-stream, mirror, native-watch, pricing, phase-policy,
 and retention terminology.</li>
 </ul>
 
-<h3 id="fixed-9"><a class="anchor" href="#fixed-9">Fixed</a></h3>
+<h3 id="fixed-10"><a class="anchor" href="#fixed-10">Fixed</a></h3>
 
 <ul>
   <li><code>harnex history</code> no longer renders blank rows for pre-0.7.3
@@ -1095,7 +1130,7 @@ untouched — legacy rows remain available for forensics.</li>
 <p>Minor bump: two behavior changes below (<code>wait --until done</code> exit codes,
 <code>--attempt-kind retry</code> now requiring <code>--parent-dispatch-id</code>).</p>
 
-<h3 id="added-18"><a class="anchor" href="#added-18">Added</a></h3>
+<h3 id="added-19"><a class="anchor" href="#added-19">Added</a></h3>
 
 <ul>
   <li>Dispatch-start records (#62): every dispatch appends a durable
@@ -1141,7 +1176,7 @@ to checkers resolving the physical path.</li>
 
 <h2 id="0714---2026-07-15--1006-pm--ist"><a class="anchor" href="#0714---2026-07-15--1006-pm--ist">[0.7.14] - 2026-07-15 | 10:06 PM | IST</a></h2>
 
-<h3 id="added-19"><a class="anchor" href="#added-19">Added</a></h3>
+<h3 id="added-20"><a class="anchor" href="#added-20">Added</a></h3>
 
 <ul>
   <li><code>harnex run</code> now accepts opt-in orchestration metadata flags
@@ -1172,7 +1207,7 @@ prose and applies equally to flex and fast service tiers.</li>
 and watch/wait/status/marker payloads preserve typed proof failures.</li>
 </ul>
 
-<h3 id="fixed-10"><a class="anchor" href="#fixed-10">Fixed</a></h3>
+<h3 id="fixed-11"><a class="anchor" href="#fixed-11">Fixed</a></h3>
 
 <ul>
   <li>Acknowledgment-only Codex turns now emit <code>completed_no_activity</code> and return a
@@ -1185,7 +1220,7 @@ no-delta work, while report-shaped JSON printed in final prose is ignored.</li>
 
 <h2 id="0713---2026-07-15--1224-pm--ist"><a class="anchor" href="#0713---2026-07-15--1224-pm--ist">[0.7.13] - 2026-07-15 | 12:24 PM | IST</a></h2>
 
-<h3 id="added-20"><a class="anchor" href="#added-20">Added</a></h3>
+<h3 id="added-21"><a class="anchor" href="#added-21">Added</a></h3>
 
 <ul>
   <li>Dispatch summaries now include a stable additive <code>context</code> block with
@@ -1222,7 +1257,7 @@ query examples.</li>
 
 <h2 id="0712---2026-07-10--1119-pm--ist"><a class="anchor" href="#0712---2026-07-10--1119-pm--ist">[0.7.12] - 2026-07-10 | 11:19 PM | IST</a></h2>
 
-<h3 id="fixed-11"><a class="anchor" href="#fixed-11">Fixed</a></h3>
+<h3 id="fixed-12"><a class="anchor" href="#fixed-12">Fixed</a></h3>
 
 <ul>
   <li>The new <code>reliability</code> block no longer treats legacy generic-PTY
@@ -1234,7 +1269,7 @@ no-summary process exit case.</li>
 
 <h2 id="0711---2026-07-10--1114-pm--ist"><a class="anchor" href="#0711---2026-07-10--1114-pm--ist">[0.7.11] - 2026-07-10 | 11:14 PM | IST</a></h2>
 
-<h3 id="added-21"><a class="anchor" href="#added-21">Added</a></h3>
+<h3 id="added-22"><a class="anchor" href="#added-22">Added</a></h3>
 
 <ul>
   <li>Dispatch summaries now include top-level additive <code>agent</code> and <code>reliability</code>
@@ -1261,7 +1296,7 @@ and a sample queue grouping snippet.</li>
 
 <h2 id="0710---2026-07-10--1057-pm--ist"><a class="anchor" href="#0710---2026-07-10--1057-pm--ist">[0.7.10] - 2026-07-10 | 10:57 PM | IST</a></h2>
 
-<h3 id="added-22"><a class="anchor" href="#added-22">Added</a></h3>
+<h3 id="added-23"><a class="anchor" href="#added-23">Added</a></h3>
 
 <ul>
   <li><code>harnex run --artifact-report PATH</code> / <code>--validation-report PATH</code> now expose a
@@ -1279,7 +1314,7 @@ summary row.</li>
 document sidecar proof while keeping plain-text <code>koder/</code> artifacts canonical.</li>
 </ul>
 
-<h3 id="fixed-12"><a class="anchor" href="#fixed-12">Fixed</a></h3>
+<h3 id="fixed-13"><a class="anchor" href="#fixed-13">Fixed</a></h3>
 
 <ul>
   <li>Missing, malformed, unsupported-schema, and oversized artifact reports now
@@ -1289,7 +1324,7 @@ crashing or changing the wrapped process exit code.</li>
 
 <h2 id="079---2026-07-10--1033-pm--ist"><a class="anchor" href="#079---2026-07-10--1033-pm--ist">[0.7.9] - 2026-07-10 | 10:33 PM | IST</a></h2>
 
-<h3 id="added-23"><a class="anchor" href="#added-23">Added</a></h3>
+<h3 id="added-24"><a class="anchor" href="#added-24">Added</a></h3>
 
 <ul>
   <li><code>harnex run</code> now accepts wrapper-level <code>--cwd DIR</code> and <code>--root DIR</code> options.
@@ -1309,7 +1344,7 @@ public-bundle / temporary-workdir dispatches with <code>--cwd</code>.</li>
 Codex CLI.</li>
 </ul>
 
-<h3 id="fixed-13"><a class="anchor" href="#fixed-13">Fixed</a></h3>
+<h3 id="fixed-14"><a class="anchor" href="#fixed-14">Fixed</a></h3>
 
 <ul>
   <li>Non-git temporary work directories no longer leak raw <code>git rev-parse</code> fatal
@@ -1318,7 +1353,7 @@ messages during harnex root probing.</li>
 
 <h2 id="078---2026-06-13--0845-pm--ist"><a class="anchor" href="#078---2026-06-13--0845-pm--ist">[0.7.8] - 2026-06-13 | 08:45 PM | IST</a></h2>
 
-<h3 id="added-24"><a class="anchor" href="#added-24">Added</a></h3>
+<h3 id="added-25"><a class="anchor" href="#added-25">Added</a></h3>
 
 <ul>
   <li><code>harnex watch --id &lt;id&gt; --until done</code> now provides a native work-terminal
@@ -1338,7 +1373,7 @@ launch-and-stall-recovery.</li>
 
 <h2 id="077---2026-06-12--1048-am--ist"><a class="anchor" href="#077---2026-06-12--1048-am--ist">[0.7.7] - 2026-06-12 | 10:48 AM | IST</a></h2>
 
-<h3 id="fixed-14"><a class="anchor" href="#fixed-14">Fixed</a></h3>
+<h3 id="fixed-15"><a class="anchor" href="#fixed-15">Fixed</a></h3>
 
 <ul>
   <li>Codex app-server failed turns now emit <code>task_failed</code> instead of being
@@ -1360,7 +1395,7 @@ transport disconnects.</li>
 
 <h2 id="076---2026-06-09--1259-am--ist"><a class="anchor" href="#076---2026-06-09--1259-am--ist">[0.7.6] - 2026-06-09 | 12:59 AM | IST</a></h2>
 
-<h3 id="added-25"><a class="anchor" href="#added-25">Added</a></h3>
+<h3 id="added-26"><a class="anchor" href="#added-26">Added</a></h3>
 
 <ul>
   <li><code>harnex status --json</code> now exposes work-level completion fields (<code>done</code>,
@@ -1382,7 +1417,7 @@ sessions, durable terminal summaries, and timeout/artifact verification.</li>
 
 <h2 id="075---2026-05-26--0518-pm--ist"><a class="anchor" href="#075---2026-05-26--0518-pm--ist">[0.7.5] - 2026-05-26 | 05:18 PM | IST</a></h2>
 
-<h3 id="added-26"><a class="anchor" href="#added-26">Added</a></h3>
+<h3 id="added-27"><a class="anchor" href="#added-27">Added</a></h3>
 
 <ul>
   <li><code>Harnex::TerminalStatus</code> now resolves durable terminal dispatch state from
@@ -1406,7 +1441,7 @@ summary rows.</li>
 
 <h2 id="074---2026-05-25--0845-am--ist"><a class="anchor" href="#074---2026-05-25--0845-am--ist">[0.7.4] - 2026-05-25 | 08:45 AM | IST</a></h2>
 
-<h3 id="added-27"><a class="anchor" href="#added-27">Added</a></h3>
+<h3 id="added-28"><a class="anchor" href="#added-28">Added</a></h3>
 
 <ul>
   <li>First-class <code>pi</code> structured adapter (<code>Harnex::Adapters::Pi</code>) for
@@ -1430,7 +1465,7 @@ usage and the <code>--</code> child-flag pattern.</li>
 
 <h2 id="073---2026-05-13--0143-pm--ist"><a class="anchor" href="#073---2026-05-13--0143-pm--ist">[0.7.3] - 2026-05-13 | 01:43 PM | IST</a></h2>
 
-<h3 id="added-28"><a class="anchor" href="#added-28">Added</a></h3>
+<h3 id="added-29"><a class="anchor" href="#added-29">Added</a></h3>
 
 <ul>
   <li><code>harnex run codex --fast</code> now opts Codex app-server runs into
@@ -1461,7 +1496,7 @@ restart primitive needed by the deployment-fallback plan. No
 public fallback CLI flag is exposed yet.</li>
 </ul>
 
-<h3 id="fixed-15"><a class="anchor" href="#fixed-15">Fixed</a></h3>
+<h3 id="fixed-16"><a class="anchor" href="#fixed-16">Fixed</a></h3>
 
 <ul>
   <li><code>harnex run</code> now defaults dispatch summaries to
@@ -1478,7 +1513,7 @@ detected; F23 remediates). Closes harnex issue #37.</li>
 
 <h2 id="072---2026-05-08"><a class="anchor" href="#072---2026-05-08">[0.7.2] - 2026-05-08</a></h2>
 
-<h3 id="fixed-16"><a class="anchor" href="#fixed-16">Fixed</a></h3>
+<h3 id="fixed-17"><a class="anchor" href="#fixed-17">Fixed</a></h3>
 
 <ul>
   <li><code>harnex run</code> now resolves the repo-local
@@ -1489,7 +1524,7 @@ runtime cwd. Closes a regression where cross-repo dispatches
 terminal row only to the global fallback, never to repo A.</li>
 </ul>
 
-<h3 id="added-29"><a class="anchor" href="#added-29">Added</a></h3>
+<h3 id="added-30"><a class="anchor" href="#added-30">Added</a></h3>
 
 <ul>
   <li><code>harnex doctor --sweep</code> reports read-only harnex/tmux session drift,
@@ -1499,7 +1534,7 @@ tmux windows, and stale session log files whose owning pid is gone.</li>
 
 <h2 id="071---2026-05-08"><a class="anchor" href="#071---2026-05-08">[0.7.1] - 2026-05-08</a></h2>
 
-<h3 id="fixed-17"><a class="anchor" href="#fixed-17">Fixed</a></h3>
+<h3 id="fixed-18"><a class="anchor" href="#fixed-18">Fixed</a></h3>
 
 <ul>
   <li>
@@ -1518,7 +1553,7 @@ prose containing a marker word was misread as a state transition.</p>
   </li>
 </ul>
 
-<h3 id="added-30"><a class="anchor" href="#added-30">Added</a></h3>
+<h3 id="added-31"><a class="anchor" href="#added-31">Added</a></h3>
 
 <ul>
   <li>Dispatch summaries now preserve declared brief budget metadata
@@ -1529,7 +1564,7 @@ record rough terminal measurements (<code>lines_changed</code>, <code>output_lin
 
 <h2 id="070---2026-05-08"><a class="anchor" href="#070---2026-05-08">[0.7.0] - 2026-05-08</a></h2>
 
-<h3 id="added-31"><a class="anchor" href="#added-31">Added</a></h3>
+<h3 id="added-32"><a class="anchor" href="#added-32">Added</a></h3>
 
 <ul>
   <li><code>harnex run</code> now appends one terminal dispatch record to
@@ -1564,7 +1599,7 @@ consumers should update column readers — schema is now stable but
 smaller. (#35 Tier 3)</li>
 </ul>
 
-<h3 id="fixed-18"><a class="anchor" href="#fixed-18">Fixed</a></h3>
+<h3 id="fixed-19"><a class="anchor" href="#fixed-19">Fixed</a></h3>
 
 <ul>
   <li><code>harnex wait</code> (default exit-watch mode) now blocks until the
@@ -1593,7 +1628,7 @@ detailed notes to the durable tracking document that owns them.</li>
 
 <h2 id="065--2026-05-07"><a class="anchor" href="#065--2026-05-07">[0.6.5] — 2026-05-07</a></h2>
 
-<h3 id="added-32"><a class="anchor" href="#added-32">Added</a></h3>
+<h3 id="added-33"><a class="anchor" href="#added-33">Added</a></h3>
 
 <ul>
   <li><code>harnex run --auto-stop</code> for one-shot <code>--context</code> dispatches.
@@ -1603,7 +1638,7 @@ to a prompt. The shutdown path reuses <code>harnex stop</code>, including the
 JSON-RPC TERM/KILL fallback.</li>
 </ul>
 
-<h3 id="fixed-19"><a class="anchor" href="#fixed-19">Fixed</a></h3>
+<h3 id="fixed-20"><a class="anchor" href="#fixed-20">Fixed</a></h3>
 
 <ul>
   <li>JSON-RPC Codex sessions now terminate their <code>codex app-server</code>
@@ -1629,7 +1664,7 @@ vs PTY flag-form difference. (#34)</li>
 
 <h2 id="064--2026-05-06"><a class="anchor" href="#064--2026-05-06">[0.6.4] — 2026-05-06</a></h2>
 
-<h3 id="fixed-20"><a class="anchor" href="#fixed-20">Fixed</a></h3>
+<h3 id="fixed-21"><a class="anchor" href="#fixed-21">Fixed</a></h3>
 
 <ul>
   <li>JSON-RPC adapter (<code>codex app-server</code>): harnex now mediates Codex’s
@@ -1661,7 +1696,7 @@ remains the default for autonomous worker dispatches and structured
 observability.</li>
 </ul>
 
-<h3 id="added-33"><a class="anchor" href="#added-33">Added</a></h3>
+<h3 id="added-34"><a class="anchor" href="#added-34">Added</a></h3>
 
 <ul>
   <li>JSON-RPC adapter: classify sub-5s pre-turn exits as <code>boot_failure</code>
@@ -1675,7 +1710,7 @@ capture) tracked separately.</li>
 
 <h2 id="063--2026-05-06"><a class="anchor" href="#063--2026-05-06">[0.6.3] — 2026-05-06</a></h2>
 
-<h3 id="fixed-21"><a class="anchor" href="#fixed-21">Fixed</a></h3>
+<h3 id="fixed-22"><a class="anchor" href="#fixed-22">Fixed</a></h3>
 
 <ul>
   <li>JSON-RPC adapter (<code>codex app-server</code>): <code>--context</code> boot injection now
@@ -1718,7 +1753,7 @@ scheduled for 0.7.0 once test-rewrite + contract gate land.</li>
 
 <h2 id="062--2026-05-06"><a class="anchor" href="#062--2026-05-06">[0.6.2] — 2026-05-06</a></h2>
 
-<h3 id="fixed-22"><a class="anchor" href="#fixed-22">Fixed</a></h3>
+<h3 id="fixed-23"><a class="anchor" href="#fixed-23">Fixed</a></h3>
 
 <ul>
   <li>App-server adapter: <code>--context</code> delivery and <code>harnex send</code> mid-session
@@ -1738,7 +1773,7 @@ Removal still scheduled for 0.7.0 per the 0.6.1 deprecation note.</li>
 
 <h2 id="061--2026-05-06"><a class="anchor" href="#061--2026-05-06">[0.6.1] — 2026-05-06</a></h2>
 
-<h3 id="added-34"><a class="anchor" href="#added-34">Added</a></h3>
+<h3 id="added-35"><a class="anchor" href="#added-35">Added</a></h3>
 
 <ul>
   <li><code>harnex agents-guide [topic]</code> exposes dispatch, chain, buddy,
@@ -1812,7 +1847,7 @@ meta) tracks the broader pivot.</li>
 
 <h2 id="050--2026-05-01"><a class="anchor" href="#050--2026-05-01">0.5.0 — 2026-05-01</a></h2>
 
-<h3 id="added-35"><a class="anchor" href="#added-35">Added</a></h3>
+<h3 id="added-36"><a class="anchor" href="#added-36">Added</a></h3>
 
 <ul>
   <li><code>harnex run --meta '&lt;JSON&gt;'</code> — per-dispatch metadata intake captured into
@@ -1884,7 +1919,7 @@ cross-references audited end-to-end. Closes #21.</li>
 
 <h2 id="033--2026-04-23"><a class="anchor" href="#033--2026-04-23">0.3.3 — 2026-04-23</a></h2>
 
-<h3 id="fixed-23"><a class="anchor" href="#fixed-23">Fixed</a></h3>
+<h3 id="fixed-24"><a class="anchor" href="#fixed-24">Fixed</a></h3>
 
 <ul>
   <li><code>--tmux</code> no longer greedily consumes the next flag as the window
@@ -1894,7 +1929,7 @@ name. Previously <code>harnex run codex --tmux --id foo</code> was parsed as
 
 <h2 id="032--2026-04-19"><a class="anchor" href="#032--2026-04-19">0.3.2 — 2026-04-19</a></h2>
 
-<h3 id="fixed-24"><a class="anchor" href="#fixed-24">Fixed</a></h3>
+<h3 id="fixed-25"><a class="anchor" href="#fixed-25">Fixed</a></h3>
 
 <ul>
   <li>State detection for cursor-addressed TUIs (Codex v0.121+). The
@@ -1920,10 +1955,10 @@ were confusing the prompt detector, leaving sessions stuck in
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.29.0</span>
+    <span>MIT · harnex 0.29.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=d0dcc6d600" defer></script>
-<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=0be958db24" defer></script>
+<script src="/assets/feedback.js?v=0be958db24" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

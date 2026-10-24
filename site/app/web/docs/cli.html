@@ -12,10 +12,17 @@
 <meta property="og:description" content="Every command&#39;s help, generated from the CLI itself.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/cli">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=0be958db24">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=0be958db24">
 <link rel="alternate" type="text/markdown" href="/docs/cli.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=d0dcc6d600">
-<script src="/assets/theme.js?v=d0dcc6d600"></script>
+<link rel="stylesheet" href="/assets/site.css?v=0be958db24">
+<script src="/assets/theme.js?v=0be958db24"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -31,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.29.0</span>
+    <span class="ver">v0.29.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -69,7 +76,7 @@
     <article class="doc help">
       <p class="crumb"><a href="/docs/">docs</a> / cli</p>
       <h1>CLI reference</h1>
-<p>Generated from <code>harnex help</code> for harnex 0.29.0. The lane commands come first; the session commands below them are the layer underneath.</p>
+<p>Generated from <code>harnex help</code> for harnex 0.29.1. The lane commands come first; the session commands below them are the layer underneath.</p>
 <p><a href="#ask"><code>ask</code></a> · <a href="#delegate"><code>delegate</code></a> · <a href="#result"><code>result</code></a> · <a href="#reply"><code>reply</code></a> · <a href="#land"><code>land</code></a> · <a href="#discard"><code>discard</code></a> · <a href="#lanes"><code>lanes</code></a> · <a href="#mcp"><code>mcp</code></a> · <a href="#run"><code>run</code></a> · <a href="#send"><code>send</code></a> · <a href="#wait"><code>wait</code></a> · <a href="#watch"><code>watch</code></a> · <a href="#stop"><code>stop</code></a> · <a href="#status"><code>status</code></a> · <a href="#logs"><code>logs</code></a> · <a href="#events"><code>events</code></a> · <a href="#history"><code>history</code></a> · <a href="#pane"><code>pane</code></a> · <a href="#doctor"><code>doctor</code></a> · <a href="#preflight"><code>preflight</code></a> · <a href="#agents-guide"><code>agents-guide</code></a> · <a href="#recipes"><code>recipes</code></a> · <a href="#guide"><code>guide</code></a> · <a href="#orchestration"><code>orchestration</code></a> · <a href="#artifact-report"><code>artifact-report</code></a> · <a href="#telemetry"><code>telemetry</code></a></p>
 <div class="codeblock"><div class="head"><span>harnex --help</span></div><pre>harnex: Pi workers (GPT models) as tools for you and your agents.
 
@@ -138,6 +145,8 @@ Options:
                    Ask once more with NAME when the first model fails on
                    provider capacity or rate limits (provider_capacity)
   --effort LEVEL   Reasoning effort / Pi thinking level
+  --phase NAME     Tag the run with a repo work phase (with --write, checked
+                   against the repo&#39;s allowlist); default: ask
   --cwd DIR        Directory the worker works in (default: current directory)
   --file PATH      Read the question from PATH (see run --context-file)
   --section TEXT   With --file: send only that section
@@ -178,6 +187,9 @@ Options:
   --file PATH      Read the task from PATH
   --model NAME     Pi model (provider/model); default: Pi&#39;s own default
   --effort LEVEL   Reasoning effort / Pi thinking level
+  --phase NAME     Tag the run with a repo work phase (checked against the
+                   repo&#39;s .harnex/config.json allowlist); default: delegate,
+                   which every allowlist accepts
   --no-wait        Start the lane and return at once; collect with
                    `harnex result` (all your lanes) or `harnex result NAME`
   --timeout DUR    Wait at most DUR (default 9m, fits a 10-minute tool cap;
@@ -904,10 +916,10 @@ Options:
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.29.0</span>
+    <span>MIT · harnex 0.29.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=d0dcc6d600" defer></script>
-<script src="/assets/feedback.js?v=d0dcc6d600" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=0be958db24" defer></script>
+<script src="/assets/feedback.js?v=0be958db24" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>
