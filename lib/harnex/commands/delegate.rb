@@ -17,8 +17,12 @@ module Harnex
         Options:
           --worktree NAME  Work in a new git worktree (.harnex/worktrees/NAME, branch
                            harnex/NAME); finish with `harnex land NAME` or
-                           `harnex discard NAME`
-          --name NAME      Lane name without a worktree (default: from the task)
+                           `harnex discard NAME`. The repo's .harnex/config.json
+                           can move it: {"lanes": {"worktree_path": "../{name}",
+                           "branch": "night/{mm}{dd}_{name}"}}
+          --name NAME      Lane name without a worktree (default: the --cwd
+                           worktree's name, else from the task). A working or
+                           unlanded lane's name is unique across every repo
           --cwd DIR        Directory the worker works in (default: current directory)
           --file PATH      Read the task from PATH
           --model NAME     Pi model (provider/model); default: Pi's own default
@@ -86,9 +90,10 @@ module Harnex
       root = Lanes.main_root(workdir)
       raise OptionParser::InvalidArgument, "--worktree needs a git repository (#{workdir} is not in one)" if @options[:worktree] && root.nil?
 
+      refuse_nested_worktree!(root, workdir) if @options[:worktree]
       Lanes.sweep_merged(root)
       root ||= workdir
-      name = Lanes.validate_name!(@options[:worktree] || @options[:name] || Lanes.generate_name(root, task))
+      name = Lanes.validate_name!(@options[:worktree] || @options[:name] || Lanes.generate_name(root, task, cwd: workdir))
       ensure_free!(root, name)
       lane = {
         "name" => name, "kind" => "delegate", "repo_root" => root, "run_root" => root, "cwd" => workdir,
@@ -125,9 +130,26 @@ module Harnex
               "lane #{name} already exists (#{existing['state']}): follow up with `harnex reply #{name} \"...\"`, " \
               "or `harnex land #{name}` / `harnex discard #{name}` first"
       end
+      if (other = Lanes.holder(name)) && other["repo_root"] != root
+        raise OptionParser::InvalidArgument,
+              "lane #{name} is in flight in #{other['repo_root']} (#{other['state']}); names of working and " \
+              "unlanded lanes are unique, so pick another name or finish that one " \
+              "(`harnex result #{name}`, `harnex land #{name}` or `harnex discard #{name}`)"
+      end
       return unless Harnex.read_registry(root, name)
 
       raise OptionParser::InvalidArgument, "a harnex session named #{name} is running; pick another name"
+    end
+
+    # #89: --cwd in a sibling worktree plus --worktree would branch a new
+    # worktree from the main checkout, not from --cwd; say so instead.
+    def refuse_nested_worktree!(root, workdir)
+      top = Lanes.toplevel(workdir)
+      return if top.nil? || root.nil? || Lanes.same_dir?(top, root)
+
+      raise OptionParser::InvalidArgument,
+            "--cwd #{top} is already a worktree of #{root}: drop --worktree to work there in place, " \
+            "or drop --cwd to start a new worktree from the main checkout"
     end
 
     def warn_uncommitted(root)

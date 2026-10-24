@@ -74,18 +74,35 @@ module Harnex
     end
 
     # A name resolves to this repo's lane first, then to the only lane
-    # anywhere with that name.
+    # anywhere that is in flight (those names are unique, #89), then to the
+    # only open one, then to the only one.
     def resolve(name, from: Dir.pwd)
       root = main_root(from)
       lane = root && load(root, name)
       return lane if lane
 
       matches = all.select { |candidate| candidate["name"] == name }
-      return matches.first if matches.one?
       raise OptionParser::InvalidArgument, "no lane named #{name.inspect} (see `harnex lanes`)" if matches.empty?
 
+      [matches.select { |l| in_flight?(l) }, matches.select { |l| open?(l) }, matches].each do |group|
+        return group.first if group.one?
+      end
       raise OptionParser::InvalidArgument,
             "several lanes are named #{name.inspect} (#{matches.map { |l| l['repo_root'] }.join(', ')}); run from the lane's repo"
+    end
+
+    # Working (or finished but uncollected), or a worktree not yet landed,
+    # in a repo that still exists.
+    def in_flight?(lane)
+      open?(lane) && !never_started?(lane) && (lane["state"] == "running" || !lane["branch"].nil?) &&
+        File.directory?(lane["repo_root"].to_s)
+    end
+
+    # #89: the in-flight lane anywhere that holds `name`, if any. A name is
+    # free only when no repo has it in flight, so `harnex result NAME` and
+    # `reply NAME` find their lane from anywhere.
+    def holder(name)
+      all.find { |lane| lane["name"] == name && in_flight?(lane) }
     end
 
     # Lanes this caller started in this repo whose current turn nobody has
@@ -98,18 +115,30 @@ module Harnex
 
     FILLER = %w[a an the this that these those to of in on at for from with and or but it its please
                 run use add make have has can could would should will do does just then also your you
-                our my me i we gpt worker workers task repo repository git command file files code].freeze
+                our my me i we gpt worker workers task repo repository git command file files code
+                are is be carry out brief lane].freeze
 
-    def generate_name(root, task, prefix: "pi")
-      words = task.to_s.downcase.scan(/[a-z0-9]+/).reject { |word| FILLER.include?(word) }.first(4)
-      base = ([prefix] + words).join("-")[0, 40].sub(/-+\z/, "")
+    # A lane working in another worktree of the repo is named after that
+    # worktree (`pi-night-1024_s3`); otherwise after the task's first words.
+    # Either way no repo has the name in flight (#89).
+    def generate_name(root, task, cwd: nil, prefix: "pi")
+      base = ([prefix] + name_words(root, task, cwd)).join("-")[0, 40].sub(/[-_.]+\z/, "")
       name = base
       index = 2
-      while open?(load(root, name)) || Harnex.read_registry(root, name)
+      while open?(load(root, name)) || holder(name) || Harnex.read_registry(root, name)
         name = "#{base}-#{index}"
         index += 1
       end
       name
+    end
+
+    def name_words(root, task, cwd)
+      top = cwd && toplevel(cwd)
+      if top && root && !same_dir?(top, root)
+        slug = File.basename(top).downcase.gsub(/[^a-z0-9._-]+/, "-").sub(/\A[^a-z0-9]+/, "")
+        return [slug] unless slug.empty?
+      end
+      task.to_s.downcase.scan(/[a-z0-9]+/).reject { |word| FILLER.include?(word) || word.match?(/\A[a-z]\z/) }.first(4)
     end
 
     def live?(lane)
@@ -155,15 +184,41 @@ module Harnex
     end
 
     # The main checkout of the repo that contains `path` (also from inside one
-    # of its worktrees), or nil outside git.
+    # of its worktrees), or nil outside git. In a bare layout (`repo/.bare`
+    # plus sibling worktrees, #89) it is the worktree on the bare repo's HEAD
+    # branch, so every worktree of the repo shares one lane namespace.
     def main_root(path)
       common, _err, ok = git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
       return nil unless ok
 
       return File.dirname(common) if File.basename(common) == ".git"
 
+      bare_main_worktree(path, common) || toplevel(path)
+    end
+
+    def same_dir?(one, two)
+      File.realpath(one.to_s) == File.realpath(two.to_s)
+    rescue SystemCallError
+      File.expand_path(one.to_s) == File.expand_path(two.to_s)
+    end
+
+    def toplevel(path)
       top, _err, ok = git(path, "rev-parse", "--show-toplevel")
       ok ? top : nil
+    end
+
+    def bare_main_worktree(path, common)
+      list, _err, ok = git(path, "worktree", "list", "--porcelain")
+      return nil unless ok
+
+      entries = list.split(/\n{2,}/).map do |block|
+        block.lines.to_h { |line| line.chomp.split(" ", 2).then { |key, value| [key, value.to_s] } }
+      end
+      return nil unless entries.first&.key?("bare")
+
+      head, _err, ok = git(common, "symbolic-ref", "-q", "HEAD")
+      main = ok && entries.find { |entry| entry["branch"] == head && File.directory?(entry["worktree"].to_s) }
+      main ? main["worktree"] : nil
     end
 
     def head_sha(dir)
@@ -176,10 +231,28 @@ module Harnex
       ok ? out.lines.map { |line| line[3..].to_s.strip } : []
     end
 
+    # #90: a worktree lane lives at .harnex/worktrees/NAME on harnex/NAME,
+    # unless the repo's .harnex/config.json `lanes` templates say otherwise
+    # ({name}, {yyyy}, {mm}, {dd}; worktree_path is relative to the main
+    # checkout, so "../{name}" puts lanes beside it).
+    def worktree_layout(root, name, now: Time.now)
+      templates = Config.load_repo(root).lanes || {}
+      fill = lambda do |template|
+        template.gsub("{name}", name).gsub("{yyyy}", now.strftime("%Y")).gsub("{mm}", now.strftime("%m"))
+                .gsub("{dd}", now.strftime("%d"))
+      end
+      path = fill.call(templates["worktree_path"] || File.join(WORKTREES_DIR, "{name}"))
+      [File.expand_path(path, root), fill.call(templates["branch"] || "#{BRANCH_PREFIX}{name}")]
+    rescue Config::ConfigError => e
+      raise OptionParser::InvalidArgument, "invalid config #{e.message}"
+    end
+
     def create_worktree(root, name)
       Harnex.ensure_git_excluded(root)
-      worktree = File.join(root, WORKTREES_DIR, name)
-      branch = BRANCH_PREFIX + name
+      worktree, branch = worktree_layout(root, name)
+      _out, _err, valid = git(root, "check-ref-format", "--branch", branch)
+      raise OptionParser::InvalidArgument, "lanes.branch gives #{branch.inspect}, which is not a valid branch name" unless valid
+
       _out, _err, exists = git(root, "rev-parse", "--verify", "--quiet", "refs/heads/#{branch}")
       if exists || File.exist?(worktree)
         raise OptionParser::InvalidArgument,
@@ -259,8 +332,12 @@ module Harnex
       merged
     end
 
+    # Inside the checkout: "a/b"; beside it: "../x"; anywhere else: absolute.
     def relative(root, path)
-      path.to_s.start_with?("#{root}/") ? path.to_s.delete_prefix("#{root}/") : path.to_s
+      return path.to_s.delete_prefix("#{root}/") if path.to_s.start_with?("#{root}/")
+
+      sibling = "../#{File.basename(path.to_s)}"
+      File.expand_path(sibling, root.to_s) == File.expand_path(path.to_s) ? sibling : path.to_s
     end
 
     # ---- briefs ------------------------------------------------------------
@@ -419,7 +496,7 @@ module Harnex
       lane["settled_at"] = now
       # Kept so a later `harnex result NAME` can show the result again.
       lane["last_turn"] = turn.slice("final_message", "final_message_path", "final_message_truncated", "model",
-                                     "outcome_class", "status", "last_error", "end_sha")
+                                     "outcome_class", "status", "last_error", "end_sha", "earlier_replies")
       save(lane)
     end
 
@@ -436,11 +513,77 @@ module Harnex
 
     def render(lane, turn, exit_code)
       lines = []
-      message = final_message(turn)
+      message = with_earlier_replies(final_message(turn), turn)
       lines << message.rstrip << "" unless message.strip.empty? || exit_code == Waiter::DONE_EXIT_TIMEOUT
       lines << "── #{lane['name']}: #{headline(lane, turn, exit_code)}"
-      lines.concat(details(lane, exit_code).map { |line| "   #{line}" })
+      lines.concat((interjection_lines(lane) + details(lane, exit_code)).map { |line| "   #{line}" })
       lines.join("\n")
+    end
+
+    # An answered ask prints only its answer, plus what else reached the
+    # worker (#92).
+    def render_answer(lane, turn)
+      text = with_earlier_replies(final_message(turn), turn)
+      notes = interjection_lines(lane)
+      return text if notes.empty?
+
+      [text.rstrip, "", "── #{lane['name']}: #{notes.first}", *notes.drop(1).map { |line| "   #{line}" }].join("\n")
+    end
+
+    # #92: when a later message reached the worker after it had answered,
+    # the turn's result is its answer to that message; the answers it
+    # replaced (the original task's report among them) come first.
+    def with_earlier_replies(message, turn)
+      earlier = Array(turn["earlier_replies"]).map(&:to_s).reject { |text| text.strip.empty? }
+      return message if earlier.empty? || message.strip.empty?
+
+      parts = earlier.map { |text| "[earlier reply this turn, before another message reached the worker]\n#{text.rstrip}" }
+      (parts + ["[latest reply]\n#{message.rstrip}"]).join("\n\n")
+    end
+
+    # #92: messages that reached the worker from anyone but the lane's own
+    # owner and its `harnex reply` (someone's `harnex send` from another
+    # terminal or session), since the lane's latest launch.
+    def interjections(lane)
+      events(lane).select do |event|
+        event["type"] == "send" && event["from"].is_a?(Hash) && after?(event["ts"], lane["launched_at"]) &&
+          !own_message?(lane, event["from"])
+      end
+    end
+
+    def own_message?(lane, from)
+      owner = lane["owner"].to_s
+      from["owner"].to_s == owner && (!owner.empty? || from["via"] == "reply")
+    end
+
+    def interjection_lines(lane)
+      found = interjections(lane)
+      return [] if found.empty?
+
+      count = found.length == 1 ? "1 message" : "#{found.length} messages"
+      ["interjected: #{count} reached the worker from outside this lane " \
+       "(the reply above may answer #{found.length == 1 ? 'it' : 'them'}; all: `harnex events --id #{lane['name']}`):"] +
+        found.last(5).map { |event| "  #{clock(event['ts'])} #{sender_label(event['from'])}: #{preview(event)}" }
+    end
+
+    def sender_label(from)
+      who = if from["session"] then "harnex session #{from['session']}"
+            elsif from["owner"] then "session #{from['owner'][0, 8]}"
+            else "a terminal"
+            end
+      "from #{who} (harnex #{from['via'] || 'send'})"
+    end
+
+    def preview(event)
+      text = event["msg"].to_s.sub(/\A\[harnex [^\]]*\]\s*/, "").gsub(/\s+/, " ").strip
+      cut = text.length > 160 || event["msg_truncated"]
+      "\"#{text[0, 160]}#{cut ? '…' : ''}\""
+    end
+
+    def clock(ts)
+      Time.iso8601(ts.to_s).localtime.strftime("%H:%M:%S")
+    rescue ArgumentError
+      ts.to_s
     end
 
     def headline(lane, turn, exit_code)
@@ -465,12 +608,56 @@ module Harnex
       dir = lane["worktree"] || lane["cwd"]
       return nil unless lane["base_sha"] && File.directory?(dir.to_s)
 
+      shas = lane["branch"] ? nil : worker_commits(lane)
+      return worker_change_summary(lane, dir, shas) if shas
+
       count, _err, ok = git(dir, "rev-list", "--count", "#{lane['base_sha']}..HEAD")
       return nil unless ok
 
       stat, = git(dir, "diff", "--shortstat", lane["base_sha"], "HEAD")
       commits = "#{count} commit#{count == '1' ? '' : 's'}"
       stat.empty? ? commits : "#{commits}, #{compact_stat(stat)}"
+    end
+
+    # #91: a lane working in place shares HEAD with whoever else commits
+    # there, so count only the commits the worker made (worker_commits
+    # events). nil when the worker's harnex did not track them.
+    def worker_commits(lane)
+      found = events(lane).select { |event| after?(event["ts"], lane["created_at"]) }
+      return nil unless found.any? { |event| event["type"] == "git" && event["tracks_worker_commits"] }
+
+      found.select { |event| event["type"] == "worker_commits" }.flat_map { |event| Array(event["shas"]) }
+    end
+
+    def worker_change_summary(lane, dir, shas)
+      moved, _err, ok = git(dir, "rev-list", "#{lane['base_sha']}..HEAD")
+      return nil unless ok
+
+      history = moved.split
+      mine = history & shas
+      text = "#{mine.length} commit#{mine.length == 1 ? '' : 's'}"
+      stat = mine.empty? ? nil : commits_stat(dir, mine)
+      text += ", #{stat}" if stat
+      others = history.length - mine.length
+      text += " (HEAD also moved #{others} commit#{others == 1 ? '' : 's'} by others)" if others.positive?
+      text
+    end
+
+    def commits_stat(dir, shas)
+      out, _err, ok = git(dir, "show", "--numstat", "--format=", *shas)
+      return nil unless ok
+
+      files = {}
+      added = removed = 0
+      out.each_line do |line|
+        plus, minus, path = line.chomp.split("\t", 3)
+        next unless path
+
+        files[path] = true
+        added += plus.to_i
+        removed += minus.to_i
+      end
+      "#{files.size} file#{files.size == 1 ? '' : 's'} (+#{added} -#{removed})"
     end
 
     def compact_stat(stat)

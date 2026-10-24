@@ -133,6 +133,22 @@ class ConfigTest < Minitest::Test
     end
   end
 
+  def test_load_repo_checks_lane_templates
+    with_git_repo do |repo|
+      write_repo_config(repo, lanes: { worktree_path: "../{name}", branch: "night/{mm}{dd}_{name}" })
+      assert_equal({ "worktree_path" => "../{name}", "branch" => "night/{mm}{dd}_{name}" }, Harnex::Config.load_repo(repo).lanes)
+    end
+    [[{ lanes: [] }, "$.lanes must be an object"],
+     [{ lanes: { root: "../" } }, "$.lanes.root is not supported"],
+     [{ lanes: { branch: "night/fixed" } }, "$.lanes.branch must be a string containing {name}"]].each do |payload, expected|
+      with_git_repo do |repo|
+        write_repo_config(repo, payload)
+        error = assert_raises(Harnex::Config::ConfigError) { Harnex::Config.load_repo(repo) }
+        assert_includes error.message, expected
+      end
+    end
+  end
+
   private
 
   def with_git_repo

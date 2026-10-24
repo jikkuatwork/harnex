@@ -1,22 +1,25 @@
 # Harnex State
 
-Updated: 2026-10-25 | 02:22 AM | IST
+Updated: 2026-10-25 | 03:15 AM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **Latest session: 0.29.1 published, and the site got its own mark.**
-  - RubyGems `harnex 0.29.1`, tag `v0.29.1` (on `875b2b1`), `main` pushed;
-    reinstalled from RubyGems. Record: `koder/releases/0.29.1.md`.
-  - Site: the MDI console icon gave way to a harnex mark (a prompt pane
-    beside two worker panes, Holm `deep` style) and a hand-made 1200x630
-    social card (`site/card.rb` → `site/src/assets/og.png`, named in
-    `og:image`). Redeployed with the 0.29.1 docs; feedback form logo
-    re-uploaded. How-to: `site/README.md`.
-  - Checked: harnex needs nothing for new Pi models. `model: zai/glm-5.3`
-    passes straight to `pi --model` (live ask ok, cost reported by Pi).
+- **Latest session: 0.30.0, local install, fixes Holm's lane friction
+  #89–#92** (Holm Queue 167). Record: `koder/releases/0.30.0.md`.
+  - #89: a bare layout (`.bare` + sibling worktrees) is one lane namespace;
+    in-flight lane names are unique across repos; lanes in another worktree
+    are named after it; `gpt` agent: `name:` header, `cwd:` follows
+    `result`/`reply`, never a `worktree` from prose.
+  - #90: `.harnex/config.json` `lanes.worktree_path`/`lanes.branch`
+    templates (e.g. `../{name}`); `land`/`discard` follow them.
+  - #91: in-place footers count only the worker's commits.
+  - #92: results list interjected `send`s and the answers they replaced.
+  - pi repo: agent + skill updated (`0f5567b`, `58c1144`, unpushed).
+- **Before that: 0.29.1 published**, and the site got its own mark
+  (`koder/releases/0.29.1.md`).
 - **Previous session:** pi repo harnex skill updated for 0.29.1 (`e2f6980`);
   Holm Issue 1050 filed (Holm `8027a8691`) for Holm's codex-era dispatch
   docs and the lane-worktree decisions.
@@ -31,19 +34,19 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Present
 
-- **Owner direction (2026-10-23):** harnex work pauses until Holm starts
-  using lanes (Holm Issue 1050); come back with what Holm's usage surfaces.
-- **Public = local = 0.29.1:** RubyGems, tag `v0.29.1`, GitHub `main` and
-  the site.
+- **Owner direction (2026-10-23):** harnex work follows Holm's lane usage
+  (Holm Issue 1050); fold what it surfaces into harnex issues.
+- **Local = 0.30.0; public = 0.29.1** (RubyGems, tag `v0.29.1`, GitHub
+  `main`, the site). Publishing 0.30.0 is the owner's call; the site was
+  not rebuilt, since `docs/` now describe 0.30.0.
+- **Holm picks up 0.30.0 only after `/mcp` reconnects harnex or the session
+  restarts** (running MCP servers and agent definitions load at start).
+  Holm was told; whether to add `lanes` templates to its tracked
+  `.harnex/config.json` is Holm's decision.
 - **Holm runs `"policy": "reject"`** (Holm `35e126858`), which needs 0.29.1:
   any other machine still on 0.29.0 needs `gem update harnex`.
-- **#89 is open (filed after the last handoff, from Holm's first lane
-  use):** lane names collide across sibling worktrees of a bare repo, so
-  `result NAME` fails; and the `gpt` relay invented a `worktree` from brief
-  prose. Cause and fixes: `koder/issues/89_lane_names_collide_across_bare_worktrees.md`.
-- **pi repo is 18 commits ahead of `origin/master`, unpushed** (includes a
-  merge of the other machine's "Make it work with claude"). Pushing is the
-  owner's call.
+- **pi repo is 2 commits ahead of `origin/master`, unpushed.** Pushing is
+  the owner's call.
 - **Owner direction:** exclusively Pi + GPT models. Releases are local only
   (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
   smoke → `koder/releases/<v>.md` → STATE) unless the owner approves
@@ -69,10 +72,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-0. **#89** (first Holm lane friction): one lane namespace per bare repo,
-   names unique across open lanes, `agents/gpt.md` carries `cwd:` into
-   `result`/`reply` and never infers `worktree`. Keep folding Holm Issue
-   1050 friction into harnex issues.
+0. **Watch Holm's next lane runs on 0.30.0** and file what they surface
+   (Holm Issue 1050). #92's optional ask (refuse direct `send` to a lane
+   another session owns) is not done.
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).
 2. **Eval follow-ups:**

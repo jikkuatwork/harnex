@@ -61,6 +61,7 @@ module Harnex
     MAX_PENDING_PI_COMMANDS = 256
     # Inline cap for a turn's final reply; the full text is in its file.
     FINAL_MESSAGE_LIMIT = 4000
+    MAX_EARLIER_REPLIES = 3
     class EventCounters
       def initialize
         @counts = {
@@ -171,6 +172,7 @@ module Harnex
       @turn_follow_ups_sent = 0
       @pi_follow_up_pending = 0
       @turn_final_text = nil
+      @turn_earlier_replies = []
       @completion_notifier = completion_notifier || CompletionNotifier.new(
         repo_root: repo_root,
         id: @id,
@@ -190,6 +192,7 @@ module Harnex
       @observed_commands_mutex = Mutex.new
       @observed_commands = []
       @pi_pending_commands = {}
+      @pi_git_heads = {}
       @pi_unobserved_commands = 0
       # Final gates and the failure flag cover the whole command history; the
       # retained @observed_commands window is capped at MAX_COMMANDS (#68).
@@ -480,10 +483,12 @@ module Harnex
       { ok: true, signal: "exit_sequence_sent" }
     end
 
-    def inject_via_adapter(text:, submit:, enter_only:, force: false, follow_up: false)
+    # `from` names who sent a message through `harnex send` (#92); the
+    # launch prompt has none.
+    def inject_via_adapter(text:, submit:, enter_only:, force: false, follow_up: false, from: nil)
       if structured_transport?
         return inject_via_structured(text: text, submit: submit, enter_only: enter_only, force: force,
-                                     follow_up: follow_up)
+                                     follow_up: follow_up, from: from)
       end
 
       after_seq = current_event_seq
@@ -509,7 +514,7 @@ module Harnex
         force: payload[:force],
         after_seq: after_seq
       )
-        .tap { emit_send_event(text, force: payload[:force]) }
+        .tap { emit_send_event(text, force: payload[:force], from: from) }
     end
 
     # #79: a structured adapter that can queue a message into the running turn
@@ -525,7 +530,7 @@ module Harnex
       @events_mutex.synchronize { @events_log_seq }
     end
 
-    def inject_via_structured(text:, submit:, enter_only:, force: false, follow_up: false)
+    def inject_via_structured(text:, submit:, enter_only:, force: false, follow_up: false, from: nil)
       if @runtime_budget&.expired?
         stop_for_runtime_budget!
         raise ArgumentError, "session runtime budget is exhausted"
@@ -560,6 +565,8 @@ module Harnex
           # is reset here. If Pi has in fact gone idle it starts a new run,
           # whose agent_start begins the next turn.
           unless queued_into_run
+            # A new prompt answers nothing earlier in this turn (#92).
+            @pi_last_answer = nil
             # Reserve work before the blocking RPC. Steering an active run does
             # not reset its clocks, but a new prompt cannot reuse old proof.
             @activity.start_turn
@@ -584,7 +591,7 @@ module Harnex
         end
       end
 
-      emit_send_event(dispatch_options.fetch(:prompt, text), force: payload[:force])
+      emit_send_event(dispatch_options.fetch(:prompt, text), force: payload[:force], from: from)
       {
         ok: true,
         cli: adapter.key,
@@ -930,6 +937,7 @@ module Harnex
         adapter.request_session_stats_async if adapter.respond_to?(:request_session_stats_async)
         schedule_auto_stop("agent_settled", interrupt: false) if task_complete? || task_failed?
       when "message_start"
+        note_pi_user_message(message["message"])
         @pi_active_message_key = pi_message_key(message["message"])
         @pi_streamed_text_by_message[@pi_active_message_key] = false
       when "message_update"
@@ -955,6 +963,7 @@ module Harnex
         if pi_command_tool?(message)
           @event_counters.record_item({ "type" => "commandExecution" })
           start_pi_command(message)
+          note_pi_git_head(message)
         else
           @event_counters.record_item({ "type" => "dynamicToolCall" })
         end
@@ -962,7 +971,10 @@ module Harnex
           "tool: #{message["toolName"] || "tool"}#{message["args"] ? " #{summarize(message["args"])}" : ""}"
         )
       when "tool_execution_end"
-        finish_pi_command(message) if pi_command_tool?(message)
+        if pi_command_tool?(message)
+          finish_pi_command(message)
+          record_pi_worker_commits(message)
+        end
         tool_name = message["toolName"] || "tool"
         status = message["isError"] ? "error" : "ok"
         record_synthesized("tool-result: #{tool_name} (#{status})")
@@ -1198,11 +1210,57 @@ module Harnex
 
       text = pi_extract_message_text(message).to_s
       @turn_final_text = text unless text.strip.empty?
+      # An answer (stopReason "stop"), kept apart from the run outcome that
+      # every turn_start resets (#92).
+      @pi_last_answer = message["stopReason"] == "stop" && !text.strip.empty? ? text : nil
 
       reason = message["stopReason"].to_s
       @pi_last_assistant_stop_reason = reason unless reason.empty?
       error = message["errorMessage"].to_s
       @pi_last_assistant_error = error unless error.empty?
+    end
+
+    # #92: a message that reaches the worker after it has answered (a
+    # follow-up from the lane's owner or from anyone else) starts a new
+    # answer; keep the one it replaces so the turn's result still has it.
+    def note_pi_user_message(message)
+      return unless message.is_a?(Hash) && message["role"] == "user"
+
+      text = @pi_last_answer.to_s.strip
+      @pi_last_answer = nil
+      return if text.empty? || @turn_earlier_replies.last == text
+
+      @turn_earlier_replies = (@turn_earlier_replies + [text]).last(MAX_EARLIER_REPLIES)
+    end
+
+    # #91: commits the worker made, told apart from HEAD moving under it
+    # (an orchestrator committing in the same checkout): HEAD is read around
+    # each command that runs git, and only commits that appear during one
+    # count as the worker's.
+    def note_pi_git_head(message)
+      args = message["args"]
+      command = args["command"] if args.is_a?(Hash)
+      return unless command.is_a?(String) && command.match?(/\bgit\b/) && @git_start && !@git_start.empty?
+
+      head = observed_git_head
+      @pi_git_heads[message["toolCallId"].to_s] = head if head
+    end
+
+    def record_pi_worker_commits(message)
+      before = @pi_git_heads.delete(message["toolCallId"].to_s)
+      after = before && observed_git_head
+      return if after.nil? || after == before
+
+      shas = Harnex.git_output(git_observation_root, "rev-list", "--max-count=100", "#{before}..#{after}").split
+      emit_event("worker_commits", shas: shas) unless shas.empty?
+    rescue StandardError
+      nil
+    end
+
+    def observed_git_head
+      Harnex.git_output(git_observation_root, "rev-parse", "HEAD")
+    rescue StandardError
+      nil
     end
 
     def settle_pi_task!
@@ -1392,6 +1450,8 @@ module Harnex
         @completion_notification_sent = false
         @turn_follow_ups_sent = 0
         @turn_final_text = nil
+        @turn_earlier_replies = []
+        @pi_last_answer = nil
         @completion_turn += 1
       end
       return unless turn
@@ -1451,6 +1511,7 @@ module Harnex
       end
       fields = { final_message: text[0, FINAL_MESSAGE_LIMIT], final_message_path: path }
       fields[:final_message_truncated] = true if text.length > FINAL_MESSAGE_LIMIT
+      fields[:earlier_replies] = @turn_earlier_replies.map { |reply| reply[0, FINAL_MESSAGE_LIMIT] } if @turn_earlier_replies.any?
       fields
     rescue StandardError
       { final_message: text[0, FINAL_MESSAGE_LIMIT] }
@@ -1658,11 +1719,13 @@ module Harnex
       warn("harnex: failed to write output log #{output_log_path}: #{e.message}")
     end
 
-    def emit_send_event(text, force:)
+    def emit_send_event(text, force:, from: nil)
       compact = text.to_s
       truncated = compact.length > 200
       preview = truncated ? "#{compact[0, 200]}…" : compact
-      emit_event("send", msg: preview, msg_truncated: truncated, forced: !!force)
+      payload = { msg: preview, msg_truncated: truncated, forced: !!force }
+      payload[:from] = from if from.is_a?(Hash) && !from.empty?
+      emit_event("send", **payload)
     end
 
     def emit_started_event
@@ -1685,7 +1748,7 @@ module Harnex
       )
       return if @git_start.empty?
 
-      payload = { phase: "start", sha: @git_start[:sha], branch: @git_start[:branch] }
+      payload = { phase: "start", sha: @git_start[:sha], branch: @git_start[:branch], tracks_worker_commits: true }
       payload[:git_root] = git_observation_root if git_lane?
       emit_event("git", **payload)
     end

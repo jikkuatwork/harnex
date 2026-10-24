@@ -112,6 +112,10 @@ module Harnex
 
     def register_lane(id, model)
       cwd = File.expand_path(@options[:cwd] || Dir.pwd)
+      if (other = Lanes.holder(id))
+        raise OptionParser::InvalidArgument,
+              "lane #{id} is in flight in #{other['repo_root']} (#{other['state']}); pick another --id"
+      end
       Lanes.save(
         "name" => id, "kind" => "ask", "repo_root" => Lanes.main_root(cwd) || cwd, "run_root" => run_root,
         "cwd" => cwd, "read_only" => !@options[:write], "owner" => Harnex.ambient_owner_id,
@@ -204,7 +208,8 @@ module Harnex
       answer = full_answer(turn)
       case exit_code
       when 0
-        @out.puts answer.to_s
+        lane = answered_lane(result["id"])
+        @out.puts(lane ? Lanes.render_answer(lane, turn.merge("final_message" => answer.to_s, "final_message_truncated" => false)) : answer.to_s)
         @err.puts("harnex ask: #{result['id']} answered in #{elapsed.round}s (model #{turn['model'] || 'Pi default'})")
       when Waiter::DONE_EXIT_TIMEOUT
         @err.puts("harnex ask: #{result['id']} is still working; keep waiting with: #{resume_command(result['id'])}")
@@ -214,6 +219,12 @@ module Harnex
         @err.puts("harnex ask: #{result['id'] || 'the worker'} did not answer (#{reason})")
       end
       exit_code
+    end
+
+    def answered_lane(id)
+      id && Lanes.resolve(id, from: File.expand_path(@options[:cwd] || Dir.pwd))
+    rescue OptionParser::InvalidArgument
+      nil
     end
 
     def full_answer(turn)

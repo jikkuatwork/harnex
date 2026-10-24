@@ -757,4 +757,71 @@ class SessionPiRpcTest < Minitest::Test
     assert_equal Harnex::ArtifactReport::MAX_STRING_LENGTH, cmd.length
     assert long.start_with?(cmd)
   end
+
+  # --- #92: interjections and the answers they replace ---
+
+  def test_a_message_after_the_answer_keeps_the_answer_it_replaced
+    reply = lambda do |text, stop, ts|
+      { "role" => "assistant", "content" => [{ "type" => "text", "text" => text }], "stopReason" => stop, "timestamp" => ts }
+    end
+    user = ->(text) { { "type" => "message_start", "message" => { "role" => "user", "content" => text } } }
+    # Pi starts every model call with turn_start, which resets the run's
+    # outcome; the answer must survive it.
+    turn = -> { @session.send(:handle_jsonl_notification, { "type" => "turn_start" }) }
+    @session.send(:register_completion_notifier!)
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, user.call("Review the plan"))
+    turn.call
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => reply.call("Reading it.", "toolUse", 1) })
+    @session.send(:handle_jsonl_notification, user.call("steer: look at section 2")) # mid-work, not after an answer
+    turn.call
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => reply.call("Review: PASS (0 P1).", "stop", 2) })
+    turn.call
+    @session.send(:handle_jsonl_notification, user.call("Write it to /tmp/review.md instead"))
+    turn.call
+    final = reply.call("Understood; written to /tmp/review.md.", "stop", 3)
+    @session.send(:handle_jsonl_notification, { "type" => "message_end", "message" => final })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [final], "willRetry" => false })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+
+    complete = events.reverse.find { |row| row["type"] == "task_complete" }
+    assert_equal "Understood; written to /tmp/review.md.", complete["final_message"]
+    assert_equal ["Review: PASS (0 P1)."], complete["earlier_replies"]
+  end
+
+  def test_a_send_event_names_its_sender_and_the_launch_prompt_has_none
+    @adapter.define_singleton_method(:dispatch) { |**_kwargs| nil }
+    @adapter.instance_variable_set(:@state, :prompt)
+    @session.inject_via_adapter(text: "launch prompt", submit: true, enter_only: false)
+    @session.inbox.enqueue(text: "from elsewhere", submit: true, enter_only: false, force: true,
+                           from: { "via" => "send", "owner" => "sess-b" })
+
+    sends = events.select { |row| row["type"] == "send" }
+    assert_nil sends.first["from"]
+    assert_equal({ "via" => "send", "owner" => "sess-b" }, sends.last["from"])
+  end
+
+  # --- #91: the worker's own commits ---
+
+  def test_only_commits_made_during_the_workers_git_commands_are_its_own
+    git = ->(*args) { assert system("git", "-C", @tmp, "-c", "user.name=t", "-c", "user.email=t@t", *args, out: File::NULL, err: File::NULL) }
+    git.call("commit", "-q", "--allow-empty", "-m", "base")
+    @session.send(:emit_git_start_event)
+    assert events.find { |row| row["type"] == "git" }["tracks_worker_commits"]
+
+    git.call("commit", "-q", "--allow-empty", "-m", "the orchestrator's")
+    pi_tool_start("c1", "bash", { "command" => "git add -A && git commit -m mine" })
+    git.call("commit", "-q", "--allow-empty", "-m", "mine")
+    mine = `git -C #{@tmp} rev-parse HEAD`.strip
+    pi_tool_end("c1", "bash", exit_code: 0)
+    pi_tool_start("c2", "bash", { "command" => "sleep 1" })
+    git.call("commit", "-q", "--allow-empty", "-m", "the orchestrator's, during a non-git command")
+    pi_tool_end("c2", "bash", exit_code: 0)
+    pi_tool_start("c3", "bash", { "command" => "git status" })
+    pi_tool_end("c3", "bash", exit_code: 0)
+
+    recorded = events.select { |row| row["type"] == "worker_commits" }
+    assert_equal [[mine]], recorded.map { |row| row["shas"] }
+  end
+
 end

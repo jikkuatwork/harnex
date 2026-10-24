@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-10-25
 updated: 2026-10-25
@@ -29,3 +29,13 @@ to the main checkout) or `--worktree-path ../<slug>`, used by `delegate --worktr
 by `land` and `discard`. Branch naming should be configurable too (Holm uses `night/<date>_<slug>`
 for queue rows). With Holm's `.bare` layout, "main checkout" means the `master` worktree; see
 Issue 89 for how `main_root` resolves there.
+
+## Resolution (0.30.0, 2026-10-25)
+
+`.harnex/config.json` takes `lanes` templates: `worktree_path` (relative to
+the main checkout) and `branch`, each with `{name}` and optionally `{yyyy}`,
+`{mm}`, `{dd}`. Example for Holm:
+`{"lanes": {"worktree_path": "../night-{mm}{dd}_{name}", "branch": "night/{mm}{dd}_{name}"}}`.
+`delegate --worktree NAME` creates the worktree there; the lane records its
+path and branch, so `land` and `discard` follow them. With Holm's `.bare`
+layout the main checkout is `master` (#89).

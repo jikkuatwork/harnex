@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P2
 created: 2026-10-25
 updated: 2026-10-25
@@ -27,3 +27,17 @@ Ask:
   outside the orchestrating owner, when, and their text.
 - The lane's final report covers the original task's outcome, not only the last turn's answer.
 - Optionally a flag that rejects direct `send` to a lane owned by another session, unless forced.
+
+## Resolution (0.30.0, 2026-10-25)
+
+- `harnex send` records who sent a message (`from`: `via` send/reply, the
+  sender's harnex session or owner session) on the session's `send` event.
+- Lane results (`delegate`, `reply`, `result`, and an answered `ask`) list
+  messages from anyone but the lane's owner and its own `harnex reply`:
+  `interjected: 1 message reached the worker from outside this lane …` with
+  time, sender and text.
+- When a message reached the worker after it had answered, the turn result
+  carries `earlier_replies`, and the result prints them first (the original
+  task's report among them), then `[latest reply]`.
+- Not done (optional in the ask): refusing a direct `send` to a lane another
+  session owns.

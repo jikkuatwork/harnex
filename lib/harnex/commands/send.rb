@@ -141,7 +141,8 @@ module Harnex
           text: text,
           submit: @options[:submit],
           enter_only: @options[:submit_only],
-          force: @options[:force]
+          force: @options[:force],
+          from: Harnex.sender_identity
         )
 
         Net::HTTP.start(

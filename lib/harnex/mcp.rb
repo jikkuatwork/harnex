@@ -41,6 +41,7 @@ module Harnex
           "model" => MODEL, "effort" => EFFORT,
           "fallback_model" => { "type" => "string", "description" => "Ask this model instead if the first is rate limited" },
           "write" => { "type" => "boolean", "description" => "Let the worker edit files and run commands (default false)" },
+          "name" => { "type" => "string", "description" => "Lane name (default: pi-ask-<random>)" },
           "cwd" => CWD, "wait_minutes" => WAIT_MINUTES
         } },
         "annotations" => { "readOnlyHint" => false, "openWorldHint" => true }
@@ -56,7 +57,7 @@ module Harnex
         "inputSchema" => { "type" => "object", "required" => ["task"], "properties" => {
           "task" => { "type" => "string", "description" => "Self-contained brief: files, expected behavior, how to verify (e.g. the test command)" },
           "worktree" => { "type" => "string", "description" => "Lane name; work in a new git worktree on branch harnex/NAME (recommended for edits)" },
-          "name" => { "type" => "string", "description" => "Lane name when not using a worktree (default: from the task)" },
+          "name" => { "type" => "string", "description" => "Lane name when not using a worktree (default: the cwd worktree's name, else from the task)" },
           "wait" => { "type" => "boolean", "description" => "Wait for the result (default true); false starts the lane and returns at once" },
           "model" => MODEL, "effort" => EFFORT, "cwd" => CWD, "wait_minutes" => WAIT_MINUTES
         } },
@@ -250,10 +251,11 @@ module Harnex
         case tool
         when "delegate"
           if args["worktree"].to_s.empty? && args["name"].to_s.empty?
-            root = Lanes.main_root(work_dir(args)) || work_dir(args)
-            args["name"] = Lanes.generate_name(root, args["task"] || args["prompt"] || args["brief"])
+            dir = work_dir(args)
+            args["name"] = Lanes.generate_name(Lanes.main_root(dir) || dir, args["task"] || args["prompt"] || args["brief"], cwd: dir)
           end
         when "ask"
+          args["id"] = args["name"] unless args["name"].to_s.strip.empty?
           args["id"] ||= "pi-ask-#{SecureRandom.hex(2)}"
         end
         args

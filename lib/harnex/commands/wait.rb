@@ -488,7 +488,8 @@ module Harnex
       }
       payload[:turn] = event["turn"] if event["turn"]
       payload[:follow_ups] = event["follow_ups"] if event["follow_ups"]
-      %w[end_sha commits turn_commits model final_message final_message_path final_message_truncated].each do |key|
+      %w[end_sha commits turn_commits model final_message final_message_path final_message_truncated
+         earlier_replies].each do |key|
         payload[key.to_sym] = event[key] if event.key?(key)
       end
       exit_code = 0

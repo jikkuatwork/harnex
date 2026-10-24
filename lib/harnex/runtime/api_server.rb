@@ -78,7 +78,8 @@ module Harnex
             text: payload[:text],
             submit: payload[:submit],
             enter_only: payload[:enter_only],
-            force: payload[:force]
+            force: payload[:force],
+            from: payload[:from]
           )
           http_code = result.delete(:http_status) || 200
           json(client, http_code, result)
@@ -136,6 +137,15 @@ module Harnex
       context
     end
 
+    # Who sent a message (#92), as `harnex send` reports it: bounded strings.
+    def sender(value)
+      return nil unless value.is_a?(Hash)
+
+      value.slice("via", "session", "owner").filter_map do |key, text|
+        [key, text.to_s[0, 120]] unless text.to_s.strip.empty?
+      end.to_h
+    end
+
     def parse_send_body(headers, body)
       if headers["content-type"].to_s.include?("application/json")
         parsed = JSON.parse(body.empty? ? "{}" : body)
@@ -145,7 +155,8 @@ module Harnex
             text: parsed["text"].to_s,
             submit: parsed.fetch("submit", true),
             enter_only: parsed.fetch("enter_only", false),
-            force: parsed.fetch("force", false)
+            force: parsed.fetch("force", false),
+            from: sender(parsed["from"])
           }
         else
           {

@@ -32,13 +32,14 @@ module Harnex
       @thread&.kill
     end
 
-    def enqueue(text:, submit:, enter_only:, force: false)
+    def enqueue(text:, submit:, enter_only:, force: false, from: nil)
       msg = Message.new(
         id: SecureRandom.hex(8),
         text: text,
         submit: submit,
         enter_only: enter_only,
         force: force,
+        from: from,
         queued_at: Time.now,
         status: :queued
       )
@@ -139,6 +140,7 @@ module Harnex
     def deliver_now(msg, follow_up: false)
       options = { text: msg.text, submit: msg.submit, enter_only: msg.enter_only, force: msg.force }
       options[:follow_up] = true if follow_up
+      options[:from] = msg.from if msg.from
       result = @session.inject_via_adapter(**options)
       msg.status = :delivered
       msg.delivered_at = Time.now

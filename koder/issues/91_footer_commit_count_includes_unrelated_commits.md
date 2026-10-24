@@ -1,5 +1,5 @@
 ---
-status: open
+status: resolved
 priority: P3
 created: 2026-10-25
 updated: 2026-10-25
@@ -21,3 +21,13 @@ Ask: count only commits created by the worker's process (for example commits who
 falls in the lane window *and* that are reachable only through the worker's own `git commit`
 calls, or the worker's reported commits), or label the number as "repo HEAD moved by N
 commits", and keep files and line counts to the worker's own diff.
+
+## Resolution (0.30.0, 2026-10-25)
+
+The session reads `HEAD` around each worker command that mentions `git`;
+commits that appear during one are emitted as `worker_commits` events (and the
+`git` start event says `tracks_worker_commits`). For a lane without a worktree
+the footer counts only those commits still in history, with files and lines
+from their own diffs, and names the rest: `0 commits (HEAD also moved 6
+commits by others)`. Lanes run by older harnex keep the old count. Worktree
+lanes are unchanged (their branch is the worker's alone).

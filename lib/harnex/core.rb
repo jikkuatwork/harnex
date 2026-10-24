@@ -450,6 +450,17 @@ module Harnex
     nil
   end
 
+  # #92: who is sending a message, for the receiving lane's footer. `via`
+  # is "reply" when `harnex reply` sends on the lane's behalf
+  # (HARNEX_SEND_VIA), else "send".
+  def sender_identity(env = ENV)
+    {
+      "via" => env["HARNEX_SEND_VIA"].to_s.strip.empty? ? "send" : env["HARNEX_SEND_VIA"].strip,
+      "session" => env["HARNEX_ID"].to_s.strip,
+      "owner" => ambient_owner_id(env).to_s
+    }.reject { |_key, value| value.empty? }
+  end
+
   # How to invoke this harnex in a printed hint: the checkout's bin when
   # running from source, plain `harnex` for the installed gem.
   def cli_command

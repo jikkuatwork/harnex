@@ -81,6 +81,20 @@ class MCPServerTest < Minitest::Test
     assert_equal ["--fallback-model", "m2", "--", "Why?"], argv.last(4)
   end
 
+  # #89: callers name lanes; a lane in another worktree is named after it.
+  def test_ask_takes_a_name_and_a_worktree_lane_is_named_after_its_worktree
+    serve(call(1, "ask", { "question" => "Why?", "name" => "s3-review" }))
+    assert_equal "s3-review", argv[argv.index("--id") + 1]
+
+    repo = File.join(@tmp, "repo")
+    side = File.join(@tmp, "night-1024_s3")
+    system("git", "init", "-q", "-b", "main", repo, out: File::NULL)
+    system("git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", out: File::NULL)
+    system("git", "-C", repo, "worktree", "add", "-q", "-b", "night/1024_s3", side, out: File::NULL, err: File::NULL)
+    serve(call(2, "delegate", { "task" => "Read and carry out the brief at b.md", "cwd" => side, "wait" => false }))
+    assert_equal "pi-night-1024_s3", argv[argv.index("--name") + 1]
+  end
+
   def test_common_argument_synonyms_are_accepted
     serve(call(1, "delegate", { "prompt" => "Add word count", "worktree" => "wc" }))
     assert_equal "Add word count", argv.last

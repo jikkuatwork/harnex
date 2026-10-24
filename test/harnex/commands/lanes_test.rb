@@ -375,4 +375,142 @@ class LanesTest < Minitest::Test
     assert_includes out, "── pi-slow-bench:"
     assert_includes out, "worked in place"
   end
+
+  # ---- #89: one namespace per repo, names unique while in flight --------
+
+  # holm-style layout: proj/.bare plus sibling worktrees, bare HEAD on main.
+  def bare_layout(*siblings)
+    base = File.join(@tmp, "proj")
+    bare = File.join(base, ".bare")
+    FileUtils.mkdir_p(base)
+    git("clone", "-q", "--bare", @repo, bare, dir: @tmp)
+    git("config", "user.name", "t", dir: bare)
+    git("config", "user.email", "t@t", dir: bare)
+    git("worktree", "add", "-q", File.join(base, "main"), "main", dir: bare)
+    siblings.each { |name| git("worktree", "add", "-q", "-b", "night/#{name}", File.join(base, name), "main", dir: bare) }
+    [File.realpath(File.join(base, "main")), *siblings.map { |name| File.realpath(File.join(base, name)) }]
+  end
+
+  def test_identical_briefs_in_sibling_worktrees_of_a_bare_repo_get_their_own_names
+    main, *sides = bare_layout("night-s3", "night-an", "night-pg")
+    Dir.chdir(main)
+    brief = "You are a build lane in Holm's night queue. Read and carry out the brief at b.md"
+    respond(*sides.map { [{ ok: true, mode: "tmux" }, 0] })
+    names = sides.map do |side|
+      _code, out, = cli(Harnex::Delegate, ["--no-wait", "--cwd", side, brief])
+      out[/── (\S+): started/, 1]
+    end
+    assert_equal %w[pi-night-s3 pi-night-an pi-night-pg], names
+    assert_equal [main], names.map { |name| Harnex::Lanes.resolve(name)["repo_root"] }.uniq, "one namespace: the bare repo's main worktree"
+
+    out = StringIO.new
+    Harnex::LanesCommand.new([], out: out).run
+    names.each { |name| assert_includes out.string, name }
+
+    respond([{ ok: true, final_message: "pi-night-an done" }, 0])
+    code, out, = cli(Harnex::LaneResult, ["pi-night-an"])
+    assert_equal 0, code, out
+    assert_includes out, "pi-night-an done"
+  end
+
+  def test_identical_briefs_in_one_checkout_are_numbered
+    respond([{ ok: true, mode: "tmux" }, 0], [{ ok: true, mode: "tmux" }, 0])
+    brief = "You are a planning lane for Holm. Read and carry out the brief at plan.md"
+    names = 2.times.map { cli(Harnex::Delegate, ["--no-wait", brief])[1][/── (\S+): started/, 1] }
+    assert_equal %w[pi-planning-holm-read-plan pi-planning-holm-read-plan-2], names
+  end
+
+  def test_a_name_in_flight_in_another_repo_is_refused_a_settled_in_place_one_is_not
+    respond([done, 0], [done, 0], [done, 0])
+    cli(Harnex::Delegate, ["--worktree", "dup", "One"])
+    cli(Harnex::Delegate, ["--name", "solo", "One"])
+    other = File.join(@tmp, "other")
+    FileUtils.mkdir_p(other)
+    git("init", "-q", "-b", "main", dir: other)
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", dir: other)
+    Dir.chdir(other)
+
+    error = assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--worktree", "dup", "Two"]) }
+    assert_includes error.message, "lane dup is in flight in #{@repo}"
+    assert_equal 0, cli(Harnex::Delegate, ["--name", "solo", "Two"]).first, "a done in-place lane does not hold its name elsewhere"
+    assert_equal "dup", Harnex::Lanes.resolve("dup")["name"], "a lane in flight resolves from any repo"
+  end
+
+  def test_a_worktree_lane_cannot_start_inside_another_worktree
+    main, side = bare_layout("night-x")
+    Dir.chdir(main)
+    error = assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--worktree", "w", "--cwd", side, "Task"]) }
+    assert_includes error.message, "drop --worktree to work there in place"
+  end
+
+  # ---- #90: worktree lanes beside the main checkout ----------------------
+
+  def test_config_puts_worktree_lanes_beside_the_checkout_and_land_honours_it
+    FileUtils.mkdir_p(File.join(@repo, ".harnex"))
+    File.write(File.join(@repo, ".harnex", "config.json"),
+               JSON.generate("lanes" => { "worktree_path" => "../night-{name}", "branch" => "night/{mm}{dd}_{name}" }))
+    respond([done, 0, commit_work("s3.rb", "s3")])
+    code, out, = cli(Harnex::Delegate, ["--worktree", "s3", "Add s3.rb"])
+    assert_equal 0, code, out
+
+    worktree = File.join(@tmp, "night-s3")
+    branch = "night/#{Time.now.strftime('%m%d')}_s3"
+    assert_equal worktree, calls.last[calls.last.index("--cwd") + 1]
+    assert_includes out, "worktree ../night-s3 (branch #{branch})"
+    assert_includes File.read(calls.last[calls.last.index("--context-file") + 1]), "on branch #{branch}"
+
+    code, out, = cli(Harnex::Land, ["s3"])
+    assert_equal 0, code, out
+    assert_includes out, "merged #{branch} into main (1 commit)"
+    refute File.exist?(worktree)
+    refute_includes git("branch"), branch
+  end
+
+  def test_bad_lane_templates_are_refused
+    FileUtils.mkdir_p(File.join(@repo, ".harnex"))
+    File.write(File.join(@repo, ".harnex", "config.json"), JSON.generate("lanes" => { "worktree_path" => "../fixed" }))
+    error = assert_raises(OptionParser::InvalidArgument) { cli(Harnex::Delegate, ["--worktree", "w", "Task"]) }
+    assert_includes error.message, "$.lanes.worktree_path must be a string containing {name}"
+  end
+
+  # ---- #91: a lane in place counts only its worker's commits -------------
+
+  def worker_events(path, sha_command)
+    future = "2999-01-01T00:00:00.000Z"
+    "sha=$(#{sha_command}) && " \
+      "printf '{\"type\":\"git\",\"phase\":\"start\",\"ts\":\"#{future}\",\"tracks_worker_commits\":true}\\n" \
+      "{\"type\":\"worker_commits\",\"ts\":\"#{future}\",\"shas\":[\"%s\"]}\\n' $sha >> #{path}"
+  end
+
+  def test_an_in_place_lane_counts_its_own_commits_not_head_movement
+    events = Harnex.events_log_path(@repo, "inplace")
+    work = "#{commit_work('lib.rb', 'two')} && #{worker_events(events, 'git rev-parse HEAD')} && " \
+           "#{commit_work('other.rb', 'theirs')}"
+    respond([done, 0, work])
+    _code, out, = cli(Harnex::Delegate, ["--name", "inplace", "Change lib.rb"])
+    assert_includes out, "· 1 commit, 1 file (+1 -1) (HEAD also moved 1 commit by others)"
+  end
+
+  # ---- #92: interjections and the answers they replaced ------------------
+
+  def test_messages_from_outside_the_lane_and_earlier_replies_are_reported
+    future = "2999-01-01T00:00:00.000Z"
+    events = Harnex.events_log_path(@repo, "review")
+    File.write(events, [
+      { type: "send", ts: future, msg: "[harnex session id=review] Review the plan" },
+      { type: "send", ts: future, msg: "Also check section 2", from: { via: "reply" } },
+      { type: "send", ts: future, msg: "Write it to /tmp/review.md instead", from: { via: "send" } }
+    ].map { |row| JSON.generate(row) }.join("\n") + "\n")
+    turn = { ok: true, final_message: "Understood; written there.", earlier_replies: ["Review: PASS (0 P1)."], model: "gpt-6.1-sol" }
+    respond([{ ok: true, turn_result: turn }, 0])
+    _code, out, = cli(Harnex::Delegate, ["--name", "review", "Review the plan"])
+
+    assert_includes out, "[earlier reply this turn, before another message reached the worker]\nReview: PASS (0 P1)."
+    assert_includes out, "[latest reply]\nUnderstood; written there."
+    assert_includes out, "interjected: 1 message reached the worker from outside this lane"
+    assert_includes out, "from a terminal (harnex send): \"Write it to /tmp/review.md instead\""
+    refute_includes out, "Also check section 2", "the lane's own reply is not an interjection"
+    refute_includes out, "Review the plan\"", "the launch prompt is not an interjection"
+  end
+
 end

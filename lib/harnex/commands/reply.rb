@@ -61,7 +61,8 @@ module Harnex
     def follow_up(lane, message)
       argv = @harnex_command + ["send", "--id", lane["name"], "--repo", lane["run_root"], "--message", message]
       argv += ["--wait-done"] + (@options[:timeout] ? ["--timeout", @options[:timeout].to_s] : []) if @options[:wait]
-      stdout, stderr, status = Open3.capture3(*argv)
+      # Marked as the lane's own follow-up, not an interjection (#92).
+      stdout, stderr, status = Open3.capture3({ "HARNEX_SEND_VIA" => "reply" }, *argv)
       result = Lanes.last_json(stdout)
       raise Lanes::LaunchError, "harnex could not reach lane #{lane['name']}: #{stderr.strip.lines.last}" if result.empty?
 

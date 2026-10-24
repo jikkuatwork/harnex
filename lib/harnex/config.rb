@@ -6,6 +6,7 @@ module Harnex
     PHASE_POLICIES = %w[warn reject].freeze
     RETENTION_DIRS = %w[events output receipts].freeze
     RETENTION_FIELDS = %w[max_age_days max_bytes].freeze
+    LANE_TEMPLATES = %w[worktree_path branch].freeze
     RETENTION_ENV = {
       "events" => {
         "max_age_days" => "HARNEX_EVENTS_MAX_AGE_DAYS",
@@ -38,6 +39,10 @@ module Harnex
       def retention
         data.is_a?(Hash) ? data["retention"] : nil
       end
+
+      def lanes
+        data.is_a?(Hash) ? data["lanes"] : nil
+      end
     end
 
     module_function
@@ -63,6 +68,22 @@ module Harnex
 
       validate_phase!(document["phase"], path) if document.key?("phase")
       validate_retention!(document["retention"], path) if document.key?("retention")
+      validate_lanes!(document["lanes"], path) if document.key?("lanes")
+    end
+
+    # #90: where worktree lanes live and what their branches are called,
+    # e.g. {"worktree_path": "../{name}", "branch": "night/{mm}{dd}_{name}"}.
+    def validate_lanes!(lanes, path)
+      raise ConfigError, "#{path}: $.lanes must be an object" unless lanes.is_a?(Hash)
+
+      lanes.each do |key, template|
+        unless LANE_TEMPLATES.include?(key)
+          raise ConfigError, "#{path}: $.lanes.#{key} is not supported (expected #{LANE_TEMPLATES.join(' or ')})"
+        end
+        next if template.is_a?(String) && template.include?("{name}")
+
+        raise ConfigError, "#{path}: $.lanes.#{key} must be a string containing {name}"
+      end
     end
 
     def validate_phase!(phase, path)

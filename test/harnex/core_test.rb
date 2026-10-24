@@ -12,6 +12,14 @@ class CoreTest < Minitest::Test
 
   # --- normalize_id ---
 
+  def test_sender_identity_names_how_and_who_sent
+    assert_equal({ "via" => "send" }, Harnex.sender_identity({}))
+    assert_equal({ "via" => "reply", "owner" => "sess-a" },
+                 Harnex.sender_identity("HARNEX_SEND_VIA" => "reply", "CLAUDE_CODE_SESSION_ID" => "sess-a"))
+    assert_equal({ "via" => "send", "session" => "pi-buddy" },
+                 Harnex.sender_identity("HARNEX_ID" => "pi-buddy", "CLAUDE_CODE_SESSION_ID" => "sess-a"))
+  end
+
   def test_normalize_id_strips_whitespace
     assert_equal "hello", Harnex.normalize_id("  hello  ")
   end

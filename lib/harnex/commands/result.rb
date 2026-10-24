@@ -71,7 +71,7 @@ module Harnex
       text = if @options[:json]
                JSON.generate(lane: lane["name"], exit_code: exit_code, state: lane["state"], result: turn)
              elsif lane["kind"] == "ask" && exit_code.zero?
-               Lanes.final_message(turn)
+               Lanes.render_answer(lane, turn)
              else
                Lanes.render(lane, turn, exit_code)
              end
