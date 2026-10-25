@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-25 | 02:55 PM | IST
+Updated: 2026-10-25 | 06:25 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -21,14 +21,10 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
   - #92: results list interjected `send`s and the answers they replaced.
   - pi repo: agent + skill updated and pushed (`0f5567b`, `58c1144`).
   - Configuration docs gained a *Lane worktrees* section.
-- **Before that: 0.29.1 published**, and the site got its own mark
-  (`koder/releases/0.29.1.md`).
-- **Previous session:** pi repo harnex skill updated for 0.29.1 (`e2f6980`);
-  Holm Issue 1050 filed (Holm `8027a8691`) for Holm's codex-era dispatch
-  docs and the lane-worktree decisions.
-- **0.29.0, the agent release** (first public since 0.12.0): lane docs, the
-  `gpt` agent in the gem, and https://harnex.zyt.app (`site/build.rb`, app
-  `holm_app_wQ4TB6JUhrTZ` on peer `zyt`). Record: `koder/releases/0.29.0.md`.
+- **Before that:** 0.29.1 published with the site's own mark; Holm Issue
+  1050 filed (Holm `8027a8691`); 0.29.0, the agent release, put the `gpt`
+  agent in the gem and launched https://harnex.zyt.app (records in
+  `koder/releases/`).
 - **#87 agent smoothness, done on 0.22.0–0.28.0:** the lane verbs, `harnex
   mcp`, the `gpt` agent; two clean 28/28 eval rounds (Claude Code and Pi,
   with and without MCP). Plan: `koder/plans/39_agent_smoothness.md`; evals:
