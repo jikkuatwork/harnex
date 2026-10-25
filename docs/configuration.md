@@ -50,6 +50,28 @@ The effective value is the first-class `harnex run --phase TEXT` value, or
 The allowlist must be an array of non-empty strings. Policy must be `warn` or
 `reject`.
 
+## Lane worktrees
+
+`harnex delegate --worktree NAME` creates `.harnex/worktrees/NAME` on branch
+`harnex/NAME`. Repositories that keep worktrees elsewhere can set templates:
+
+```json
+{
+  "lanes": {
+    "worktree_path": "../night-{mm}{dd}_{name}",
+    "branch": "night/{mm}{dd}_{name}"
+  }
+}
+```
+
+- Placeholders: `{name}` (the lane), `{yyyy}`, `{mm}`, `{dd}` (the day the
+  lane starts). Each template must contain `{name}`.
+- `worktree_path` is relative to the main checkout; `branch` must be a valid
+  branch name.
+- Either key may be left out to keep its default. `land` and `discard` follow
+  each lane's recorded path and branch, so changing the templates does not
+  strand lanes already started. See [Lanes](lanes.md).
+
 ## Events, output, and receipt retention
 
 Per-session event JSONL, output transcripts, and generated proof receipts live

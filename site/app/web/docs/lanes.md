@@ -5,7 +5,8 @@ its follow-ups. You start one with `harnex ask` or `harnex delegate`, collect
 it with `harnex result`, continue it with `harnex reply`, and finish it with
 `harnex land` or `harnex discard`. Every lane has a name, runs in a visible
 tmux window named after it, and leaves a small record so any later command can
-find it by name from anywhere in the repository.
+find it by name from anywhere in the repository (from any worktree of it, a
+bare-repo layout included).
 
 Lanes are the agent-facing layer of harnex. Everything here is also available
 as native tools through [`harnex mcp`](mcp.md), and the low-level `run`, `send`,
@@ -65,10 +66,19 @@ cost, commits and the next commands.
   `harnex/NAME` from `HEAD`. The worker is told to commit there. Parallel lanes
   never collide, and your checkout is untouched until you land. If your checkout
   has uncommitted changes, harnex warns that the worktree starts from `HEAD`.
-- **Without `--worktree`** the worker works in the current directory, which is
-  right for tasks that only run or inspect things (tests, a benchmark, a long
-  command). `--name NAME` names the lane; otherwise harnex derives a name from
-  the task (`pi-slow-bench`).
+  A repo that keeps its worktrees elsewhere says so in `.harnex/config.json`
+  (see [Where things live](#where-things-live)).
+- **Without `--worktree`** the worker works in the current directory, or in
+  `--cwd DIR`, which is right for tasks that only run or inspect things (tests,
+  a benchmark, a long command) and for a worktree you made yourself.
+- **Names.** `--name NAME` names the lane. Otherwise a lane working in another
+  worktree of the repo is named after it (`--cwd ../night-1024_s3` gives
+  `pi-night-1024_s3`), and any other lane after the task's first words
+  (`pi-slow-bench`, then `pi-slow-bench-2`). Generated names skip every name
+  another lane still holds anywhere (working, uncollected, or a worktree not
+  yet landed), and a name you choose is refused while another repo's worker
+  is running under it, so `harnex result NAME` and `reply NAME` find a
+  working lane from anywhere.
 - **`--file PATH`** reads a long brief from a file. Briefs must be
   self-contained: the worker has not seen your conversation. Name the files, the
   expected behavior and how to verify it.
@@ -126,6 +136,11 @@ or bare `land`.
 `harnex discard NAME` stops the lane if it is still working and deletes its
 worktree and branch without merging.
 
+**Lanes in place.** For a lane without a worktree, the footer counts only the
+commits the worker made (harnex watches `HEAD` around each git command the
+worker runs). Commits someone else made in the same checkout meanwhile are
+named apart: `0 commits (HEAD also moved 3 commits by others)`.
+
 ## Parallel lanes
 
 ```bash
@@ -152,6 +167,26 @@ The worker keeps its context. A worker still on its turn takes the message
 mid-task as a follow-up; a lane that has finished is relaunched on its own Pi
 session (`pi --session`), so it remembers everything from the earlier turns.
 The footer's cost is the lane's total so far.
+
+**Messages from someone else.** Anyone can `harnex send` to a lane's worker
+(the owner from another terminal, a buddy). The lane's result then says so,
+so the session that started the lane is not left guessing:
+
+```text
+[earlier reply this turn, before another message reached the worker]
+Review: PASS (0 P1, 2 P2) ...
+
+[latest reply]
+Understood; the report is now in /tmp/review.md.
+
+── review: done in 6m10s · gpt-6.1-sol · $0.41 · 0 commits
+   interjected: 1 message reached the worker from outside this lane (the reply above may answer it; all: `harnex events --id review`):
+     23:26:04 from a terminal (harnex send): "Write the report to /tmp/review.md instead"
+```
+
+The worker's earlier answers in the same turn (the original task's report
+among them) come first; your own `harnex reply` follow-ups are never listed as
+interjections.
 
 ## When a model fails
 
@@ -188,7 +223,18 @@ worker's tmux window, and the window itself is always there to watch.
   repo, worktree, branch, model, owner, Pi session, cost, last result). Closed
   lanes are pruned after 30 days; open lanes never are.
 - **Worktrees:** `.harnex/worktrees/NAME` inside your repository, on branch
-  `harnex/NAME`.
+  `harnex/NAME`. To keep them beside the main checkout instead, set templates
+  in the repo's `.harnex/config.json` (`{name}`, `{yyyy}`, `{mm}`, `{dd}`;
+  the path is relative to the main checkout). `land` and `discard` follow the
+  lane's own path and branch:
+
+  ```json
+  { "lanes": { "worktree_path": "../night-{mm}{dd}_{name}", "branch": "night/{mm}{dd}_{name}" } }
+  ```
+
+- **Bare-repo layouts** (`repo/.bare` plus sibling worktrees): the main
+  checkout is the worktree on the bare repo's `HEAD` branch (`master`), and
+  every worktree of the repo shares its lanes.
 - **`.harnex/`** is added to the clone's `.git/info/exclude` the first time
   harnex writes there, so lane worktrees and dispatch rows never show up as
   untracked work. Nothing tracked changes.

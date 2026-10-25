@@ -12,17 +12,17 @@
 <meta property="og:description" content="ask, delegate, result, reply, land, discard and lanes in depth.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/lanes">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <link rel="alternate" type="text/markdown" href="/docs/lanes.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=9af1ff7d07">
-<script src="/assets/theme.js?v=9af1ff7d07"></script>
+<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
+<script src="/assets/theme.js?v=10cfaf606f"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.29.1</span>
+    <span class="ver">v0.30.0</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -81,7 +81,8 @@ its follow-ups. You start one with <code>harnex ask</code> or <code>harnex deleg
 it with <code>harnex result</code>, continue it with <code>harnex reply</code>, and finish it with
 <code>harnex land</code> or <code>harnex discard</code>. Every lane has a name, runs in a visible
 tmux window named after it, and leaves a small record so any later command can
-find it by name from anywhere in the repository.</p>
+find it by name from anywhere in the repository (from any worktree of it, a
+bare-repo layout included).</p>
 
 <p>Lanes are the agent-facing layer of harnex. Everything here is also available
 as native tools through <a href="/docs/mcp"><code>harnex mcp</code></a>, and the low-level <code>run</code>, <code>send</code>,
@@ -167,11 +168,20 @@ cost, commits and the next commands.</p>
   <li><strong><code>--worktree NAME</code></strong> creates <code>.harnex/worktrees/NAME</code> on a new branch
 <code>harnex/NAME</code> from <code>HEAD</code>. The worker is told to commit there. Parallel lanes
 never collide, and your checkout is untouched until you land. If your checkout
-has uncommitted changes, harnex warns that the worktree starts from <code>HEAD</code>.</li>
-  <li><strong>Without <code>--worktree</code></strong> the worker works in the current directory, which is
-right for tasks that only run or inspect things (tests, a benchmark, a long
-command). <code>--name NAME</code> names the lane; otherwise harnex derives a name from
-the task (<code>pi-slow-bench</code>).</li>
+has uncommitted changes, harnex warns that the worktree starts from <code>HEAD</code>.
+A repo that keeps its worktrees elsewhere says so in <code>.harnex/config.json</code>
+(see <a href="#where-things-live">Where things live</a>).</li>
+  <li><strong>Without <code>--worktree</code></strong> the worker works in the current directory, or in
+<code>--cwd DIR</code>, which is right for tasks that only run or inspect things (tests,
+a benchmark, a long command) and for a worktree you made yourself.</li>
+  <li><strong>Names.</strong> <code>--name NAME</code> names the lane. Otherwise a lane working in another
+worktree of the repo is named after it (<code>--cwd ../night-1024_s3</code> gives
+<code>pi-night-1024_s3</code>), and any other lane after the task’s first words
+(<code>pi-slow-bench</code>, then <code>pi-slow-bench-2</code>). Generated names skip every name
+another lane still holds anywhere (working, uncollected, or a worktree not
+yet landed), and a name you choose is refused while another repo’s worker
+is running under it, so <code>harnex result NAME</code> and <code>reply NAME</code> find a
+working lane from anywhere.</li>
   <li><strong><code>--file PATH</code></strong> reads a long brief from a file. Briefs must be
 self-contained: the worker has not seen your conversation. Name the files, the
 expected behavior and how to verify it.</li>
@@ -248,6 +258,11 @@ or bare <code>land</code>.</p>
 <p><code>harnex discard NAME</code> stops the lane if it is still working and deletes its
 worktree and branch without merging.</p>
 
+<p><strong>Lanes in place.</strong> For a lane without a worktree, the footer counts only the
+commits the worker made (harnex watches <code>HEAD</code> around each git command the
+worker runs). Commits someone else made in the same checkout meanwhile are
+named apart: <code>0 commits (HEAD also moved 3 commits by others)</code>.</p>
+
 <h2 id="parallel-lanes"><a class="anchor" href="#parallel-lanes">Parallel lanes</a></h2>
 
 <div class="codeblock"><div class="head"><span>shell</span></div><pre class="highlight"><code>harnex delegate <span class="nt">--no-wait</span> <span class="nt">--worktree</span> slugify  <span class="s2">"Fix TextKit.slugify so punctuation is dropped ..."</span>
@@ -272,6 +287,25 @@ should name the lanes it waits for.</p>
 mid-task as a follow-up; a lane that has finished is relaunched on its own Pi
 session (<code>pi --session</code>), so it remembers everything from the earlier turns.
 The footer’s cost is the lane’s total so far.</p>
+
+<p><strong>Messages from someone else.</strong> Anyone can <code>harnex send</code> to a lane’s worker
+(the owner from another terminal, a buddy). The lane’s result then says so,
+so the session that started the lane is not left guessing:</p>
+
+<div class="codeblock"><div class="head"><span>text</span></div><pre><code>[earlier reply this turn, before another message reached the worker]
+Review: PASS (0 P1, 2 P2) ...
+
+[latest reply]
+Understood; the report is now in /tmp/review.md.
+
+── review: done in 6m10s · gpt-6.1-sol · $0.41 · 0 commits
+   interjected: 1 message reached the worker from outside this lane (the reply above may answer it; all: `harnex events --id review`):
+     23:26:04 from a terminal (harnex send): "Write the report to /tmp/review.md instead"
+</code></pre></div>
+
+<p>The worker’s earlier answers in the same turn (the original task’s report
+among them) come first; your own <code>harnex reply</code> follow-ups are never listed as
+interjections.</p>
 
 <h2 id="when-a-model-fails"><a class="anchor" href="#when-a-model-fails">When a model fails</a></h2>
 
@@ -305,8 +339,19 @@ worker’s tmux window, and the window itself is always there to watch.</p>
   <li><strong>Lane records:</strong> <code>~/.local/state/harnex/lanes/</code> (one JSON file per lane:
 repo, worktree, branch, model, owner, Pi session, cost, last result). Closed
 lanes are pruned after 30 days; open lanes never are.</li>
-  <li><strong>Worktrees:</strong> <code>.harnex/worktrees/NAME</code> inside your repository, on branch
-<code>harnex/NAME</code>.</li>
+  <li>
+    <p><strong>Worktrees:</strong> <code>.harnex/worktrees/NAME</code> inside your repository, on branch
+<code>harnex/NAME</code>. To keep them beside the main checkout instead, set templates
+in the repo’s <code>.harnex/config.json</code> (<code>{name}</code>, <code>{yyyy}</code>, <code>{mm}</code>, <code>{dd}</code>;
+the path is relative to the main checkout). <code>land</code> and <code>discard</code> follow the
+lane’s own path and branch:</p>
+
+    <div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w"> </span><span class="nl">"lanes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nl">"worktree_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"../night-{mm}{dd}_{name}"</span><span class="p">,</span><span class="w"> </span><span class="nl">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"night/{mm}{dd}_{name}"</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span><span class="w">
+</span></code></pre></div>    </div>
+  </li>
+  <li><strong>Bare-repo layouts</strong> (<code>repo/.bare</code> plus sibling worktrees): the main
+checkout is the worktree on the bare repo’s <code>HEAD</code> branch (<code>master</code>), and
+every worktree of the repo shares its lanes.</li>
   <li><strong><code>.harnex/</code></strong> is added to the clone’s <code>.git/info/exclude</code> the first time
 harnex writes there, so lane worktrees and dispatch rows never show up as
 untracked work. Nothing tracked changes.</li>
@@ -342,10 +387,10 @@ reference (<code>harnex help delegate</code>, <code>result</code>, <code>reply</
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.29.1</span>
+    <span>MIT · harnex 0.30.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=9af1ff7d07" defer></script>
-<script src="/assets/feedback.js?v=9af1ff7d07" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=10cfaf606f" defer></script>
+<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

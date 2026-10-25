@@ -2,7 +2,7 @@
 
 ## [0.30.0] - 2026-10-25 | 02:55 AM | IST
 
-Holm's first nights with lanes (Holm Queue 167): #89–#92. Local install.
+Holm's first nights with lanes (Holm Queue 167): #89–#92. Published to RubyGems.
 
 ### Fixed
 

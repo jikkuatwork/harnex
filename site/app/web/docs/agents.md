@@ -59,10 +59,13 @@ Optional header lines, then a blank line, then the brief:
 | `mode: read` | Read-only, even if the brief mentions commands |
 | `model: provider/model`, `effort: low\|medium\|high` | Pick the worker's model |
 | `fallback: provider/model` | Retry a read-only ask on another model |
-| `cwd: DIR` | Work in another directory |
+| `cwd: DIR` | Work in another directory, e.g. a sibling worktree (follow-ups stay there) |
+| `name: NAME` | Name the lane (default: the `cwd` worktree's name, else the brief's first words) |
 
 Without a header, questions and reviews go to a read-only worker, and a brief
-that asks to run something or change files goes to a worker that can.
+that asks to run something or change files goes to a worker that can. Only
+header lines set these: a brief that mentions a worktree or a branch is passed
+on as it is, never turned into a `worktree`.
 The definition ships with harnex as [`agents/gpt.md`](../agents/gpt.md).
 
 ### The CLI from Claude's Bash tool

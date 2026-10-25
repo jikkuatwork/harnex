@@ -1,4 +1,4 @@
-# CLI reference (harnex 0.29.1)
+# CLI reference (harnex 0.30.0)
 
 ```text
 harnex: Pi workers (GPT models) as tools for you and your agents.
@@ -112,8 +112,12 @@ files and run commands, and stops when it has replied. Follow up with
 Options:
   --worktree NAME  Work in a new git worktree (.harnex/worktrees/NAME, branch
                    harnex/NAME); finish with `harnex land NAME` or
-                   `harnex discard NAME`
-  --name NAME      Lane name without a worktree (default: from the task)
+                   `harnex discard NAME`. The repo's .harnex/config.json
+                   can move it: {"lanes": {"worktree_path": "../{name}",
+                   "branch": "night/{mm}{dd}_{name}"}}
+  --name NAME      Lane name without a worktree (default: the --cwd
+                   worktree's name, else from the task). A working
+                   lane's name is unique across every repo
   --cwd DIR        Directory the worker works in (default: current directory)
   --file PATH      Read the task from PATH
   --model NAME     Pi model (provider/model); default: Pi's own default

@@ -1,14 +1,15 @@
 # Harnex State
 
-Updated: 2026-10-25 | 03:15 AM | IST
+Updated: 2026-10-25 | 02:55 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **Latest session: 0.30.0, local install, fixes Holm's lane friction
-  #89–#92** (Holm Queue 167). Record: `koder/releases/0.30.0.md`.
+- **Latest session: 0.30.0 published (RubyGems, tag `v0.30.0`, GitHub,
+  site), fixes Holm's lane friction #89–#92** (Holm Queue 167). Record:
+  `koder/releases/0.30.0.md`.
   - #89: a bare layout (`.bare` + sibling worktrees) is one lane namespace;
     generated names skip names in flight anywhere, chosen names are refused
     while another repo's worker runs; lanes in another worktree are named
@@ -18,7 +19,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
     templates (e.g. `../{name}`); `land`/`discard` follow them.
   - #91: in-place footers count only the worker's commits.
   - #92: results list interjected `send`s and the answers they replaced.
-  - pi repo: agent + skill updated (`0f5567b`, `58c1144`, unpushed).
+  - pi repo: agent + skill updated and pushed (`0f5567b`, `58c1144`).
+  - Configuration docs gained a *Lane worktrees* section.
 - **Before that: 0.29.1 published**, and the site got its own mark
   (`koder/releases/0.29.1.md`).
 - **Previous session:** pi repo harnex skill updated for 0.29.1 (`e2f6980`);
@@ -37,21 +39,20 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 - **Owner direction (2026-10-23):** harnex work follows Holm's lane usage
   (Holm Issue 1050); fold what it surfaces into harnex issues.
-- **Local = 0.30.0; public = 0.29.1** (RubyGems, tag `v0.29.1`, GitHub
-  `main`, the site). Publishing 0.30.0 is the owner's call; the site was
-  not rebuilt, since `docs/` now describe 0.30.0.
+- **Local = public = 0.30.0** (RubyGems, tag `v0.30.0`, GitHub `main`,
+  https://harnex.zyt.app).
 - **Holm picks up 0.30.0 only after `/mcp` reconnects harnex or the session
   restarts** (running MCP servers and agent definitions load at start).
   Holm was told; whether to add `lanes` templates to its tracked
   `.harnex/config.json` is Holm's decision.
 - **Holm runs `"policy": "reject"`** (Holm `35e126858`), which needs 0.29.1:
   any other machine still on 0.29.0 needs `gem update harnex`.
-- **pi repo is 2 commits ahead of `origin/master`, unpushed.** Pushing is
-  the owner's call.
-- **Owner direction:** exclusively Pi + GPT models. Releases are local only
-  (suite green → version/CHANGELOG → `gem build` → `gem install --local` →
-  smoke → `koder/releases/<v>.md` → STATE) unless the owner approves
-  publishing, as for 0.29.0 and 0.29.1. Run `pi update` first.
+- **pi repo:** in sync with `origin/master`, except an uncommitted
+  `.pi/skills/feedback/references/01_usage.md` change that is not harnex's.
+- **Owner direction:** exclusively Pi + GPT models. **Every release is
+  published and installed immediately, with the site** (2026-10-25; the
+  local-only rule is retired): the full CLAUDE.md checklist, then the site
+  build and deploy below. Run `pi update` first.
 - **Site:** after a docs change, run `ruby site/build.rb`, then
   `holm @zyt app deploy site/app --spec-v1 --host harnex.zyt.app --force`.
   - Feedback project `6jyd3ya4`: the form's logo is `site/app/web/icon-512.png`

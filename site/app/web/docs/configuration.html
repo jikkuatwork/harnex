@@ -12,17 +12,17 @@
 <meta property="og:description" content=".harnex/config.json: phases, retention and telemetry settings.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/configuration">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <link rel="alternate" type="text/markdown" href="/docs/configuration.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=9af1ff7d07">
-<script src="/assets/theme.js?v=9af1ff7d07"></script>
+<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
+<script src="/assets/theme.js?v=10cfaf606f"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.29.1</span>
+    <span class="ver">v0.30.0</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -125,6 +125,29 @@ names a work phase, which the allowlist then checks.</li>
 
 <p>The allowlist must be an array of non-empty strings. Policy must be <code>warn</code> or
 <code>reject</code>.</p>
+
+<h2 id="lane-worktrees"><a class="anchor" href="#lane-worktrees">Lane worktrees</a></h2>
+
+<p><code>harnex delegate --worktree NAME</code> creates <code>.harnex/worktrees/NAME</code> on branch
+<code>harnex/NAME</code>. Repositories that keep worktrees elsewhere can set templates:</p>
+
+<div class="codeblock"><div class="head"><span>json</span></div><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"lanes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"worktree_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"../night-{mm}{dd}_{name}"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"night/{mm}{dd}_{name}"</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>
+
+<ul>
+  <li>Placeholders: <code>{name}</code> (the lane), <code>{yyyy}</code>, <code>{mm}</code>, <code>{dd}</code> (the day the
+lane starts). Each template must contain <code>{name}</code>.</li>
+  <li><code>worktree_path</code> is relative to the main checkout; <code>branch</code> must be a valid
+branch name.</li>
+  <li>Either key may be left out to keep its default. <code>land</code> and <code>discard</code> follow
+each lane’s recorded path and branch, so changing the templates does not
+strand lanes already started. See <a href="/docs/lanes">Lanes</a>.</li>
+</ul>
 
 <h2 id="events-output-and-receipt-retention"><a class="anchor" href="#events-output-and-receipt-retention">Events, output, and receipt retention</a></h2>
 
@@ -213,10 +236,10 @@ need a disposable local-state root.</p>
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.29.1</span>
+    <span>MIT · harnex 0.30.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=9af1ff7d07" defer></script>
-<script src="/assets/feedback.js?v=9af1ff7d07" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=10cfaf606f" defer></script>
+<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

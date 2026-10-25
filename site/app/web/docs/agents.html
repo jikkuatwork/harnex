@@ -12,17 +12,17 @@
 <meta property="og:description" content="Driving harnex from Claude Code and Pi: MCP, the gpt subagent, the CLI.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/agents">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=9af1ff7d07">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
 <link rel="alternate" type="text/markdown" href="/docs/agents.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=9af1ff7d07">
-<script src="/assets/theme.js?v=9af1ff7d07"></script>
+<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
+<script src="/assets/theme.js?v=10cfaf606f"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.29.1</span>
+    <span class="ver">v0.30.0</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -158,13 +158,19 @@ Add TextKit.word_count(text) to lib/textkit.rb with a test; run bin/test.
     </tr>
     <tr>
       <td><code>cwd: DIR</code></td>
-      <td>Work in another directory</td>
+      <td>Work in another directory, e.g. a sibling worktree (follow-ups stay there)</td>
+    </tr>
+    <tr>
+      <td><code>name: NAME</code></td>
+      <td>Name the lane (default: the <code>cwd</code> worktree’s name, else the brief’s first words)</td>
     </tr>
   </tbody>
 </table>
 
 <p>Without a header, questions and reviews go to a read-only worker, and a brief
-that asks to run something or change files goes to a worker that can.
+that asks to run something or change files goes to a worker that can. Only
+header lines set these: a brief that mentions a worktree or a branch is passed
+on as it is, never turned into a <code>worktree</code>.
 The definition ships with harnex as <a href="https://github.com/jikkuatwork/harnex/blob/main/agents/gpt.md"><code>agents/gpt.md</code></a>.</p>
 
 <h3 id="the-cli-from-claudes-bash-tool"><a class="anchor" href="#the-cli-from-claudes-bash-tool">The CLI from Claude’s Bash tool</a></h3>
@@ -240,10 +246,10 @@ evals/agents/run <span class="nt">--supervisor</span> claude,pi S2 S3
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.29.1</span>
+    <span>MIT · harnex 0.30.0</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=9af1ff7d07" defer></script>
-<script src="/assets/feedback.js?v=9af1ff7d07" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=10cfaf606f" defer></script>
+<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

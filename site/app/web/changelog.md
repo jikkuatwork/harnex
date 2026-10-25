@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.30.0] - 2026-10-25 | 02:55 AM | IST
+
+Holm's first nights with lanes (Holm Queue 167): #89–#92. Published to RubyGems.
+
+### Fixed
+
+- **Lane names collided** (#89). Identical briefs in sibling worktrees of a
+  bare repo all became `pi-read-carry-out-brief`, and `harnex result NAME`
+  then failed with `several lanes are named …`.
+  - A bare layout (`repo/.bare` plus sibling worktrees) is one repo: its main
+    checkout is the worktree on the bare repo's `HEAD` branch, so every
+    worktree shares one lane namespace and `harnex lanes` shows them all.
+  - Generated names skip every name another lane still holds in any repo
+    (working, uncollected, or an unlanded worktree); `--name`, `--worktree`
+    and `ask --id` refuse a name while another repo's worker runs under it;
+    `result`/`reply` find a working lane from anywhere.
+  - A lane working in another worktree is named after it
+    (`pi-night-1024_s3`); brief openers such as "You are a … lane" and "carry
+    out the brief" no longer make the name.
+  - `delegate --worktree` refuses a `--cwd` that is already another worktree
+    of the repo (it would have branched from the main checkout instead).
+- **The `gpt` agent invented a `worktree`** from brief prose (#89). It now
+  sets `worktree`, `name` and `cwd` only from header lines, takes a new
+  `name:` header, and passes `cwd:` on to `result` and `reply`.
+- **A lane in place reported other people's commits** (#91). Its footer
+  counts only commits that appeared while the worker ran a git command, and
+  names the rest: `0 commits (HEAD also moved 6 commits by others)`.
+- **Messages sent straight to a worker were invisible** to the session that
+  started its lane (#92). `harnex send` now records who sent a message, and a
+  lane's result lists messages from anyone but the lane's owner and its own
+  `harnex reply` (`interjected: 1 message … from a terminal (harnex send):
+  "…"`). When a message reached the worker after it had answered, the result
+  shows the answers it replaced first, the original task's report among them.
+
+### Added
+
+- `.harnex/config.json` `lanes` templates put worktree lanes where the repo
+  keeps its worktrees (#90): `{"lanes": {"worktree_path": "../{name}",
+  "branch": "night/{mm}{dd}_{name}"}}` (`{name}`, `{yyyy}`, `{mm}`, `{dd}`).
+  `land` and `discard` follow each lane's own path and branch.
+- MCP `ask` takes `name`.
+
 ## [0.29.1] - 2026-10-23 | 10:31 AM | IST
 
 Fix release for #88: lanes in repos with a phase allowlist. Published to
