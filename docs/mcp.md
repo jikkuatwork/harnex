@@ -19,9 +19,10 @@ servers when a session starts. `harnex doctor` reports the registrations under
 
 Each tool runs the matching CLI command and returns its text: normally the
 worker's reply followed by the `── NAME:` footer. `lanes` returns the
-`harnex lanes --json` array instead: current `state`, separate `collected`
-and process-liveness `live` fields. A settled uncollected worker reads
-`done`/`failed`, never `running`; listing does not collect its result.
+`harnex lanes` table, with each worker's live activity; a settled worker reads
+"finished, uncollected" until its result is collected. Scripts use
+`harnex lanes --json`, whose `state` is `done`/`failed` for a settled worker
+(never `running`), with separate `collected` and `live` fields.
 
 | Tool | Arguments | Does |
 | --- | --- | --- |

@@ -473,7 +473,7 @@ class LanesTest < Minitest::Test
     end
   end
 
-  def test_mcp_lanes_returns_honest_state_and_collection_json
+  def test_mcp_lanes_shows_a_settled_uncollected_worker_as_finished
     respond([{ ok: true, mode: "tmux" }, 0])
     cli(Harnex::Delegate, ["--no-wait", "--name", "mcp-failed", "Task"])
     File.write(Harnex.events_log_path(@repo, "mcp-failed"), JSON.generate(type: "task_failed", seq: 12,
@@ -483,9 +483,10 @@ class LanesTest < Minitest::Test
     output = StringIO.new
     Harnex::MCP::Server.new(input: input, output: output).run
     text = JSON.parse(output.string).dig("result", "content", 0, "text")
-    assert text.start_with?("["), "MCP lanes must return lane JSON, got: #{text}"
-    row = JSON.parse(text).find { |lane| lane["name"] == "mcp-failed" }
-    assert_equal ["failed", false], row.values_at("state", "collected")
+    # MCP keeps the human table (it carries each worker's live activity);
+    # its row must still say the worker settled, never plain "working".
+    row = text.lines.find { |line| line.start_with?("mcp-failed") }
+    assert_includes row, "finished, uncollected"
   end
 
   def test_policy_refusal_footer_requires_a_rephrased_brief_or_another_route
