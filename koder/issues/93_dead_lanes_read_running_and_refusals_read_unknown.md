@@ -52,9 +52,11 @@ Automatic retry (#86 slice 3) and any provider-specific API call from harnex.
 
 ## Resolution
 
-- Machine lane listings (`lanes --json`, MCP `lanes`) project settled
-  `done`/`failed` independently of `collected`, without consuming results or
-  changing the table wording. Evidence is fenced to the launch/follow-up.
+- `lanes --json` projects settled `done`/`failed` independently of
+  `collected`, without consuming results. The table (also what MCP `lanes`
+  returns, since it carries live worker activity) keeps its wording, which
+  already reads "finished, uncollected". Evidence is fenced to the
+  launch/follow-up.
 - Pi refusal errors settle as `policy_refusal`; the exact no-details error
   settles as `provider_error_unexplained`. Footers require rephrasing/another
   route or provider/gateway log inspection, respectively. Owner-watch events
