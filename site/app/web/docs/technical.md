@@ -423,7 +423,10 @@ not a new runtime.
   base sha, owner (`CLAUDE_CODE_SESSION_ID`/`PI_SESSION_ID`), requested model,
   Pi `agent_session_id`, accumulated cost, launch time and the last turn's result.
   States: `running` (a turn is out and uncollected), `done`, `failed`, `landed`,
-  `discarded`.
+  `discarded`. `lanes --json` and MCP `lanes` project current settlement from
+  task events (or fresh terminal evidence): `done`/`failed` even before
+  collection, with separate `collected` and process-liveness `live` fields.
+  Listing is read-only; pending results and the table wording are unchanged.
 - **Launching:** the verbs shell out to the low-level CLI. `delegate` runs
   `harnex run pi --id NAME --tmux NAME --cwd WORKDIR --root ROOT --auto-stop`
   with a brief file (`--context-file`); with `--wait-done` it blocks on the
@@ -436,7 +439,12 @@ not a new runtime.
   <agent_session_id>`, so Pi resumes the conversation.
 - **Settling:** after a turn, the lane reads the launch's `usage` event (cost,
   `agent_session_id`) and records the result; the footer adds commits and a
-  diffstat from git (`base_sha..HEAD`).
+  diffstat from git (`base_sha..HEAD`). Pi error text can classify
+  `policy_refusal` (retry with a rephrased brief or another route) or
+  `provider_error_unexplained` (inspect provider/gateway logs first). These
+  failure classes are preserved in `watch --owner`; `provider_capacity`
+  retains its adapter-retries-exhausted meaning. Full vocabulary:
+  [dispatch telemetry](docs/dispatch-telemetry.md).
 - **Worktrees:** `.harnex/worktrees/NAME` on branch `harnex/NAME`; `.harnex/`
   is added to `<git-common-dir>/info/exclude` on the first write.
   `land` merges with `git merge --no-edit`, leaves conflicts in progress, and

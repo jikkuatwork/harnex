@@ -1,12 +1,18 @@
 # Harnex State
 
-Updated: 2026-10-28 | 12:27 PM | IST
+Updated: 2026-10-28 | 11:20 AM | +04
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
+- **Latest session: 0.30.1 published (RubyGems, tag `v0.30.1`, GitHub, site), fixes #93**
+  (Holm Queue 174): `lanes --json` reports a settled lane as `done`/`failed`, never
+  `running`; Pi refusals settle as `policy_refusal`, Pi's no-details error as
+  `provider_error_unexplained`, both with "don't retry unchanged" footers. Record:
+  `koder/releases/0.30.1.md`. Open: Pi drops OpenAI's trailing `error` event, so refusals
+  still arrive as the no-details error.
 - **#93 implemented, not released:** honest lane JSON/MCP settlement and
   distinct provider refusal/no-details outcomes. Evidence:
   `koder/issues/93_dead_lanes_read_running_and_refusals_read_unknown.md`;
@@ -44,7 +50,7 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 - **Owner direction (2026-10-23):** harnex work follows Holm's lane usage
   (Holm Issue 1050); fold what it surfaces into harnex issues.
-- **Local = public = 0.30.0** (RubyGems, tag `v0.30.0`, GitHub `main`,
+- **Local = public = 0.30.1** (RubyGems, tag `v0.30.0`, GitHub `main`,
   https://harnex.zyt.app).
 - **Holm picks up 0.30.0 only after `/mcp` reconnects harnex or the session
   restarts** (running MCP servers and agent definitions load at start).

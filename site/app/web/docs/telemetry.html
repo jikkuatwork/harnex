@@ -12,17 +12,17 @@
 <meta property="og:description" content="The canonical dispatch history stream and its schema.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/telemetry">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <link rel="alternate" type="text/markdown" href="/docs/telemetry.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
-<script src="/assets/theme.js?v=10cfaf606f"></script>
+<link rel="stylesheet" href="/assets/site.css?v=30efe60ff2">
+<script src="/assets/theme.js?v=30efe60ff2"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.30.0</span>
+    <span class="ver">v0.30.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -418,10 +418,16 @@ facts prove the delta, not semantic quality or human authorship.</p>
   <li><strong>Completion:</strong> <code>completed_with_proof</code>, <code>completed_with_activity</code>.</li>
   <li><strong>Proof defects:</strong> <code>completed_no_activity</code>, <code>report_missing</code>,
 <code>report_invalid</code>, <code>report_rejected</code>.</li>
-  <li><strong>Process:</strong> <code>task_failed</code> (the turn failed), <code>provider_capacity</code> (the turn
-failed after the adapter’s own provider retries ran out, from Pi’s
-structured <code>auto_retry_end success:false</code>; capacity or rate limits rather
-than the work), <code>boot_failure</code> (structured
+  <li><strong>Provider:</strong> <code>provider_capacity</code> (the turn failed after the adapter’s own
+provider retries ran out, from Pi’s structured <code>auto_retry_end success:false</code>;
+capacity or rate limits rather than the work), <code>policy_refusal</code> (Pi’s error
+text names <code>cyber_policy</code>, content filter/policy, or a cybersecurity-risk
+flag; retry needs a rephrased brief or another route),
+<code>provider_error_unexplained</code> (Pi’s exact <code>Unknown error (no error details in
+response)</code>; inspect provider/gateway logs before retrying). Explicit error
+classes take precedence over retry exhaustion; they do not infer a refusal
+from an unexplained error. <code>watch --owner</code> carries these classes unchanged.</li>
+  <li><strong>Process:</strong> <code>task_failed</code> (the turn failed), <code>boot_failure</code> (structured
 transport died before its first turn), <code>permission_prompt</code> (ended on a
 trust/confirmation prompt the adapter recognizes), <code>timeout</code> (<code>--max-runtime</code>
 stopped running work, or exit 124), <code>stopped_by_caller</code> (a manual stop
@@ -449,7 +455,8 @@ initial workers do not join families. Start rows are not counted. An optional
 adds a <code>failure_budget</code> verdict and exits 3 once N fatal failures are counted
 (1 is an error, 2 a usage error; a missing <code>--dispatch</code> file is an error).
 By default the fatal classes are <code>completed_no_activity</code>, <code>task_failed</code>,
-<code>provider_capacity</code>, <code>boot_failure</code>, <code>permission_prompt</code>, <code>timeout</code>, and <code>process_failed</code>; proof
+<code>provider_capacity</code>, <code>policy_refusal</code>, <code>provider_error_unexplained</code>,
+<code>boot_failure</code>, <code>permission_prompt</code>, <code>timeout</code>, and <code>process_failed</code>; proof
 defects, caller stops and <code>unknown</code> are not fatal.
 Harnex supplies the ledger only: the caller decides what to do on a breach.</p>
 
@@ -770,10 +777,10 @@ work verdict. Repo phase allowlists and runtime-log retention are documented in
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.30.0</span>
+    <span>MIT · harnex 0.30.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=10cfaf606f" defer></script>
-<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=30efe60ff2" defer></script>
+<script src="/assets/feedback.js?v=30efe60ff2" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

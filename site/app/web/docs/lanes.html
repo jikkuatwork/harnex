@@ -12,17 +12,17 @@
 <meta property="og:description" content="ask, delegate, result, reply, land, discard and lanes in depth.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/lanes">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <link rel="alternate" type="text/markdown" href="/docs/lanes.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
-<script src="/assets/theme.js?v=10cfaf606f"></script>
+<link rel="stylesheet" href="/assets/site.css?v=30efe60ff2">
+<script src="/assets/theme.js?v=30efe60ff2"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.30.0</span>
+    <span class="ver">v0.30.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -317,7 +317,14 @@ interjections.</p>
 <p>For provider and model failures (not found, rate limited, out of capacity) the
 footer suggests continuing on Pi’s default model. <code>reply --model</code> resumes the
 same session, so the task is not lost. For <code>ask</code>, <code>--fallback-model</code> does this
-automatically.</p>
+automatically on <code>provider_capacity</code> only.</p>
+
+<p>A provider refusal is different: <code>policy_refusal</code> means the provider refused
+the content, so a retry needs a rephrased brief or another route. Do not send
+“Continue the same task” unchanged. <code>provider_error_unexplained</code> means Pi
+reported exactly <code>Unknown error (no error details in response)</code>; read the
+provider/gateway logs before retrying. Harnex does not infer a policy refusal
+when Pi supplies no details.</p>
 
 <h2 id="watching-a-worker"><a class="anchor" href="#watching-a-worker">Watching a worker</a></h2>
 
@@ -330,7 +337,12 @@ truncate  done                   2m03s  gpt-5.1  harnex/truncate  harnex land tr
 </code></pre></div>
 
 <p>A working lane shows the tool it is running right now (tool names only; harnex
-never records tool arguments). <code>harnex pane --id NAME --lines 40</code> captures the
+never records tool arguments). <code>harnex lanes --json</code> and MCP <code>lanes</code> return
+current settlement (<code>done</code>/<code>failed</code> even before collection), a separate
+<code>collected</code> boolean, and process-liveness <code>live</code>. <code>collected: false</code> means
+<code>harnex result</code> still needs to collect the turn; listing does not do that.
+The table keeps <code>finished, uncollected</code> for those finished workers.
+<code>harnex pane --id NAME --lines 40</code> captures the
 worker’s tmux window, and the window itself is always there to watch.</p>
 
 <h2 id="where-things-live"><a class="anchor" href="#where-things-live">Where things live</a></h2>
@@ -387,10 +399,10 @@ reference (<code>harnex help delegate</code>, <code>result</code>, <code>reply</
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.30.0</span>
+    <span>MIT · harnex 0.30.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=10cfaf606f" defer></script>
-<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=30efe60ff2" defer></script>
+<script src="/assets/feedback.js?v=30efe60ff2" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.30.1] - 2026-10-28 | 11:16 AM | +04
+
+Holm Queue 174 lost a night to dead lanes reading `running` and refusals
+reading "Unknown error": #93.
+
+### Fixed
+
+- **Settled lanes no longer read `running` in machine listings** (#93).
+  `harnex lanes --json` reports `done`/`failed` independently of
+  `collected`; listing does not collect results. The table, which MCP
+  `lanes` also returns, keeps its wording, including `finished, uncollected`.
+- **Pi provider errors have actionable outcomes** (#93). Refusal errors
+  (`cyber_policy`, content filter/policy, cybersecurity-risk flags) settle as
+  `policy_refusal`; retry guidance requires a rephrased brief or another
+  route. Pi's exact `Unknown error (no error details in response)` settles as
+  `provider_error_unexplained`, with guidance to inspect provider/gateway
+  logs before retrying. Neither suggests continuing the same task unchanged.
+  Both classes remain intact in owner-watch events and count toward the
+  default orchestration failure budget. `provider_capacity` is unchanged.
+
 ## [0.30.0] - 2026-10-25 | 02:55 AM | IST
 
 Holm's first nights with lanes (Holm Queue 167): #89–#92. Published to RubyGems.

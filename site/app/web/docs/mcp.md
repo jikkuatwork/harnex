@@ -17,8 +17,12 @@ servers when a session starts. `harnex doctor` reports the registrations under
 
 ## Tools
 
-Each tool runs the matching CLI command and returns its text: the worker's
-reply followed by the `── NAME:` footer.
+Each tool runs the matching CLI command and returns its text: normally the
+worker's reply followed by the `── NAME:` footer. `lanes` returns the
+`harnex lanes` table, with each worker's live activity; a settled worker reads
+"finished, uncollected" until its result is collected. Scripts use
+`harnex lanes --json`, whose `state` is `done`/`failed` for a settled worker
+(never `running`), with separate `collected` and `live` fields.
 
 | Tool | Arguments | Does |
 | --- | --- | --- |
@@ -28,7 +32,7 @@ reply followed by the `── NAME:` footer.
 | `reply` | `name`, `message`; `model`, `wait`, `cwd`, `wait_minutes` | Follow-up to the same worker, which keeps its context |
 | `land` | `names` (optional); `cwd` | Merge worktree lanes, remove worktrees and branches |
 | `discard` | `names`; `cwd` | Drop lanes without merging |
-| `lanes` | `all`; `cwd` | Open lanes, what each worker is doing, the next step |
+| `lanes` | `all`; `cwd` | Open lane JSON: settled state, collection, liveness, model and branch |
 
 Arguments are forgiving: `prompt`, `brief` or `message` work for `task`;
 `prompt` or `query` for `question`; `lane` or `id` for `name`. `cwd` defaults

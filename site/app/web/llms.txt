@@ -2,7 +2,7 @@
 
 > Pi workers (GPT models by default) as tools for you and your coding agents. Hand a question or a task to a Pi worker and get the reply back in one call: `harnex ask` (read-only), `harnex delegate [--worktree NAME]` (does the task, optionally in its own git worktree), `harnex result` (collect parallel lanes), `harnex reply NAME` (follow up; the worker keeps its context), `harnex land` (merge a worktree lane and clean up), `harnex discard`, `harnex lanes`. Every command prints the worker's reply and a `── NAME:` footer naming the next command. Exit codes: 0 done, 1 failed, 2 usage error, 124 still working (run `harnex result NAME`). `harnex mcp install` exposes the same verbs as MCP tools to Claude Code and Pi.
 
-Version 0.30.0. Install: `gem install harnex` (Ruby 3.x, no dependencies; needs Pi 0.80.4+ and tmux).
+Version 0.30.1. Install: `gem install harnex` (Ruby 3.x, no dependencies; needs Pi 0.80.4+ and tmux).
 
 ## Docs
 

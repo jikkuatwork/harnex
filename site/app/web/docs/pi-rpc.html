@@ -12,17 +12,17 @@
 <meta property="og:description" content="How harnex drives Pi&#39;s structured RPC mode.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/pi-rpc">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <link rel="alternate" type="text/markdown" href="/docs/pi-rpc.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
-<script src="/assets/theme.js?v=10cfaf606f"></script>
+<link rel="stylesheet" href="/assets/site.css?v=30efe60ff2">
+<script src="/assets/theme.js?v=30efe60ff2"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.30.0</span>
+    <span class="ver">v0.30.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -206,6 +206,15 @@ security decision, not merely a prompt-suppression flag.</p>
   </tbody>
 </table>
 
+<p>A final Pi <code>error</code> with refusal text (<code>cyber_policy</code>, content filter/policy,
+“flagged for possible cybersecurity risk”) settles as <code>policy_refusal</code>.
+A retry needs a rephrased brief or another route, not the same task unchanged.
+The exact <code>Unknown error (no error details in response)</code> settles as
+<code>provider_error_unexplained</code>: inspect provider/gateway logs before retrying;
+it is not evidence of a refusal. Both override exhausted adapter retries;
+otherwise <code>provider_capacity</code> keeps its existing retry-exhaustion behavior.
+These classes survive status, dispatch rows and <code>watch --owner</code> events.</p>
+
 <p>A forced send while Pi is busy is translated to a <code>prompt</code> with
 <code>streamingBehavior="steer"</code>; ordinary sends wait for the settled prompt state.
 This avoids sending a plain prompt that current Pi correctly rejects while
@@ -344,10 +353,10 @@ timeouts, and telemetry. The opt-in live contract test is:</p>
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.30.0</span>
+    <span>MIT · harnex 0.30.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=10cfaf606f" defer></script>
-<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=30efe60ff2" defer></script>
+<script src="/assets/feedback.js?v=30efe60ff2" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>

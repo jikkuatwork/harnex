@@ -12,17 +12,17 @@
 <meta property="og:description" content="Commands, patterns, the HTTP API, adapters and internals.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://harnex.zyt.app/docs/technical">
-<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta property="og:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="harnex: Pi workers as tools for you and your coding agents, beside a terminal running harnex delegate and harnex land">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=10cfaf606f">
+<meta name="twitter:image" content="https://harnex.zyt.app/assets/og.png?v=30efe60ff2">
 <link rel="alternate" type="text/markdown" href="/docs/technical.md">
 <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css?v=10cfaf606f">
-<script src="/assets/theme.js?v=10cfaf606f"></script>
+<link rel="stylesheet" href="/assets/site.css?v=30efe60ff2">
+<script src="/assets/theme.js?v=30efe60ff2"></script>
 </head>
 <body>
 <a class="skip" href="#main">skip to content</a>
@@ -38,7 +38,7 @@
     <a href="/changelog"><span class="ix">6:</span>changelog</a>
   </nav>
   <div class="right">
-    <span class="ver">v0.30.0</span>
+    <span class="ver">v0.30.1</span>
     <button class="theme" type="button" aria-label="Change theme">theme:auto</button>
     <a href="https://github.com/jikkuatwork/harnex" aria-label="Source on GitHub" rel="noopener">src</a>
   </div>
@@ -646,7 +646,10 @@ kind (<code>ask</code>/<code>delegate</code>), main-checkout root, run root, cwd
 base sha, owner (<code>CLAUDE_CODE_SESSION_ID</code>/<code>PI_SESSION_ID</code>), requested model,
 Pi <code>agent_session_id</code>, accumulated cost, launch time and the last turn’s result.
 States: <code>running</code> (a turn is out and uncollected), <code>done</code>, <code>failed</code>, <code>landed</code>,
-<code>discarded</code>.</li>
+<code>discarded</code>. <code>lanes --json</code> and MCP <code>lanes</code> project current settlement from
+task events (or fresh terminal evidence): <code>done</code>/<code>failed</code> even before
+collection, with separate <code>collected</code> and process-liveness <code>live</code> fields.
+Listing is read-only; pending results and the table wording are unchanged.</li>
   <li><strong>Launching:</strong> the verbs shell out to the low-level CLI. <code>delegate</code> runs
 <code>harnex run pi --id NAME --tmux NAME --cwd WORKDIR --root ROOT --auto-stop</code>
 with a brief file (<code>--context-file</code>); with <code>--wait-done</code> it blocks on the
@@ -661,7 +664,12 @@ a finished lane is relaunched under the same id with `– –session
   </li>
   <li><strong>Settling:</strong> after a turn, the lane reads the launch’s <code>usage</code> event (cost,
 <code>agent_session_id</code>) and records the result; the footer adds commits and a
-diffstat from git (<code>base_sha..HEAD</code>).</li>
+diffstat from git (<code>base_sha..HEAD</code>). Pi error text can classify
+<code>policy_refusal</code> (retry with a rephrased brief or another route) or
+<code>provider_error_unexplained</code> (inspect provider/gateway logs first). These
+failure classes are preserved in <code>watch --owner</code>; <code>provider_capacity</code>
+retains its adapter-retries-exhausted meaning. Full vocabulary:
+<a href="/docs/telemetry">dispatch telemetry</a>.</li>
   <li><strong>Worktrees:</strong> <code>.harnex/worktrees/NAME</code> on branch <code>harnex/NAME</code>; <code>.harnex/</code>
 is added to <code>&lt;git-common-dir&gt;/info/exclude</code> on the first write.
 <code>land</code> merges with <code>git merge --no-edit</code>, leaves conflicts in progress, and
@@ -1203,10 +1211,10 @@ framework. One thread per connection, no keep-alive.</li>
       <a href="/llms.txt">llms.txt</a>
       <a id="analytics" href="#" hidden>analytics</a>
     </span>
-    <span>MIT · harnex 0.30.0</span>
+    <span>MIT · harnex 0.30.1</span>
   </div>
 </footer>
-<script src="/assets/site.js?v=10cfaf606f" defer></script>
-<script src="/assets/feedback.js?v=10cfaf606f" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
+<script src="/assets/site.js?v=30efe60ff2" defer></script>
+<script src="/assets/feedback.js?v=30efe60ff2" data-project="6jyd3ya4" data-origin="https://feedback.zyt.app" data-color="#a55f0a" data-theme="auto" data-label="feedback" async></script>
 </body>
 </html>
