@@ -216,6 +216,8 @@ module Harnex
         @out.puts answer unless answer.to_s.empty?
         reason = turn["last_error"] || turn["outcome_class"] || turn["status"] || result["error"] || "no result"
         @err.puts("harnex ask: #{result['id'] || 'the worker'} did not answer (#{reason})")
+        hint = Lanes.provider_failure_hint("outcome" => turn["outcome_class"])
+        @err.puts("next: #{hint}") if hint
       end
       exit_code
     end

@@ -70,7 +70,12 @@ harnex reply word-count "Also add TextKit.char_count(text) with a test."
 A worker still on its turn takes the message as a follow-up. A finished lane
 is relaunched on its own Pi session, so the worker keeps everything it knew.
 After a provider-capacity failure, reply "Continue the same task from where
-you stopped", optionally with `--model OTHER`.
+you stopped", optionally with `--model OTHER`. Do not do that for
+`policy_refusal`: the provider refused the content, so retry with a rephrased
+brief or another route. For `provider_error_unexplained`, read the
+provider/gateway logs before retrying. `harnex lanes --json` and MCP `lanes`
+separate settled `state` (`done`/`failed`) from `collected` and process `live`;
+uncollected results are still available through `result`.
 
 ## Rules For Claude Code
 

@@ -23,7 +23,8 @@ module Harnex
     # are not fatal unless a caller names them (#57). provider_capacity was
     # task_failed before #82 and stays fatal; pass fatal classes to exempt it.
     DEFAULT_FATAL_CLASSES = %w[
-      completed_no_activity task_failed provider_capacity boot_failure permission_prompt timeout process_failed
+      completed_no_activity task_failed provider_capacity policy_refusal provider_error_unexplained
+      boot_failure permission_prompt timeout process_failed
     ].freeze
 
     module_function

@@ -1,13 +1,18 @@
 # Harnex State
 
-Updated: 2026-10-25 | 06:25 PM | IST
+Updated: 2026-10-28 | 12:27 PM | IST
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **Latest session: 0.30.0 published (RubyGems, tag `v0.30.0`, GitHub,
+- **#93 implemented, not released:** honest lane JSON/MCP settlement and
+  distinct provider refusal/no-details outcomes. Evidence:
+  `koder/issues/93_dead_lanes_read_running_and_refusals_read_unknown.md`;
+  `CHANGELOG.md` Unreleased.
+
+- **Latest release: 0.30.0 published (RubyGems, tag `v0.30.0`, GitHub,
   site), fixes Holm's lane friction #89–#92** (Holm Queue 167). Record:
   `koder/releases/0.30.0.md`.
   - #89: a bare layout (`.bare` + sibling worktrees) is one lane namespace;
@@ -32,6 +37,10 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 - #86 slices 1–2 are done; slice 3's capacity fallback is still open.
 
 ## Present
+
+- **#93 worktree ready for review/landing** (`harnex/i93-lane-state-refusals`);
+  full suite passes (opt-in live Pi integration not run). No version bump,
+  publication or site deployment in this task; public/local stay 0.30.0.
 
 - **Owner direction (2026-10-23):** harnex work follows Holm's lane usage
   (Holm Issue 1050); fold what it surfaces into harnex issues.
@@ -70,8 +79,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-0. **Watch Holm's next lane runs on 0.30.0** and file what they surface
-   (Holm Issue 1050). #92's optional ask (refuse direct `send` to a lane
+0. **Review/land #93, then watch Holm's next lane runs** (Holm Issue 1050).
+   #92's optional ask (refuse direct `send` to a lane
    another session owns) is not done.
 1. **#86 slice 3 rest:** automatic capacity retry/fallback for `delegate`
    and `run` (with #59/#82).

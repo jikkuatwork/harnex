@@ -345,10 +345,16 @@ facts prove the delta, not semantic quality or human authorship.
 - **Completion:** `completed_with_proof`, `completed_with_activity`.
 - **Proof defects:** `completed_no_activity`, `report_missing`,
   `report_invalid`, `report_rejected`.
-- **Process:** `task_failed` (the turn failed), `provider_capacity` (the turn
-  failed after the adapter's own provider retries ran out, from Pi's
-  structured `auto_retry_end success:false`; capacity or rate limits rather
-  than the work), `boot_failure` (structured
+- **Provider:** `provider_capacity` (the turn failed after the adapter's own
+  provider retries ran out, from Pi's structured `auto_retry_end success:false`;
+  capacity or rate limits rather than the work), `policy_refusal` (Pi's error
+  text names `cyber_policy`, content filter/policy, or a cybersecurity-risk
+  flag; retry needs a rephrased brief or another route),
+  `provider_error_unexplained` (Pi's exact `Unknown error (no error details in
+  response)`; inspect provider/gateway logs before retrying). Explicit error
+  classes take precedence over retry exhaustion; they do not infer a refusal
+  from an unexplained error. `watch --owner` carries these classes unchanged.
+- **Process:** `task_failed` (the turn failed), `boot_failure` (structured
   transport died before its first turn), `permission_prompt` (ended on a
   trust/confirmation prompt the adapter recognizes), `timeout` (`--max-runtime`
   stopped running work, or exit 124), `stopped_by_caller` (a manual stop
@@ -375,7 +381,8 @@ initial workers do not join families. Start rows are not counted. An optional
 adds a `failure_budget` verdict and exits 3 once N fatal failures are counted
 (1 is an error, 2 a usage error; a missing `--dispatch` file is an error).
 By default the fatal classes are `completed_no_activity`, `task_failed`,
-`provider_capacity`, `boot_failure`, `permission_prompt`, `timeout`, and `process_failed`; proof
+`provider_capacity`, `policy_refusal`, `provider_error_unexplained`,
+`boot_failure`, `permission_prompt`, `timeout`, and `process_failed`; proof
 defects, caller stops and `unknown` are not fatal.
 Harnex supplies the ledger only: the caller decides what to do on a breach.
 

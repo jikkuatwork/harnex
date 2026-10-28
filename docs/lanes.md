@@ -199,7 +199,14 @@ interjections.
 For provider and model failures (not found, rate limited, out of capacity) the
 footer suggests continuing on Pi's default model. `reply --model` resumes the
 same session, so the task is not lost. For `ask`, `--fallback-model` does this
-automatically.
+automatically on `provider_capacity` only.
+
+A provider refusal is different: `policy_refusal` means the provider refused
+the content, so a retry needs a rephrased brief or another route. Do not send
+"Continue the same task" unchanged. `provider_error_unexplained` means Pi
+reported exactly `Unknown error (no error details in response)`; read the
+provider/gateway logs before retrying. Harnex does not infer a policy refusal
+when Pi supplies no details.
 
 ## Watching a worker
 
@@ -214,7 +221,12 @@ truncate  done                   2m03s  gpt-5.1  harnex/truncate  harnex land tr
 ```
 
 A working lane shows the tool it is running right now (tool names only; harnex
-never records tool arguments). `harnex pane --id NAME --lines 40` captures the
+never records tool arguments). `harnex lanes --json` and MCP `lanes` return
+current settlement (`done`/`failed` even before collection), a separate
+`collected` boolean, and process-liveness `live`. `collected: false` means
+`harnex result` still needs to collect the turn; listing does not do that.
+The table keeps `finished, uncollected` for those finished workers.
+`harnex pane --id NAME --lines 40` captures the
 worker's tmux window, and the window itself is always there to watch.
 
 ## Where things live

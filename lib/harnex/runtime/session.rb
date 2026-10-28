@@ -54,7 +54,7 @@ module Harnex
     # rate limits, not the work. Structured signal only, never text.
     OUTCOME_CLASSES = (
       %w[completed_with_proof completed_with_activity] + PROOF_REJECTION_CLASSES +
-      %w[task_failed provider_capacity] + PROCESS_OUTCOME_CLASSES + %w[unknown]
+      %w[task_failed provider_capacity policy_refusal provider_error_unexplained] + PROCESS_OUTCOME_CLASSES + %w[unknown]
     ).freeze
     # Pi tools whose structured results carry an integer exit code.
     PI_COMMAND_TOOLS = %w[bash].freeze
@@ -1263,6 +1263,10 @@ module Harnex
       nil
     end
 
+    # #93: these are Pi's structured errorMessage/finalError, not transcript
+    # text. Explicit provider errors take precedence over exhausted retries.
+    PI_POLICY_REFUSAL = /\bcyber_policy\b|content[\s_-]*(?:filter|policy)|flagged for possible cybersecurity risk/i
+
     def settle_pi_task!
       return if @stop_requested || @pi_transport_failed
 
@@ -1273,8 +1277,16 @@ module Harnex
       when "error", "aborted", "length"
         error = @pi_last_assistant_error || @pi_last_retry_error
         error = "Pi agent settled with stopReason=#{reason}" if error.to_s.empty?
-        capacity = reason == "error" && !@pi_last_retry_error.to_s.empty?
-        mark_task_failed(status: reason, error: error, outcome_class: capacity ? "provider_capacity" : nil)
+        outcome_class = if reason == "error"
+                          if [error, @pi_last_retry_error].any? { |text| text.to_s.match?(PI_POLICY_REFUSAL) }
+                            "policy_refusal"
+                          elsif error == "Unknown error (no error details in response)"
+                            "provider_error_unexplained"
+                          elsif !@pi_last_retry_error.to_s.empty?
+                            "provider_capacity"
+                          end
+                        end
+        mark_task_failed(status: reason, error: error, outcome_class: outcome_class)
       when nil, ""
         mark_task_failed(
           status: "missing_final_message",
@@ -2549,6 +2561,7 @@ module Harnex
       # Status/source derive from the proof verdict, not the refined label.
       proof_failure = %w[
         completed_no_activity report_missing report_invalid report_rejected task_failed provider_capacity
+        policy_refusal provider_error_unexplained
       ].include?(base_class)
       harness_receipt = artifact_payload&.dig("receipt", "author") == "harnex"
       status = receipt_outcome["status"]

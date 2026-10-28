@@ -238,7 +238,10 @@ harnex watch --owner --stall-after 25m
   `session_id`, `repo`, `ts`, `work_state`, plus `outcome_class`,
   `receipt_path`, `elapsed_s`, `stall`, `reason` where they apply, and a
   readable `msg`. No heartbeats, so Claude Code's `Monitor` wakes only when
-  something needs a decision.
+  something needs a decision. Provider failures preserve `policy_refusal`
+  (rephrase the brief or use another route), `provider_error_unexplained`
+  (read provider/gateway logs before retrying), and `provider_capacity`
+  (adapter retries exhausted) as distinct outcome classes.
 - **Restarts:** a restarted stream re-announces `started` for running
   dispatches and delivers only results it has not delivered before (cursor
   under the owner's notifications directory). Delivery is not acceptance:

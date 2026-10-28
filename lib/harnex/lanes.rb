@@ -11,8 +11,9 @@ module Harnex
   # harnex/<name>. A record under STATE_DIR/lanes lets `result`, `reply`,
   # `land` and `discard` find a lane by name from anywhere in its repo.
   #
-  # Record states: running (a turn is out and nobody has collected it),
-  # done, failed, landed, discarded.
+  # Internal record states: running (a turn is out and uncollected), done,
+  # failed, landed, discarded. Machine listings project the worker's settled
+  # state independently, with `collected` indicating the record's boundary.
   module Lanes
     NAME = /\A[A-Za-z0-9][A-Za-z0-9._-]{0,47}\z/
     BRANCH_PREFIX = "harnex/".freeze
@@ -152,6 +153,57 @@ module Harnex
     def live?(lane)
       registry = Harnex.read_registry(lane["run_root"], lane["name"])
       !registry.nil? && Harnex.alive_pid?(registry["pid"])
+    end
+
+    # #93: listing is read-only, not result collection. The record's running
+    # state still drives pending/result and the table's "finished, uncollected".
+    # Fence evidence to this launch and follow-up so a reused name cannot pick
+    # up an earlier turn. Settlement can precede process exit (Pi at prompt).
+    def snapshot(lane)
+      live = live?(lane)
+      view = lane.merge("live" => live, "collected" => lane["state"] != "running")
+      return view unless lane["state"] == "running"
+
+      %w[outcome last_error settled_at last_turn].each { |key| view.delete(key) }
+      event = events(lane).reverse.find do |row|
+        row.is_a?(Hash) && %w[task_complete task_failed work_turn agent_start].include?(row["type"]) &&
+          after?(row["ts"], lane["launched_at"]) &&
+          (!lane["after_seq"] || row["seq"].to_i > lane["after_seq"].to_i)
+      end
+      if event && %w[task_complete task_failed].include?(event["type"])
+        failed = event["type"] == "task_failed" ||
+                 (!event["status"].to_s.empty? && !%w[completed success succeeded].include?(event["status"]))
+        view.merge!("state" => failed ? "failed" : "done", "outcome" => event["outcome_class"] || event["status"],
+                    "settled_at" => event["ts"])
+        view["last_error"] = event["message"] || event["error"] if failed
+      elsif !live
+        # Process failures may exit without a task event. The canonical end
+        # row supplies their class; ignore old rows from a previous launch.
+        terminal = TerminalStatus.resolve(id: lane["name"], repo_root: lane["run_root"])
+        if terminal && terminal["terminal"] && after?(terminal["ended_at"], lane["launched_at"])
+          view.merge!("state" => terminal["work_state"] == "completed" ? "done" : "failed",
+                      "outcome" => terminal["outcome_class"], "settled_at" => terminal["ended_at"])
+        elsif (exit_status = fresh_exit_status(lane))
+          done = exit_status["task_complete"] == true ||
+                 (exit_status["task_failed"] != true && exit_status["exit_code"] == 0)
+          view.merge!("state" => done ? "done" : "failed", "outcome" => exit_status["outcome_class"],
+                      "settled_at" => exit_status["exited_at"])
+        end
+      end
+      view
+    end
+
+    def fresh_exit_status(lane)
+      path = Harnex.exit_status_path(lane["run_root"], lane["name"])
+      data = JSON.parse(File.read(path))
+      return nil unless data.is_a?(Hash)
+
+      # Exit timestamps have second precision; mtime also fences same-second
+      # relaunches so an earlier dispatch's leftover file cannot settle one.
+      since = Time.iso8601(lane["launched_at"].to_s)
+      data if File.mtime(path) >= since && after?(data["exited_at"], since.iso8601)
+    rescue Errno::ENOENT, JSON::ParserError, ArgumentError
+      nil
     end
 
     # The live worker's activity snapshot (see ActivityTracker), or nil.
@@ -678,6 +730,8 @@ module Harnex
     def details(lane, exit_code)
       name = lane["name"]
       return ["keep waiting: harnex result #{name}"] if exit_code == Waiter::DONE_EXIT_TIMEOUT
+      provider_hint = provider_failure_hint(lane)
+      return ["next: #{provider_hint}"] if lane["kind"] == "ask" && !exit_code.zero? && provider_hint
       return ["more: harnex reply #{name} \"...\""] if lane["kind"] == "ask"
 
       out = []
@@ -697,6 +751,8 @@ module Harnex
         else
           out << "worked in place in #{lane['cwd']}; more work: `harnex reply #{name} \"...\"`"
         end
+      elsif provider_hint
+        out << "next: #{provider_hint}#{lane['branch'] ? "; or `harnex discard #{name}`" : ''}"
       else
         retry_model = model_problem?(lane) ? other_model(lane) : nil
         out << "next: `harnex reply #{name} \"Continue the same task from where you stopped\"" \
@@ -705,6 +761,15 @@ module Harnex
                "#{lane['branch'] ? " or `harnex discard #{name}`" : ''}"
       end
       out
+    end
+
+    def provider_failure_hint(lane)
+      case lane["outcome"]
+      when "policy_refusal"
+        "provider refused the content; a retry needs a rephrased brief or another route"
+      when "provider_error_unexplained"
+        "read the provider/gateway logs before retrying; the provider returned no error details"
+      end
     end
 
     def commit_count(lane)

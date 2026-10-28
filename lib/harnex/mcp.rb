@@ -113,7 +113,7 @@ module Harnex
       {
         "name" => "lanes",
         "title" => "List lanes",
-        "description" => "List this repo's open lanes: state, age, model, branch and the next step for each.",
+        "description" => "List this repo's open lanes as JSON: settled state (done/failed) or running, collected, live, model and branch.",
         "inputSchema" => { "type" => "object", "properties" => {
           "all" => { "type" => "boolean", "description" => "Lanes of every repo" }, "cwd" => CWD
         } },
@@ -218,7 +218,7 @@ module Harnex
 
           [name] + names
         when "lanes"
-          ["lanes"] + (args["all"] == true ? ["--all"] : [])
+          ["lanes", "--json"] + (args["all"] == true ? ["--all"] : [])
         else
           raise ArgumentError, "unknown tool #{name.inspect}"
         end

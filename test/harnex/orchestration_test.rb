@@ -213,6 +213,17 @@ class OrchestrationTest < Minitest::Test
     assert_equal 3, report.dig("failure_budget", "fatal_families")
   end
 
+  def test_provider_failure_classes_count_toward_the_default_failure_budget
+    rows = %w[policy_refusal provider_error_unexplained].map do |klass|
+      worker_row(klass, entry: klass, outcome: "unknown", exit_reason: "failure", tokens: nil, klass: klass)
+    end
+    report = Harnex::Orchestration.build_report(dispatch_rows: rows, sample_rows: [], run_id: "orch-1",
+                                               budget: { limit: 2, unit: "attempts" })
+    assert_equal({ "policy_refusal" => 1, "provider_error_unexplained" => 1 },
+                 report.dig("workers", "outcome_classes", "attempts"))
+    assert_equal [2, true], report.fetch("failure_budget").values_at("consumed", "breached")
+  end
+
   def test_report_usage_lists_the_whole_outcome_vocabulary
     usage = Harnex::OrchestrationCommand.usage
     Harnex::Session::OUTCOME_CLASSES.each { |klass| assert_includes usage, klass }

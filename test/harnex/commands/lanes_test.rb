@@ -368,6 +368,145 @@ class LanesTest < Minitest::Test
     assert_includes out.string, "harnex land ylane"
   end
 
+  # #93: settlement and collection are separate in machine-readable output.
+  def lane_json
+    out = StringIO.new
+    assert_equal 0, Harnex::LanesCommand.new(["--json"], out: out).run
+    JSON.parse(out.string).to_h { |lane| [lane["name"], lane] }
+  end
+
+  def test_lanes_json_reports_settled_states_before_and_after_collection
+    respond([{ ok: true, mode: "tmux" }, 0], [{ ok: true, mode: "tmux" }, 0])
+    %w[success failure].each { |name| cli(Harnex::Delegate, ["--no-wait", "--name", name, "Task"]) }
+    %w[success failure].each do |name|
+      lane = Harnex::Lanes.resolve(name)
+      event = { type: name == "success" ? "task_complete" : "task_failed", seq: 10,
+                ts: Harnex::Lanes.now, outcome_class: name == "success" ? "completed_with_activity" : "policy_refusal",
+                message: ("cyber_policy" if name == "failure") }
+      File.write(Harnex.events_log_path(@repo, name), JSON.generate(event) + "\n")
+    end
+
+    rows = lane_json
+    assert_equal ["done", false, false], rows["success"].values_at("state", "collected", "live")
+    assert_equal ["failed", false, false], rows["failure"].values_at("state", "collected", "live")
+    assert_equal "policy_refusal", rows["failure"]["outcome"]
+    assert_equal "cyber_policy", rows["failure"]["last_error"]
+    assert_equal %w[failure success], Harnex::Lanes.pending.map { |lane| lane["name"] }.sort,
+                 "listing must not consume pending results"
+    out = StringIO.new
+    Harnex::LanesCommand.new([], out: out).run
+    assert_equal 2, out.string.scan("finished, uncollected").length, "table wording stays unchanged"
+
+    respond([{ ok: true, final_message: "Done" }, 0], [{ ok: false, last_error: "cyber_policy", outcome_class: "policy_refusal" }, 1])
+    cli(Harnex::LaneResult, ["success"])
+    cli(Harnex::LaneResult, ["failure"])
+    rows = lane_json
+    assert_equal ["done", true], rows["success"].values_at("state", "collected")
+    assert_equal ["failed", true], rows["failure"].values_at("state", "collected")
+    assert_empty Harnex::Lanes.pending
+  end
+
+  def test_lanes_json_does_not_confuse_a_live_settled_worker_with_running_work
+    respond([{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "idle", "Task"])
+    Harnex.write_registry(Harnex.registry_path(@repo, "idle"), "id" => "idle", "pid" => Process.pid)
+    File.write(Harnex.events_log_path(@repo, "idle"), JSON.generate(type: "task_failed", seq: 12,
+               ts: Harnex::Lanes.now, outcome_class: "provider_error_unexplained") + "\n")
+    assert_equal ["failed", false, true], lane_json["idle"].values_at("state", "collected", "live")
+  ensure
+    FileUtils.rm_f(Harnex.registry_path(@repo, "idle"))
+  end
+
+  def test_lanes_json_fences_previous_launches_and_follow_ups
+    respond([{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "fresh", "Task"])
+    lane = Harnex::Lanes.resolve("fresh")
+    lane.merge!("after_seq" => 20, "outcome" => "policy_refusal", "last_error" => "old refusal")
+    Harnex::Lanes.save(lane)
+    path = Harnex.events_log_path(@repo, "fresh")
+    File.write(path, [
+      { type: "task_failed", ts: "2000-01-01T00:00:00Z", seq: 30, outcome_class: "policy_refusal" },
+      { type: "task_failed", ts: Harnex::Lanes.now, seq: 20, outcome_class: "policy_refusal" }
+    ].map { |row| JSON.generate(row) }.join("\n") + "\n")
+    assert_equal ["running", false], lane_json["fresh"].values_at("state", "collected")
+    assert_nil lane_json["fresh"]["outcome"], "do not present the previous turn's failure as current"
+    File.open(path, "a") { |f| f.puts JSON.generate(type: "task_complete", ts: Harnex::Lanes.now, seq: 21) }
+    assert_equal "done", lane_json["fresh"]["state"]
+    File.open(path, "a") { |f| f.puts JSON.generate(type: "work_turn", ts: Harnex::Lanes.now, seq: 22) }
+    assert_equal "running", lane_json["fresh"]["state"], "a new turn supersedes an older settlement"
+  end
+
+  def test_lanes_json_reports_process_only_settlement_and_ignores_old_dispatch_rows
+    respond([{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "boot", "Task"])
+    path = Harnex::DispatchHistory.path_for(@repo)
+    row = { meta: { id: "boot", started_at: "2000-01-01T00:00:00Z", ended_at: "2000-01-01T00:00:01Z" },
+            actual: { exit: "boot_failure", exit_code: 1 }, outcome: { class: "boot_failure" } }
+    Harnex::DispatchHistory.append(path, row)
+    assert_equal "running", lane_json["boot"]["state"]
+    row[:meta][:ended_at] = Harnex::Lanes.now
+    Harnex::DispatchHistory.append(path, row)
+    assert_equal ["failed", false, "boot_failure"], lane_json["boot"].values_at("state", "collected", "outcome")
+  end
+
+  def test_lanes_json_reads_fresh_exit_status_before_the_dispatch_row_lands
+    respond([{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "exited", "Task"])
+    path = Harnex.exit_status_path(@repo, "exited")
+    Harnex.atomic_write_json(path, exit_code: 1, task_failed: true, exited_at: "2000-01-01T00:00:00Z",
+                             outcome_class: "process_failed")
+    assert_equal "running", lane_json["exited"]["state"]
+    Harnex.atomic_write_json(path, exit_code: 1, task_failed: true, exited_at: Time.now.iso8601,
+                             outcome_class: "provider_error_unexplained")
+    assert_equal ["failed", false, "provider_error_unexplained"],
+                 lane_json["exited"].values_at("state", "collected", "outcome")
+  end
+
+  def test_provider_failure_ask_footers_do_not_suggest_continuing_unchanged
+    %w[policy_refusal provider_error_unexplained].each do |klass|
+      respond([{ ok: false, turn_result: { outcome_class: klass, last_error: "provider error" } }, 1])
+      code, out, err = cli(Harnex::Ask, ["--id", klass, "Question"])
+      assert_equal 1, code
+      assert_includes err, "next:"
+      assert_includes err, klass == "policy_refusal" ? "rephrased brief or another route" : "provider/gateway logs before retrying"
+      refute_includes out + err, "Continue the same task"
+    end
+  end
+
+  def test_mcp_lanes_returns_honest_state_and_collection_json
+    respond([{ ok: true, mode: "tmux" }, 0])
+    cli(Harnex::Delegate, ["--no-wait", "--name", "mcp-failed", "Task"])
+    File.write(Harnex.events_log_path(@repo, "mcp-failed"), JSON.generate(type: "task_failed", seq: 12,
+               ts: Harnex::Lanes.now, outcome_class: "policy_refusal") + "\n")
+    input = StringIO.new(JSON.generate(jsonrpc: "2.0", id: 1, method: "tools/call",
+                         params: { name: "lanes", arguments: { cwd: @repo } }) + "\n")
+    output = StringIO.new
+    Harnex::MCP::Server.new(input: input, output: output).run
+    text = JSON.parse(output.string).dig("result", "content", 0, "text")
+    assert text.start_with?("["), "MCP lanes must return lane JSON, got: #{text}"
+    row = JSON.parse(text).find { |lane| lane["name"] == "mcp-failed" }
+    assert_equal ["failed", false], row.values_at("state", "collected")
+  end
+
+  def test_policy_refusal_footer_requires_a_rephrased_brief_or_another_route
+    respond([{ ok: false, turn_result: { outcome_class: "policy_refusal", last_error: "provider cyber_policy refusal" } }, 1])
+    code, out, = cli(Harnex::Delegate, ["--worktree", "refused", "Task"])
+    assert_equal 1, code
+    assert_includes out, "next: provider refused the content"
+    assert_includes out, "rephrased brief or another route"
+    refute_includes out, "Continue the same task"
+    assert_includes out, "harnex discard refused"
+  end
+
+  def test_unexplained_provider_error_footer_requires_logs_before_retrying
+    respond([{ ok: false, turn_result: { outcome_class: "provider_error_unexplained",
+                last_error: "Unknown error (no error details in response)" } }, 1])
+    code, out, = cli(Harnex::Delegate, ["--name", "unexplained", "Task"])
+    assert_equal 1, code
+    assert_includes out, "next: read the provider/gateway logs before retrying"
+    refute_includes out, "Continue the same task"
+  end
+
   def test_delegate_without_a_worktree_names_the_lane_from_the_task
     respond([done, 0])
     code, out, = cli(Harnex::Delegate, ["Run the slow bench please"])

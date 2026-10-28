@@ -1,5 +1,6 @@
 require_relative "../../test_helper"
 require "json"
+require "stringio"
 
 class SessionPiRpcTest < Minitest::Test
   def setup
@@ -384,6 +385,82 @@ class SessionPiRpcTest < Minitest::Test
     failure = events.reverse.find { |row| row["type"] == "task_failed" }
     assert_nil failure["outcome_class"]
     assert_equal "task_failed", @session.send(:build_summary_outcome, nil)["class"]
+  end
+
+  def assert_pi_provider_failure(error, expected_class, retried: false)
+    @session.send(:handle_jsonl_notification, { "type" => "auto_retry_end", "success" => false, "finalError" => error }) if retried
+    assistant = { "role" => "assistant", "content" => [], "stopReason" => "error", "errorMessage" => error }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+    refute @session.task_failed?, "a provider error must wait for agent_settled"
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_equal expected_class, failure["outcome_class"], error
+    assert_equal error, failure["message"]
+    assert_equal expected_class, @session.status_payload[:outcome_class]
+    summary = @session.send(:build_summary_outcome, { "outcome" => { "status" => "accepted" } })
+    assert_equal expected_class, summary["class"]
+    assert_equal "unknown", summary["status"], "provider failures cannot count as accepted receipts"
+    assert_equal "harnex_completion_gate", summary["source"]
+  end
+
+  def test_provider_policy_refusals_keep_their_class_through_settlement_and_owner_watch
+    errors = ["cyber_policy", "Request blocked by content filter", "content_filter rejected the request",
+              "Content policy violation", "content_policy_violation", "This content was flagged for possible cybersecurity risk"]
+    owner = "i93-policy-owner"
+    @session.instance_variable_set(:@completion_notifier, Harnex::CompletionNotifier.new(
+      repo_root: @tmp, id: @session.id, session_id: @session.session_id, receipt_path: "",
+      owner_id: owner, stderr: StringIO.new
+    ))
+    @session.send(:register_completion_notifier!)
+    errors.each_with_index do |error, index|
+      @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+      assert_pi_provider_failure(error, "policy_refusal", retried: index.odd?)
+    end
+    out = StringIO.new
+    Harnex::OwnerStream.new(owner_id: owner, out: out, wall_clock: -> { Time.now + 10 }).scan
+    rows = out.string.lines.map { |line| JSON.parse(line) }
+    assert_equal errors.size, rows.size
+    assert rows.all? { |row| row["event"] == "failed" && row["outcome_class"] == "policy_refusal" }
+  end
+
+  def test_exact_pi_unknown_error_is_an_unexplained_provider_failure_even_after_retries
+    owner = "i93-unexplained-owner"
+    @session.instance_variable_set(:@completion_notifier, Harnex::CompletionNotifier.new(
+      repo_root: @tmp, id: @session.id, session_id: @session.session_id, receipt_path: "",
+      owner_id: owner, stderr: StringIO.new
+    ))
+    @session.send(:register_completion_notifier!)
+    [false, true].each do |retried|
+      @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+      assert_pi_provider_failure("Unknown error (no error details in response)", "provider_error_unexplained", retried: retried)
+    end
+    out = StringIO.new
+    Harnex::OwnerStream.new(owner_id: owner, out: out, wall_clock: -> { Time.now + 10 }).scan
+    rows = out.string.lines.map { |line| JSON.parse(line) }
+    assert_equal 2, rows.size
+    assert rows.all? { |row| row["event"] == "failed" && row["outcome_class"] == "provider_error_unexplained" }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    settle_pi_run(@session, stop_reason: "error", error: "Unknown error in a tool")
+    assert_equal "task_failed", @session.send(:build_summary_outcome, nil)["class"], "do not classify arbitrary unknown errors"
+  end
+
+  def test_explicit_retry_refusal_outranks_pis_unexplained_final_assistant_error
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "auto_retry_end", "success" => false,
+                                              "finalError" => "cyber_policy: content refused" })
+    assert_pi_provider_failure("Unknown error (no error details in response)", "policy_refusal")
+  end
+
+  def test_provider_failure_details_can_come_from_pis_final_retry_error
+    @session.send(:handle_jsonl_notification, { "type" => "agent_start" })
+    @session.send(:handle_jsonl_notification, { "type" => "auto_retry_end", "success" => false,
+                                              "finalError" => "content policy violation" })
+    assistant = { "role" => "assistant", "content" => [], "stopReason" => "error" }
+    @session.send(:handle_jsonl_notification, { "type" => "agent_end", "messages" => [assistant], "willRetry" => false })
+    @session.send(:handle_jsonl_notification, { "type" => "agent_settled" })
+    failure = events.reverse.find { |row| row["type"] == "task_failed" }
+    assert_equal "policy_refusal", failure["outcome_class"]
+    assert_equal "content policy violation", failure["message"]
   end
 
   def test_each_turn_result_carries_the_workers_final_reply

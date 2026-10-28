@@ -34,7 +34,7 @@ module Harnex
       Lanes.sweep_merged(Lanes.main_root(Dir.pwd))
       lanes = selected
       if @argv.include?("--json")
-        @out.puts JSON.generate(lanes.map { |lane| lane.merge("live" => Lanes.live?(lane)) })
+        @out.puts JSON.generate(lanes.map { |lane| Lanes.snapshot(lane) })
       elsif lanes.empty?
         @out.puts "no lanes#{@argv.include?('--all') ? '' : ' in this repo'} (start one with `harnex delegate`)"
       else

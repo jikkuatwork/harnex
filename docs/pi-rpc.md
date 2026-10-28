@@ -107,6 +107,15 @@ Harnex maps Pi events as follows:
 | `agent_settled` without an authoritative final stop reason | fail closed |
 | EOF, malformed JSON, or request timeout | disconnect/failure |
 
+A final Pi `error` with refusal text (`cyber_policy`, content filter/policy,
+"flagged for possible cybersecurity risk") settles as `policy_refusal`.
+A retry needs a rephrased brief or another route, not the same task unchanged.
+The exact `Unknown error (no error details in response)` settles as
+`provider_error_unexplained`: inspect provider/gateway logs before retrying;
+it is not evidence of a refusal. Both override exhausted adapter retries;
+otherwise `provider_capacity` keeps its existing retry-exhaustion behavior.
+These classes survive status, dispatch rows and `watch --owner` events.
+
 A forced send while Pi is busy is translated to a `prompt` with
 `streamingBehavior="steer"`; ordinary sends wait for the settled prompt state.
 This avoids sending a plain prompt that current Pi correctly rejects while
