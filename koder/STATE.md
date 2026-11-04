@@ -97,5 +97,7 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 3. **Site follow-ups:**
    - check it in Safari and Firefox, and as an installed app on a phone;
    - check the new link preview in a real unfurler (Slack, X, iMessage).
-4. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
+4. **#96 dispatch work-item metadata flags** (`--queue/--entry/--round/--plan/--issue/--tier/
+   --predicted-min`; ask verdict line in the row) — a downstream process review is waiting on it.
+5. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
    (macOS), #59.
