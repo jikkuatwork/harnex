@@ -99,6 +99,9 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
    - check the new link preview in a real unfurler (Slack, X, iMessage).
 4. **#97 remote host lanes** (`--on HOST`, MCP `host`, `fetch`/`land` round-trip; helium plan 38
    proves the ssh-only Phase 1 first; pairs with #95 lane caps).
+   **#98 first:** over non-interactive ssh the second lane dies with
+   `duplicate session: harnex` (`run.rb` picks new-window by `$TMUX` alone); helium
+   works around it in `scripts/hvm` (2026-11-05).
 5. **#96 dispatch work-item metadata flags** (`--queue/--entry/--round/--plan/--issue/--tier/
    --predicted-min`; ask verdict line in the row) — a downstream process review is waiting on it.
 6. #41 Slice C (`docs/public_api.md`), #78 pane time markers, #17, #16
