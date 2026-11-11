@@ -312,6 +312,113 @@ class TelemetryReconcilerTest < Minitest::Test
     end
   end
 
+  def test_reconcile_apply_imports_authentic_v2_pair_and_rerun_is_byte_identical
+    # seam: behavior-change + cli-subprocess
+    Dir.mktmpdir("harnex-telemetry-pair") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      start = v2_start.merge("meta" => { "fixture" => "authentic start" })
+      terminal = v2_end
+      write_jsonl(source, terminal, start, v2_start(id: "unrelated"))
+
+      [[], [start], [start, terminal]].each do |existing_pair|
+        prefix = JSON.generate(legacy_thin)
+        File.binwrite(canonical, ([prefix] + existing_pair.map { |row| JSON.generate(row) }).join("\n"))
+        before = File.binread(canonical)
+        dry = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--json")
+        assert_equal before, File.binread(canonical), "dry run must not write"
+        assert_report(dry, exitstatus: existing_pair.size == 2 ? 0 : 1,
+                      command: "reconcile", status: existing_pair.size == 2 ? "clean" : "drift")
+
+        apply = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json")
+        assert_report(apply, exitstatus: 0, command: "reconcile", status: "clean", appended: 2 - existing_pair.size)
+        refute_includes apply.stdout, "unpaired v2 end"
+        after = File.binread(canonical)
+        assert after.start_with?(before), "existing bytes must be preserved"
+        assert_equal [JSON.parse(prefix), start, terminal], File.readlines(canonical).map { |line| JSON.parse(line) }
+        check = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source, "--json")
+        assert_report(check, exitstatus: 0, command: "assert-canonical", status: "clean", open_starts: 0)
+        rerun = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json")
+        assert_report(rerun, exitstatus: 0, command: "reconcile", status: "clean", appended: 0)
+        assert_equal after, File.binread(canonical), "rerun must be byte-identical"
+      end
+    end
+  end
+
+  def test_reconcile_v2_invalid_or_conflicting_pairs_refuse_the_whole_batch
+    # seam: behavior-change + cli-subprocess
+    Dir.mktmpdir("harnex-telemetry-pair-refusal") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      start = v2_start
+      terminal = v2_end
+      fixtures = {
+        "end-only canonical" => [[terminal], [start, terminal], "corrupt"],
+        "missing source start" => [[], [terminal], "corrupt"],
+        "malformed source start" => [[], [start.merge("started_at" => "invalid"), terminal], "corrupt"],
+        "malformed start schema" => [[], [start.merge("schema_version" => 99), terminal], "corrupt"],
+        "malformed start with canonical start" => [[start], [start.merge("id" => ""), terminal], "corrupt"],
+        "different source start identity" => [[], [start.merge("session_id" => "other"), terminal], "corrupt"],
+        "conflicting source end outcome" => [[], [start, terminal, v2_end(exit_code: 1)], "conflict"],
+        "conflicting canonical end outcome" => [[start, v2_end(exit_code: 1)], [start, terminal], "conflict"],
+        "conflicting source start payload" => [[], [start, start.merge("pid" => 42), terminal], "conflict"],
+        "conflicting canonical start payload" => [[start.merge("pid" => 42)], [start, terminal], "conflict"],
+        "conflict with another candidate" => [
+          [legacy_rich(exit_code: 0)], [start, terminal, legacy_rich(exit_code: 1)], "conflict"
+        ]
+      }
+      fixtures.each do |label, (existing, retained, status)|
+        write_jsonl(canonical, *existing)
+        write_jsonl(source, *retained, legacy_rich(id: "missing-too"))
+        before = File.binread(canonical)
+        apply = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json")
+        assert_equal before, File.binread(canonical), "#{label}: refuse without any writes"
+        assert_report(apply, exitstatus: 1, command: "reconcile", status: status, appended: 0)
+      end
+    end
+  end
+
+  def test_reconcile_v2_pair_members_already_in_archived_history_are_not_duplicated
+    # seam: behavior-change + cli-subprocess
+    Dir.mktmpdir("harnex-telemetry-archived-pair") do |dir|
+      canonical = File.join(dir, "dispatch.jsonl")
+      source = File.join(dir, "source.jsonl")
+      archived = File.join(dir, "archived.jsonl")
+      helper = File.join(dir, "synthetic-history-reader")
+      File.write(helper, <<~RUBY)
+        #!/usr/bin/env ruby
+        STDOUT.write(File.binread(ENV.fetch("ARCHIVED_FIXTURE")))
+        STDOUT.write(File.binread(ENV.fetch("ACTIVE_FIXTURE")))
+      RUBY
+      File.chmod(0o755, helper)
+      env = { "HARNEX_DISPATCH_HISTORY_READER" => helper,
+              "ARCHIVED_FIXTURE" => archived, "ACTIVE_FIXTURE" => canonical }
+      start = v2_start
+      terminal = v2_end
+      write_jsonl(source, start, terminal)
+      [[start], [start, terminal]].each do |history|
+        write_jsonl(archived, *history)
+        write_jsonl(canonical, legacy_thin)
+        archived_before = File.binread(archived)
+        before = File.binread(canonical)
+        dry = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--json", env: env)
+        assert_report(dry, exitstatus: history.size == 2 ? 0 : 1, command: "reconcile",
+                      status: history.size == 2 ? "clean" : "drift")
+        assert_equal before, File.binread(canonical)
+        apply = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json", env: env)
+        assert_report(apply, exitstatus: 0, command: "reconcile", status: "clean", appended: 2 - history.size)
+        after = File.binread(canonical)
+        assert_equal before, after if history.size == 2
+        check = telemetry(dir, "assert-canonical", "--canonical", canonical, "--source", source, "--json", env: env)
+        assert_report(check, exitstatus: 0, command: "assert-canonical", status: "clean", open_starts: 0)
+        rerun = telemetry(dir, "reconcile", "--canonical", canonical, "--source", source, "--apply", "--json", env: env)
+        assert_report(rerun, exitstatus: 0, command: "reconcile", status: "clean", appended: 0)
+        assert_equal after, File.binread(canonical)
+        assert_equal archived_before, File.binread(archived)
+      end
+    end
+  end
+
   def test_reconcile_apply_appends_missing_once_and_rerun_is_byte_identical
     # seam: behavior-change + cli-subprocess
     Dir.mktmpdir("harnex-telemetry-apply") do |dir|

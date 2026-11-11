@@ -115,7 +115,7 @@ module Harnex
 
     def writable?(state) = state[:fatal].empty? && state[:conflict_rows].empty? && state[:missing_rows].any?
 
-    def load_canonical(path, locked: false)
+    def load_canonical(path, locked: false, appended: [])
       rows = []
       fatal = []
       families = FAMILY_KEYS.to_h { |key| [key, 0] }
@@ -135,6 +135,9 @@ module Harnex
         }
       end
 
+      appended.each do |row|
+        entries << { record: row.record, line: entries.length + 1, path: path }
+      end
       entries.each do |entry|
         if entry[:error]
           fatal << "malformed canonical JSON at #{path}:#{entry[:line]}"
@@ -152,6 +155,7 @@ module Harnex
           families["v2_start"] += 1
           validate_v2(record, path, entry[:line], fatal) do |identity|
             add_unique(starts, identity, record, path, entry[:line], fatal, "v2 start")
+            recoverable << build_row(record, path, entry[:line], :v2_start)
           end
         when :v2_end
           families["v2_end"] += 1
@@ -225,8 +229,12 @@ module Harnex
       conflicts = source_conflicts(rows)
       conflicts.each { |left, right| diagnostic("identity conflict #{identity_label(left)} at #{left.path}:#{left.line} vs #{right.path}:#{right.line}") }
 
+      selected = dedupe_source_rows(rows)
+      selected.reject! do |row|
+        row.family == :v2_start && !selected.any? { |terminal| terminal.family == :v2 && terminal.identity == row.identity.take(4) }
+      end
       {
-        rows: dedupe_source_rows(rows),
+        rows: selected,
         fatal: fatal,
         summary: {
           "paths" => unique.length,
@@ -264,13 +272,19 @@ module Harnex
       parsed = parse_whole_json(path)
       entries = parsed ? json_entries(parsed, path) : read_jsonl(path)
       errors = entries.select { |entry| entry[:error] }
+      fatal = []
+      entries.each do |entry|
+        record = entry[:record]
+        next unless record.is_a?(Hash) && record["record_type"] == "dispatch_start"
+
+        validate_v2(record, path, entry[:line], fatal) { |_identity| }
+      end
       rows = entries.filter_map do |entry|
         next if entry[:error]
 
         source_candidate(entry[:record], path, entry[:line])
       end
 
-      fatal = []
       if explicit && errors.any?
         fatal << "malformed source telemetry at #{path}:#{errors.first[:line]}"
       elsif !explicit && rows.any? && errors.any?
@@ -331,7 +345,10 @@ module Harnex
     end
 
     def source_candidate(record, path, line)
-      if v2_rich_end?(record)
+      if record.is_a?(Hash) && canonical_family(record) == :v2_start &&
+          !record["id"].to_s.empty? && !record["session_id"].to_s.empty? && normalized_time(record["started_at"])
+        build_row(record, path, line, :v2_start)
+      elsif v2_rich_end?(record)
         build_row(record, path, line, :v2)
       elsif legacy_rich?(record)
         build_row(record, path, line, :legacy)
@@ -361,10 +378,12 @@ module Harnex
     end
 
     def build_row(record, path, line, family)
-      id = family == :v2 ? record["id"].to_s : record.dig("meta", "id").to_s
-      started_at = normalized_time(family == :v2 ? record["started_at"] : record.dig("meta", "started_at"))
-      session_id = family == :v2 ? record["session_id"].to_s : nil
-      identity = family == :v2 ? ["v2", session_id, id, started_at] : ["legacy", id, started_at]
+      v2 = family != :legacy
+      id = v2 ? record["id"].to_s : record.dig("meta", "id").to_s
+      started_at = normalized_time(v2 ? record["started_at"] : record.dig("meta", "started_at"))
+      session_id = v2 ? record["session_id"].to_s : nil
+      identity = v2 ? ["v2", session_id, id, started_at] : ["legacy", id, started_at]
+      identity += ["start"] if family == :v2_start
       Row.new(
         record: record,
         path: path,
@@ -380,7 +399,9 @@ module Harnex
       same_family = canonical_rows.find { |candidate| candidate.identity == row.identity }
       return same_family if same_family
 
-      canonical_rows.find { |candidate| candidate.match_identity == row.match_identity }
+      return nil if row.family == :v2_start
+
+      canonical_rows.find { |candidate| candidate.family != :v2_start && candidate.match_identity == row.match_identity }
     end
 
     def source_conflicts(rows)
@@ -389,7 +410,7 @@ module Harnex
         first = group.first
         group.drop(1).each { |row| conflicts << [first, row] unless payload_equal?(first.record, row.record) }
       end
-      rows.group_by(&:match_identity).each_value do |group|
+      rows.reject { |row| row.family == :v2_start }.group_by(&:match_identity).each_value do |group|
         next unless group.map(&:family).uniq.length > 1
 
         group.combination(2) do |left, right|
@@ -406,7 +427,10 @@ module Harnex
       rows.sort_by { |row| [row.sort_key[0], row.match_identity, family_preference(row), row.path, row.line] }.each do |row|
         next if selected.any? { |candidate| candidate.identity == row.identity }
 
-        match = selected.find { |candidate| candidate.family != row.family && candidate.match_identity == row.match_identity }
+        match = selected.find do |candidate|
+          row.family != :v2_start && candidate.family != :v2_start &&
+            candidate.family != row.family && candidate.match_identity == row.match_identity
+        end
         next if match && rows_payload_equal?(match, row)
 
         selected << row
@@ -416,7 +440,7 @@ module Harnex
 
     def dedupe_rows(rows)
       seen = Set.new
-      rows.sort_by(&:sort_key).select do |row|
+      rows.sort_by { |row| [row.sort_key[0], row.family == :v2_start ? 0 : 1, row.path, row.line] }.select do |row|
         key = row.identity
         next false if seen.include?(key)
 
@@ -436,6 +460,9 @@ module Harnex
         return [0, locked] unless writable?(locked)
 
         still_missing = locked[:missing_rows].select { |row| rows.any? { |wanted| wanted.identity == row.identity } }
+        proposed = load_canonical(@canonical, locked: true, appended: still_missing)
+        return [0, locked.merge(fatal: locked[:fatal] + proposed[:fatal])] unless proposed[:fatal].empty?
+
         payload = still_missing.map { |row| JSON.generate(DispatchHistory.portable_record(row.record)) }.join("\n")
         existing = File.file?(@canonical) ? File.binread(@canonical) : ""
         payload = "\n#{payload}" unless existing.empty? || existing.end_with?("\n")
