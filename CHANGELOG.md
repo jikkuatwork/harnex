@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.30.2] - 2026-11-21 | 02:00 AM | +0800
+
+First run on a Mac (Holm's M4 host): #99.
 
 ### Fixed
 
