@@ -258,7 +258,10 @@ module Harnex
     def reap_observer(pid)
       begin
         Process.kill("KILL", -pid)
-      rescue Errno::ESRCH
+      rescue Errno::ESRCH, Errno::EPERM
+        # Darwin's killpg answers EPERM, not ESRCH, when every member of the
+        # group has exited but is not yet reaped (#99). The direct KILL and
+        # waitpid below still reap the observer.
         nil
       end
       begin

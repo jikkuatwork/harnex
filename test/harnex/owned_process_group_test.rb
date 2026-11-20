@@ -19,6 +19,32 @@ class OwnedProcessGroupTest < Minitest::Test
     assert_equal [["TERM", -424242]], calls
   end
 
+  # Darwin's killpg answers EPERM, not ESRCH, when every member of the group has
+  # exited but is not yet reaped (#99). That group is gone too.
+  def test_zombie_only_group_eperm_is_gone_and_never_signalled_again
+    group = Harnex::OwnedProcessGroup.new(424242)
+    calls = []
+    Process.stub(:kill, ->(signal, target) { calls << [signal, target]; raise Errno::EPERM }) do
+      2.times { assert group.terminate(term_grace_seconds: 0, kill_grace_seconds: 0) }
+    end
+    assert_equal [["TERM", -424242]], calls
+  end
+
+  def test_group_that_exits_after_term_reads_gone_when_the_probe_gets_eperm
+    group = Harnex::OwnedProcessGroup.new(424242)
+    calls = []
+    darwin = lambda do |signal, target|
+      calls << [signal, target]
+      raise Errno::EPERM unless signal == "TERM"
+
+      1
+    end
+    Process.stub(:kill, darwin) do
+      assert group.terminate(term_grace_seconds: 1, kill_grace_seconds: 0)
+    end
+    assert_equal [["TERM", -424242], [0, -424242]], calls
+  end
+
   def test_cannot_signal_runner_or_its_group
     [Process.pid, Process.getpgrp].each do |pgid|
       group = Harnex::OwnedProcessGroup.new(pgid)

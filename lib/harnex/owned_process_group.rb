@@ -29,7 +29,11 @@ module Harnex
     def signal(name)
       Process.kill(name, -@pgid)
       true
-    rescue Errno::ESRCH
+    rescue Errno::ESRCH, Errno::EPERM
+      # EPERM: no member could be signalled. On Darwin that is how killpg
+      # reports a group whose members have all exited but are not yet reaped
+      # (#99); anywhere else it means members we have no right to signal, which
+      # no later signal could reach either.
       # Do not later signal a recycled group ID after observing it gone.
       @pgid = nil
       false

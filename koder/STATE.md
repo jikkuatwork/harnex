@@ -1,6 +1,6 @@
 # Harnex State
 
-Updated: 2026-10-28 | 11:20 AM | +04
+Updated: 2026-11-21 | 01:53 AM | +0800
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
@@ -44,6 +44,12 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Present
 
+- **#99 fixed on `main`, not released** (2026-11-21): on macOS every `ask` and
+  `wait --timeout` failed with "Operation not permitted" (Darwin returns EPERM for
+  `kill(-pgid)` on a zombie-only group). The first Mac install, Holm's M4 host, runs
+  0.30.1 with the same one-line local patch until the next release. The macOS suite has
+  19 more failures, all test portability: #100.
+
 - **#93 worktree ready for review/landing** (`harnex/i93-lane-state-refusals`);
   full suite passes (opt-in live Pi integration not run). No version bump,
   publication or site deployment in this task; public/local stay 0.30.0.
@@ -85,6 +91,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
+- **Release #99** (0.30.2), then `gem install harnex` on the Mac to
+  replace its locally patched 0.30.1.
 0. **Review/land #93, then watch Holm's next lane runs** (Holm Issue 1050).
    #92's optional ask (refuse direct `send` to a lane
    another session owns) is not done.

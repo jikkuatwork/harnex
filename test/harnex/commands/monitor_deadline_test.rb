@@ -153,6 +153,28 @@ class MonitorDeadlineTest < Minitest::Test
     assert_equal 143, JSON.parse(out)["exit_code"]
   end
 
+  # Darwin answers kill(-pgid) with EPERM, not ESRCH, once the observer has
+  # exited but is not yet reaped (#99): every `ask` and `wait --timeout` on macOS
+  # failed with "Operation not permitted". Emulated so every platform runs it.
+  def test_reaping_a_finished_observer_tolerates_darwin_eperm
+    File.write(@events, JSON.generate(type: "task_complete", seq: 8) + "\n")
+    real_kill = Process.method(:kill)
+    group_signals = []
+    darwin_kill = lambda do |signal, *targets|
+      if targets.any? { |target| target.is_a?(Integer) && target.negative? }
+        group_signals << signal
+        raise Errno::EPERM
+      end
+      real_kill.call(signal, *targets)
+    end
+    out, err = Process.stub(:kill, darwin_kill) do
+      capture_io { assert_equal 0, build_waiter(timeout: "1").run }
+    end
+    assert_equal "task_complete", JSON.parse(out)["event"]
+    assert_empty err
+    assert_includes group_signals, "KILL"
+  end
+
   def test_heartbeat_is_opt_in_and_reports_observed_state_not_log_age
     File.write(@events, JSON.generate(type: "agent_state", state: "busy", seq: 9, log_idle_s: 0) + "\n")
     out, err = capture_io { assert_equal 124, build_waiter.run }
