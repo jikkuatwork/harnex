@@ -63,3 +63,5 @@ the group as gone.
   The other 19 are test portability, tracked in #100.
 - Live: the Mac's installed 0.30.1 carried the same one-line patch, and
   `harnex ask` to `foundry-zyt/gpt-6.2-astra` then answered in 7 s.
+- Released in 0.30.2 (2026-11-21). On the Mac, the clean 0.30.2, with the patched
+  0.30.1 removed, answered an `ask` in 6 s. Record: `koder/releases/0.30.2.md`.

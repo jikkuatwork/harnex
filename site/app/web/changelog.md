@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.2] - 2026-11-21 | 02:00 AM | +0800
+
+First run on a Mac (Holm's M4 host): #99.
+
+### Fixed
+
+- **On macOS, `ask` and `wait --timeout` no longer fail with "Operation not
+  permitted"** (#99). When every member of a process group has exited but is
+  not yet reaped, Darwin answers `kill(-pgid)` with `EPERM` (Linux succeeds).
+  The observer reap in `wait`, and `OwnedProcessGroup`, which stops Pi worker
+  groups, now treat `EPERM` as gone. Linux behaviour is unchanged. The other
+  19 macOS test failures are test portability: #100.
+
 ## [0.30.1] - 2026-10-28 | 11:16 AM | +04
 
 Holm Queue 174 lost a night to dead lanes reading `running` and refusals

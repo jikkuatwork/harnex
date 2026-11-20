@@ -1,13 +1,18 @@
 # Harnex State
 
-Updated: 2026-11-21 | 01:53 AM | +0800
+Updated: 2026-11-21 | 02:12 AM | +0800
 
 Thin session handoff. History: `CHANGELOG.md`; release evidence:
 `koder/releases/`; implementation detail: linked issues/plans.
 
 ## Past
 
-- **Latest session: 0.30.1 published (RubyGems, tag `v0.30.1`, GitHub, site), fixes #93**
+- **Latest session: 0.30.2 published (RubyGems, tag `v0.30.2`, GitHub, site), fixes #99**
+  (first Mac install, Holm's M4 host): on macOS every `ask` and `wait --timeout` failed with
+  "Operation not permitted". Darwin returns EPERM for `kill(-pgid)` on a zombie-only group;
+  the observer reap and `OwnedProcessGroup` now read EPERM as gone. Record:
+  `koder/releases/0.30.2.md`.
+- **0.30.1 published (RubyGems, tag `v0.30.1`, GitHub, site), fixes #93**
   (Holm Queue 174): `lanes --json` reports a settled lane as `done`/`failed`, never
   `running`; Pi refusals settle as `policy_refusal`, Pi's no-details error as
   `provider_error_unexplained`, both with "don't retry unchanged" footers. Record:
@@ -44,11 +49,11 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Present
 
-- **#99 fixed on `main`, not released** (2026-11-21): on macOS every `ask` and
-  `wait --timeout` failed with "Operation not permitted" (Darwin returns EPERM for
-  `kill(-pgid)` on a zombie-only group). The first Mac install, Holm's M4 host, runs
-  0.30.1 with the same one-line local patch until the next release. The macOS suite has
-  19 more failures, all test portability: #100.
+- **macOS works from 0.30.2** (#99). The suite still has 19 macOS-only failures, all
+  test portability (`/var` vs `/private/var`, `/proc`): #100.
+- **Publishing over non-interactive ssh:** run `bin/gem-push` inside `zsh -ic`.
+  `GEM_HOST_API_KEY` and `~/commands/otp` load only in interactive shells; without them it
+  fails with `otp: command not found`, then a 401.
 
 - **#93 worktree ready for review/landing** (`harnex/i93-lane-state-refusals`);
   full suite passes (opt-in live Pi integration not run). No version bump,
@@ -56,8 +61,8 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 - **Owner direction (2026-10-23):** harnex work follows Holm's lane usage
   (Holm Issue 1050); fold what it surfaces into harnex issues.
-- **Local = public = 0.30.1** (RubyGems, tag `v0.30.0`, GitHub `main`,
-  https://harnex.zyt.app).
+- **Local = public = 0.30.2** (RubyGems, tag `v0.30.2`, GitHub `main`,
+  https://harnex.zyt.app), installed on Holm's VM and M4 host.
 - **Holm picks up 0.30.0 only after `/mcp` reconnects harnex or the session
   restarts** (running MCP servers and agent definitions load at start).
   Holm was told; whether to add `lanes` templates to its tracked
@@ -91,8 +96,7 @@ Thin session handoff. History: `CHANGELOG.md`; release evidence:
 
 ## Future (suggested order)
 
-- **Release #99** (0.30.2), then `gem install harnex` on the Mac to
-  replace its locally patched 0.30.1.
+- **#100:** make the suite green on macOS.
 0. **Review/land #93, then watch Holm's next lane runs** (Holm Issue 1050).
    #92's optional ask (refuse direct `send` to a lane
    another session owns) is not done.

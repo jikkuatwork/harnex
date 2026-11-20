@@ -1,4 +1,4 @@
-# CLI reference (harnex 0.30.1)
+# CLI reference (harnex 0.30.2)
 
 ```text
 harnex: Pi workers (GPT models) as tools for you and your agents.
@@ -229,7 +229,7 @@ Usage: harnex mcp                  Serve MCP over stdio (what MCP clients run)
 
 Exposes ask, delegate, result, reply, land, discard and lanes as native tools.
 install registers the server for Claude Code (`claude mcp add --scope user`)
-and Pi (/home/kodeman/.pi/agent/mcp.json, exposure direct). With neither flag it does both
+and Pi (/Users/bluebox/.pi/agent/mcp.json, exposure direct). With neither flag it does both
 (each only when that CLI is installed). For Claude Code it also installs the
 `gpt` subagent at ~/.claude/agents/gpt.md unless one exists (--no-agent skips it).
 Restart running sessions afterwards.
@@ -735,7 +735,7 @@ a JSON verdict. Exits 0 only when every required check passes.
 
 Options:
   --cwd DIR           Workspace to dispatch in (default: current directory)
-  --task-root DIR     Where the pinned task file is written (default: /tmp)
+  --task-root DIR     Where the pinned task file is written (default: /var/folders/77/qfn1swpj5b1_vqg2tmsdb75w0000gn/T)
   --commit-check      Also prove a commit in a throwaway scratch repo
                       (never the caller's repo)
   --timeout DUR       Per-dispatch deadline (default: 180s)
